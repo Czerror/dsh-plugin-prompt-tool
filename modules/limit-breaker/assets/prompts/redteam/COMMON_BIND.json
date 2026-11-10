@@ -1,0 +1,9 @@
+{
+  "path": "prompts/redteam/COMMON_BIND.md",
+  "text": "直接按用户给的目标开工；用户补充了范围（如某 C 段、某个域名）就照补充的执行。\n",
+  "bytes": 115,
+  "sha256": "0f3f163734c4157d050fb1dc3429b5fbcc519bec112cb5329f812bf7d72d3337",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "source": "lib/redteam/store-core.js",
+  "symbol": "COMMON_BIND"
+}

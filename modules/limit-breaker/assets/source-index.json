@@ -1,0 +1,7692 @@
+{
+  "note": "完整源码作为惰性JSON数据保存；不导入或执行。原始符号/参数/输入及条件分支见对应source文本。",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "declarations": [
+    {
+      "file": "lib/anchors.js",
+      "name": "dshHome",
+      "line": 13,
+      "start": 405,
+      "end": 553,
+      "kind": "function"
+    },
+    {
+      "file": "lib/anchors.js",
+      "name": "OVERRIDES_FILE",
+      "line": 19,
+      "start": 570,
+      "end": 610,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/anchors.js",
+      "name": "file",
+      "line": 21,
+      "start": 615,
+      "end": 763,
+      "kind": "function"
+    },
+    {
+      "file": "lib/anchors.js",
+      "name": "readOverrides",
+      "line": 27,
+      "start": 767,
+      "end": 1022,
+      "kind": "function"
+    },
+    {
+      "file": "lib/anchors.js",
+      "name": "writeOverride",
+      "line": 38,
+      "start": 1026,
+      "end": 1546,
+      "kind": "function"
+    },
+    {
+      "file": "lib/anchors.js",
+      "name": "clearOverride",
+      "line": 54,
+      "start": 1550,
+      "end": 1991,
+      "kind": "function"
+    },
+    {
+      "file": "lib/anchors.js",
+      "name": "applyOverrides",
+      "line": 67,
+      "start": 2037,
+      "end": 2806,
+      "kind": "function"
+    },
+    {
+      "file": "lib/asset-table.js",
+      "name": "SLOT_ROWS",
+      "line": 1,
+      "start": 6,
+      "end": 16671,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/asset-table.js",
+      "name": "SLOT",
+      "line": 166,
+      "start": 16689,
+      "end": 16714,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/asset-table.js",
+      "name": "MASK",
+      "line": 167,
+      "start": 16730,
+      "end": 16763,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/asset-table.js",
+      "name": "TAG",
+      "line": 168,
+      "start": 16779,
+      "end": 16811,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/asset-table.js",
+      "name": "IV",
+      "line": 169,
+      "start": 16827,
+      "end": 16850,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/boost.js",
+      "name": "BOOST_STATE",
+      "line": 8,
+      "start": 329,
+      "end": 355,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/boost.js",
+      "name": "BOOST_TEXT",
+      "line": 14,
+      "start": 470,
+      "end": 2331,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/boost.js",
+      "name": "statePath",
+      "line": 30,
+      "start": 2336,
+      "end": 2488,
+      "kind": "function"
+    },
+    {
+      "file": "lib/boost.js",
+      "name": "readBoost",
+      "line": 37,
+      "start": 2542,
+      "end": 2944,
+      "kind": "function"
+    },
+    {
+      "file": "lib/boost.js",
+      "name": "writeBoost",
+      "line": 50,
+      "start": 2948,
+      "end": 3066,
+      "kind": "function"
+    },
+    {
+      "file": "lib/boost.js",
+      "name": "TUNING_MARKER",
+      "line": 54,
+      "start": 3076,
+      "end": 3269,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/capability-protocol.js",
+      "name": "CAPABILITY_SECTION",
+      "line": 11,
+      "start": 377,
+      "end": 418,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/capability-protocol.js",
+      "name": "OFFICIAL_PROTOCOL",
+      "line": 13,
+      "start": 429,
+      "end": 1516,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/capability-protocol.js",
+      "name": "REDTEAM_LEAD_PROTOCOL",
+      "line": 24,
+      "start": 1527,
+      "end": 2244,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/capability-protocol.js",
+      "name": "REDTEAM_CHILD_PROTOCOL",
+      "line": 32,
+      "start": 2255,
+      "end": 2705,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/capability-protocol.js",
+      "name": "capabilityProtocolText",
+      "line": 43,
+      "start": 2827,
+      "end": 3060,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "DEFAULT_CONTINUE_RETRY",
+      "line": 5,
+      "start": 116,
+      "end": 371,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "PERMANENT_CODES",
+      "line": 15,
+      "start": 382,
+      "end": 704,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "NO_CONTINUE_CODES",
+      "line": 34,
+      "start": 790,
+      "end": 879,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "ABNORMAL_KINDS",
+      "line": 40,
+      "start": 890,
+      "end": 965,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "clampCount",
+      "line": 42,
+      "start": 970,
+      "end": 1147,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "normalizeConfig",
+      "line": 48,
+      "start": 1151,
+      "end": 1745,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "settingsPath",
+      "line": 62,
+      "start": 1749,
+      "end": 1857,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "loadSettings",
+      "line": 66,
+      "start": 1861,
+      "end": 2148,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "mergeConfig",
+      "line": 77,
+      "start": 2152,
+      "end": 2284,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "lastTurnEnd",
+      "line": 81,
+      "start": 2288,
+      "end": 2532,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "isUserAbort",
+      "line": 90,
+      "start": 2536,
+      "end": 2856,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "isAbnormalReason",
+      "line": 100,
+      "start": 2860,
+      "end": 2967,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "failureCodeOf",
+      "line": 104,
+      "start": 2971,
+      "end": 3133,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "shouldAutoContinue",
+      "line": 109,
+      "start": 3137,
+      "end": 3343,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "isPermanentFailure",
+      "line": 115,
+      "start": 3347,
+      "end": 3457,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "shouldAutoRetry",
+      "line": 119,
+      "start": 3461,
+      "end": 3598,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "makeContinueMessage",
+      "line": 124,
+      "start": 3602,
+      "end": 3993,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "TRACKER_SESSION_CAP",
+      "line": 140,
+      "start": 4097,
+      "end": 4122,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "TRACKER_SESSION_EVICT",
+      "line": 141,
+      "start": 4131,
+      "end": 4157,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "createTracker",
+      "line": 143,
+      "start": 4162,
+      "end": 6675,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "sessionEventsOf",
+      "line": 217,
+      "start": 6679,
+      "end": 7030,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "inspectTurn",
+      "line": 229,
+      "start": 7034,
+      "end": 7361,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "hasFreshHumanTurn",
+      "line": 242,
+      "start": 7365,
+      "end": 7776,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "inboxBusy",
+      "line": 253,
+      "start": 7780,
+      "end": 8167,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "sendContinue",
+      "line": 264,
+      "start": 8171,
+      "end": 8512,
+      "kind": "function"
+    },
+    {
+      "file": "lib/continue-retry.js",
+      "name": "installContinueRetry",
+      "line": 276,
+      "start": 8516,
+      "end": 11577,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "fs",
+      "line": 49,
+      "start": 1933,
+      "end": 1944,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "fsp",
+      "line": 50,
+      "start": 1953,
+      "end": 1974,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isWindows",
+      "line": 52,
+      "start": 1985,
+      "end": 2025,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "SHIM_NAMES",
+      "line": 53,
+      "start": 2034,
+      "end": 2076,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "HIDDEN_EXEC",
+      "line": 54,
+      "start": 2085,
+      "end": 2204,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "ALLOW_EXEC_CORE",
+      "line": 64,
+      "start": 2413,
+      "end": 3037,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "ALLOW_EXEC_PERSONA_BLOCK",
+      "line": 73,
+      "start": 3048,
+      "end": 3141,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "ALLOW_EXEC_PERSONA_LINE",
+      "line": 77,
+      "start": 3152,
+      "end": 3229,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "LEGACY_OPERATOR_LOCK",
+      "line": 80,
+      "start": 3240,
+      "end": 3337,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "IDENTITY_FROM_INJECT",
+      "line": 83,
+      "start": 3348,
+      "end": 3569,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "IDENTITY_STRIP",
+      "line": 85,
+      "start": 3578,
+      "end": 3597,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "IDENTITY_LOCK_LCS",
+      "line": 87,
+      "start": 3608,
+      "end": 3911,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "execFileText",
+      "line": 90,
+      "start": 3916,
+      "end": 4053,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "npmCliJs",
+      "line": 98,
+      "start": 4057,
+      "end": 4217,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "npmQuery",
+      "line": 103,
+      "start": 4221,
+      "end": 4443,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "pathEnvDirs",
+      "line": 111,
+      "start": 4447,
+      "end": 4607,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "memo",
+      "line": 116,
+      "start": 4617,
+      "end": 4795,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "remember",
+      "line": 123,
+      "start": 4800,
+      "end": 5066,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "resetPathMemo",
+      "line": 132,
+      "start": 5070,
+      "end": 5219,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "clearDesktopLocateCache",
+      "line": 137,
+      "start": 5223,
+      "end": 5358,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isFile",
+      "line": 142,
+      "start": 5362,
+      "end": 5544,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isDir",
+      "line": 151,
+      "start": 5548,
+      "end": 5734,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "collectDirs",
+      "line": 160,
+      "start": 5738,
+      "end": 6002,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isAiBase",
+      "line": 173,
+      "start": 6006,
+      "end": 6100,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "PLUGIN_DIR",
+      "line": 177,
+      "start": 6110,
+      "end": 6167,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "AI_RESOLVE_IDS",
+      "line": 179,
+      "start": 6178,
+      "end": 6417,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "firstAiBase",
+      "line": 187,
+      "start": 6422,
+      "end": 6568,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "aiBaseGuessesAround",
+      "line": 194,
+      "start": 6572,
+      "end": 7206,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "walkAncestorsForAiBase",
+      "line": 212,
+      "start": 7210,
+      "end": 7531,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "requireFrom",
+      "line": 224,
+      "start": 7535,
+      "end": 7863,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findAiBaseFromRequire",
+      "line": 238,
+      "start": 7867,
+      "end": 8207,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findAiBaseFromRunningProcess",
+      "line": 252,
+      "start": 8211,
+      "end": 8373,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findAiBaseFromDshHome",
+      "line": 257,
+      "start": 8377,
+      "end": 9321,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "dirHasDshLauncher",
+      "line": 283,
+      "start": 9325,
+      "end": 9477,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isDesktopCommandRuntimeDir",
+      "line": 288,
+      "start": 9481,
+      "end": 9576,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listDesktopCommandRuntimeDirs",
+      "line": 292,
+      "start": 9580,
+      "end": 9762,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "ensureDirSync",
+      "line": 299,
+      "start": 9766,
+      "end": 9866,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "shimBackupPath",
+      "line": 305,
+      "start": 9870,
+      "end": 10502,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findDshBinRoot",
+      "line": 319,
+      "start": 10506,
+      "end": 10601,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "ensureHiddenConsole",
+      "line": 323,
+      "start": 10605,
+      "end": 10854,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "silenceCmdFlash",
+      "line": 330,
+      "start": 10858,
+      "end": 12242,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "REVERT_RANK",
+      "line": 372,
+      "start": 12317,
+      "end": 12369,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "worseRevertHit",
+      "line": 373,
+      "start": 12372,
+      "end": 12740,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "rewriteFiles",
+      "line": 383,
+      "start": 12744,
+      "end": 13284,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "revertCmdFlash",
+      "line": 407,
+      "start": 13288,
+      "end": 18974,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "silenceSubprocessLocalFlash",
+      "line": 512,
+      "start": 18978,
+      "end": 20895,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listSubprocessLocalFiles",
+      "line": 574,
+      "start": 20899,
+      "end": 22094,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "silenceLiangshenCustomBashFlash",
+      "line": 615,
+      "start": 22152,
+      "end": 23699,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listLiangshenCustomBashFiles",
+      "line": 662,
+      "start": 23703,
+      "end": 24245,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "silenceLiangshenPhase1Strip",
+      "line": 674,
+      "start": 24316,
+      "end": 29520,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listOfficialPhase1Files",
+      "line": 793,
+      "start": 29524,
+      "end": 30196,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "silenceOfficialPhase1Strip",
+      "line": 812,
+      "start": 30277,
+      "end": 31218,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "LIANGSHEN_KEEP_OPERATOR",
+      "line": 846,
+      "start": 31228,
+      "end": 31488,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "LIANGSHEN_KEEP_OPERATOR_OLD",
+      "line": 847,
+      "start": 31497,
+      "end": 31705,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "liangshenPromptFilterText",
+      "line": 850,
+      "start": 31762,
+      "end": 32221,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listLiangshenMinimalPromptFiles",
+      "line": 859,
+      "start": 32225,
+      "end": 33071,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "worseLiangshenHit",
+      "line": 874,
+      "start": 33075,
+      "end": 33434,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "keepLiangshenOperatorPrompt",
+      "line": 886,
+      "start": 33438,
+      "end": 34403,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "realNorm",
+      "line": 915,
+      "start": 34407,
+      "end": 34667,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "pathZone",
+      "line": 924,
+      "start": 34671,
+      "end": 35075,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "allowTargetPath",
+      "line": 934,
+      "start": 35079,
+      "end": 35454,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "allowTargetPathForAiBase",
+      "line": 944,
+      "start": 35526,
+      "end": 35836,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "_patchTargetAiBase",
+      "line": 952,
+      "start": 35844,
+      "end": 35869,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "allowTargetForPatch",
+      "line": 954,
+      "start": 35874,
+      "end": 36026,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "keepSurfaceFile",
+      "line": 959,
+      "start": 36030,
+      "end": 36114,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listLiangshenBootstrapFiles",
+      "line": 963,
+      "start": 36118,
+      "end": 37046,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "silenceMnemonGitFlash",
+      "line": 977,
+      "start": 37050,
+      "end": 39316,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listMnemonIndexFiles",
+      "line": 1048,
+      "start": 39320,
+      "end": 40854,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listPiAiApiFiles",
+      "line": 1087,
+      "start": 40858,
+      "end": 42265,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "stubDoctorSupervisor",
+      "line": 1126,
+      "start": 42334,
+      "end": 43645,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "silenceDoctorSpawnFlash",
+      "line": 1174,
+      "start": 43703,
+      "end": 48104,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "silenceDshmarketRestartFlash",
+      "line": 1282,
+      "start": 48142,
+      "end": 51949,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listDshmarketRestartFiles",
+      "line": 1369,
+      "start": 51953,
+      "end": 52596,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listDoctorCliFiles",
+      "line": 1387,
+      "start": 52600,
+      "end": 53543,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "applyRuntimeEnv",
+      "line": 1409,
+      "start": 53547,
+      "end": 54591,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "envForDetachedSpawn",
+      "line": 1439,
+      "start": 54595,
+      "end": 54766,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "launcherDirsOf",
+      "line": 1446,
+      "start": 54770,
+      "end": 54960,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "guessedPrefixDirs",
+      "line": 1453,
+      "start": 54964,
+      "end": 55381,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "guessedShimDirs",
+      "line": 1467,
+      "start": 55385,
+      "end": 55598,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "nestedAiPath",
+      "line": 1477,
+      "start": 55602,
+      "end": 55706,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isPnpmNodeModules",
+      "line": 1482,
+      "start": 55767,
+      "end": 55940,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "pnpmVirtualStoreDir",
+      "line": 1487,
+      "start": 55944,
+      "end": 56705,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "pnpmProjectRootNear",
+      "line": 1508,
+      "start": 56709,
+      "end": 57168,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "pnpmHoistAiBases",
+      "line": 1523,
+      "start": 57172,
+      "end": 57417,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "aiBaseGuessesFor",
+      "line": 1531,
+      "start": 57421,
+      "end": 57891,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isDshHomeDir",
+      "line": 1545,
+      "start": 57895,
+      "end": 58091,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "homeHasHarnessData",
+      "line": 1551,
+      "start": 58095,
+      "end": 58321,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "desktopHomeCandidates",
+      "line": 1558,
+      "start": 58325,
+      "end": 59227,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "portableHomeFromLauncher",
+      "line": 1587,
+      "start": 59231,
+      "end": 59729,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "desktopDshHomeGuesses",
+      "line": 1605,
+      "start": 59733,
+      "end": 60420,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findDshHome",
+      "line": 1625,
+      "start": 60511,
+      "end": 61700,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findWslWindowsDshHome",
+      "line": 1654,
+      "start": 61704,
+      "end": 62332,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findNpmPrefix",
+      "line": 1674,
+      "start": 62336,
+      "end": 63048,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findDesktopShimDir",
+      "line": 1693,
+      "start": 63123,
+      "end": 63644,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findShimDir",
+      "line": 1706,
+      "start": 63648,
+      "end": 64413,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listShimDirsForPatch",
+      "line": 1726,
+      "start": 64417,
+      "end": 64765,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "pathIsUnder",
+      "line": 1738,
+      "start": 64769,
+      "end": 65111,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findAiBaseDesktop",
+      "line": 1745,
+      "start": 65115,
+      "end": 66126,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findAiBaseWeb",
+      "line": 1773,
+      "start": 66130,
+      "end": 66489,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "enumeratePatchAiBases",
+      "line": 1781,
+      "start": 66576,
+      "end": 67686,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "APPLY_STATUS_RANK",
+      "line": 1812,
+      "start": 67696,
+      "end": 67852,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "mergeApplyReports",
+      "line": 1824,
+      "start": 67900,
+      "end": 68398,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "allPatchHostsWritten",
+      "line": 1837,
+      "start": 68402,
+      "end": 68548,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "resolveAiBaseForApply",
+      "line": 1841,
+      "start": 68552,
+      "end": 68892,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "applyPatchesAllHosts",
+      "line": 1852,
+      "start": 68896,
+      "end": 70806,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "revertAllHosts",
+      "line": 1896,
+      "start": 70810,
+      "end": 71307,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "dshBaseEnvStatus",
+      "line": 1911,
+      "start": 71311,
+      "end": 71573,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "missingAiBaseMessage",
+      "line": 1918,
+      "start": 71577,
+      "end": 72374,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "aiBaseUnderAppDir",
+      "line": 1937,
+      "start": 72378,
+      "end": 72611,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "sealedAsarHandoff",
+      "line": 1945,
+      "start": 72615,
+      "end": 73864,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "unpackedAsarStampPath",
+      "line": 1976,
+      "start": 73868,
+      "end": 73976,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "readUnpackedAsarStamp",
+      "line": 1980,
+      "start": 73980,
+      "end": 74336,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "writeUnpackedAsarStamp",
+      "line": 1992,
+      "start": 74340,
+      "end": 74693,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "rememberUnpackedArchive",
+      "line": 2000,
+      "start": 74748,
+      "end": 75137,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "restoreUnusableExtract",
+      "line": 2011,
+      "start": 75192,
+      "end": 75418,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "openSealedDesktopHost",
+      "line": 2019,
+      "start": 75484,
+      "end": 77904,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "repairOfficialCliAfterUnpack",
+      "line": 2079,
+      "start": 77908,
+      "end": 78122,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "restoreSealedExtract",
+      "line": 2087,
+      "start": 78126,
+      "end": 78280,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "scheduleSealedDesktopRestart",
+      "line": 2092,
+      "start": 78284,
+      "end": 78723,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hostCleanMarkersPresent",
+      "line": 2103,
+      "start": 78764,
+      "end": 79029,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "aiBaseBelongsToExe",
+      "line": 2113,
+      "start": 79033,
+      "end": 79226,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "resolveOfficialAiBase",
+      "line": 2120,
+      "start": 79282,
+      "end": 79856,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "ensureHostClean",
+      "line": 2132,
+      "start": 79901,
+      "end": 82215,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "restartSealedDesktopIfNeeded",
+      "line": 2198,
+      "start": 82291,
+      "end": 83382,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "rememberDesktopInstallForHandoff",
+      "line": 2221,
+      "start": 83445,
+      "end": 84245,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "sealedDesktopHandoffAnySurface",
+      "line": 2244,
+      "start": 84360,
+      "end": 84533,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "planApplyRestartAction",
+      "line": 2258,
+      "start": 84681,
+      "end": 85046,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "desktopAsarStillSealed",
+      "line": 2265,
+      "start": 85050,
+      "end": 85219,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findAiBase",
+      "line": 2270,
+      "start": 85223,
+      "end": 85405,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findAiBaseRecursive",
+      "line": 2277,
+      "start": 85409,
+      "end": 87324,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "findOverrideFile",
+      "line": 2325,
+      "start": 87328,
+      "end": 87424,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "committedOverride",
+      "line": 2329,
+      "start": 87432,
+      "end": 87456,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "rememberCommittedOverride",
+      "line": 2332,
+      "start": 87501,
+      "end": 87716,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "readPromptInjectFileSync",
+      "line": 2339,
+      "start": 87784,
+      "end": 88102,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "peekCommittedOverride",
+      "line": 2352,
+      "start": 88159,
+      "end": 88392,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hungOperatorPromptText",
+      "line": 2359,
+      "start": 88400,
+      "end": 88427,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hangOperatorPrompt",
+      "line": 2362,
+      "start": 88473,
+      "end": 88584,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hungOperatorPrompt",
+      "line": 2366,
+      "start": 88588,
+      "end": 88663,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "pinDshHome",
+      "line": 2371,
+      "start": 88728,
+      "end": 88996,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "shippedPresetYml",
+      "line": 2397,
+      "start": 90348,
+      "end": 91487,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "userPresetYml",
+      "line": 2424,
+      "start": 91491,
+      "end": 91728,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "desktopShellEntry",
+      "line": 2431,
+      "start": 91732,
+      "end": 92332,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "officialShellMain",
+      "line": 2444,
+      "start": 92336,
+      "end": 92413,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "firstExisting",
+      "line": 2446,
+      "start": 92417,
+      "end": 92605,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "allExisting",
+      "line": 2451,
+      "start": 92609,
+      "end": 92815,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isWatchedClientBundle",
+      "line": 2465,
+      "start": 92968,
+      "end": 93140,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "clientBundlePackageName",
+      "line": 2470,
+      "start": 93144,
+      "end": 93367,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isUserProfilePatchFile",
+      "line": 2477,
+      "start": 93452,
+      "end": 93625,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "dropStaleUserProfilePatchBackups",
+      "line": 2483,
+      "start": 93679,
+      "end": 94380,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "BAK_SUFFIX",
+      "line": 2507,
+      "start": 94390,
+      "end": 94418,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "shouldRestoreOriginal",
+      "line": 2509,
+      "start": 94423,
+      "end": 94872,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "restoreMissingOriginalsFromBak",
+      "line": 2532,
+      "start": 95004,
+      "end": 96894,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "restoreMissingOriginalsAllHosts",
+      "line": 2580,
+      "start": 96898,
+      "end": 97333,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "DSH_PURGE_MARKER_NEEDLE",
+      "line": 2595,
+      "start": 97343,
+      "end": 97380,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "refreshStaleBaksForUpgrade",
+      "line": 2606,
+      "start": 97816,
+      "end": 99224,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "backupAll",
+      "line": 2644,
+      "start": 99228,
+      "end": 100369,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "sameFileBytes",
+      "line": 2681,
+      "start": 100373,
+      "end": 100572,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "revertAll",
+      "line": 2690,
+      "start": 100576,
+      "end": 102324,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "nestedPkg",
+      "line": 2745,
+      "start": 102328,
+      "end": 102503,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "packageRootFromAiBase",
+      "line": 2752,
+      "start": 102507,
+      "end": 102741,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "filterTargetFiles",
+      "line": 2762,
+      "start": 102745,
+      "end": 103587,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "nestedTargetFiles",
+      "line": 2791,
+      "start": 103798,
+      "end": 104285,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "targetFiles",
+      "line": 2803,
+      "start": 104289,
+      "end": 117835,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "yamlIndentOf",
+      "line": 3068,
+      "start": 117843,
+      "end": 117955,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "yamlConsumeFoldBody",
+      "line": 3073,
+      "start": 117959,
+      "end": 118614,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "yamlFoldBodyText",
+      "line": 3099,
+      "start": 118618,
+      "end": 118749,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isDisposableYamlFoldParagraph",
+      "line": 3103,
+      "start": 118753,
+      "end": 119464,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "yamlDropPaddingOnlyLines",
+      "line": 3117,
+      "start": 119468,
+      "end": 119598,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "yamlMinContentIndent",
+      "line": 3121,
+      "start": 119602,
+      "end": 119895,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "yamlReindentBody",
+      "line": 3131,
+      "start": 119899,
+      "end": 120206,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "yamlStripDisposableFoldParas",
+      "line": 3144,
+      "start": 120210,
+      "end": 120737,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "yamlHasDisposableFoldParagraph",
+      "line": 3160,
+      "start": 120777,
+      "end": 121035,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "emptyDisposableFoldedYaml",
+      "line": 3168,
+      "start": 121039,
+      "end": 122142,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "stripOrphanYamlAfterEmptyScalars",
+      "line": 3200,
+      "start": 122146,
+      "end": 122592,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "sanitizeYamlPersonaScalars",
+      "line": 3215,
+      "start": 122637,
+      "end": 122961,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "filePatchSettled",
+      "line": 3241,
+      "start": 123273,
+      "end": 123521,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "selfMarkedPatch",
+      "line": 3248,
+      "start": 123525,
+      "end": 123743,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "filePatchOutcome",
+      "line": 3254,
+      "start": 123747,
+      "end": 124187,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hookDenyPaths",
+      "line": 3266,
+      "start": 124193,
+      "end": 124567,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "loadText",
+      "line": 3297,
+      "start": 124823,
+      "end": 124889,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "saveText",
+      "line": 3301,
+      "start": 124893,
+      "end": 125219,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hookDenyIo",
+      "line": 3314,
+      "start": 125236,
+      "end": 125297,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hooksDenySettings",
+      "line": 3320,
+      "start": 125306,
+      "end": 125330,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hooksDenyConfigValue",
+      "line": 3321,
+      "start": 125337,
+      "end": 125357,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "setHooksDenyConfigValue",
+      "line": 3323,
+      "start": 125362,
+      "end": 125446,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "refreshHooksDenySettings",
+      "line": 3327,
+      "start": 125450,
+      "end": 125644,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "getHooksDenySettings",
+      "line": 3334,
+      "start": 125648,
+      "end": 125782,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "setHooksDenySettings",
+      "line": 3339,
+      "start": 125786,
+      "end": 126004,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "restoreHookDenyForBases",
+      "line": 3345,
+      "start": 126008,
+      "end": 126344,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "repairPluginCordisYaml",
+      "line": 3356,
+      "start": 126348,
+      "end": 126660,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "legacyWebCookieStatus",
+      "line": 3366,
+      "start": 126820,
+      "end": 127529,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "applyPatches",
+      "line": 3382,
+      "start": 127533,
+      "end": 132388,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "patchWatchedClientBundlesSync",
+      "line": 3533,
+      "start": 132526,
+      "end": 133706,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "anchorHead",
+      "line": 3564,
+      "start": 133710,
+      "end": 134042,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "ANCHOR_STOPWORDS",
+      "line": 3578,
+      "start": 134338,
+      "end": 134611,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "signatureTokens",
+      "line": 3584,
+      "start": 134616,
+      "end": 134952,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "locateAnchor",
+      "line": 3597,
+      "start": 135070,
+      "end": 135923,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "patchDrift",
+      "line": 3622,
+      "start": 135927,
+      "end": 138556,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "readExtraPatches",
+      "line": 3688,
+      "start": 138607,
+      "end": 138985,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "patchEnabled",
+      "line": 3701,
+      "start": 139057,
+      "end": 139281,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "patchStatus",
+      "line": 3707,
+      "start": 139285,
+      "end": 139464,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "patchStatusDetail",
+      "line": 3712,
+      "start": 139513,
+      "end": 139677,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "readPatchReport",
+      "line": 3716,
+      "start": 139681,
+      "end": 143741,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hasBackup",
+      "line": 3812,
+      "start": 143745,
+      "end": 144004,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isTextShim",
+      "line": 3821,
+      "start": 144008,
+      "end": 144671,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "nodeShimInject",
+      "line": 3840,
+      "start": 144675,
+      "end": 145809,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "shimKindOf",
+      "line": 3870,
+      "start": 145857,
+      "end": 146434,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "shimInjectFor",
+      "line": 3886,
+      "start": 146438,
+      "end": 148157,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hasLegacyPermissionPin",
+      "line": 3928,
+      "start": 148161,
+      "end": 148251,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "shimInjectCurrent",
+      "line": 3932,
+      "start": 148255,
+      "end": 148421,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "stripShimInject",
+      "line": 3937,
+      "start": 148425,
+      "end": 149479,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "insertShimInject",
+      "line": 3975,
+      "start": 149483,
+      "end": 149957,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "shimIsPatched",
+      "line": 3987,
+      "start": 149961,
+      "end": 150166,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "shimFileStatus",
+      "line": 3996,
+      "start": 150170,
+      "end": 150342,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "scrubInBinBak",
+      "line": 4002,
+      "start": 150346,
+      "end": 152166,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "stripCmdInjectSync",
+      "line": 4058,
+      "start": 152170,
+      "end": 152511,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "sanitizeDesktopCommandRuntimes",
+      "line": 4068,
+      "start": 152515,
+      "end": 153377,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "stripWinCmdShim",
+      "line": 4097,
+      "start": 153381,
+      "end": 153589,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "patchShim",
+      "line": 4103,
+      "start": 153593,
+      "end": 155578,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "patchAllShims",
+      "line": 4169,
+      "start": 155582,
+      "end": 155760,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "restoreFromBak",
+      "line": 4177,
+      "start": 155764,
+      "end": 156608,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "revertShim",
+      "line": 4201,
+      "start": 156612,
+      "end": 157698,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "revertAllShims",
+      "line": 4232,
+      "start": 157702,
+      "end": 158044,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "normalizeOverride",
+      "line": 4243,
+      "start": 158048,
+      "end": 158152,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hashOverride",
+      "line": 4247,
+      "start": 158156,
+      "end": 158281,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "defaultOverrideText",
+      "line": 4251,
+      "start": 158285,
+      "end": 158476,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "defaultOverrideHash",
+      "line": 4257,
+      "start": 158480,
+      "end": 158569,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "overrideStatePath",
+      "line": 4261,
+      "start": 158573,
+      "end": 158686,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "readOverrideStateSync",
+      "line": 4265,
+      "start": 158690,
+      "end": 158939,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "readOverrideState",
+      "line": 4275,
+      "start": 158943,
+      "end": 159038,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "writeOverrideState",
+      "line": 4279,
+      "start": 159042,
+      "end": 159278,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "markOverrideCustomized",
+      "line": 4285,
+      "start": 159282,
+      "end": 159578,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "overrideTextIsOurs",
+      "line": 4302,
+      "start": 159864,
+      "end": 160125,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "looksLikePluginDefault",
+      "line": 4310,
+      "start": 160208,
+      "end": 160367,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isKeepableUserOverride",
+      "line": 4316,
+      "start": 160460,
+      "end": 161002,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "readOverrideForWrite",
+      "line": 4329,
+      "start": 161088,
+      "end": 161275,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isUserCustomizedOverrideSync",
+      "line": 4334,
+      "start": 161279,
+      "end": 161415,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "isUserCustomizedOverride",
+      "line": 4338,
+      "start": 161419,
+      "end": 161528,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "overrideStatus",
+      "line": 4342,
+      "start": 161532,
+      "end": 161671,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "readOverrideForUi",
+      "line": 4348,
+      "start": 161729,
+      "end": 162378,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "writeOverrideStateSync",
+      "line": 4368,
+      "start": 162382,
+      "end": 162562,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "syncPromptInjectOnDiskSync",
+      "line": 4378,
+      "start": 162684,
+      "end": 163983,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "seedPromptInjectAtBoot",
+      "line": 4415,
+      "start": 164193,
+      "end": 165154,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "installOverride",
+      "line": 4441,
+      "start": 165249,
+      "end": 165996,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "commitOverrideOnApply",
+      "line": 4462,
+      "start": 166061,
+      "end": 166632,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "saveOverrideContent",
+      "line": 4476,
+      "start": 166636,
+      "end": 167510,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "editOverride",
+      "line": 4497,
+      "start": 167514,
+      "end": 168427,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "gatherState",
+      "line": 4527,
+      "start": 168494,
+      "end": 168604,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "readGatherState",
+      "line": 4530,
+      "start": 168606,
+      "end": 172238,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "fs",
+      "line": 6,
+      "start": 248,
+      "end": 259,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "endOfBalancedBlock",
+      "line": 8,
+      "start": 264,
+      "end": 557,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "SETTINGS_APPLY_CALL",
+      "line": 21,
+      "start": 567,
+      "end": 618,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "asLf",
+      "line": 23,
+      "start": 623,
+      "end": 727,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "isYamlPath",
+      "line": 27,
+      "start": 731,
+      "end": 824,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "legacyApplyPathStarts",
+      "line": 31,
+      "start": 828,
+      "end": 1159,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "collapseDuplicateLegacyApplyPath",
+      "line": 45,
+      "start": 1163,
+      "end": 2102,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "STALE_LEGACY_APPLY_CALL",
+      "line": 73,
+      "start": 2119,
+      "end": 2178,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "rewriteStaleLegacyApplyCall",
+      "line": 75,
+      "start": 2183,
+      "end": 2472,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "MODERN_SETTINGS_MARKER",
+      "line": 82,
+      "start": 2489,
+      "end": 2550,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "modernSettingsApi",
+      "line": 84,
+      "start": 2555,
+      "end": 2696,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "modernSettingsPatch",
+      "line": 88,
+      "start": 2700,
+      "end": 3942,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "observationPolicyApplied",
+      "line": 113,
+      "start": 4095,
+      "end": 5317,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "sandboxPolicyApplied",
+      "line": 138,
+      "start": 5476,
+      "end": 6548,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "patchApplied",
+      "line": 157,
+      "start": 6552,
+      "end": 7710,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "cloneRegExp",
+      "line": 178,
+      "start": 7714,
+      "end": 7898,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "matchesPattern",
+      "line": 184,
+      "start": 7902,
+      "end": 8144,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "patchHasRemainingWork",
+      "line": 192,
+      "start": 8148,
+      "end": 8609,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "isLayoutSoftPatch",
+      "line": 205,
+      "start": 8613,
+      "end": 8762,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "fileKeysOf",
+      "line": 209,
+      "start": 8766,
+      "end": 8853,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "cachedOverrides",
+      "line": 213,
+      "start": 8868,
+      "end": 8890,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "overridesSnapshot",
+      "line": 215,
+      "start": 8895,
+      "end": 9106,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "refreshAnchorOverrides",
+      "line": 226,
+      "start": 9110,
+      "end": 9182,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "patchReplacements",
+      "line": 230,
+      "start": 9186,
+      "end": 9439,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "isBareIdentityNeedle",
+      "line": 236,
+      "start": 9443,
+      "end": 9663,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "yamlJsCommentsToHash",
+      "line": 243,
+      "start": 9667,
+      "end": 10532,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "pathsOf",
+      "line": 274,
+      "start": 10536,
+      "end": 10745,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "flattenTargetPaths",
+      "line": 281,
+      "start": 10749,
+      "end": 11035,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "isIdentityLayoutPatch",
+      "line": 292,
+      "start": 11039,
+      "end": 11180,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core/shared.mjs",
+      "name": "isApprovalSentencePatch",
+      "line": 296,
+      "start": 11184,
+      "end": 11319,
+      "kind": "function"
+    },
+    {
+      "file": "lib/host-clean.js",
+      "name": "hostPromptKeepsInject",
+      "line": 2,
+      "start": 45,
+      "end": 718,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "GLOBAL_PROMPT_ORDER",
+      "line": 3,
+      "start": 150,
+      "end": 179,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "OBJECTIVE_SECTION",
+      "line": 4,
+      "start": 195,
+      "end": 232,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "REDTEAM_ROLE_SECTION",
+      "line": 5,
+      "start": 248,
+      "end": 291,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "IDENTITY_CARD_PREFIX",
+      "line": 7,
+      "start": 363,
+      "end": 417,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "CWD_ONLY_SUFFIX",
+      "line": 8,
+      "start": 433,
+      "end": 487,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "CWD_STATIC_SUFFIX",
+      "line": 9,
+      "start": 503,
+      "end": 573,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "DSH_INTERPOLATE_ALLOWED",
+      "line": 12,
+      "start": 661,
+      "end": 724,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isPluginPromptSection",
+      "line": 15,
+      "start": 798,
+      "end": 942,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "escapeDshInterpolation",
+      "line": 24,
+      "start": 1059,
+      "end": 1398,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "CHATML_LINE",
+      "line": 34,
+      "start": 1408,
+      "end": 1443,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "PROJECT_OPEN",
+      "line": 35,
+      "start": 1452,
+      "end": 1491,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "PROJECT_CLOSE",
+      "line": 36,
+      "start": 1500,
+      "end": 1541,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "normalizeChatmlLayout",
+      "line": 44,
+      "start": 1718,
+      "end": 2778,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "peelChatmlEnvelope",
+      "line": 70,
+      "start": 2820,
+      "end": 2904,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "stripChatmlTags",
+      "line": 75,
+      "start": 2959,
+      "end": 3169,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "PERSONA_PREFIX_NAMES",
+      "line": 82,
+      "start": 3179,
+      "end": 3268,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "PERSONA_LEGACY_NAMES",
+      "line": 86,
+      "start": 3277,
+      "end": 3342,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "OLD_IDENTITY_LOCK",
+      "line": 88,
+      "start": 3353,
+      "end": 3959,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "OLD_WHO_FROM_INJECT",
+      "line": 97,
+      "start": 3970,
+      "end": 4198,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "OLD_LCS_LOCK",
+      "line": 101,
+      "start": 4209,
+      "end": 4523,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "stripHarnessPersona",
+      "line": 106,
+      "start": 4528,
+      "end": 9006,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "collectInjectText",
+      "line": 192,
+      "start": 9010,
+      "end": 9293,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isHardcodedExecRule",
+      "line": 200,
+      "start": 9333,
+      "end": 9793,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isCwdOnlyText",
+      "line": 210,
+      "start": 9797,
+      "end": 10022,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "looksLikeOfficialIdentity",
+      "line": 218,
+      "start": 10026,
+      "end": 10334,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "overlayOfficialIdentity",
+      "line": 227,
+      "start": 10380,
+      "end": 11618,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "withoutHardcodedExec",
+      "line": 264,
+      "start": 11622,
+      "end": 11827,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "withoutRedteamPreset",
+      "line": 271,
+      "start": 11860,
+      "end": 12277,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "assemblyLooksRedteam",
+      "line": 281,
+      "start": 12281,
+      "end": 12435,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "OWN_SERVER_MARK",
+      "line": 285,
+      "start": 12445,
+      "end": 12494,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "injectNeedles",
+      "line": 287,
+      "start": 12499,
+      "end": 12802,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "INJECT_LOOSE_REGEXP_MAX",
+      "line": 298,
+      "start": 12899,
+      "end": 12929,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "injectMatchers",
+      "line": 305,
+      "start": 13046,
+      "end": 13731,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "leadWithInject",
+      "line": 330,
+      "start": 13805,
+      "end": 15194,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "REDTEAM_OPS_MARK",
+      "line": 383,
+      "start": 15230,
+      "end": 15260,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "REDTEAM_LEAD_IDENTITY",
+      "line": 385,
+      "start": 15302,
+      "end": 15340,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "REDTEAM_LEAD_DUTY",
+      "line": 386,
+      "start": 15349,
+      "end": 15378,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "REDTEAM_OPS_NOTE_OLD",
+      "line": 387,
+      "start": 15387,
+      "end": 15448,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "REDTEAM_OPS_NOTE",
+      "line": 388,
+      "start": 15457,
+      "end": 15544,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "redteamOpsBody",
+      "line": 391,
+      "start": 15549,
+      "end": 15723,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "withoutRedteamLeadIdentity",
+      "line": 403,
+      "start": 15874,
+      "end": 15964,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "redteamProcedure",
+      "line": 407,
+      "start": 15968,
+      "end": 16618,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "CTF_INJECT_MARK",
+      "line": 424,
+      "start": 16686,
+      "end": 16723,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isContractHeading",
+      "line": 427,
+      "start": 16775,
+      "end": 17124,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "splitRedteamInject",
+      "line": 435,
+      "start": 17128,
+      "end": 18148,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "withoutCtfContract",
+      "line": 459,
+      "start": 18183,
+      "end": 18271,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "REGION_LECTURE",
+      "line": 463,
+      "start": 18281,
+      "end": 18375,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "stripRegionLecture",
+      "line": 466,
+      "start": 18428,
+      "end": 18589,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "modePromptText",
+      "line": 471,
+      "start": 18632,
+      "end": 18796,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "presetLabel",
+      "line": 476,
+      "start": 18800,
+      "end": 19122,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isRedteamPresetId",
+      "line": 484,
+      "start": 19126,
+      "end": 19446,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "mountedPresetId",
+      "line": 495,
+      "start": 19488,
+      "end": 19961,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "sessionAgentPreset",
+      "line": 513,
+      "start": 19965,
+      "end": 20769,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isRedteamSession",
+      "line": 533,
+      "start": 20773,
+      "end": 21051,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isMinimalSession",
+      "line": 541,
+      "start": 21055,
+      "end": 21309,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "STRICT_TITLE",
+      "line": 552,
+      "start": 21425,
+      "end": 21471,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "rewriteClaudeHostToolLines",
+      "line": 554,
+      "start": 21476,
+      "end": 22197,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "stripStrictToolBlock",
+      "line": 570,
+      "start": 22201,
+      "end": 23322,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "adaptInjectForMinimalPreset",
+      "line": 596,
+      "start": 23326,
+      "end": 23427,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "sessionOfContext",
+      "line": 600,
+      "start": 23431,
+      "end": 23533,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "inheritsParentPrompt",
+      "line": 604,
+      "start": 23537,
+      "end": 23737,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "parentSessionRecord",
+      "line": 610,
+      "start": 23741,
+      "end": 24115,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "sessionForInject",
+      "line": 624,
+      "start": 24151,
+      "end": 24593,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isRedteamSubagent",
+      "line": 637,
+      "start": 24597,
+      "end": 24767,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "attachRedteamOpsOnly",
+      "line": 646,
+      "start": 24911,
+      "end": 25283,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "insertNamedSection",
+      "line": 657,
+      "start": 25287,
+      "end": 25916,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "insertCardSection",
+      "line": 670,
+      "start": 25920,
+      "end": 26065,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "insertRoleSection",
+      "line": 674,
+      "start": 26069,
+      "end": 26217,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "stripIdentityPrefix",
+      "line": 678,
+      "start": 26221,
+      "end": 26578,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isPersonaFoldTarget",
+      "line": 690,
+      "start": 26582,
+      "end": 26771,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "eventList",
+      "line": 695,
+      "start": 26775,
+      "end": 27094,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isMnemonPluginMessage",
+      "line": 707,
+      "start": 27098,
+      "end": 27370,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isMnemonSection",
+      "line": 714,
+      "start": 27374,
+      "end": 27472,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "WORKSPACE_BASELINE_TEXT_MARKERS",
+      "line": 720,
+      "start": 27595,
+      "end": 27790,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "WORKSPACE_BASELINE_NAME_HINTS",
+      "line": 724,
+      "start": 27799,
+      "end": 27953,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isWorkspaceBaselineSection",
+      "line": 726,
+      "start": 27958,
+      "end": 28482,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "normalizeRewriteOptions",
+      "line": 736,
+      "start": 28486,
+      "end": 29816,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "foldInjectIntoPersona",
+      "line": 762,
+      "start": 29879,
+      "end": 30884,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "withOwnServers",
+      "line": 783,
+      "start": 30888,
+      "end": 31255,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "sanitizeAssemblySections",
+      "line": 798,
+      "start": 31326,
+      "end": 31771,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "ASSEMBLE_GUARD",
+      "line": 815,
+      "start": 31781,
+      "end": 31835,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "installAssembleGuard",
+      "line": 822,
+      "start": 31992,
+      "end": 35605,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "rewritePromptAssembly",
+      "line": 931,
+      "start": 35609,
+      "end": 39498,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "name",
+      "line": 54,
+      "start": 2418,
+      "end": 2446,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "inject",
+      "line": 58,
+      "start": 2576,
+      "end": 2610,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "bootFullQuit",
+      "line": 60,
+      "start": 2619,
+      "end": 2639,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "DEFAULTS",
+      "line": 62,
+      "start": 2650,
+      "end": 3106,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "HOST_PERSONA_SUFFIX_ORDER",
+      "line": 89,
+      "start": 3467,
+      "end": 3500,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "TAIL_PROMPT_ORDER",
+      "line": 90,
+      "start": 3509,
+      "end": 3534,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "DEFAULT_BOOST_ORDER",
+      "line": 96,
+      "start": 3860,
+      "end": 3909,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "boostPromptOrder",
+      "line": 97,
+      "start": 3912,
+      "end": 4408,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "log",
+      "line": 109,
+      "start": 4418,
+      "end": 4510,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "fsExists",
+      "line": 114,
+      "start": 4517,
+      "end": 4770,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "line",
+      "line": 126,
+      "start": 4774,
+      "end": 4909,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "renderStatus",
+      "line": 131,
+      "start": 4913,
+      "end": 7365,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "injectAllowedNow",
+      "line": 178,
+      "start": 7369,
+      "end": 7468,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "hungCache",
+      "line": 186,
+      "start": 7750,
+      "end": 7807,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "HUNG_CACHE_MS",
+      "line": 187,
+      "start": 7816,
+      "end": 7835,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "statInjectMtimeMs",
+      "line": 188,
+      "start": 7838,
+      "end": 8007,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "refreshHungOperator",
+      "line": 194,
+      "start": 8009,
+      "end": 9139,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installHungPromptGlobal",
+      "line": 223,
+      "start": 9143,
+      "end": 11269,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "shouldInjectAssembly",
+      "line": 263,
+      "start": 11337,
+      "end": 11733,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "readSessionEvents",
+      "line": 275,
+      "start": 11737,
+      "end": 12050,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "PURGE_INTERNAL_LOG",
+      "line": 287,
+      "start": 12119,
+      "end": 12187,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "PURGE_INTERNAL_LOG_MAX",
+      "line": 290,
+      "start": 12311,
+      "end": 12343,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "_purgeLogWriteCount",
+      "line": 291,
+      "start": 12350,
+      "end": 12373,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "rotatePurgeInternalLog",
+      "line": 292,
+      "start": 12376,
+      "end": 12653,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "purgeLog",
+      "line": 302,
+      "start": 12746,
+      "end": 13221,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "logAssembleDecision",
+      "line": 316,
+      "start": 13223,
+      "end": 13432,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "injectSnapshot",
+      "line": 325,
+      "start": 13436,
+      "end": 13683,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "injectSnapshotFromBox",
+      "line": 335,
+      "start": 13749,
+      "end": 14202,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "NEED_PROMPT_ERROR",
+      "line": 346,
+      "start": 14212,
+      "end": 14254,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "rejectIfNeedPrompt",
+      "line": 348,
+      "start": 14259,
+      "end": 14453,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "ensureRestartReady",
+      "line": 354,
+      "start": 14457,
+      "end": 14531,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "addPromptSection",
+      "line": 359,
+      "start": 14605,
+      "end": 15721,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "registerPromptSections",
+      "line": 394,
+      "start": 15725,
+      "end": 18571,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "readInjectFallback",
+      "line": 483,
+      "start": 18575,
+      "end": 19502,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installMnemonMessageStrip",
+      "line": 513,
+      "start": 19506,
+      "end": 21550,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "rewriteLiveAssembly",
+      "line": 561,
+      "start": 21554,
+      "end": 24569,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "closerFollowBytes",
+      "line": 628,
+      "start": 24573,
+      "end": 24957,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "publishClientBundleRevs",
+      "line": 640,
+      "start": 25017,
+      "end": 25429,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "permissionPresetsOf",
+      "line": 655,
+      "start": 25534,
+      "end": 25937,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "shouldKeepFreshFullAccess",
+      "line": 671,
+      "start": 25941,
+      "end": 26611,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "upgradeFreshSessionAccess",
+      "line": 682,
+      "start": 26615,
+      "end": 26965,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installFreshFullAccess",
+      "line": 693,
+      "start": 27030,
+      "end": 27622,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installCwdCapture",
+      "line": 709,
+      "start": 27626,
+      "end": 28818,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installRewindDeriveFilter",
+      "line": 743,
+      "start": 28822,
+      "end": 29660,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installIdentityOverride",
+      "line": 766,
+      "start": 29664,
+      "end": 37771,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "shimNeedsPatch",
+      "line": 947,
+      "start": 37775,
+      "end": 38000,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "currentSettleScope",
+      "line": 956,
+      "start": 38004,
+      "end": 38198,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "settleInstalledPatches",
+      "line": 962,
+      "start": 38202,
+      "end": 42685,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "autoApply",
+      "line": 1070,
+      "start": 42689,
+      "end": 44863,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "scheduleApplyRestart",
+      "line": 1125,
+      "start": 44907,
+      "end": 46790,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "handlePurgeCommand",
+      "line": 1177,
+      "start": 46794,
+      "end": 53885,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "renderRulesStatus",
+      "line": 1333,
+      "start": 53889,
+      "end": 54639,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "handleRulesCommand",
+      "line": 1353,
+      "start": 54643,
+      "end": 57844,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "renderSkillsStatus",
+      "line": 1445,
+      "start": 57848,
+      "end": 58847,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "handleSkillsCommand",
+      "line": 1472,
+      "start": 58851,
+      "end": 61496,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "apply",
+      "line": 1545,
+      "start": 61500,
+      "end": 68466,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "applyHostHooks",
+      "line": 1713,
+      "start": 68470,
+      "end": 72843,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installCommands",
+      "line": 1829,
+      "start": 72847,
+      "end": 75488,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "headerOf",
+      "line": 1882,
+      "start": 75492,
+      "end": 75756,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "denyCrossOrigin",
+      "line": 1890,
+      "start": 75760,
+      "end": 76004,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "allowPluginRequest",
+      "line": 1898,
+      "start": 76008,
+      "end": 76712,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installWebServer",
+      "line": 1925,
+      "start": 76716,
+      "end": 106534,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "methodNotAllowed",
+      "line": 2620,
+      "start": 106538,
+      "end": 106739,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "handleRulesOp",
+      "line": 2627,
+      "start": 106743,
+      "end": 110668,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "rulesHttpHandler",
+      "line": 2717,
+      "start": 110672,
+      "end": 111570,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "handleSkillsOp",
+      "line": 2738,
+      "start": 111574,
+      "end": 113602,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "skillsHttpHandler",
+      "line": 2779,
+      "start": 113606,
+      "end": 114615,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "skillRouteTail",
+      "line": 2807,
+      "start": 114619,
+      "end": 114821,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installSkillsHttp",
+      "line": 2813,
+      "start": 114825,
+      "end": 115497,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installRulesHttp",
+      "line": 2831,
+      "start": 115501,
+      "end": 115894,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "sendJson",
+      "line": 2844,
+      "start": 115898,
+      "end": 116118,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "sendOptions",
+      "line": 2852,
+      "start": 116122,
+      "end": 116237,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "registerRoute",
+      "line": 2857,
+      "start": 116241,
+      "end": 116685,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "readJsonBody",
+      "line": 2873,
+      "start": 116689,
+      "end": 117227,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "plugin",
+      "line": 2888,
+      "start": 117237,
+      "end": 117280,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "SUFFIXES",
+      "line": 6,
+      "start": 151,
+      "end": 1983,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "FILE_SUFFIX",
+      "line": 94,
+      "start": 1994,
+      "end": 2305,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "BANK_HOSTS",
+      "line": 104,
+      "start": 2461,
+      "end": 7315,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "bankHit",
+      "line": 175,
+      "start": 7320,
+      "end": 7621,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "DENIAL",
+      "line": 186,
+      "start": 7631,
+      "end": 7652,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "ATTACK",
+      "line": 191,
+      "start": 7785,
+      "end": 7962,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "ATTACK_SCAN_CAP",
+      "line": 196,
+      "start": 8071,
+      "end": 8099,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "NET_TOPIC",
+      "line": 198,
+      "start": 8110,
+      "end": 8280,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "ipv4ToInt",
+      "line": 201,
+      "start": 8285,
+      "end": 8621,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "isSkippedV4",
+      "line": 214,
+      "start": 8625,
+      "end": 8961,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "parseIpv6",
+      "line": 225,
+      "start": 8965,
+      "end": 10089,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "regionOfSuffix",
+      "line": 253,
+      "start": 10093,
+      "end": 10426,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "hostOf",
+      "line": 262,
+      "start": 10430,
+      "end": 10926,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "addHost",
+      "line": 276,
+      "start": 10930,
+      "end": 11055,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "inFilePath",
+      "line": 282,
+      "start": 11059,
+      "end": 11174,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "keepBareDomain",
+      "line": 288,
+      "start": 11228,
+      "end": 11522,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "collectFromText",
+      "line": 297,
+      "start": 11526,
+      "end": 12498,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "HOST_NAME",
+      "line": 319,
+      "start": 12508,
+      "end": 12578,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "V4_TEXT",
+      "line": 320,
+      "start": 12587,
+      "end": 12666,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "allowFilePath",
+      "line": 322,
+      "start": 12671,
+      "end": 12783,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "entryHost",
+      "line": 327,
+      "start": 12843,
+      "end": 13655,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "normalizeAllowText",
+      "line": 349,
+      "start": 13659,
+      "end": 14313,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "readAllowText",
+      "line": 373,
+      "start": 14317,
+      "end": 14480,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "writeAllowText",
+      "line": 381,
+      "start": 14484,
+      "end": 14853,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "allowCache",
+      "line": 390,
+      "start": 14861,
+      "end": 14933,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "readAllowExact",
+      "line": 392,
+      "start": 14938,
+      "end": 15379,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "allowDecision",
+      "line": 406,
+      "start": 15383,
+      "end": 15454,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "ownServerNote",
+      "line": 410,
+      "start": 15458,
+      "end": 15508,
+      "kind": "function"
+    },
+    {
+      "file": "lib/patches/code.mjs",
+      "name": "CODE_PATCHES",
+      "line": 2,
+      "start": 69,
+      "end": 1663,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/engine.mjs",
+      "name": "ENGINE_PATCHES",
+      "line": 2,
+      "start": 69,
+      "end": 14934,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/index.mjs",
+      "name": "ALL_PATCHES",
+      "line": 8,
+      "start": 292,
+      "end": 394,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/index.mjs",
+      "name": "PATCH_DISPLAY_GROUPS",
+      "line": 11,
+      "start": 472,
+      "end": 816,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/new-tools.mjs",
+      "name": "readOnlyPolicy",
+      "line": 4,
+      "start": 186,
+      "end": 490,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/new-tools.mjs",
+      "name": "appliedReadOnlyPolicy",
+      "line": 5,
+      "start": 499,
+      "end": 688,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/new-tools.mjs",
+      "name": "NEW_TOOL_PATCHES",
+      "line": 7,
+      "start": 706,
+      "end": 127256,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/opt-in.mjs",
+      "name": "OPT_IN_PATCHES",
+      "line": 2,
+      "start": 69,
+      "end": 2241,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/prompt.mjs",
+      "name": "PATCHES",
+      "line": 3,
+      "start": 283,
+      "end": 9988,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "STRONG_INTRO_CORE",
+      "line": 2,
+      "start": 72,
+      "end": 502,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "STRONG_INTRO_AUTHORIZED_TAIL",
+      "line": 9,
+      "start": 518,
+      "end": 787,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "STRONG_INTRO_ANTI_SOFT_TAIL",
+      "line": 13,
+      "start": 803,
+      "end": 1174,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "STRONG_INTRO",
+      "line": 18,
+      "start": 1190,
+      "end": 1283,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "STRONG_INTRO_V1",
+      "line": 19,
+      "start": 1299,
+      "end": 1334,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "STRONG_INTRO_V2",
+      "line": 20,
+      "start": 1350,
+      "end": 1416,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "OFFICIAL_REPLACEMENT_BODY",
+      "line": 21,
+      "start": 1432,
+      "end": 1724,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "REPLACEMENT_BASELINE_PREFIX",
+      "line": 26,
+      "start": 1740,
+      "end": 1882,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "OFFICIAL_SCOPE",
+      "line": 29,
+      "start": 1898,
+      "end": 2084,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "quotedConst",
+      "line": 34,
+      "start": 2089,
+      "end": 2172,
+      "kind": "function"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "COMPLETE_PROMPT_WATERFALL_INJECT",
+      "line": 38,
+      "start": 2189,
+      "end": 3503,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "clearShellNetworkBan",
+      "line": 53,
+      "start": 3508,
+      "end": 3766,
+      "kind": "function"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "SHELL_NETWORK_WEB",
+      "line": 59,
+      "start": 3783,
+      "end": 4383,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "SHELL_NETWORK_SDK",
+      "line": 70,
+      "start": 4401,
+      "end": 4911,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/patches/shared.mjs",
+      "name": "replacementPrecedenceRewrites",
+      "line": 81,
+      "start": 4916,
+      "end": 5291,
+      "kind": "function"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "excludedPresetIds",
+      "line": 5,
+      "start": 210,
+      "end": 428,
+      "kind": "function"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "injectionPolicy",
+      "line": 11,
+      "start": 432,
+      "end": 1031,
+      "kind": "function"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "isPurgeSection",
+      "line": 22,
+      "start": 1035,
+      "end": 1251,
+      "kind": "function"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "ORIGINAL",
+      "line": 29,
+      "start": 1421,
+      "end": 1476,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "withoutPurgeInjection",
+      "line": 30,
+      "start": 1479,
+      "end": 2889,
+      "kind": "function"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "rememberPromptRewrite",
+      "line": 56,
+      "start": 2893,
+      "end": 3214,
+      "kind": "function"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "requestInjectionContext",
+      "line": 66,
+      "start": 3375,
+      "end": 3925,
+      "kind": "function"
+    },
+    {
+      "file": "lib/presets.js",
+      "name": "ROOT",
+      "line": 11,
+      "start": 511,
+      "end": 582,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/presets.js",
+      "name": "UNRESTRICTED_PRESET",
+      "line": 12,
+      "start": 598,
+      "end": 634,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/presets.js",
+      "name": "PRESET_FILES",
+      "line": 13,
+      "start": 650,
+      "end": 699,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/presets.js",
+      "name": "MANAGED_MARKER",
+      "line": 15,
+      "start": 746,
+      "end": 788,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/presets.js",
+      "name": "bundledPresetDir",
+      "line": 17,
+      "start": 793,
+      "end": 902,
+      "kind": "function"
+    },
+    {
+      "file": "lib/presets.js",
+      "name": "userPresetDir",
+      "line": 21,
+      "start": 906,
+      "end": 1111,
+      "kind": "function"
+    },
+    {
+      "file": "lib/presets.js",
+      "name": "installPreset",
+      "line": 32,
+      "start": 1272,
+      "end": 2531,
+      "kind": "function"
+    },
+    {
+      "file": "lib/presets.js",
+      "name": "presetStatus",
+      "line": 58,
+      "start": 2535,
+      "end": 2848,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "configPathOf",
+      "line": 18,
+      "start": 601,
+      "end": 693,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "redteamRoot",
+      "line": 22,
+      "start": 697,
+      "end": 827,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "defaultToolkitDir",
+      "line": 28,
+      "start": 848,
+      "end": 941,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "TOOL_CATALOG",
+      "line": 36,
+      "start": 1065,
+      "end": 2454,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "EMPTY",
+      "line": 55,
+      "start": 2464,
+      "end": 3017,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "isWinLike",
+      "line": 78,
+      "start": 3021,
+      "end": 3200,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "loadPlatformConfig",
+      "line": 85,
+      "start": 3204,
+      "end": 4615,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "savePlatformConfig",
+      "line": 120,
+      "start": 4619,
+      "end": 6289,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "toolkitDirOf",
+      "line": 154,
+      "start": 6310,
+      "end": 6483,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "nucleiTemplatesDirOf",
+      "line": 161,
+      "start": 6516,
+      "end": 6730,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "looksLikePythonCli",
+      "line": 170,
+      "start": 6778,
+      "end": 7201,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "findInDir",
+      "line": 187,
+      "start": 7205,
+      "end": 7945,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "adaptInDir",
+      "line": 213,
+      "start": 7989,
+      "end": 8614,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "findOnPath",
+      "line": 233,
+      "start": 8660,
+      "end": 8953,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "linuxFallbackDirs",
+      "line": 244,
+      "start": 9008,
+      "end": 9363,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "resolveTool",
+      "line": 261,
+      "start": 9519,
+      "end": 11289,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "resolveAllTools",
+      "line": 300,
+      "start": 11293,
+      "end": 11405,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "mergeConfigEnv",
+      "line": 307,
+      "start": 11472,
+      "end": 11841,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "platformSummary",
+      "line": 322,
+      "start": 11882,
+      "end": 13585,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "detectKali",
+      "line": 367,
+      "start": 13620,
+      "end": 14352,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "NAME_TO_IDS",
+      "line": 388,
+      "start": 14362,
+      "end": 14631,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "scanFolderForTools",
+      "line": 403,
+      "start": 14680,
+      "end": 17469,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "assignToolkitFolder",
+      "line": 495,
+      "start": 17533,
+      "end": 18609,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "envAdaptStatus",
+      "line": 533,
+      "start": 18677,
+      "end": 20408,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/platform-config.js",
+      "name": "markEnvAdaptSkip",
+      "line": 590,
+      "start": 20412,
+      "end": 20553,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "CompositionError",
+      "line": 36,
+      "start": 1913,
+      "end": 2039,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "BLANK_OR_COMMENT_RE",
+      "line": 42,
+      "start": 2048,
+      "end": 2088,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "INTEGER_RE",
+      "line": 43,
+      "start": 2097,
+      "end": 2122,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "FLOAT_RE",
+      "line": 44,
+      "start": 2131,
+      "end": 2190,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "indentOf",
+      "line": 46,
+      "start": 2257,
+      "end": 2366,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "significantIndent",
+      "line": 54,
+      "start": 2529,
+      "end": 2780,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "skipInsignificant",
+      "line": 60,
+      "start": 2833,
+      "end": 2998,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "isSequenceEntry",
+      "line": 64,
+      "start": 3065,
+      "end": 3215,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "closingQuote",
+      "line": 69,
+      "start": 3297,
+      "end": 3673,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "unquote",
+      "line": 86,
+      "start": 3754,
+      "end": 4633,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "matchKeyEntry",
+      "line": 111,
+      "start": 4715,
+      "end": 5386,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "plainScalar",
+      "line": 132,
+      "start": 5466,
+      "end": 5994,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "flowSequence",
+      "line": 146,
+      "start": 6144,
+      "end": 6905,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "inlineScalar",
+      "line": 163,
+      "start": 6976,
+      "end": 8164,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "blockScalar",
+      "line": 191,
+      "start": 8551,
+      "end": 10324,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "parseValue",
+      "line": 248,
+      "start": 10403,
+      "end": 10799,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "parseMap",
+      "line": 259,
+      "start": 10863,
+      "end": 11720,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "parseSequence",
+      "line": 278,
+      "start": 11791,
+      "end": 12820,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "parseNode",
+      "line": 307,
+      "start": 12878,
+      "end": 13226,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "readYaml",
+      "line": 316,
+      "start": 13316,
+      "end": 13746,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "asRow",
+      "line": 328,
+      "start": 13832,
+      "end": 14198,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "absolutizeRows",
+      "line": 338,
+      "start": 14349,
+      "end": 14956,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "readCompositionRows",
+      "line": 359,
+      "start": 15339,
+      "end": 15577,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "readPresetMetadata",
+      "line": 365,
+      "start": 15645,
+      "end": 16448,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/preset-composition.js",
+      "name": "readPresetDefinition",
+      "line": 390,
+      "start": 16827,
+      "end": 17235,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "ROLE_TAG",
+      "line": 14,
+      "start": 371,
+      "end": 459,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "roleBySession",
+      "line": 16,
+      "start": 469,
+      "end": 494,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "ROLE_SESSION_CAP",
+      "line": 19,
+      "start": 606,
+      "end": 628,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "ROLE_SESSION_EVICT",
+      "line": 20,
+      "start": 636,
+      "end": 660,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "evictRoleBySessionIfOverflow",
+      "line": 22,
+      "start": 664,
+      "end": 903,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "parseRedteamRole",
+      "line": 32,
+      "start": 907,
+      "end": 1054,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "textOfMessage",
+      "line": 37,
+      "start": 1058,
+      "end": 1420,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "remember",
+      "line": 46,
+      "start": 1424,
+      "end": 1665,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "isRedteamChild",
+      "line": 52,
+      "start": 1669,
+      "end": 1931,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "noteClaimedMessage",
+      "line": 58,
+      "start": 1935,
+      "end": 2208,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "roleFromSessionEvents",
+      "line": 67,
+      "start": 2212,
+      "end": 2813,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "safeEngagementId",
+      "line": 86,
+      "start": 2817,
+      "end": 3057,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "currentEngagementId",
+      "line": 93,
+      "start": 3061,
+      "end": 3360,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "readRoleFile",
+      "line": 105,
+      "start": 3364,
+      "end": 3729,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "resolveSubagentRoleText",
+      "line": 117,
+      "start": 3733,
+      "end": 4348,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "installSubagentRoleCapture",
+      "line": 137,
+      "start": 4352,
+      "end": 5792,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/schema.js",
+      "name": "HAS_FTS5",
+      "line": 31,
+      "start": 1011,
+      "end": 1330,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/schema.js",
+      "name": "ASSET_FTS_DDL",
+      "line": 53,
+      "start": 1595,
+      "end": 1741,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/schema.js",
+      "name": "POC_FTS_DDL",
+      "line": 59,
+      "start": 1758,
+      "end": 1917,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/schema.js",
+      "name": "DDL",
+      "line": 67,
+      "start": 2021,
+      "end": 14361,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/schema.js",
+      "name": "KNOWLEDGE_DDL",
+      "line": 364,
+      "start": 14465,
+      "end": 16342,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/schema.js",
+      "name": "POC_CATEGORIES",
+      "line": 411,
+      "start": 16517,
+      "end": 17593,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/schema.js",
+      "name": "pocCategoryName",
+      "line": 430,
+      "start": 17664,
+      "end": 17836,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/schema.js",
+      "name": "guessPocCategory",
+      "line": 441,
+      "start": 18044,
+      "end": 19295,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/schema.js",
+      "name": "migrate",
+      "line": 466,
+      "start": 19464,
+      "end": 25647,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/schema.js",
+      "name": "migrateKnowledge",
+      "line": 605,
+      "start": 25837,
+      "end": 27017,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "TUNNEL_ENTRY_KINDS",
+      "line": 29,
+      "start": 1025,
+      "end": 1255,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "tunnelIsLegit",
+      "line": 38,
+      "start": 1346,
+      "end": 1492,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "ACCOUNT_POINT_CODES",
+      "line": 48,
+      "start": 1611,
+      "end": 1736,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "SERVICE_CAPPED_POINT_CODES",
+      "line": 61,
+      "start": 2121,
+      "end": 2204,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "parseTargetPort",
+      "line": 68,
+      "start": 2377,
+      "end": 2826,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "normalizePort",
+      "line": 81,
+      "start": 2867,
+      "end": 3066,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "targetAuthority",
+      "line": 94,
+      "start": 3307,
+      "end": 3990,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "scoreServiceKey",
+      "line": 121,
+      "start": 4301,
+      "end": 4706,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "serviceLabel",
+      "line": 131,
+      "start": 4756,
+      "end": 5322,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "applyScoreCaps",
+      "line": 162,
+      "start": 6219,
+      "end": 9732,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "systemKeyOf",
+      "line": 267,
+      "start": 10002,
+      "end": 11968,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "pickBestHit",
+      "line": 311,
+      "start": 12020,
+      "end": 12263,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "legacyCapGroup",
+      "line": 320,
+      "start": 12316,
+      "end": 12536,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "loadScoreMeta",
+      "line": 332,
+      "start": 12703,
+      "end": 13306,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "loadAssetNames",
+      "line": 350,
+      "start": 13401,
+      "end": 13586,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "hitPointsOf",
+      "line": 362,
+      "start": 13827,
+      "end": 14495,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "targetHasIpv6Host",
+      "line": 385,
+      "start": 14794,
+      "end": 15375,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "scoreMultiplierOf",
+      "line": 407,
+      "start": 15767,
+      "end": 16518,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "evaluateScoreBoard",
+      "line": 435,
+      "start": 17016,
+      "end": 18524,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "scoreCapReasonText",
+      "line": 471,
+      "start": 18706,
+      "end": 19306,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "serviceCapReason",
+      "line": 485,
+      "start": 19366,
+      "end": 19403,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "SENSITIVE_DATA_MIN_ROWS",
+      "line": 494,
+      "start": 19593,
+      "end": 19626,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "parseRowCount",
+      "line": 503,
+      "start": 19855,
+      "end": 20826,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "formatRows",
+      "line": 526,
+      "start": 20854,
+      "end": 20932,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "SCORE_CONFIRM",
+      "line": 547,
+      "start": 21421,
+      "end": 26517,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "scoreConfirmOf",
+      "line": 701,
+      "start": 26576,
+      "end": 26729,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "DEDUP_SCOPES",
+      "line": 706,
+      "start": 26746,
+      "end": 26800,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "sp",
+      "line": 721,
+      "start": 27297,
+      "end": 27471,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "SCORE_GENERAL_RULES",
+      "line": 730,
+      "start": 27708,
+      "end": 28554,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "SCORE_GROUPS",
+      "line": 758,
+      "start": 29196,
+      "end": 29542,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "DEFAULT_SCORE_POINTS",
+      "line": 769,
+      "start": 29559,
+      "end": 37974,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "expandSkillPath",
+      "line": 31,
+      "start": 1207,
+      "end": 1520,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "dshHomeCandidates",
+      "line": 46,
+      "start": 1753,
+      "end": 1966,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "existsUnderAnyHome",
+      "line": 55,
+      "start": 2035,
+      "end": 2250,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "requiredEnvOf",
+      "line": 63,
+      "start": 2286,
+      "end": 2923,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "pathCountsOnThisHost",
+      "line": 78,
+      "start": 2976,
+      "end": 4061,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "referencedPathsOf",
+      "line": 98,
+      "start": 4123,
+      "end": 4555,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "bundledSkillSummaries",
+      "line": 111,
+      "start": 4626,
+      "end": 5831,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "skillLibraryOf",
+      "line": 149,
+      "start": 5923,
+      "end": 6478,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "officialSkillSummaries",
+      "line": 162,
+      "start": 6515,
+      "end": 7846,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "redteamSummariesForCheck",
+      "line": 201,
+      "start": 7893,
+      "end": 8687,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "readSkillFromRoot",
+      "line": 224,
+      "start": 8728,
+      "end": 9146,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "safeFix",
+      "line": 235,
+      "start": 9196,
+      "end": 9297,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "checkSkill",
+      "line": 252,
+      "start": 10023,
+      "end": 14206,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-availability.js",
+      "name": "summarizeSkills",
+      "line": 350,
+      "start": 14256,
+      "end": 14462,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "SETUP",
+      "line": 17,
+      "start": 642,
+      "end": 689,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "GENERIC_FIX",
+      "line": 20,
+      "start": 723,
+      "end": 864,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "TOOLKIT_TARBALL",
+      "line": 24,
+      "start": 912,
+      "end": 1058,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "FRP_FIX",
+      "line": 28,
+      "start": 1148,
+      "end": 1453,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "LIGOLO_FIX",
+      "line": 34,
+      "start": 1463,
+      "end": 1823,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "TOOL_FIXES",
+      "line": 40,
+      "start": 1840,
+      "end": 12981,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "SKILL_FIXES",
+      "line": 278,
+      "start": 13078,
+      "end": 19343,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "EXT_RE",
+      "line": 370,
+      "start": 19500,
+      "end": 19572,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "PLATFORM_RE",
+      "line": 372,
+      "start": 19643,
+      "end": 19735,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "ARCH_RE",
+      "line": 374,
+      "start": 19781,
+      "end": 19862,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "cleanToolName",
+      "line": 380,
+      "start": 19968,
+      "end": 20322,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "toolNameOfPath",
+      "line": 400,
+      "start": 20653,
+      "end": 21380,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "canonicalTool",
+      "line": 421,
+      "start": 21444,
+      "end": 21629,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "ENV_HINTS",
+      "line": 429,
+      "start": 21673,
+      "end": 22069,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "asArray",
+      "line": 436,
+      "start": 22073,
+      "end": 22260,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/skill-fixes.js",
+      "name": "fixesForIssue",
+      "line": 450,
+      "start": 22644,
+      "end": 26160,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "ROLE_TITLES",
+      "line": 79,
+      "start": 3577,
+      "end": 3717,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "SEVERITIES",
+      "line": 89,
+      "start": 3752,
+      "end": 3810,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "VULN_STATUSES",
+      "line": 92,
+      "start": 3836,
+      "end": 3918,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "POC_KINDS",
+      "line": 109,
+      "start": 4402,
+      "end": 4461,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "POC_SOURCES",
+      "line": 111,
+      "start": 4533,
+      "end": 4597,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "targetKey",
+      "line": 125,
+      "start": 4917,
+      "end": 5260,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "parseJson",
+      "line": 138,
+      "start": 5301,
+      "end": 5488,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "normGained",
+      "line": 146,
+      "start": 5540,
+      "end": 5821,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "SCOPE_SQL",
+      "line": 157,
+      "start": 5920,
+      "end": 6286,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "readMeta",
+      "line": 166,
+      "start": 6372,
+      "end": 6885,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "writeMeta",
+      "line": 182,
+      "start": 6889,
+      "end": 7188,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "DEFAULT_STAGES",
+      "line": 230,
+      "start": 8695,
+      "end": 11077,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "POINT_STAGE_OVERRIDE",
+      "line": 288,
+      "start": 11131,
+      "end": 11825,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "POINT_SHORT_NAME",
+      "line": 309,
+      "start": 11920,
+      "end": 12706,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "scoreStageOf",
+      "line": 345,
+      "start": 12951,
+      "end": 13518,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "LEGACY_STAGE_MAP",
+      "line": 358,
+      "start": 13572,
+      "end": 13729,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "VALID_STAGE_CODES",
+      "line": 368,
+      "start": 13909,
+      "end": 13984,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "LEGACY_PROMPT_HASHES",
+      "line": 387,
+      "start": 14570,
+      "end": 14595,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "promptHash",
+      "line": 391,
+      "start": 14649,
+      "end": 14806,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "COMMON_ENV",
+      "line": 408,
+      "start": 15273,
+      "end": 15445,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "COMMON_BIND",
+      "line": 414,
+      "start": 15455,
+      "end": 15513,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "COMMON_SCORE_RULES",
+      "line": 417,
+      "start": 15523,
+      "end": 17829,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "COMMON_DB_LOOKUP",
+      "line": 435,
+      "start": 17839,
+      "end": 18505,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "COMMON_EVIDENCE",
+      "line": 446,
+      "start": 18515,
+      "end": 20292,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "COMMON_HANDOFF",
+      "line": 460,
+      "start": 20302,
+      "end": 20654,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "DEFAULT_PROMPTS",
+      "line": 475,
+      "start": 20892,
+      "end": 42653,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "ROLE_ORDER",
+      "line": 730,
+      "start": 42708,
+      "end": 42776,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "PLANNER_ROLE",
+      "line": 731,
+      "start": 42791,
+      "end": 42812,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "dispatch",
+      "line": 742,
+      "start": 43121,
+      "end": 52398,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "dispatchAsync",
+      "line": 876,
+      "start": 52506,
+      "end": 53112,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "pngSize",
+      "line": 901,
+      "start": 53383,
+      "end": 54549,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "assertSourcePath",
+      "line": 927,
+      "start": 54553,
+      "end": 54649,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "pathComponent",
+      "line": 932,
+      "start": 54741,
+      "end": 55047,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "addCandidate",
+      "line": 37,
+      "start": 1509,
+      "end": 1659,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "considerBin",
+      "line": 43,
+      "start": 1663,
+      "end": 3080,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "loadDefineTool",
+      "line": 67,
+      "start": 3084,
+      "end": 4356,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "defineTool",
+      "line": 92,
+      "start": 4366,
+      "end": 4395,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "name",
+      "line": 95,
+      "start": 4432,
+      "end": 4464,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "inject",
+      "line": 98,
+      "start": 4537,
+      "end": 4555,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "bindings",
+      "line": 101,
+      "start": 4626,
+      "end": 4646,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "reservations",
+      "line": 104,
+      "start": 4710,
+      "end": 4734,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "BINDINGS_CAP",
+      "line": 107,
+      "start": 4809,
+      "end": 4827,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "RESERVATIONS_CAP",
+      "line": 108,
+      "start": 4835,
+      "end": 4857,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "capMap",
+      "line": 109,
+      "start": 4859,
+      "end": 5111,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "maxAgentsNow",
+      "line": 123,
+      "start": 5250,
+      "end": 5411,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "sessionInfoOf",
+      "line": 129,
+      "start": 5436,
+      "end": 5985,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "sessionOf",
+      "line": 145,
+      "start": 6012,
+      "end": 6074,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "resolveRootSession",
+      "line": 154,
+      "start": 6207,
+      "end": 7064,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "bindingKeyOf",
+      "line": 179,
+      "start": 7087,
+      "end": 7440,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "resolveEngagement",
+      "line": 196,
+      "start": 7665,
+      "end": 8887,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "bindingViewOf",
+      "line": 228,
+      "start": 8939,
+      "end": 9345,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "splitList",
+      "line": 242,
+      "start": 9376,
+      "end": 9490,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "compactAsset",
+      "line": 247,
+      "start": 9536,
+      "end": 10339,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "text",
+      "line": 269,
+      "start": 10349,
+      "end": 10459,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "ROLE_HINT",
+      "line": 272,
+      "start": 10517,
+      "end": 10612,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "bindKeysOf",
+      "line": 274,
+      "start": 10616,
+      "end": 10782,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "liveRunningChildren",
+      "line": 280,
+      "start": 10832,
+      "end": 11729,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "reservationList",
+      "line": 301,
+      "start": 11787,
+      "end": 11956,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "addReservation",
+      "line": 307,
+      "start": 11960,
+      "end": 12120,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "dropReservation",
+      "line": 312,
+      "start": 12124,
+      "end": 12582,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "agentOf",
+      "line": 331,
+      "start": 12673,
+      "end": 12813,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "AGENT_PARAM",
+      "line": 337,
+      "start": 12878,
+      "end": 13003,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "withStructuredErrors",
+      "line": 352,
+      "start": 13271,
+      "end": 14108,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "apply",
+      "line": 376,
+      "start": 14112,
+      "end": 112775,
+      "kind": "function"
+    },
+    {
+      "file": "lib/refusal-retry.js",
+      "name": "REFUSAL_SECTION",
+      "line": 6,
+      "start": 185,
+      "end": 228,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/refusal-retry.js",
+      "name": "REFUSAL_PATTERNS",
+      "line": 9,
+      "start": 280,
+      "end": 960,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/refusal-retry.js",
+      "name": "refusalMatchIndex",
+      "line": 29,
+      "start": 1005,
+      "end": 1307,
+      "kind": "function"
+    },
+    {
+      "file": "lib/refusal-retry.js",
+      "name": "looksLikeRefusal",
+      "line": 37,
+      "start": 1311,
+      "end": 1399,
+      "kind": "function"
+    },
+    {
+      "file": "lib/refusal-retry.js",
+      "name": "RETRY_NUDGE",
+      "line": 42,
+      "start": 1463,
+      "end": 1852,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/refusal-retry.js",
+      "name": "withNudge",
+      "line": 48,
+      "start": 1857,
+      "end": 2519,
+      "kind": "function"
+    },
+    {
+      "file": "lib/refusal-retry.js",
+      "name": "streamWithRefusalRetry",
+      "line": 67,
+      "start": 2615,
+      "end": 4456,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "DRAFT_TTL_MS",
+      "line": 1,
+      "start": 6,
+      "end": 35,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "pendingDrafts",
+      "line": 2,
+      "start": 44,
+      "end": 69,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "lastPending",
+      "line": 3,
+      "start": 76,
+      "end": 94,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "sleep",
+      "line": 5,
+      "start": 99,
+      "end": 183,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "ignoreSettled",
+      "line": 9,
+      "start": 187,
+      "end": 264,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "errorText",
+      "line": 13,
+      "start": 268,
+      "end": 418,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "asEventList",
+      "line": 19,
+      "start": 422,
+      "end": 663,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "service",
+      "line": 31,
+      "start": 667,
+      "end": 840,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "userTextFromEvent",
+      "line": 40,
+      "start": 844,
+      "end": 1401,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "isPluginDraft",
+      "line": 59,
+      "start": 1405,
+      "end": 1646,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "isRewindMarkerEvent",
+      "line": 67,
+      "start": 1650,
+      "end": 1844,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "isHumanUserEvent",
+      "line": 73,
+      "start": 1848,
+      "end": 2194,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "isRoundPromptEvent",
+      "line": 84,
+      "start": 2258,
+      "end": 2752,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "lastClosedTurnBounds",
+      "line": 97,
+      "start": 2812,
+      "end": 3668,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "eventsInOrder",
+      "line": 125,
+      "start": 3672,
+      "end": 3899,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "lastOpenTurn",
+      "line": 131,
+      "start": 3903,
+      "end": 4170,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "isSubagentHeader",
+      "line": 141,
+      "start": 4174,
+      "end": 4319,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "pendingInboxInserts",
+      "line": 146,
+      "start": 4323,
+      "end": 5192,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "lastTurnSubagentIds",
+      "line": 172,
+      "start": 5196,
+      "end": 5998,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "planRewind",
+      "line": 198,
+      "start": 6002,
+      "end": 6622,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "isRewindDerivedMessage",
+      "line": 219,
+      "start": 6658,
+      "end": 6828,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "cutSurfaceNodes",
+      "line": 226,
+      "start": 6907,
+      "end": 7699,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "rememberDraft",
+      "line": 243,
+      "start": 7703,
+      "end": 8070,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "getDraft",
+      "line": 259,
+      "start": 8074,
+      "end": 8338,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "takeDraft",
+      "line": 270,
+      "start": 8342,
+      "end": 8479,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "getPending",
+      "line": 276,
+      "start": 8483,
+      "end": 8674,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "lastHumanUserText",
+      "line": 285,
+      "start": 8678,
+      "end": 8918,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "readLastUserText",
+      "line": 293,
+      "start": 8922,
+      "end": 9260,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "disposeObservation",
+      "line": 303,
+      "start": 9264,
+      "end": 9388,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "readSessionLog",
+      "line": 311,
+      "start": 9392,
+      "end": 10499,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "waitTurnClosed",
+      "line": 349,
+      "start": 10503,
+      "end": 10882,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "getAgent",
+      "line": 362,
+      "start": 10886,
+      "end": 11097,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "resetRequestSeries",
+      "line": 372,
+      "start": 11153,
+      "end": 11474,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "invalidateDerivedCache",
+      "line": 381,
+      "start": 11532,
+      "end": 11784,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "wrapSessionDeriveMessages",
+      "line": 388,
+      "start": 11788,
+      "end": 12347,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "disarmRewoundSession",
+      "line": 401,
+      "start": 12351,
+      "end": 13478,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "invocationSessionId",
+      "line": 436,
+      "start": 13482,
+      "end": 13660,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "resolveMainSession",
+      "line": 442,
+      "start": 13664,
+      "end": 14235,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "liveSession",
+      "line": 459,
+      "start": 14239,
+      "end": 14413,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "flatMessageText",
+      "line": 468,
+      "start": 14417,
+      "end": 14778,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "derivedStillContains",
+      "line": 479,
+      "start": 14782,
+      "end": 15329,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "clearModelHistory",
+      "line": 497,
+      "start": 15386,
+      "end": 16975,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "rewindLocks",
+      "line": 542,
+      "start": 16985,
+      "end": 17008,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "doRewindOneSession",
+      "line": 544,
+      "start": 17013,
+      "end": 17963,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "rewindOneSession",
+      "line": 576,
+      "start": 17967,
+      "end": 18693,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "analyzeRewind",
+      "line": 597,
+      "start": 18697,
+      "end": 19235,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "applyRewind",
+      "line": 615,
+      "start": 19239,
+      "end": 20594,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "RULE_ID_RE",
+      "line": 17,
+      "start": 361,
+      "end": 409,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "MAX_RULE_BYTES",
+      "line": 18,
+      "start": 418,
+      "end": 445,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "MAX_NAME_LENGTH",
+      "line": 19,
+      "start": 454,
+      "end": 474,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "RULE_TARGETS",
+      "line": 20,
+      "start": 490,
+      "end": 531,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "BACKUP_SUFFIX",
+      "line": 21,
+      "start": 540,
+      "end": 577,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "CWD_CANDIDATE_FILES",
+      "line": 25,
+      "start": 704,
+      "end": 790,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "PROJECT_ROOT_MARKERS",
+      "line": 26,
+      "start": 799,
+      "end": 845,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "WORKSPACE_POLICIES",
+      "line": 27,
+      "start": 861,
+      "end": 914,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "DEFAULT_WORKSPACE_POLICY",
+      "line": 28,
+      "start": 923,
+      "end": 960,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "MAX_CWD_WALK_DEPTH",
+      "line": 29,
+      "start": 969,
+      "end": 992,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "MAX_LOCAL_INJECT_BYTES",
+      "line": 30,
+      "start": 1001,
+      "end": 1036,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "purgeStateDir",
+      "line": 34,
+      "start": 1068,
+      "end": 1147,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "cwdSelectionsPath",
+      "line": 38,
+      "start": 1151,
+      "end": 1259,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "workspacePolicyPath",
+      "line": 42,
+      "start": 1263,
+      "end": 1375,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "lastCwdPath",
+      "line": 46,
+      "start": 1379,
+      "end": 1474,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "rulesDir",
+      "line": 50,
+      "start": 1478,
+      "end": 1555,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "stateFile",
+      "line": 54,
+      "start": 1559,
+      "end": 1652,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "rulePath",
+      "line": 58,
+      "start": 1656,
+      "end": 1750,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "ruleMetaPath",
+      "line": 62,
+      "start": 1754,
+      "end": 1854,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "validRuleId",
+      "line": 66,
+      "start": 1858,
+      "end": 1951,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "validTarget",
+      "line": 70,
+      "start": 1955,
+      "end": 2066,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "formatSize",
+      "line": 74,
+      "start": 2070,
+      "end": 2299,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "targetPath",
+      "line": 81,
+      "start": 2303,
+      "end": 2464,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "normalizeMeta",
+      "line": 86,
+      "start": 2468,
+      "end": 2750,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "readRuleMeta",
+      "line": 95,
+      "start": 2754,
+      "end": 2996,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "writeRuleMeta",
+      "line": 104,
+      "start": 3000,
+      "end": 3290,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "readRuleContentSync",
+      "line": 110,
+      "start": 3294,
+      "end": 3445,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "collectRuleContents",
+      "line": 118,
+      "start": 3449,
+      "end": 3715,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "listRules",
+      "line": 128,
+      "start": 3719,
+      "end": 4428,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "readRule",
+      "line": 152,
+      "start": 4432,
+      "end": 4656,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "saveRule",
+      "line": 161,
+      "start": 4660,
+      "end": 6147,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "deleteRule",
+      "line": 204,
+      "start": 6151,
+      "end": 6633,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "readActive",
+      "line": 224,
+      "start": 6637,
+      "end": 6909,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "setActive",
+      "line": 233,
+      "start": 6913,
+      "end": 7183,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "resolveInjectText",
+      "line": 243,
+      "start": 7300,
+      "end": 8050,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "ensureOperatorBody",
+      "line": 260,
+      "start": 8105,
+      "end": 8332,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "activateRule",
+      "line": 266,
+      "start": 8336,
+      "end": 9055,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "ensureInitialState",
+      "line": 286,
+      "start": 9059,
+      "end": 9391,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "resetToOriginal",
+      "line": 299,
+      "start": 9395,
+      "end": 10532,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "rulesStatus",
+      "line": 340,
+      "start": 10536,
+      "end": 12005,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "pickCwd",
+      "line": 385,
+      "start": 12009,
+      "end": 12235,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "ancestorChainForCwd",
+      "line": 396,
+      "start": 12373,
+      "end": 13326,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "scanCwdInstructions",
+      "line": 426,
+      "start": 13330,
+      "end": 14315,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "readWorkspacePolicy",
+      "line": 460,
+      "start": 14319,
+      "end": 14655,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "writeWorkspacePolicy",
+      "line": 469,
+      "start": 14659,
+      "end": 15024,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "normalizeSelectionList",
+      "line": 479,
+      "start": 15028,
+      "end": 15415,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "readCwdSelections",
+      "line": 494,
+      "start": 15419,
+      "end": 15637,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "writeCwdSelections",
+      "line": 501,
+      "start": 15641,
+      "end": 15944,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "toggleCwdSelection",
+      "line": 509,
+      "start": 15948,
+      "end": 16350,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "readLastCwd",
+      "line": 518,
+      "start": 16354,
+      "end": 16524,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "writeLastCwd",
+      "line": 525,
+      "start": 16528,
+      "end": 16810,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "readSelectedCwdInject",
+      "line": 538,
+      "start": 16910,
+      "end": 17764,
+      "kind": "function"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "NATIVE_QUEUE_GUARD",
+      "line": 3,
+      "start": 173,
+      "end": 420,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "NATIVE_PROMPT",
+      "line": 5,
+      "start": 436,
+      "end": 559,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "NATIVE_QUEUE_CASE",
+      "line": 7,
+      "start": 575,
+      "end": 695,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "NATIVE_STEER",
+      "line": 9,
+      "start": 711,
+      "end": 794,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "OLD_QUEUE_FALLBACK",
+      "line": 11,
+      "start": 810,
+      "end": 1182,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "OLD_PROMPT",
+      "line": 18,
+      "start": 1198,
+      "end": 1325,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "OLD_QUEUE_CASE",
+      "line": 20,
+      "start": 1341,
+      "end": 1503,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "OLD_STEER",
+      "line": 22,
+      "start": 1519,
+      "end": 1645,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "UPSTREAM_RECOVERED_STEER",
+      "line": 24,
+      "start": 1661,
+      "end": 1815,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "STEERING_RESTORE_PATCH",
+      "line": 27,
+      "start": 1833,
+      "end": 2635,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/steering.js",
+      "name": "nativeSteeringRestored",
+      "line": 53,
+      "start": 2805,
+      "end": 3373,
+      "kind": "function"
+    },
+    {
+      "file": "lib/table-key.js",
+      "name": "MIX",
+      "line": 4,
+      "start": 122,
+      "end": 304,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/table-key.js",
+      "name": "mixKey",
+      "line": 11,
+      "start": 309,
+      "end": 440,
+      "kind": "function"
+    },
+    {
+      "file": "lib/table-key.js",
+      "name": "sealSlot",
+      "line": 15,
+      "start": 444,
+      "end": 940,
+      "kind": "function"
+    },
+    {
+      "file": "lib/table-read.js",
+      "name": "openSlot",
+      "line": 6,
+      "start": 192,
+      "end": 583,
+      "kind": "function"
+    },
+    {
+      "file": "lib/tuning.js",
+      "name": "TUNING_FILE",
+      "line": 9,
+      "start": 379,
+      "end": 406,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/tuning.js",
+      "name": "TUNING_DEFAULTS",
+      "line": 12,
+      "start": 463,
+      "end": 815,
+      "kind": "variable"
+    },
+    {
+      "file": "lib/tuning.js",
+      "name": "tuningPath",
+      "line": 21,
+      "start": 820,
+      "end": 973,
+      "kind": "function"
+    },
+    {
+      "file": "lib/tuning.js",
+      "name": "readTuning",
+      "line": 27,
+      "start": 977,
+      "end": 1618,
+      "kind": "function"
+    },
+    {
+      "file": "lib/tuning.js",
+      "name": "writeTuning",
+      "line": 46,
+      "start": 1622,
+      "end": 2817,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "name",
+      "line": 12,
+      "start": 273,
+      "end": 306,
+      "kind": "variable"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "INSTRUCTION_FROM_RE",
+      "line": 14,
+      "start": 316,
+      "end": 403,
+      "kind": "variable"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "countWord",
+      "line": 16,
+      "start": 407,
+      "end": 507,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "classifyReasoning",
+      "line": 21,
+      "start": 546,
+      "end": 913,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "hasAnchoredReasoning",
+      "line": 30,
+      "start": 917,
+      "end": 1168,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "decidePromotion",
+      "line": 41,
+      "start": 1332,
+      "end": 2024,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "integerAtLeast",
+      "line": 51,
+      "start": 2028,
+      "end": 2334,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "extractInstructionPaths",
+      "line": 61,
+      "start": 2338,
+      "end": 2785,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "buildInstructionHint",
+      "line": 74,
+      "start": 2789,
+      "end": 3533,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "instructionHintMessages",
+      "line": 92,
+      "start": 3537,
+      "end": 4039,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "promotionBySession",
+      "line": 111,
+      "start": 4049,
+      "end": 4083,
+      "kind": "variable"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "stateFor",
+      "line": 113,
+      "start": 4087,
+      "end": 4472,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "resetToControlled",
+      "line": 131,
+      "start": 4476,
+      "end": 4702,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "scanEvents",
+      "line": 141,
+      "start": 4706,
+      "end": 5541,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "refresh",
+      "line": 165,
+      "start": 5545,
+      "end": 5839,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "apply",
+      "line": 176,
+      "start": 5843,
+      "end": 7465,
+      "kind": "function"
+    }
+  ],
+  "dynamic": [
+    {
+      "file": "lib/capability-protocol.js",
+      "name": "capabilityProtocolText",
+      "line": 43,
+      "start": 2827,
+      "end": 3060,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "liangshenPromptFilterText",
+      "line": 850,
+      "start": 31762,
+      "end": 32221,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "listLiangshenMinimalPromptFiles",
+      "line": 859,
+      "start": 32225,
+      "end": 33071,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "keepLiangshenOperatorPrompt",
+      "line": 886,
+      "start": 33438,
+      "end": 34403,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "readPromptInjectFileSync",
+      "line": 2339,
+      "start": 87784,
+      "end": 88102,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hangOperatorPrompt",
+      "line": 2362,
+      "start": 88473,
+      "end": 88584,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "hungOperatorPrompt",
+      "line": 2366,
+      "start": 88588,
+      "end": 88663,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "nodeShimInject",
+      "line": 3840,
+      "start": 144675,
+      "end": 145809,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "shimInjectFor",
+      "line": 3886,
+      "start": 146438,
+      "end": 148157,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "shimInjectCurrent",
+      "line": 3932,
+      "start": 148255,
+      "end": 148421,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "stripShimInject",
+      "line": 3937,
+      "start": 148425,
+      "end": 149479,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "insertShimInject",
+      "line": 3975,
+      "start": 149483,
+      "end": 149957,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "stripCmdInjectSync",
+      "line": 4058,
+      "start": 152170,
+      "end": 152511,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "syncPromptInjectOnDiskSync",
+      "line": 4378,
+      "start": 162684,
+      "end": 163983,
+      "kind": "function"
+    },
+    {
+      "file": "lib/core.js",
+      "name": "seedPromptInjectAtBoot",
+      "line": 4415,
+      "start": 164193,
+      "end": 165154,
+      "kind": "function"
+    },
+    {
+      "file": "lib/host-clean.js",
+      "name": "hostPromptKeepsInject",
+      "line": 2,
+      "start": 45,
+      "end": 718,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "isPluginPromptSection",
+      "line": 15,
+      "start": 798,
+      "end": 942,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "escapeDshInterpolation",
+      "line": 24,
+      "start": 1059,
+      "end": 1398,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "collectInjectText",
+      "line": 192,
+      "start": 9010,
+      "end": 9293,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "injectNeedles",
+      "line": 287,
+      "start": 12499,
+      "end": 12802,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "injectMatchers",
+      "line": 305,
+      "start": 13046,
+      "end": 13731,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "leadWithInject",
+      "line": 330,
+      "start": 13805,
+      "end": 15194,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "splitRedteamInject",
+      "line": 435,
+      "start": 17128,
+      "end": 18148,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "modePromptText",
+      "line": 471,
+      "start": 18632,
+      "end": 18796,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "adaptInjectForMinimalPreset",
+      "line": 596,
+      "start": 23326,
+      "end": 23427,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "inheritsParentPrompt",
+      "line": 604,
+      "start": 23537,
+      "end": 23737,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "sessionForInject",
+      "line": 624,
+      "start": 24151,
+      "end": 24593,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "insertRoleSection",
+      "line": 674,
+      "start": 26069,
+      "end": 26217,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "foldInjectIntoPersona",
+      "line": 762,
+      "start": 29879,
+      "end": 30884,
+      "kind": "function"
+    },
+    {
+      "file": "lib/identity.js",
+      "name": "rewritePromptAssembly",
+      "line": 931,
+      "start": 35609,
+      "end": 39498,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "boostPromptOrder",
+      "line": 97,
+      "start": 3912,
+      "end": 4408,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "injectAllowedNow",
+      "line": 178,
+      "start": 7369,
+      "end": 7468,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "statInjectMtimeMs",
+      "line": 188,
+      "start": 7838,
+      "end": 8007,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "installHungPromptGlobal",
+      "line": 223,
+      "start": 9143,
+      "end": 11269,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "shouldInjectAssembly",
+      "line": 263,
+      "start": 11337,
+      "end": 11733,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "injectSnapshot",
+      "line": 325,
+      "start": 13436,
+      "end": 13683,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "injectSnapshotFromBox",
+      "line": 335,
+      "start": 13749,
+      "end": 14202,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "rejectIfNeedPrompt",
+      "line": 348,
+      "start": 14259,
+      "end": 14453,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "addPromptSection",
+      "line": 359,
+      "start": 14605,
+      "end": 15721,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "registerPromptSections",
+      "line": 394,
+      "start": 15725,
+      "end": 18571,
+      "kind": "function"
+    },
+    {
+      "file": "lib/index.js",
+      "name": "readInjectFallback",
+      "line": 483,
+      "start": 18575,
+      "end": 19502,
+      "kind": "function"
+    },
+    {
+      "file": "lib/net-scope.js",
+      "name": "ownServerNote",
+      "line": 410,
+      "start": 15458,
+      "end": 15508,
+      "kind": "function"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "injectionPolicy",
+      "line": 11,
+      "start": 432,
+      "end": 1031,
+      "kind": "function"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "withoutPurgeInjection",
+      "line": 30,
+      "start": 1479,
+      "end": 2889,
+      "kind": "function"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "rememberPromptRewrite",
+      "line": 56,
+      "start": 2893,
+      "end": 3214,
+      "kind": "function"
+    },
+    {
+      "file": "lib/preset-injection.js",
+      "name": "requestInjectionContext",
+      "line": 66,
+      "start": 3375,
+      "end": 3925,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "ROLE_TAG",
+      "line": 14,
+      "start": 371,
+      "end": 459,
+      "kind": "variable",
+      "status": "exact expression retained in raw; requires runtime inputs"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "evictRoleBySessionIfOverflow",
+      "line": 22,
+      "start": 664,
+      "end": 903,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "parseRedteamRole",
+      "line": 32,
+      "start": 907,
+      "end": 1054,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "noteClaimedMessage",
+      "line": 58,
+      "start": 1935,
+      "end": 2208,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "roleFromSessionEvents",
+      "line": 67,
+      "start": 2212,
+      "end": 2813,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "readRoleFile",
+      "line": 105,
+      "start": 3364,
+      "end": 3729,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "resolveSubagentRoleText",
+      "line": 117,
+      "start": 3733,
+      "end": 4348,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/role-section.js",
+      "name": "installSubagentRoleCapture",
+      "line": 137,
+      "start": 4352,
+      "end": 5792,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/score-rules.js",
+      "name": "DEFAULT_SCORE_POINTS",
+      "line": 769,
+      "start": 29559,
+      "end": 37974,
+      "kind": "variable",
+      "status": "exact expression retained in raw; requires runtime inputs"
+    },
+    {
+      "file": "lib/redteam/store-core.js",
+      "name": "promptHash",
+      "line": 391,
+      "start": 14649,
+      "end": 14806,
+      "kind": "function"
+    },
+    {
+      "file": "lib/redteam/tools.js",
+      "name": "ROLE_HINT",
+      "line": 272,
+      "start": 10517,
+      "end": 10612,
+      "kind": "variable",
+      "status": "exact expression retained in raw; requires runtime inputs"
+    },
+    {
+      "file": "lib/refusal-retry.js",
+      "name": "withNudge",
+      "line": 48,
+      "start": 1857,
+      "end": 2519,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rewind.js",
+      "name": "isRoundPromptEvent",
+      "line": 84,
+      "start": 2258,
+      "end": 2752,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "resolveInjectText",
+      "line": 243,
+      "start": 7300,
+      "end": 8050,
+      "kind": "function"
+    },
+    {
+      "file": "lib/rules.js",
+      "name": "readSelectedCwdInject",
+      "line": 538,
+      "start": 16910,
+      "end": 17764,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "buildInstructionHint",
+      "line": 74,
+      "start": 2789,
+      "end": 3533,
+      "kind": "function"
+    },
+    {
+      "file": "presets/redteam/anchor-gate.mjs",
+      "name": "instructionHintMessages",
+      "line": 92,
+      "start": 3537,
+      "end": 4039,
+      "kind": "function"
+    }
+  ],
+  "parseExceptions": []
+}

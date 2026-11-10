@@ -1,0 +1,7 @@
+{
+  "source": "skills/redteam/passive-recon.md",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "bytes": 736,
+  "sha256": "b0f76bf87d7f6edfe6752026683c87ac278581c2f48bff9e5c0c0e5c13648f5b",
+  "text": "---\r\nname: passive-recon\r\ndescription: 被动信息收集：不接触目标主机，仅使用公开数据源\r\nwhenToUse: 需要在不暴露自身的情况下收集目标资产情报时\r\nrole: recon\r\nenabled: true\r\n---\r\n\r\n\r\n\r\n## 数据源\r\n- 证书透明日志（crt.sh）：`curl -s \"https://crt.sh/?q=%25.<domain>&output=json\" | jq -r '.[].name_value' | sort -u`\r\n- DNS 记录：`dig +short <domain> A/AAAA/MX/TXT/NS`\r\n- whois：注册人、网段、ASN\r\n- 搜索引擎与代码托管平台：泄露的子域、密钥、内部地址\r\n- 公开端口测绘数据（Shodan/Censys/FOFA 等，需授权 API）\r\n\r\n## 落库要求\r\n每条发现调用 redteam_asset_upsert，provenance 固定为 `passive`，tool 记录具体数据源。\r\n\r\n\r\n"
+}

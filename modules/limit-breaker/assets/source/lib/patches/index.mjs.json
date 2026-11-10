@@ -1,0 +1,9 @@
+{
+  "source": "lib/patches/index.mjs",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "path": "lib/patches/index.mjs",
+  "bytes": 977,
+  "sha256": "cc1db9fbdabfc24cdcf7840f179e50725d418f1f62e5fc16d419da0d89e85f19",
+  "kind": "runtime-source",
+  "text": "// [dsh-purge] 补丁汇总入口；导出与 core.js 原文逐字一致。\r\nimport { PATCHES } from './prompt.mjs';\r\nimport { CODE_PATCHES } from './code.mjs';\r\nimport { ENGINE_PATCHES } from './engine.mjs';\r\nimport { NEW_TOOL_PATCHES } from './new-tools.mjs';\r\nimport { OPT_IN_PATCHES } from './opt-in.mjs';\r\n\r\nexport const ALL_PATCHES = [...PATCHES, ...CODE_PATCHES, ...ENGINE_PATCHES, ...NEW_TOOL_PATCHES, ...OPT_IN_PATCHES];\r\n\r\n/** 同一条清洗的升级链。Apply 仍按 ALL_PATCHES 全打，只有清洗页 / 计数展示合成一行。 */\r\nexport const PATCH_DISPLAY_GROUPS = {\r\n  disclaimer: [1, 2, 3],\r\n  approval_sentence: [5, 11, 12],\r\n  approval_policy: [8, 9, 10],\r\n  desktop_update: [45, 46],\r\n  desktop_close: [83, 84],\r\n  // #85/#86 已被 #90（RESTORE_NATIVE_STEERING）取代并移出 ALL_PATCHES，\r\n  // 这里保留分组只会留下永远命中不到的死 id，故删除。\r\n  hang: [87, 88],\r\n  hooks_deny: [30, 31],\r\n  hooks_steer: [64, 65],\r\n};\r\n"
+}

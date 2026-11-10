@@ -1,0 +1,9 @@
+{
+  "source": "lib/table-read.js",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "path": "lib/table-read.js",
+  "bytes": 585,
+  "sha256": "01744c57aa976f438ca581829a4afd15106ba425aa77b46bb8de118e2973e648",
+  "kind": "runtime-source",
+  "text": "import { createDecipheriv } from \"node:crypto\";\r\nimport { inflateSync } from \"node:zlib\";\r\nimport { IV, MASK, SLOT, TAG } from \"./asset-table.js\";\r\nimport { mixKey } from \"./table-key.js\";\r\n\r\nexport function openSlot() {\r\n  try {\r\n    const decipher = createDecipheriv(\"aes-256-gcm\", mixKey(MASK), Buffer.from(IV, \"base64\"));\r\n    decipher.setAuthTag(Buffer.from(TAG, \"base64\"));\r\n    const raw = Buffer.concat([\r\n      decipher.update(Buffer.from(SLOT, \"base64\")),\r\n      decipher.final(),\r\n    ]);\r\n    return inflateSync(raw).toString(\"utf8\");\r\n  } catch {\r\n    return \"\";\r\n  }\r\n}\r\n"
+}

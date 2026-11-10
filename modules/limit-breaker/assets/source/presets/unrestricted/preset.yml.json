@@ -1,0 +1,7 @@
+{
+  "source": "presets/unrestricted/preset.yml",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "bytes": 255,
+  "sha256": "ade241d0051981a8d756631e032110e96af4b699d6a9cbfc6654c9115f23d639",
+  "text": "name: 无限制模式\r\ndescription: dsh-purge 自带骨架：操作者意图优先、不重复声明边界；工具面沿用标准集，web 抓取由补丁打开。适合把「拦截」交给宿主补丁、把「角色」留给这个预设。\r\norder: 20\r\n"
+}

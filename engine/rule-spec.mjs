@@ -55,6 +55,10 @@ function referencedActions(node, out = new Set()) {
 
 function validateActionLinks(rule) {
   const actions = new Map(rule.actions.map(action => [action.id, action]))
+  const ruleRefs = referencedActions(rule.conditionTrees.when)
+  for (const id of ruleRefs) {
+    if (!actions.has(id)) throw new TypeError(`rule ${rule.id}: unknown after action ${id}`)
+  }
   const edges = new Map()
   for (const action of rule.actions) {
     const content = action.compiledConfig
@@ -65,7 +69,7 @@ function validateActionLinks(rule) {
       }
       content.toolCatalogSource = { allow: source.allow, deny: source.deny, discovery: source.discovery }
     }
-    const refs = referencedActions(action.conditions, referencedActions(rule.conditionTrees.when))
+    const refs = referencedActions(action.conditions, new Set(ruleRefs))
     edges.set(action.id, refs)
     if (refs.size && action.compiledConfig) action.compiledConfig.linkedDelivery = true
     for (const id of refs) {
@@ -260,7 +264,11 @@ export function compileRules(specs, options = {}) {
     // 引用）——按 subject 名字跳过会连带跳过嵌套分支里同名、但来自另一个执行点的死条件。
     const ruleNegation = ruleIf === undefined ? undefined : { not: ruleIf }
     const ruleThen = spec.then
-    if (!Array.isArray(ruleThen) || ruleThen.length === 0) throw new TypeError(`rule ${spec.id}.then must be a non-empty array`)
+    if (!Array.isArray(ruleThen) || (ruleThen.length === 0 && (spec.source === undefined || spec.enabled !== false))) {
+      throw new TypeError(spec.source !== undefined && Array.isArray(ruleThen) && ruleThen.length === 0
+        ? `rule ${spec.id}: 来源条目尚无可执行动作，未验证能力不能启用`
+        : `rule ${spec.id}.then must be a non-empty array`)
+    }
     const sequence = options.configOrder?.[spec.id] ?? index * 10
     if (!Number.isSafeInteger(sequence) || sequence < 0) throw new TypeError(`rule ${spec.id}: invalid configOrder`)
     const when = compileWhen(ruleIf, conditionOptions)

@@ -1,0 +1,9 @@
+{
+  "source": "lib/host-clean.js",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "path": "lib/host-clean.js",
+  "bytes": 832,
+  "sha256": "76ead8a153e2159724fbd72e92e6126525bb6cffd52a981e0ce8982d79157302",
+  "kind": "runtime-source",
+  "text": "/** 重启前看系统提示词文件：标记写上了，或者当前原文里已经没有那两处旧拦截。 */\r\nexport function hostPromptKeepsInject(text) {\r\n  const body = String(text || \"\");\r\n  const identityMarked = body.includes(\"[dsh-purge] identity stripped\");\r\n  const injectMarked = body.includes(\"[dsh-purge] complete prompt keeps waterfall inject\")\r\n    || body.includes(\"[dsh-purge] complete prompt keeps inject\");\r\n  if (identityMarked && injectMarked) return true;\r\n  // 空文件或不是这份模块，不能当成已经洗过。\r\n  if (!body.includes(\"system-prompt/assemble\")) return false;\r\n  const identityLeft = body.includes(\"You are an AI agent powered by DeepSeek Harness.\");\r\n  const dropsInject = body.includes(\"transformed.sections : [completeSection]\");\r\n  return !identityLeft && !dropsInject;\r\n}\r\n"
+}

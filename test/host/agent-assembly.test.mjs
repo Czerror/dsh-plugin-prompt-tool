@@ -62,6 +62,38 @@ async function liveAssembly(t, enabledModules, options = {}) {
   return { root, runtime, makeAgent, inject, warnings }
 }
 
+test('核心来源正文只按所选普通规则投递精确文本，主子模块停用撤回贡献', async (t) => {
+  const { cloneBuiltinModule } = await import('../../src/host/module-catalog.ts')
+  const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
+  const { readModuleFile } = await import('../../src/host/module-files.ts')
+  const { createHash } = await import('node:crypto')
+  const { tempDir } = await import('../fixtures/host-harness.mjs')
+  const root = tempDir('pt-limit-assembly-')
+  assert.equal(cloneBuiltinModule('limit-breaker', false, root).ok, true)
+  const dir = join(root, 'limit-breaker')
+  const enabled = ['limit-breaker']
+  const h = await liveAssembly(t, () => enabled, { moduleRoot: root })
+  const main = await h.makeAgent('source-main'), child = await h.makeAgent('source-child', 1)
+  const body = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
+  assert.deepEqual(await body(main), ['USER'])
+  assert.deepEqual(await body(child), ['USER'])
+  const snapshot = readModuleRules(dir)
+  editModuleRules(dir, { expectedRevisions: snapshot.revisions, activateRuleId: 'source-default-prompt-inject' })
+  await h.runtime.refresh('limit-breaker')
+  const expected = JSON.parse(readModuleFile(dir, 'assets/prompts/default-prompt-inject.json').content).text
+  for (const agent of [main, child]) {
+    const output = await body(agent)
+    assert.deepEqual(output, ['USER', expected])
+    assert.equal(Buffer.byteLength(output[1]), 25128)
+    assert.equal(createHash('sha256').update(output[1]).digest('hex'), '1757f1774457b448323ba036ec177c3c638d2a6dc97c9aa8ca2a1cc3e07528bc')
+  }
+  enabled.length = 0
+  await h.runtime.refresh()
+  assert.deepEqual(await body(main), ['USER'])
+  assert.deepEqual(await body(child), ['USER'])
+  assert.ok(readModuleRules(dir).rules.find(rule => rule.id === 'source-default-prompt-inject').enabled, '停用模块保留规则选择')
+})
+
 test('官方 assemble 自动采用最新有效本地定义，坏定义保旧并在修复后恢复', async (t) => {
   const id = 'live-system-definition'
   const write = text => writeModuleFixture(id, { modules: ['prompt-config-engine'], promptConfigs: [{ id: 'live-system', layer: 'system-section', text }] })

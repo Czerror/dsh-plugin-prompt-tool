@@ -1,0 +1,7 @@
+{
+  "source": "skills/redteam/asset-correlation.md",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "bytes": 534,
+  "sha256": "c4958b40e581204ed9b487c395f1102bfbd7290ab9029f3d01b0f30530f52391",
+  "text": "---\r\nname: asset-correlation\r\ndescription: 资产关联：域名↔IP↔C 段↔证书↔服务的图谱化\r\nwhenToUse: 信息收集阶段性收口，需要形成资产关系视图时\r\nrole: recon\r\nenabled: true\r\n---\r\n\r\n## 关联规则\r\n- 域名解析 → `resolves` 边（domain → asset）\r\n- C 段归属 → `contains` 边（segment → asset）\r\n- 端口开放 → `exposes` 边（asset → port）\r\n- 证书 SAN 共享 → `shares_cert` 边\r\n\r\n## 落库要求\r\n通过 redteam_asset_link 写入 edge 表；重复关系幂等。\r\n"
+}

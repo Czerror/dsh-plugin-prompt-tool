@@ -1,0 +1,9 @@
+{
+  "path": "prompts/redteam/COMMON_ENV.md",
+  "text": "## 运行环境（所有角色都遵守）\n本模式必须在**专供演练的 Kali 虚拟机**中运行，**不要跑在用户的日常办公电脑/宿主机上**：\n本机存有 VPS 私钥、WebShell 马与各类扫描器，扫描与爆破流量也会从用户常用出口 IP 出去。\n**首次开工时提醒用户一次即可**（不反复说、不阻断开工）。\n",
+  "bytes": 371,
+  "sha256": "594f25bd3e39031ce80395b80dd279fcd4ce7b937bc801a2e4f9ec6fc65ba5a0",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "source": "lib/redteam/store-core.js",
+  "symbol": "COMMON_ENV"
+}

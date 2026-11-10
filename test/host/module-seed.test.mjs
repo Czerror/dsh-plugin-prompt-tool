@@ -14,16 +14,17 @@ const { packageModulesDir } = await import('../../src/host/module-dirs.ts')
 
 const PRESETS_DIR = join(storageRootOf(home), 'modules')
 
-test('核心破限模块只补缺失定义，两条身份规则默认关闭且不启用模块', async () => {
+test('核心破限模块只补缺失定义，身份规则默认关闭且不启用模块', async () => {
   const root = tempDir('pt-limit-breaker-seed-')
   assert.ok(ensureModuleSeed(root).created.includes('limit-breaker'))
   const definition = join(root, 'limit-breaker', 'module.yml')
   const spec = parseYaml(readFileSync(definition, 'utf8'))
   assert.equal(spec.name, '核心破限模块')
-  assert.deepEqual(spec.rules.map(rule => [rule.id, rule.enabled]), [['purge-4', false], ['purge-25', false]])
+  const identity = rules => rules.filter(rule => ['purge-4', 'purge-25'].includes(rule.id))
+  assert.deepEqual(identity(spec.rules).map(rule => [rule.id, rule.enabled]), [['purge-4', false], ['purge-25', false]])
   const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
   const snapshot = readModuleRules(join(root, 'limit-breaker'))
-  assert.deepEqual(snapshot.rules.map(rule => rule.source), [
+  assert.deepEqual(identity(snapshot.rules).map(rule => rule.source), [
     { format: 'dsh-purge', id: 4, name: 'SYSTEM_PROMPT_PERSONA', path: 'lib/patches/prompt.mjs', commit: '126caa2c99297223a7e0e87e604aecfc802f396e' },
     { format: 'dsh-purge', id: 25, name: 'HARNESS_IDENTITY_STRIP', path: 'lib/patches/new-tools.mjs', commit: '126caa2c99297223a7e0e87e604aecfc802f396e' },
   ])

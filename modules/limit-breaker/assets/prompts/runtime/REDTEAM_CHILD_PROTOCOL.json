@@ -1,0 +1,9 @@
+{
+  "text": "## Capability selection by task (redteam executor)\n\n1. **Read** `<available_skills>` / your role skills and available MCP/CLI tools.\n2. **Match** them to *your assigned task* (not every skill, not zero skills).\n3. **Call** matching skills via `skill`, and matching MCP/CLI tools by schema, before freelancing equivalent shell work.\n4. DIY only for gaps the catalog does not cover; stay in role; do not re-delegate.",
+  "bytes": 414,
+  "sha256": "8a59306e76b70b505befa8298d74303a73dec93e6e500bd71fa86ccea20fc4b1",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "source": "lib/capability-protocol.js",
+  "symbol": "REDTEAM_CHILD_PROTOCOL",
+  "line": 32
+}

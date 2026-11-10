@@ -1,0 +1,7 @@
+{
+  "source": "presets/redteam/preset.yml",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "bytes": 319,
+  "sha256": "269e085ef71774f94c8817aaf36d77d9f36ffa619ae635a322f818171e1539b0",
+  "text": "name: 红队模式\r\ndescription: 攻防演练模式：发送一个靶标单位名称即可拉起红队智能体。内置主会话 + 信息收集/资产梳理/漏洞发现/漏洞利用/内网渗透五个执行角色（并发最多 3 个），资产测绘落入 SQLite 资产库，技能库可自行配置。\r\norder: 10\r\n"
+}

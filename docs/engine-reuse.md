@@ -154,7 +154,7 @@ runtime 事实授权按真实 Agent 的有效规则来源校验；persona 动作
 
 ## 规则条件与动作边界
 
-规则含 `id/name/enabled/layer/group/exclusive/if/then/else`。动作有稳定 id 和 kind；then/else 与嵌套分支内的所有动作 id 在同一规则中唯一。读取投影可生成配置身份，编辑映射保留原始条件和载荷，不把编译默认值写回。
+规则含 `id/name/enabled/layer/group/exclusive/if/then/else`，可附有界 `source` 来源事实。动作有稳定 id 和 kind；then/else 与嵌套分支内的所有动作 id 在同一规则中唯一。读取投影可生成配置身份，编辑映射保留原始条件和载荷，不把编译默认值写回。仅合法 `source` 且显式 `enabled:false` 的来源目录允许空 `then`，不注册动作；启用时明确拒绝未验证能力，其余空规则仍拒绝。
 
 `if` 是单键谓词或 all/any/not/notAny 组合。必要事实缺失为 UNAVAILABLE，不会因 not 变成 true。`variable` 谓词写成 `{ key, op, value, scope }`：op ∈ eq/ne/in/gt/gte/lt/lte/present/absent（缺省 eq），scope ∈ effective/session/module/global/runtime（缺省 effective）；effective 按会话→模块→全局，显式 session 条件只看会话域。`in` 的 value 是非空字符串数组，其余比较 op 的 value 是字符串，`present`/`absent` 不收 value；普通键缺失或非数字比较为假；runtime 事实缺失、读取失败、变量关闭或适配器未绑定为 UNAVAILABLE。适配器按真实 Agent 与来源模块绑定，不能由普通变量伪造 runtime。规则级 else 要有同一规则的 if；事实未知时可能两支都不执行。分支节点不写 kind，不能把 if/then/else 塞进动作对象。
 

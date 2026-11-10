@@ -1,0 +1,9 @@
+{
+  "source": "lib/table-key.js",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "path": "lib/table-key.js",
+  "bytes": 942,
+  "sha256": "b0de48b5f24731c9bd26c267b072d69a29a6e2e835036114ad277715c3f2f81c",
+  "kind": "runtime-source",
+  "text": "import { createCipheriv, createHash, randomBytes } from \"node:crypto\";\r\nimport { deflateSync } from \"node:zlib\";\r\n\r\nconst MIX = Object.freeze([\r\n  \"cordis.slot.v2\",\r\n  [100, 115, 104, 45, 112, 117, 114, 103, 101].map((n) => String.fromCharCode(n)).join(\"\"),\r\n  \"surface:web|desktop\",\r\n  \"ov.table.1\",\r\n]);\r\n\r\nexport function mixKey(extra) {\r\n  return createHash(\"sha256\").update(`${MIX.join(\"\\x1e\")}\\x1e${String(extra || \"\")}`).digest();\r\n}\r\n\r\nexport function sealSlot(text) {\r\n  const mask = randomBytes(16).toString(\"base64\");\r\n  const iv = randomBytes(12);\r\n  const cipher = createCipheriv(\"aes-256-gcm\", mixKey(mask), iv);\r\n  const packed = deflateSync(Buffer.from(String(text ?? \"\"), \"utf8\"), { level: 9 });\r\n  const body = Buffer.concat([cipher.update(packed), cipher.final()]);\r\n  return {\r\n    SLOT: body.toString(\"base64\"),\r\n    MASK: mask,\r\n    TAG: cipher.getAuthTag().toString(\"base64\"),\r\n    IV: iv.toString(\"base64\"),\r\n  };\r\n}\r\n"
+}

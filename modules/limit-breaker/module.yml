@@ -1,13 +1,20 @@
 id: limit-breaker
 name: 核心破限模块
 version: 1.0.0
-description: 按规则接管官方默认身份；各条规则默认关闭，不改变工具、环境和功能正文。
-modules: [rule-engine]
+description: 66项核心来源逐条追溯；未验证条目不能启用，完整正文按普通规则选用且默认关闭。
+modules: [ rule-engine ]
 rules:
   - id: purge-4
     name: 去掉预设默认身份句（P4 · SYSTEM_PROMPT_PERSONA）
     enabled: false
-    source: { format: dsh-purge, id: 4, name: SYSTEM_PROMPT_PERSONA, path: lib/patches/prompt.mjs, commit: 126caa2c99297223a7e0e87e604aecfc802f396e }
+    source:
+      {
+        format: dsh-purge,
+        id: 4,
+        name: SYSTEM_PROMPT_PERSONA,
+        path: lib/patches/prompt.mjs,
+        commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+      }
     then:
       - id: identity
         kind: persona
@@ -15,8 +22,835 @@ rules:
   - id: purge-25
     name: 去掉 Harness 默认身份句（P25 · HARNESS_IDENTITY_STRIP）
     enabled: false
-    source: { format: dsh-purge, id: 25, name: HARNESS_IDENTITY_STRIP, path: lib/patches/new-tools.mjs, commit: 126caa2c99297223a7e0e87e604aecfc802f396e }
+    source:
+      {
+        format: dsh-purge,
+        id: 25,
+        name: HARNESS_IDENTITY_STRIP,
+        path: lib/patches/new-tools.mjs,
+        commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+      }
     then:
       - id: identity
         kind: persona
         stripDefaultIdentity: harness
+  - id: purge-1
+    name: 工作区通用导语（P1 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 1
+      name: WORKSPACE_CONTEXT_INTRO
+      path: lib/patches/prompt.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-43
+    name: Web 四预设身份（P43 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 43
+      name: WEB_PRESET_IDENTITY_STRIP
+      path: lib/patches/prompt.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-76
+    name: 自建 unrestricted 身份（P76 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 76
+      name: PRESET_UNRESTRICTED_IDENTITY_STRIP
+      path: lib/patches/prompt.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-70
+    name: minimal 网络说明（P70 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 70
+      name: PRESET_SHELL_NETWORK
+      path: lib/patches/prompt.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-73
+    name: minimal 镜像说明（P73 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 73
+      name: PRESET_BASH_MIRROR_LINE
+      path: lib/patches/prompt.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-71
+    name: 梁神默认身份（P71 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 71
+      name: LIANGSHEN_IDENTITY_LINE
+      path: lib/patches/prompt.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-5
+    name: never 审批提示（P5 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 5
+      name: APPROVAL_NEVER_SENTENCE
+      path: lib/patches/prompt.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-6
+    name: 文件写入沙箱判据（P6 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 6
+      name: SANDBOX_DENY_FILE_WRITE
+      path: lib/patches/code.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-7
+    name: 沙箱软默认（P7 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 7
+      name: SANDBOX_MODE_DEFAULT
+      path: lib/patches/code.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-8
+    name: 审批组合默认（P8 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 8
+      name: APPROVAL_POLICY_DEFAULT
+      path: lib/patches/code.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-9
+    name: 审批门自动决定（P9 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 9
+      name: APPROVAL_AUTO_GRANT
+      path: lib/patches/engine.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-10
+    name: 审批配置软默认（P10 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 10
+      name: APPROVAL_CONFIG_DEFAULT_NEVER
+      path: lib/patches/engine.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-11
+    name: never 分支文本（P11 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 11
+      name: APPROVAL_NEVER_SENTENCE_BYPASS
+      path: lib/patches/engine.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-12
+    name: ask 分支文本（P12 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 12
+      name: APPROVAL_ASK_SENTENCE_BYPASS
+      path: lib/patches/engine.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-13
+    name: 升级阶梯判据（P13 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 13
+      name: ESCALATION_WIDENING_EXEMPT
+      path: lib/patches/engine.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-14
+    name: 升级授信决定（P14 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 14
+      name: ESCALATION_GRANT_UNCONDITIONAL
+      path: lib/patches/engine.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-15
+    name: 沙箱 confine 透传（P15 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 15
+      name: SANDBOX_CONFINE_PASSTHROUGH
+      path: lib/patches/engine.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-16
+    name: 文件系统围栏（P16 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 16
+      name: FS_FENCE_DISABLED
+      path: lib/patches/engine.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-93
+    name: 沙箱策略品牌文本（P93 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 93
+      name: SANDBOX_POLICY_BRAND_NEUTRAL
+      path: lib/patches/engine.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-94
+    name: 技能徽章描述（P94 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 94
+      name: SKILL_BADGE_DESCRIPTION_NEUTRAL
+      path: lib/patches/engine.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-17
+    name: 文件观察意图（P17 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 17
+      name: FS_OBSERVATION_INTENT_FREE
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-22
+    name: 文件读取上限（P22 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 22
+      name: READ_CAPS_RAISED
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-23
+    name: 子代理默认深度（P23 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 23
+      name: SUBAGENT_MAXDEPTH_RAISED
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-24
+    name: 已有 web 工具 fetch（P24 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 24
+      name: PRESET_FETCH_ENABLED
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-26
+    name: minimal 身份及注入（P26 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 26
+      name: MINIMAL_PERSONA_PURGE
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-28
+    name: 梁神首阶段注入（P28 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 28
+      name: LIANGSHEN_PHASE1_KEEP_INJECT
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-32
+    name: Web 上下文身份（P32 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 32
+      name: WEB_SURFACE_IDENTITY_NEUTRAL
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-29
+    name: web 结果包装（P29 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 29
+      name: TOOL_WEB_UNTRUSTED_NEUTRAL
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-30
+    name: Claude hooks 决策（P30 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 30
+      name: HOOKS_CLAUDE_DENY_ALLOW
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-31
+    name: Codex hooks 决策（P31 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 31
+      name: HOOKS_CODEX_DENY_ALLOW
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-33
+    name: shell 拒绝描述（P33 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 33
+      name: TOOL_SHELL_DENIAL_PROMPT
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-34
+    name: 升级 hint（P34 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 34
+      name: SANDBOX_HINT_NEUTRAL
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-35
+    name: 升级拒绝结果处理（P35 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 35
+      name: ESCALATION_NEVER_REJECT
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-36
+    name: fs 升级字段描述（P36 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 36
+      name: TOOL_FS_ESCALATION_SCHEMA
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-37
+    name: 子代理范围锁提示（P37 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 37
+      name: SUBAGENT_SCOPE_LOCK_NEUTRAL
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-40
+    name: complete 保留注入（P40 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 40
+      name: COMPLETE_PROMPT_KEEP_INJECT
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-47
+    name: OAuth 首段身份（P47 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 47
+      name: ANTHROPIC_OAUTH_NO_CLAUDE_IDENTITY
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-48
+    name: shell 删除移动说明（P48 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 48
+      name: TOOL_SHELL_DELETE_MOVE_NEUTRAL
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-51
+    name: 新会话继承部署模式（P51 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 51
+      name: FRESH_SESSION_FULL_ACCESS
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-53
+    name: Web 功能禁止句（P53 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 53
+      name: WEB_SURFACE_PROHIBITION
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-54
+    name: 交付物工具提示（P54 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 54
+      name: DELIVERABLE_DO_NOT
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-55
+    name: 每步当前系统正文（P55 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 55
+      name: SYSTEM_PROMPT_REPLACE_HEAD
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-74
+    name: 首发前准备正文（P74 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 74
+      name: ASSEMBLE_BEFORE_PRESTEP
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-66
+    name: 缺系统段正文容错（P66 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 66
+      name: SYSTEM_PROMPT_RENDER_GUARD
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-67
+    name: 缺 messages 容错（P67 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 67
+      name: AGENT_LOOP_MESSAGES_GUARD
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-68
+    name: 缺 content 与派生容错（P68 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 68
+      name: SYSTEM_NODES_CONTENT_GUARD
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-72
+    name: Messages 当前 system（P72 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 72
+      name: MESSAGES_SYSTEM_CURRENT
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-56
+    name: 回退裁切可见范围（P56 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 56
+      name: REWIND_HIDE_CUT_ONLY
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-77
+    name: 回退标记即时投影（P77 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 77
+      name: REWIND_DROP_SENT_ON_APPEND
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-75
+    name: 回退待办状态（P75 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 75
+      name: REWIND_RESET_TODOS
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-57
+    name: 系统消息角色映射（P57 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 57
+      name: DEEPSEEK_SYSTEM_ROLE
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-58
+    name: 回退空标记过滤（P58 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 58
+      name: REWIND_SKIP_DERIVE
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-59
+    name: Auto Review 透传（P59 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 59
+      name: OFFICIAL_AUTO_REVIEW_PASSTHROUGH
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-60
+    name: PTC 升级描述（P60 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 60
+      name: OFFICIAL_RUN_CODE_APPROVAL_NEUTRAL
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-61
+    name: 沙箱策略说明（P61 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 61
+      name: OFFICIAL_SANDBOX_POLICY_NEUTRAL
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-62
+    name: 工具审批结果直通（P62 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 62
+      name: OFFICIAL_TOOL_ASK_FAILOPEN
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-63
+    name: 计划模式文本（P63 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 63
+      name: OFFICIAL_PLAN_MODE_NEUTRAL
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-64
+    name: Stop 旧旁路迁移对照（P64 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 64
+      name: HOOKS_STOP_STEER_NEUTRAL
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-65
+    name: pre-step 旧旁路迁移对照（P65 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 65
+      name: HOOKS_PRESTEP_REJECT_NEUTRAL
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-87
+    name: 正文完整性与换行（P87 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 87
+      name: HUNG_PROMPT_LF_NEEDLE
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-88
+    name: 正文头尾完整性（P88 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 88
+      name: HUNG_PROMPT_STRICT_NEEDLE
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-89
+    name: 提问无限等待上限（P89 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 89
+      name: ASK_USER_WAIT_CAPPED
+      path: lib/patches/new-tools.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-18
+    name: 重复调用提醒（P18 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 18
+      name: REPEAT_TOOL_REMINDER_DISABLED
+      path: lib/patches/opt-in.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: purge-19
+    name: 工具结果修剪（P19 · 未验证）
+    enabled: false
+    source:
+      format: dsh-purge
+      id: 19
+      name: TOOL_RESULT_PRUNER_DISABLED
+      path: lib/patches/opt-in.mjs
+      commit: 126caa2c99297223a7e0e87e604aecfc802f396e
+    then: []
+  - id: source-default-prompt-inject
+    name: 来源正文：默认完整正文（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/default-prompt-inject.json
+  - id: source-redteam-plan
+    name: 来源正文：plan（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/plan.json
+  - id: source-redteam-recon
+    name: 来源正文：recon（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/recon.json
+  - id: source-redteam-assess
+    name: 来源正文：assess（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/assess.json
+  - id: source-redteam-vuln-scan
+    name: 来源正文：vuln-scan（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/vuln-scan.json
+  - id: source-redteam-exploit
+    name: 来源正文：exploit（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/exploit.json
+  - id: source-redteam-internal
+    name: 来源正文：internal（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/internal.json
+  - id: source-redteam-common_env
+    name: 来源正文：COMMON_ENV（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/COMMON_ENV.json
+  - id: source-redteam-common_bind
+    name: 来源正文：COMMON_BIND（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/COMMON_BIND.json
+  - id: source-redteam-common_score_rules
+    name: 来源正文：COMMON_SCORE_RULES（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/COMMON_SCORE_RULES.json
+  - id: source-redteam-common_db_lookup
+    name: 来源正文：COMMON_DB_LOOKUP（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/COMMON_DB_LOOKUP.json
+  - id: source-redteam-common_evidence
+    name: 来源正文：COMMON_EVIDENCE（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/COMMON_EVIDENCE.json
+  - id: source-redteam-common_handoff
+    name: 来源正文：COMMON_HANDOFF（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/redteam/COMMON_HANDOFF.json
+  - id: source-runtime-boost_text
+    name: 来源正文：BOOST_TEXT（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/runtime/BOOST_TEXT.json
+  - id: source-runtime-official_protocol
+    name: 来源正文：OFFICIAL_PROTOCOL（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/runtime/OFFICIAL_PROTOCOL.json
+  - id: source-runtime-redteam_lead_protocol
+    name: 来源正文：REDTEAM_LEAD_PROTOCOL（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/runtime/REDTEAM_LEAD_PROTOCOL.json
+  - id: source-runtime-redteam_child_protocol
+    name: 来源正文：REDTEAM_CHILD_PROTOCOL（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/runtime/REDTEAM_CHILD_PROTOCOL.json
+  - id: source-runtime-retry_nudge
+    name: 来源正文：RETRY_NUDGE（仅文本，依赖工具未验证）
+    enabled: false
+    then:
+      - id: text
+        kind: inject-text
+        config:
+          layer: pre-step
+          strategy: static
+          templateFile: ./assets/prompts/runtime/RETRY_NUDGE.json

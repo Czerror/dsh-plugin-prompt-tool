@@ -1,0 +1,695 @@
+{
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "version": "1.6.86",
+  "note": "来源事实不是实现率；核心66项、原生7项、外围13项。",
+  "entries": [
+    {
+      "id": 1,
+      "name": "WORKSPACE_CONTEXT_INTRO",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-1"
+    },
+    {
+      "id": 2,
+      "name": "REPLACEMENT_WORKSPACE_CONTEXT_INTRO",
+      "category": "native-restore",
+      "sourceCategory": "A；还原官方；常规",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 3,
+      "name": "SCOPE_INTRO",
+      "category": "native-restore",
+      "sourceCategory": "A；还原官方；常规",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 4,
+      "name": "SYSTEM_PROMPT_PERSONA",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-4"
+    },
+    {
+      "id": 43,
+      "name": "WEB_PRESET_IDENTITY_STRIP",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-43"
+    },
+    {
+      "id": 76,
+      "name": "PRESET_UNRESTRICTED_IDENTITY_STRIP",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-76"
+    },
+    {
+      "id": 70,
+      "name": "PRESET_SHELL_NETWORK",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-70"
+    },
+    {
+      "id": 73,
+      "name": "PRESET_BASH_MIRROR_LINE",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-73"
+    },
+    {
+      "id": 71,
+      "name": "LIANGSHEN_IDENTITY_LINE",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-71"
+    },
+    {
+      "id": 5,
+      "name": "APPROVAL_NEVER_SENTENCE",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-5"
+    },
+    {
+      "id": 6,
+      "name": "SANDBOX_DENY_FILE_WRITE",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-6"
+    },
+    {
+      "id": 7,
+      "name": "SANDBOX_MODE_DEFAULT",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-7"
+    },
+    {
+      "id": 8,
+      "name": "APPROVAL_POLICY_DEFAULT",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-8"
+    },
+    {
+      "id": 9,
+      "name": "APPROVAL_AUTO_GRANT",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-9"
+    },
+    {
+      "id": 10,
+      "name": "APPROVAL_CONFIG_DEFAULT_NEVER",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-10"
+    },
+    {
+      "id": 11,
+      "name": "APPROVAL_NEVER_SENTENCE_BYPASS",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-11"
+    },
+    {
+      "id": 12,
+      "name": "APPROVAL_ASK_SENTENCE_BYPASS",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-12"
+    },
+    {
+      "id": 13,
+      "name": "ESCALATION_WIDENING_EXEMPT",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-13"
+    },
+    {
+      "id": 14,
+      "name": "ESCALATION_GRANT_UNCONDITIONAL",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-14"
+    },
+    {
+      "id": 15,
+      "name": "SANDBOX_CONFINE_PASSTHROUGH",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-15"
+    },
+    {
+      "id": 16,
+      "name": "FS_FENCE_DISABLED",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-16"
+    },
+    {
+      "id": 91,
+      "name": "BROWSER_COOKIE_NAME_IGNORE_PORT",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 92,
+      "name": "HOST_MAX_HTTP_HEADER_SIZE",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 93,
+      "name": "SANDBOX_POLICY_BRAND_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-93"
+    },
+    {
+      "id": 94,
+      "name": "SKILL_BADGE_DESCRIPTION_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-94"
+    },
+    {
+      "id": 17,
+      "name": "FS_OBSERVATION_INTENT_FREE",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-17"
+    },
+    {
+      "id": 21,
+      "name": "BASH_TIMEOUT_RESTORE",
+      "category": "native-restore",
+      "sourceCategory": "B；还原官方；常规",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 22,
+      "name": "READ_CAPS_RAISED",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-22"
+    },
+    {
+      "id": 23,
+      "name": "SUBAGENT_MAXDEPTH_RAISED",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-23"
+    },
+    {
+      "id": 24,
+      "name": "PRESET_FETCH_ENABLED",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-24"
+    },
+    {
+      "id": 25,
+      "name": "HARNESS_IDENTITY_STRIP",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-25"
+    },
+    {
+      "id": 26,
+      "name": "MINIMAL_PERSONA_PURGE",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-26"
+    },
+    {
+      "id": 80,
+      "name": "MINIMAL_OFFICIAL_TOOLSET",
+      "category": "native-restore",
+      "sourceCategory": "B；还原官方；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 28,
+      "name": "LIANGSHEN_PHASE1_KEEP_INJECT",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-28"
+    },
+    {
+      "id": 32,
+      "name": "WEB_SURFACE_IDENTITY_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-32"
+    },
+    {
+      "id": 29,
+      "name": "TOOL_WEB_UNTRUSTED_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-29"
+    },
+    {
+      "id": 30,
+      "name": "HOOKS_CLAUDE_DENY_ALLOW",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-30"
+    },
+    {
+      "id": 31,
+      "name": "HOOKS_CODEX_DENY_ALLOW",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-31"
+    },
+    {
+      "id": 33,
+      "name": "TOOL_SHELL_DENIAL_PROMPT",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-33"
+    },
+    {
+      "id": 34,
+      "name": "SANDBOX_HINT_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-34"
+    },
+    {
+      "id": 35,
+      "name": "ESCALATION_NEVER_REJECT",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-35"
+    },
+    {
+      "id": 36,
+      "name": "TOOL_FS_ESCALATION_SCHEMA",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-36"
+    },
+    {
+      "id": 37,
+      "name": "SUBAGENT_SCOPE_LOCK_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-37"
+    },
+    {
+      "id": 38,
+      "name": "PERSONA_TEXT_PREFIX_ALIAS",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 39,
+      "name": "SESSION_V0_PLUGIN_SUMMARY_ALIAS",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 40,
+      "name": "COMPLETE_PROMPT_KEEP_INJECT",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-40"
+    },
+    {
+      "id": 42,
+      "name": "SETTINGS_LEGACY_API",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 45,
+      "name": "OFFICIAL_DESKTOP_UPDATE_HANDOFF",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 46,
+      "name": "OFFICIAL_DESKTOP_UPDATE_ASCII",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 47,
+      "name": "ANTHROPIC_OAUTH_NO_CLAUDE_IDENTITY",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-47"
+    },
+    {
+      "id": 48,
+      "name": "TOOL_SHELL_DELETE_MOVE_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-48"
+    },
+    {
+      "id": 49,
+      "name": "ANTHROPIC_OAUTH_CLI_NEUTRAL",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 50,
+      "name": "SESSION_REFERENCE_FRAMING_NEUTRAL",
+      "category": "native-restore",
+      "sourceCategory": "A；还原官方；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 51,
+      "name": "FRESH_SESSION_FULL_ACCESS",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-51"
+    },
+    {
+      "id": 52,
+      "name": "SESSION_LOG_UPLOAD_DEFAULT_OFF",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 53,
+      "name": "WEB_SURFACE_PROHIBITION",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-53"
+    },
+    {
+      "id": 54,
+      "name": "DELIVERABLE_DO_NOT",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-54"
+    },
+    {
+      "id": 55,
+      "name": "SYSTEM_PROMPT_REPLACE_HEAD",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-55"
+    },
+    {
+      "id": 74,
+      "name": "ASSEMBLE_BEFORE_PRESTEP",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-74"
+    },
+    {
+      "id": 66,
+      "name": "SYSTEM_PROMPT_RENDER_GUARD",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-66"
+    },
+    {
+      "id": 83,
+      "name": "DESKTOP_HOST_CLOSE_NO_FATAL",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 84,
+      "name": "DESKTOP_HOST_CLOSE_CODE0_NO_FAIL",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 67,
+      "name": "AGENT_LOOP_MESSAGES_GUARD",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-67"
+    },
+    {
+      "id": 68,
+      "name": "SYSTEM_NODES_CONTENT_GUARD",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规",
+      "owner": "limit-breaker",
+      "ruleId": "purge-68"
+    },
+    {
+      "id": 69,
+      "name": "MODEL_STREAM_RELEASE",
+      "category": "native-restore",
+      "sourceCategory": "B；还原官方；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 72,
+      "name": "MESSAGES_SYSTEM_CURRENT",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-72"
+    },
+    {
+      "id": 56,
+      "name": "REWIND_HIDE_CUT_ONLY",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-56"
+    },
+    {
+      "id": 77,
+      "name": "REWIND_DROP_SENT_ON_APPEND",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-77"
+    },
+    {
+      "id": 75,
+      "name": "REWIND_RESET_TODOS",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-75"
+    },
+    {
+      "id": 57,
+      "name": "DEEPSEEK_SYSTEM_ROLE",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-57"
+    },
+    {
+      "id": 58,
+      "name": "REWIND_SKIP_DERIVE",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-58"
+    },
+    {
+      "id": 59,
+      "name": "OFFICIAL_AUTO_REVIEW_PASSTHROUGH",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-59"
+    },
+    {
+      "id": 60,
+      "name": "OFFICIAL_RUN_CODE_APPROVAL_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-60"
+    },
+    {
+      "id": 61,
+      "name": "OFFICIAL_SANDBOX_POLICY_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-61"
+    },
+    {
+      "id": 62,
+      "name": "OFFICIAL_TOOL_ASK_FAILOPEN",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-62"
+    },
+    {
+      "id": 63,
+      "name": "OFFICIAL_PLAN_MODE_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "A；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-63"
+    },
+    {
+      "id": 64,
+      "name": "HOOKS_STOP_STEER_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-64"
+    },
+    {
+      "id": 65,
+      "name": "HOOKS_PRESTEP_REJECT_NEUTRAL",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-65"
+    },
+    {
+      "id": 78,
+      "name": "OVERLAY_RESTORE_FROM_BAK",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 82,
+      "name": "DESKTOP_SHELL_PROFILE_FALLBACK",
+      "category": "peripheral-or-compat",
+      "sourceCategory": "C；常规；目标可选",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 87,
+      "name": "HUNG_PROMPT_LF_NEEDLE",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-87"
+    },
+    {
+      "id": 88,
+      "name": "HUNG_PROMPT_STRICT_NEEDLE",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-88"
+    },
+    {
+      "id": 90,
+      "name": "RESTORE_NATIVE_STEERING",
+      "category": "native-restore",
+      "sourceCategory": "B；还原官方；常规",
+      "owner": null,
+      "ruleId": null
+    },
+    {
+      "id": 89,
+      "name": "ASK_USER_WAIT_CAPPED",
+      "category": "core-candidate",
+      "sourceCategory": "B；常规；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-89"
+    },
+    {
+      "id": 18,
+      "name": "REPEAT_TOOL_REMINDER_DISABLED",
+      "category": "core-candidate",
+      "sourceCategory": "B；默认关闭；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-18"
+    },
+    {
+      "id": 19,
+      "name": "TOOL_RESULT_PRUNER_DISABLED",
+      "category": "core-candidate",
+      "sourceCategory": "B；默认关闭；目标可选",
+      "owner": "limit-breaker",
+      "ruleId": "purge-19"
+    }
+  ]
+}

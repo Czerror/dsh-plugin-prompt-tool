@@ -1,11 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { parse } from 'yaml'
 import { withSsr, renderElement, makeTranslate } from './support/ssr-render.mjs'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { createRuleEditor, getRulesDraft } from '../../src/client/data/rule-drafts.ts'
 
 const { ModulePersonaCard, RuleCard } = await withSsr([new URL('../../src/client/features/prompts/ModulePersonaCard.tsx', import.meta.url).href, new URL('../../src/client/features/prompts/RuleCard.tsx', import.meta.url).href])
 const t = makeTranslate()
+
+test('66项核心来源卡显示稳定身份与未验证状态，未实现项没有伪造动作', () => {
+  const spec = parse(readFileSync(new URL('../../modules/limit-breaker/module.yml', import.meta.url), 'utf8'))
+  const rules = spec.rules.filter(rule => rule.id.startsWith('purge-'))
+  assert.equal(rules.length, 66)
+  for (const rule of rules) {
+    const draft = getRulesDraft(createWorkspaceDrafts(), 'limit-breaker')
+    const html = renderElement(RuleCard, { t, entry: { key: rule.id, value: rule }, draft, editor: {}, meta: { layers: [] }, moduleId: 'limit-breaker', expanded: true, expandedRows: new Map(), onToggle: () => {}, onDuplicate: () => {} })
+    assert.ok(html.includes(`aria-label="${t('rules.enable', { name: rule.name || rule.id })}"`))
+    assert.ok(html.includes(t('rules.origin', { ...rule.source, id: String(rule.source.id) })))
+    assert.ok(html.includes(t('rules.intentOff')))
+    assert.ok(html.includes(t('rules.availabilityUnverified')))
+    assert.equal(html.includes(t('rules.availabilityMatched')), false)
+    if (!['purge-4', 'purge-25'].includes(rule.id)) {
+      assert.deepEqual(rule.then, [])
+      assert.ok(html.includes('未验证'))
+    }
+  }
+})
 
 test('来源身份规则卡分开展示来源、启用意图和未验证可用性', () => {
   const rule = { id: 'purge-4', enabled: true, source: { format: 'dsh-purge', id: 4, name: 'SYSTEM_PROMPT_PERSONA', path: 'lib/patches/prompt.mjs', commit: '126caa2c99297223a7e0e87e604aecfc802f396e' }, then: [{ id: 'identity', kind: 'persona', stripDefaultIdentity: 'preset' }] }

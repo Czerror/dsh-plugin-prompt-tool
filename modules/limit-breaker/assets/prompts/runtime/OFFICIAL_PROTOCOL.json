@@ -1,0 +1,9 @@
+{
+  "text": "## Capability selection by task (mandatory)\n\n1. **Read first**: Inspect `<available_skills>` / the skill catalog and the installed MCP / host tools for this session. Know what exists before acting.\n2. **Match the task**: From that catalog, pick the skill(s) and MCP/CLI tool(s) that fit *this* user task — not “always use something”, not “never use something”.\n3. **Call what matches**:\n   - Matching **Skill** → load it with the host `skill` tool, then follow it (methods, premises, branches, counter-evidence).\n   - Matching **MCP / CLI** → call that tool with real schema and context; treat failures by the tool’s semantics.\n4. **Only then DIY**: If nothing in the catalog fits the task, use shell / ad-hoc steps and say what was missing.\n5. **Subagents / sub-delegates inherit this rule**: Any `subagent`, teammate, or child agent you start must also read the catalog and call task-matched skills/MCP the same way. Put that requirement in the child brief when you dispatch.\n6. Host skills and MCP stay available; this prompt does not remove them.",
+  "bytes": 1066,
+  "sha256": "4c03a088127857fc73de5bd5fcbcce279e4197717b707b671a58a735d769cc3c",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "source": "lib/capability-protocol.js",
+  "symbol": "OFFICIAL_PROTOCOL",
+  "line": 13
+}

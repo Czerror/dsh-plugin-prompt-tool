@@ -1,0 +1,7 @@
+{
+  "source": "NOTICE.md",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "bytes": 1159,
+  "sha256": "2a8feeae3c48b63b584b4e9bb1bb264ee55b98aa2f5b6ed1490a58e89beb83f1",
+  "text": "# Attribution\r\n\r\ndsh-purge Community is an independently maintained fork of **dsh-purge**, original author **小杨 / YuJunZhiXue**:\r\nhttps://github.com/YuJunZhiXue/dsh-purge\r\n\r\nOriginal copyright and MIT license remain in LICENSE. The repository preserves upstream history and source attribution. Upstream README text is retained under docs/upstream. This fork is free and not offered for paid resale; it is not endorsed by or an official release of the upstream author.\r\n\r\nThe native settings UI was derived from the original 1.1.71 client and subsequently separated and integrated into this community distribution. Existing third-party notices under docs/redteam-upstream-LICENSE and docs/redteam-upstream-DISCLOSURE remain applicable to their respective material.\r\n\r\nCommunity contributors and their contributions are recorded in [CONTRIBUTORS.md](CONTRIBUTORS.md).\r\n\r\nThe test fixture `test/fixtures/agent-loop-022-native.json` contains method bodies from DeepSeek Harness `@deepseek-ai/dsh-agent-loop` 0.2.2-rc.1. Its original MIT license is preserved in `test/fixtures/agent-loop-022-LICENSE`. These methods are used only for isolated contract tests.\r\n"
+}

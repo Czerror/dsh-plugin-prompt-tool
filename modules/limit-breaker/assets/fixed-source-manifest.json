@@ -1,0 +1,3010 @@
+{
+  "source": "dsh-purge-community",
+  "head": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "version": "1.6.86",
+  "files": 499,
+  "bytes": 7189573,
+  "sourceClean": true,
+  "excluded": [
+    ".git history",
+    "node_modules",
+    "external DSH_HOME state",
+    "remote marketplace downloads"
+  ],
+  "entries": [
+    {
+      "path": ".github/contributors.json",
+      "bytes": 1856,
+      "sha256": "803147dd24215c1b99551687d71685488f433b491f2e6cf5e23a5ef4641619cd",
+      "kind": "repository-source"
+    },
+    {
+      "path": ".github/workflows/community.yml",
+      "bytes": 9780,
+      "sha256": "d3f6c75b749aed3c094f6dea039f00ec6d678bbbf6d3c2557c0b86b266880eb9",
+      "kind": "repository-source"
+    },
+    {
+      "path": ".github/workflows/contributors.yml",
+      "bytes": 1603,
+      "sha256": "f5cd784514aeb032eed691880fde7186d606a4197a34cd4eb68888a88a01ac1a",
+      "kind": "repository-source"
+    },
+    {
+      "path": ".github/workflows/market.yml",
+      "bytes": 1265,
+      "sha256": "203e2b7e299af7427f0a04d92ef4653730f67da05fe6d45c6aaa0f9d1b7a8123",
+      "kind": "repository-source"
+    },
+    {
+      "path": ".github/workflows/native-panel.yml",
+      "bytes": 788,
+      "sha256": "da4c28816d87cad410103c6cd2bc88cfa694c54df1a8eab5f227f945734b2068",
+      "kind": "repository-source"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "bytes": 5490,
+      "sha256": "9abf41daece1e3017815dd805117b98a5a1f5d818da886f69aafef06c765f4b9",
+      "kind": "repository-source"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 632,
+      "sha256": "63c1eca93ab3e068c9464a9db04a3d2458dd0b2d5c645508d1af4eb4774ca2c9",
+      "kind": "repository-source"
+    },
+    {
+      "path": ".npmignore",
+      "bytes": 77,
+      "sha256": "11e40fb7291dda75c011dc131ffc0e25c0b6e9872aa2868922f4c2c8b4774136",
+      "kind": "repository-source"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 64110,
+      "sha256": "0eb2ed01ca4e195fba6e5312c08898228091722bc1839d3b63a0690a4a464635",
+      "kind": "repository-source"
+    },
+    {
+      "path": "CONTRIBUTORS.md",
+      "bytes": 5352,
+      "sha256": "7f204ca6055851f518ece6022c1688f625ef1a254a870e97e16b24e10a461d31",
+      "kind": "repository-source"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1084,
+      "sha256": "fc0852e0b944982eda5c38127faac27e14caaf09eee47c7e42682e64f01695cd",
+      "kind": "repository-source"
+    },
+    {
+      "path": "NATIVE-PANEL.md",
+      "bytes": 2307,
+      "sha256": "625d54f0ae177f3eb4abf5d7d695dc14e267deccfba633b0f099d343bafd4721",
+      "kind": "repository-source"
+    },
+    {
+      "path": "NOTICE.md",
+      "bytes": 1159,
+      "sha256": "2a8feeae3c48b63b584b4e9bb1bb264ee55b98aa2f5b6ed1490a58e89beb83f1",
+      "kind": "repository-source"
+    },
+    {
+      "path": "README.md",
+      "bytes": 22888,
+      "sha256": "55dbceb12684132f1bcae9cf01da7f97a91cab91b38e1d3ff509f2572791bdbe",
+      "kind": "repository-source"
+    },
+    {
+      "path": "README.zh-CN.md",
+      "bytes": 22888,
+      "sha256": "55dbceb12684132f1bcae9cf01da7f97a91cab91b38e1d3ff509f2572791bdbe",
+      "kind": "repository-source"
+    },
+    {
+      "path": "bin/community.js",
+      "bytes": 15415,
+      "sha256": "485fe1f0e35d9f317933aff46f01b212520d22dac1ea6328efe1c9c466093d9f",
+      "kind": "repository-source"
+    },
+    {
+      "path": "bin/dsh-purge.js",
+      "bytes": 7969,
+      "sha256": "0b4cba797e568529f713f624b5c5cc71a74a3fd2ec728dcca29570eed7ace70b",
+      "kind": "repository-source"
+    },
+    {
+      "path": "client.js",
+      "bytes": 671868,
+      "sha256": "f642c1ea654e3c33f7abd41ea09613ef1852caf8cc99a7c7fff34f6c053810df",
+      "kind": "repository-source"
+    },
+    {
+      "path": "cordis.patch.yml",
+      "bytes": 2025,
+      "sha256": "254618406644e01337e2b0958252e3ab08779df623307a71770261e862223398",
+      "kind": "repository-source"
+    },
+    {
+      "path": "docs/AUTO-UPDATE.md",
+      "bytes": 1552,
+      "sha256": "96ac6314ecc0ef20e72cf13f19cd1a5d9ef314daa2992cf36cf9ba933b5baf78",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/CWD-COMPAT.md",
+      "bytes": 1327,
+      "sha256": "80ae582bd3e167e4f363a573622078a8e187bb95b773bd579df32c2277597262",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/DSH-STORE.md",
+      "bytes": 4370,
+      "sha256": "54cb993421b48ffc692479a56fb89eb816a7e639c1656f994c8b7230642f0cf4",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/INSTALLATION.md",
+      "bytes": 25434,
+      "sha256": "518b98bc401fdeeb2014adf0905edda70e70a67535d60232512b5765f58f8e3f",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/MAINTENANCE.md",
+      "bytes": 12220,
+      "sha256": "2a640a405ad117d831d2fdc9f24a87c32435e26d3e70832b269100a381e04003",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/MARKET-MIGRATION.md",
+      "bytes": 3349,
+      "sha256": "e40a1f23c08c1926877a27c79c6b49e81dcd29da3bda2aee62a54caa6145c526",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/README.en.md",
+      "bytes": 16211,
+      "sha256": "c0d106941727e566409162d069571907f8784bb9c628bcf27d86316a052f2c04",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/WEB-MAINTENANCE.md",
+      "bytes": 3302,
+      "sha256": "37094e850ef7d3c8817971c4430c51fd30d71e5fd632446cee15e2b718cfcc1e",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/banner.svg",
+      "bytes": 1143,
+      "sha256": "6cdabf3431f2c93584499e9b69913cbc7f841892d9173ff20cc35c79716ddcaf",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/drill-auth-legal.html",
+      "bytes": 12316,
+      "sha256": "10a6adc4f127246f1b2947f3925e30426367c2e363bccc27a66a49b0fb4452c2",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/host-diagnostics-118-119.md",
+      "bytes": 4076,
+      "sha256": "8564fbca1044c88d6bb0fbb93156590f3901443822e5743c551e99219f29360d",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/inject-review.md",
+      "bytes": 8159,
+      "sha256": "2bed9dfc63047fd513d50b89991a333930836b650a7e8b6f856e03ed0da4241c",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-022-diagnostics.md",
+      "bytes": 5241,
+      "sha256": "50fcfaddaaa604968ea6eafbebad4803b06001d7c7c5c397f3b429ea32114125",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-1.6.61.md",
+      "bytes": 5918,
+      "sha256": "66630a4f596d96f1b68e76da82829b38cebf7c58769eb45bbf9e44a4dea92ccc",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-1.6.62.md",
+      "bytes": 1250,
+      "sha256": "0ac9f15b32ad7e69c04f20cc64f713b5c909cc1f0050319948b86fc1b5864550",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-1.6.63.md",
+      "bytes": 1517,
+      "sha256": "6b3826e2bdef8db7ce1b44aed99d47b3ce2366bf5721f2b5a15a984577e7e334",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-1.6.64.md",
+      "bytes": 1278,
+      "sha256": "23ac8687bac1cb1715166cb71b43a7a99585a9ff75c7eae546145f584663195f",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-1.6.65.md",
+      "bytes": 1339,
+      "sha256": "4d75011a25fd14c7e5e47d5f47f6dfa1eaf8adaac8ab37b3bba0f92af0b0a7c8",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-integrity-169.md",
+      "bytes": 9636,
+      "sha256": "74a37ecc2394908d0e2173d74d15437d067d356e16979d0616a328be288a8fa5",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issue-38.md",
+      "bytes": 1972,
+      "sha256": "714e4b98a9159e212f95e4f9146a3a64e4ed8ffeddc4b00b0c2be2f753390582",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issue-40.md",
+      "bytes": 7712,
+      "sha256": "db040dd4aaa18d9fe4cf7fb36e729f27400f063e36678d30c9766b91e6cab68c",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issue-52.md",
+      "bytes": 5038,
+      "sha256": "8cb055fbfe3f5082181495161ae17b18e25609e42b409ca0b81155a06ecc7b3b",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issue-53.md",
+      "bytes": 3621,
+      "sha256": "7ae903ebf0991611bd083d31ed48d0a926474112930951ce5333420dfab53159",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issue-67.md",
+      "bytes": 4713,
+      "sha256": "28d8d41727824e6f4df65c774876ce16c5f1a4ed7cc00a1181c82fe4598ee0e0",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issue-79.md",
+      "bytes": 3436,
+      "sha256": "ca8c8e40e7471ebf794617165ed777801e7cc9c9fdeb0c7bf92db42b86616245",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issues-27-30.md",
+      "bytes": 5383,
+      "sha256": "f6832a62c12efa531520047f824dd9c0da86dbcbe3966ec13b701f5c2ca14f06",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issues-34-35.md",
+      "bytes": 4480,
+      "sha256": "e0cac08256e0ca295cf28cc04dd1bdd34aa69712a7b4babb2300deb57021c8de",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issues-44-47.md",
+      "bytes": 5240,
+      "sha256": "b9cc0844ec0ed2320f194877d2ddb282500878d0991ea1a1b8a9df183de03788",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issues-63-64.md",
+      "bytes": 3353,
+      "sha256": "f437064291b4fc471518fa0b86f10dd6eb8c69f7259b6dff2f48340010845e4c",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issues-72-74.md",
+      "bytes": 4356,
+      "sha256": "8668a91c69ae8416c9c6c3060f4c32ac05cc9f92f57a074c7de81d4f5b5cf6a7",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issues-81-83.md",
+      "bytes": 4003,
+      "sha256": "58604ae5f68c17830d8a4566231fbd216da90170cd8afb79e923a3a16977753a",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-issues-86-89.md",
+      "bytes": 4627,
+      "sha256": "1b222288460613a22a34b9887c3ca3a9c957cd77c0ebcec0df7556e02e478249",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-next-host.md",
+      "bytes": 6148,
+      "sha256": "5b6515ff3571e9e23372d9639f91452c29813a57092a35d185810bf324b6d045",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-pr-33.md",
+      "bytes": 3334,
+      "sha256": "5413e0e14d0037a325672cf2a9798670a73f9f303a4bad33c2165747445a4e37",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-pr-42.md",
+      "bytes": 2501,
+      "sha256": "27ca1cfd6542f1bbd3364235bf6e5ffb087e81cdee12688e1c871cd12472e99b",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-pr-58-61.md",
+      "bytes": 3270,
+      "sha256": "7bb59ac24b20610bcc0c13dfb36e7ecb994febe94bbdfaba39db3b8e40e54b9a",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/maintenance-update-state.md",
+      "bytes": 2926,
+      "sha256": "b193777dd52b7662eed1fb22173840cbfe8645a7c5170ef2f7d5ed5c6a5db655",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/native-input-integrity.md",
+      "bytes": 7326,
+      "sha256": "1505ab1871239be71acbc9d9ec7ac76fed962f39c3e04f36e8283757d0f10f5b",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/pr78-runtime-integrity.md",
+      "bytes": 10728,
+      "sha256": "c64998920fd266341d40f68c3f5592c08a6ed07bcf2fec411c9590cc944b85f8",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preset-test.md",
+      "bytes": 4428,
+      "sha256": "a9223aec86bd0c5b12ee2c1a49bc0700b53cda6ef5843236e66af98f2b17b94b",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/dock-auth.png",
+      "bytes": 133615,
+      "sha256": "70265078d8a430068515fd92dc38e41aa1ce88b2791b16a6a17fdde0ecd1982c",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/dock-clean.png",
+      "bytes": 48582,
+      "sha256": "68650a42fc78f728a08e213206171f8852e406d1759ecabc74ab1582272338d8",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/dock-drill.png",
+      "bytes": 45298,
+      "sha256": "30df7fac3ef8047d9e57101134a6570a8bceb02e5b36fb97cb8f1b11c6c539d9",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/next-host/01-status.png",
+      "bytes": 62056,
+      "sha256": "750718beed1dc5f2429f752ed48c221b5de1a2bf2815e67fd14927bea462c2f8",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/next-host/02-patch-detail.png",
+      "bytes": 52687,
+      "sha256": "13758ca8bb54c287d6d463632ecc45c784cd0a8894573779b6a5d34a946d3335",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/next-host/03-layers.png",
+      "bytes": 74396,
+      "sha256": "c0624530e5e543b741f24abfaea9d78ad32eab0ff1fb3628adcfddd73ecdd833",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/next-host/04-swap-on-disk.png",
+      "bytes": 42226,
+      "sha256": "a5ad827018c63f5bbc5d3b7f299d20f3019ee6bac5cb6d63cb67a4dcfa7d33b2",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/own-servers-en.png",
+      "bytes": 22345,
+      "sha256": "ff27f6fd1993d2aa4bfad9fa7ce8ce10befdec4678152b341ff3d89509c6183d",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/own-servers.png",
+      "bytes": 24789,
+      "sha256": "bd83fdb9c94184d65ab7c6ed98610d7c62192f77ee90918ccbb9213d898eb81a",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/rules.png",
+      "bytes": 77267,
+      "sha256": "85789b0b06a90808a61c007a74914faee25166e1f2e9d314b39a1406bad964cd",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/preview/settings.png",
+      "bytes": 323668,
+      "sha256": "b62ab223bcdaeddeb2d02fafef82d1d541501e5b89b4f1b1cce10d5a0d9a4da1",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/redteam-upstream-DISCLOSURE",
+      "bytes": 4338,
+      "sha256": "06db51f90f985d59f543583d4eb6c94e0ee3c5267f08dedbb098f235e5a70dc5",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/redteam-upstream-LICENSE",
+      "bytes": 1394,
+      "sha256": "ee2a80c31b460756aaf41faa67cd381df46829548e7476907d9e47fa19304667",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/refusal-ab.md",
+      "bytes": 7618,
+      "sha256": "61179d039605d3b1a0131c59364b7f621ee24b9e223d93006f20e4d5c58744cd",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.10.md",
+      "bytes": 2238,
+      "sha256": "368810f638ccce8dded900afe23c6a7d78874338d3d8c0c3b997708381594eb7",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.11.md",
+      "bytes": 2562,
+      "sha256": "d62220340987ce86bb598cc14c90459bd61e83d82a77994fdb0fa6aa59e49c34",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.12.md",
+      "bytes": 1535,
+      "sha256": "0d4c097327275802d9034a6dadd77ab71e59b28910f2c16001b3d546b38d441a",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.13.md",
+      "bytes": 2218,
+      "sha256": "f5aa444aa182187d94e0516682cc014868301bfef0b360cdb9fbf785ab087c15",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.14.md",
+      "bytes": 2696,
+      "sha256": "6e259ad153cc526c045f4e82947095b8593f0ba544b2fc494d99ec4b23ec9449",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.27.md",
+      "bytes": 1163,
+      "sha256": "cdee883f1f16f2578165e3457e16e9a1a4274292f3fbed481de2fa2d9b7df6dd",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.28.md",
+      "bytes": 2197,
+      "sha256": "38ac3c115a50edf9ef8776105222f09f56e4934b8b32e72d332b9c87f433017e",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.29.md",
+      "bytes": 1873,
+      "sha256": "2801589d69299b6fc8608cf12f2a4b0f7f2e6972c930ff43f12792a43519befe",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.3.md",
+      "bytes": 15023,
+      "sha256": "f60798dcf9d33db6d6dde8c18db7b82e00363a69fd4695714d1ff9511eabe93e",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.30.md",
+      "bytes": 1561,
+      "sha256": "db8141aae0a50163d717bfe0d8882d552e879fd1ddd4061c51f646ffe6fae15a",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.31.md",
+      "bytes": 1951,
+      "sha256": "37cc25f76967e0d426a0310325790d136c2b78ee335a91ae28578ced6ccd9f82",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.32.md",
+      "bytes": 800,
+      "sha256": "81ec082007818ea7e16804f0611965f155aacb22152b5dd05dc0e949e325554f",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.33.md",
+      "bytes": 1509,
+      "sha256": "fff377292d393012005b0c24137a5719a42c80d878a5e151cbf0a02b1fb0103b",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.35.md",
+      "bytes": 2505,
+      "sha256": "e14415c0c4ac7eceab02f3bf2ea87ce92bf41afd5a2204aaac771390c591cc66",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.36.md",
+      "bytes": 1986,
+      "sha256": "6b3dc57019b8cb4a95e8172b93b9f0334fb0e840c102e020f102c4c68f0e9e31",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.38.md",
+      "bytes": 1330,
+      "sha256": "5a087ab6ad307f9de6bf5f9a617d105eece85c42cb6fc01e3db321676148d3a3",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.39.md",
+      "bytes": 1187,
+      "sha256": "b9b89e14dc4349b4676d9b94300ad80a16547c8fb3f2ccd2205e4abdf38ab4be",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.4.md",
+      "bytes": 2940,
+      "sha256": "f3d59a5c1585408e2767b22def29cbcb4d5002d994b28946b23af74b3fc3341e",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.40.md",
+      "bytes": 1153,
+      "sha256": "e0473f2cdbbddd63fa9ed38e5d90f104fbbbd64bf8cf797a90966c3b2bfc9373",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.41.md",
+      "bytes": 1031,
+      "sha256": "415930c782428f5f3a18530b265c280d45ab42db4d8ae27b4c42d8d7b2d17d23",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.42.md",
+      "bytes": 1430,
+      "sha256": "6b9ae44fa92497de74adac72b98881e8f9de8e307f58dca9fb365176f56d9c3c",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.44.md",
+      "bytes": 1621,
+      "sha256": "ceab67c6d742f9293acf91d203329bbc4824a4ff2b08bd7054d8e2cdab2a445f",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.45.md",
+      "bytes": 1266,
+      "sha256": "6f7887121f5296c1677badd04c923d7a54500fe4026618e9aaec38d84bc8aafa",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.46.md",
+      "bytes": 1476,
+      "sha256": "cb1cc92f44ab812ab023c06ed7bc29cf3e725840ee08b34bedbf456870367df1",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.47.md",
+      "bytes": 1122,
+      "sha256": "70ec444d86c2a78c7d583b4d800b1458a2a6608c94b258ccf99d06df3a911b38",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.48.md",
+      "bytes": 1121,
+      "sha256": "dd7d3b29802a37f19f7ad4190d3f55497feb236306f268d3ea67aea945b709e9",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.51.md",
+      "bytes": 1915,
+      "sha256": "a197a3263faddc6acaa90404d3da31efe3c30563b4ea9b47e7e67545c351601e",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.54.md",
+      "bytes": 906,
+      "sha256": "ef43e193a7998b8a0321beab80dcfda3b3cf1082c6e17a7f5093848d53325e83",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.56.md",
+      "bytes": 1175,
+      "sha256": "f1286175ed2e8c57a32f4e2fc63db41c4fac9a93defc0eb1e6031724b4d3f5c0",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.6.md",
+      "bytes": 1810,
+      "sha256": "7f39a66c1877bc74ab58bbbd88c50fd7944d613adb8c8104a9799ce24bcc138f",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.61.md",
+      "bytes": 1809,
+      "sha256": "0695fe0c211d78da192d29e1efafc9192f6b6e6abf3949a3f14802f61f4471a6",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.62.md",
+      "bytes": 703,
+      "sha256": "96f25465f3183502cbbc7c9725eaf9e8dcb53052880b04d7d720a8f96c027915",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.63.md",
+      "bytes": 732,
+      "sha256": "4a940314ae61892601dd5cb9bc07d518c1e376d478ca7eca5a8d487e5d5c60e1",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.64.md",
+      "bytes": 594,
+      "sha256": "083279aa3683c1f7b4b5523cbd0a206ddb5b745edc61975aeb602a29b0f21dbd",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.65.md",
+      "bytes": 465,
+      "sha256": "b212401c83b1ed5b56730462723fe80bca681524e8c3c13192a8fe9bc0bf26f5",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.66.md",
+      "bytes": 1986,
+      "sha256": "487a9923ded604f1ca3cb5b8f38202375fa1350aeb5134f3872f72b130aa8e9a",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.67.md",
+      "bytes": 2488,
+      "sha256": "7ecfce9d0c6bafa0baf911c8a07a2c7b24290737b7c4b5af252fddc15a15ca76",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.68.md",
+      "bytes": 1539,
+      "sha256": "661b841e7bf51918f2a617a8bc4f1a704022f864ad23cb7e5d9071348133537b",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.69.md",
+      "bytes": 2152,
+      "sha256": "fcaadb3020dd14542b462a976bcf4311a3a7f457435b9838a7661d69983fd12c",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.7.md",
+      "bytes": 2165,
+      "sha256": "616baa0a9eb935be3bbe61b225b6eee5e7a3fdd044973be6272cd624626ddd06",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.70.md",
+      "bytes": 2908,
+      "sha256": "08bb6d5c6f76deff39d7bf350fde5297d5f80701ff111c207ed94d380a950fa7",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.71.md",
+      "bytes": 2008,
+      "sha256": "9bf9334f720c71ad702384a65671b87a1ddb6a7c63eaeb54b52459de7c3505ef",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.72.md",
+      "bytes": 532,
+      "sha256": "7307bb4a53d17ab1210e2e9084435ff13de4884b8f810784b3316dec31149b5f",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.73.md",
+      "bytes": 236,
+      "sha256": "b9883ab18a35965158df060679ea5c18ddcbc2874fd2cc64045d13476e82873e",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.74.md",
+      "bytes": 2504,
+      "sha256": "e83c8570462736eb4b3c1fd88e3fd4553e8309fd84412b5a4d6addc837f20edf",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.75.md",
+      "bytes": 1381,
+      "sha256": "983ad21f5ba81b4953f549ef81ef7553f96683f18f2f01e443dfc65dde9e4085",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.76.md",
+      "bytes": 1255,
+      "sha256": "dd7d32c02fb54aed575d0f5d2d0437a2fb0d78522eb0bd9b1dbe2c91ed80cd82",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.77.md",
+      "bytes": 383,
+      "sha256": "70c5d228489defdb5ccd121aca9f9860d1a440bd1fe49d783b9f954a750ea032",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.78.md",
+      "bytes": 417,
+      "sha256": "8853a5492b573e760ce24a0ad77db1482a069d7202cc7ad64664ebbb04e9bd1c",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.79.md",
+      "bytes": 360,
+      "sha256": "99c2bfb78ac57540ee4792749fca27250f059fee708127edef11432da3db6a47",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.8.md",
+      "bytes": 2905,
+      "sha256": "8481eae51ae0abd8f0037893f22b9ae3104ce5c187fd184ddc44eee4a9c37a6b",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.83.md",
+      "bytes": 966,
+      "sha256": "513f1e8dca5d8b8d3a91791161c4bcc206f0aa676355eae70f902b450bc35bc5",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.84.md",
+      "bytes": 1079,
+      "sha256": "59bfcee192a4c7122a168a519cfc508403728904e3a8aefc70890a9faa371d16",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.85.md",
+      "bytes": 811,
+      "sha256": "658d827d703130e9de23b995f2943c77397502b1b69877bc8eef18629bf8b2b6",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.86.md",
+      "bytes": 661,
+      "sha256": "34701408b7b9d3356858abfe5a4e1d640b79c7510d9b5b9fc113dfd0ed57d8de",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/releases/1.6.9.md",
+      "bytes": 3681,
+      "sha256": "4b8e697ed8e48d777f6863c1151a0ad31959f96cf24b620f25c43c12ba7d6a6f",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/review-pr102-diagnostics.md",
+      "bytes": 2046,
+      "sha256": "a4e57d13b074362e43ef520341b1d9e90afce48a9a1fc5dd4f2027bd599d9824",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/review-pr128-settings.md",
+      "bytes": 1586,
+      "sha256": "26ca9cd2777525d79af47a8e0d10524528b0b67be0c2aacf187deee9c4399cf6",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/steer-notes.md",
+      "bytes": 3492,
+      "sha256": "eaf7b9129d44218715435ee4e63e89b51476b2aa65c37b9620b605949d7f83f6",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/update-channel-122.md",
+      "bytes": 4319,
+      "sha256": "117ef73d045199fd46327ec4c2619871a40cc3355f00c37b7171da05b6b7560c",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/update-layout-130-132-137.md",
+      "bytes": 5128,
+      "sha256": "3d6ae1bbd2ade7a94626c3528d85e2fde0f37d4296821571eb5a65dfee18c5bd",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/upstream/README.md",
+      "bytes": 33293,
+      "sha256": "f5f5b936a875ae31ace79d071f171fc2d8845fff0cd4f09f096e36a23ba6f706",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/upstream/README.zh-CN.md",
+      "bytes": 32263,
+      "sha256": "20aed6fb77861b5d6c241f066c5d3c23122971c6b9f54a4302ead5040f80d40b",
+      "kind": "documentation"
+    },
+    {
+      "path": "docs/upstream/release-notes.md",
+      "bytes": 75752,
+      "sha256": "e686f44eb1ba9c161e3f4adce69664c3654c33164bab0b3b8c84c93ee1265f07",
+      "kind": "documentation"
+    },
+    {
+      "path": "lib/anchors.js",
+      "bytes": 3112,
+      "sha256": "d4f5107aab9131c40160db9194305a1e96dcf699ddc19fc021080add62d1c662",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/apply-gate.js",
+      "bytes": 1214,
+      "sha256": "4909067cfeba7374057e4336b7eef72ec93dd067f743921efa4bd95aa3cc7403",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/asset-table.js",
+      "bytes": 16853,
+      "sha256": "f92bf2586c901a9c0536bdd1512cea09c3f60a206fda5123ecece5b53decc564",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/atomic-files.js",
+      "bytes": 3775,
+      "sha256": "5bc196fe9dba029dbe8ed0a641e1734d321261171c5a2a43073ee13d9f61b008",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/audit.js",
+      "bytes": 6593,
+      "sha256": "282a1d9de701d9a63a35cdb4ea636448f1fc451a0a393a1e9b555eebcbd0bdd6",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/boost.js",
+      "bytes": 3464,
+      "sha256": "95110a6f7e5ccbc6ad5920f85fd3a66653cef4670399f72e4bcf8e807746a77e",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/capability-protocol.js",
+      "bytes": 3316,
+      "sha256": "283694aec8ca355c164120b91f6ed409fa142fd09f7a73b43f868983d678e485",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/child-process-hide.mjs",
+      "bytes": 3097,
+      "sha256": "023cf00181354c9c6d03bf90ab2bf7227392a41377d4a4b4ed1f3f29fec73d9d",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/command-registration.js",
+      "bytes": 1011,
+      "sha256": "4c96ced8a8dc646b925632f8827b31820ad80db9c78bd6e5975768c24ad6e700",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/community.js",
+      "bytes": 43363,
+      "sha256": "0a36106e773b2d78b4e595bdf0127769e237a2f4cf52c9977f7f2df71951e6e7",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/continue-retry.js",
+      "bytes": 11967,
+      "sha256": "670c8d389bc08998b0ec8b3f2830e7c2d6859d6f20865e7f14aa77e64791bedb",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/core.js",
+      "bytes": 181861,
+      "sha256": "f717154b268983cc81313537eee52f960dd56189e6d68292ae6507e103372975",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/core/shared.mjs",
+      "bytes": 11513,
+      "sha256": "9ddc643b6323684ab6eacc651429570de269a1e857f918d5b49a90abc5fc8a8e",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/core/verify.mjs",
+      "bytes": 8945,
+      "sha256": "6710beb763297d216ec6d5adfc945ee01d3cf2a298f633c16191a0c947f0d372",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/desktop-cli.js",
+      "bytes": 4263,
+      "sha256": "ca722d68fc8d252202a80f8ec4ee2964174cecb9fb16368824f8d9413062939a",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/desktop-entry.js",
+      "bytes": 2634,
+      "sha256": "44830ef18bd1694c7f50be2d88be86509d550ccdcd7b13f87f6c5c5eeb14eaa2",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/desktop-handoff.js",
+      "bytes": 677,
+      "sha256": "51d30d245dd56041216af09dd5c2291ee3e7c3bfa35189be29f211bea0b087ec",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/desktop-identity.js",
+      "bytes": 7614,
+      "sha256": "35b8f0eae376cce92c17beaf0310511a7a2a8d36e67202f9e45982a549c0beea",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/desktop-read-scope.js",
+      "bytes": 1529,
+      "sha256": "f50f024d629c5d0d53833ebc099f2ae09188d438ada112dc7b9f19c8362a7960",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/desktop.js",
+      "bytes": 64399,
+      "sha256": "98dd329ba7c884426131b7365fa420d3f53449a9868631b3c47ee9bb08f2a8fc",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/drill-grant.js",
+      "bytes": 1790,
+      "sha256": "9b6581a4a707367ad9b8b56e3f936f4703c2d0b4c22a034730925df2f7235fcd",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/extract-asar.js",
+      "bytes": 19317,
+      "sha256": "07cf2f9a3d46280c7c7c88baeea2ce58b6a8f0a76fcb17db19ab47304a3d2caa",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/hide-console.js",
+      "bytes": 12113,
+      "sha256": "ae90695fb53139740874dc2497bae14cd312f0f63c6482edf2c2b2a5f8b887a0",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/hooks-deny.js",
+      "bytes": 8278,
+      "sha256": "03c0c57f9209cf42abde6d65c132ae8ab16cf85fbcd4170a23e6ca3c75f7acb4",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/host-clean.js",
+      "bytes": 832,
+      "sha256": "76ead8a153e2159724fbd72e92e6126525bb6cffd52a981e0ce8982d79157302",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/host-layout.js",
+      "bytes": 4488,
+      "sha256": "aa3b95f76267e6f52867d88969646963f8d01befb541544518794ba29a520858",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/host.js",
+      "bytes": 680,
+      "sha256": "79379be0cdf6f259107c8f7f89dce895f58883e6baa290d3e721875581806c0e",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/identity.js",
+      "bytes": 42966,
+      "sha256": "603523f7cc7c8053d00b21fcc66fdaed39279329e4b7417fd96b6daefbb513a8",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/index.js",
+      "bytes": 125624,
+      "sha256": "5eba82efbcbec9331066ccf57ae71508d211d65253e259a8397cc68f54c43160",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/install-registry.js",
+      "bytes": 3743,
+      "sha256": "77663f98d476f00ca639f94ddfc40fe123ccf2e9cd8155df51d47d4547137bdf",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/installed-package.js",
+      "bytes": 2155,
+      "sha256": "2fd6bfe459d64b12ed3719857233c4b976cd8492c89d46f39c4bc96c168c3d52",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/instance.js",
+      "bytes": 20839,
+      "sha256": "d250f4fc04481cc0b1474efe317c360d795dde1df27f684ea721d896117ca2ff",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/macos-asar-handoff.js",
+      "bytes": 9490,
+      "sha256": "f38f5c631d37461f562c52011c447dfd740f7b3473ba936277a06a7f5346666d",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/maintenance-lock.js",
+      "bytes": 8771,
+      "sha256": "0cc9e4ab54b534c5d67973e0141f174de318429ab8bc675b3bbbb2eedb9e6e40",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/market-migration.js",
+      "bytes": 4060,
+      "sha256": "e2023f50f1f6456c7dd0a8bff81d44ebff6febaf03b82ab2377593d86dd6e0fa",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/net-scope.js",
+      "bytes": 16338,
+      "sha256": "8277da35a325c4b683a95e74a1ab1661226ac188cbcfb0d0af68b88fc3bd78db",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/next-host.js",
+      "bytes": 2699,
+      "sha256": "d4a45b3e818b3bc29f695f33ef3ab281b6a48ef3f755e53b3b365d1f1758bc6b",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/official-update.js",
+      "bytes": 1931,
+      "sha256": "139c9c6a63d601e61fd7819f01a2198a32a4b43a3a51df963e6365e3cb1020c4",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/official-update.wscript",
+      "bytes": 4908,
+      "sha256": "84548bb3ceeaef22e6da83e08621376f3950bee19e9be332d70652fef1b5db32",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/patches/code.mjs",
+      "bytes": 1834,
+      "sha256": "cfc139ce559201919031940ce50a325f58559bf513456448d166629208bce20e",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/patches/engine.mjs",
+      "bytes": 16197,
+      "sha256": "4b0fd51b2d81d20e1c2d9ab8ed62de10d3073fae522e779b4d32ab4e79624165",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/patches/index.mjs",
+      "bytes": 977,
+      "sha256": "cc1db9fbdabfc24cdcf7840f179e50725d418f1f62e5fc16d419da0d89e85f19",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/patches/new-tools.mjs",
+      "bytes": 132044,
+      "sha256": "e151a7d8927f4824a4640208f30d4cbf4dad7e40e1a7ec3f55509b8e558b3776",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/patches/opt-in.mjs",
+      "bytes": 2410,
+      "sha256": "3ea85631a915d57c974afe78cad020440004721121b25ea8c56c837e46b4e2c0",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/patches/prompt.mjs",
+      "bytes": 11363,
+      "sha256": "70958618b13d92ade4fc617991a0a01fcac9aafa916892c65f8ddf96aa54962b",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/patches/shared.mjs",
+      "bytes": 5435,
+      "sha256": "5377adffbdab1c49572f8584f24e9d25e74dfd6bda29f5fd6c82e65c81701509",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/path-boundary.js",
+      "bytes": 2449,
+      "sha256": "eeaf37767e11ce0774dab3bddc79103ad02f41e21709eacf9d4743bb600f8ea6",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/permission-state.js",
+      "bytes": 4214,
+      "sha256": "af10040b773bf90a8580baa80fe14d11e46c5dc81fb238fea84abd24f7b9916f",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/phase1-keep.js",
+      "bytes": 925,
+      "sha256": "c88161628a833239ad3f879a23f60fb98dd545d65a09aff117f1838d6bb25869",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/preset-compat.js",
+      "bytes": 11351,
+      "sha256": "32bbf7b4a7ab65b0b72a51d401804fdb7f91b08a564709bce6d41127d60d5deb",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/preset-diagnostic.js",
+      "bytes": 2373,
+      "sha256": "0fddeb61efa0058ac7fcc7fb94089d962b999422b3a7898b7dad476a9850eb7e",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/preset-injection.js",
+      "bytes": 3927,
+      "sha256": "90361bf8348cc619a067a9ea8585c91352bbecf7473e67cd506ed9e7172c3fac",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/preset-presence.js",
+      "bytes": 2303,
+      "sha256": "977e7923e74b0d9291a7a174f1246bf3cf774d6d21f2aec39c941a5f51a4d4bc",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/presets-plugin.js",
+      "bytes": 3469,
+      "sha256": "565a38285560e415059f3c57c1d52bf88cdb4870ed1bf2b46b7867405018cee5",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/presets.js",
+      "bytes": 3188,
+      "sha256": "a112de65672248d44e982edf189688180269f9b5c7f226f90170ba1028b3b3e9",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/probe.js",
+      "bytes": 2516,
+      "sha256": "9fb5ab9f711bc23053554af58c497b36a9583006638f4c9bb78b4b30c85cca4d",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/reapply-cli.js",
+      "bytes": 182,
+      "sha256": "ccbff27b99d4974f933a03ee139aaa22b1a53899977b8952507ec075b9055a2e",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/reapply.js",
+      "bytes": 14582,
+      "sha256": "b52d9743bc7760806853d8c13495175005f8c963e1517477409ab8397cae8cd8",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/atomic-write.js",
+      "bytes": 932,
+      "sha256": "2aa7664b16ff6a8240cdc8d428e0eae4692b8baac2aa40fc32c26df549908310",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/client.js",
+      "bytes": 281726,
+      "sha256": "7dc6e3554e2508a41f1ee0e360f724e8cfdec66857c499b80059217cc78e6b04",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/evidence-ledger.mjs",
+      "bytes": 22093,
+      "sha256": "33a21b88e641341ca9c6a86ea4de972a13dd1e927f2a5a837e48d5d35c5e0997",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/index.js",
+      "bytes": 25474,
+      "sha256": "23dae4215446d7c7aea9d4626e5e960144f4eeb2610661db64f41a5f963be170",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/ip-utils.js",
+      "bytes": 6291,
+      "sha256": "8bd019a107b7539810ba11aa0bcb082412f9d6c2bb459eb7e228dbfc7ba1b6d4",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/platform-config.js",
+      "bytes": 22766,
+      "sha256": "212f228e0cd0b37295c6ca43463e8260720d045298cee08db1b180c2e13f55af",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/preset-composition.js",
+      "bytes": 17320,
+      "sha256": "99cbbe989b5bef70411c0e1f1aa32d404cd50c4a87d94ac9d49b986eec919b08",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/report-replay.js",
+      "bytes": 10699,
+      "sha256": "ebabe140bebcae6544050da3cb8b991bdf6906451b2588a533f935438139c223",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/role-section.js",
+      "bytes": 6188,
+      "sha256": "c5aaf941a2027bf70a575496e52e6f949219196a402f0488b649c06b76129c0e",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/schema.js",
+      "bytes": 33949,
+      "sha256": "1feb559484849fde0a4e84b646bfdaee061c9833eb9c11a83b113904621ed5c9",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/score-rules.js",
+      "bytes": 59438,
+      "sha256": "79152fc9373f83f95baa312fae952a1eb121e8ab19a8f31ee5381a69d818712a",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/settings.js",
+      "bytes": 3422,
+      "sha256": "037ac85037ecb0c15152f1ed4b34937807cbf3888525400c98d502d860847d3f",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/skill-availability.js",
+      "bytes": 17992,
+      "sha256": "720da40a46d4ff49c322a80cda5ed05ede7a7f22d9b4a2bcc6a8c243db97bae1",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/skill-fixes.js",
+      "bytes": 35595,
+      "sha256": "f6caa780115e863cfed2cf995084838c3bf9085334f64ae83f4bd1eb002cfcbd",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/store-core.js",
+      "bytes": 347123,
+      "sha256": "7ef114241eeda7cd88c4288bbfab0a8c2b443855df7101cbca288576c7e17889",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/store.js",
+      "bytes": 3049,
+      "sha256": "3652ec5df687a959b22fc457476f1f3778ad5b2649d239576a1633d87fad9077",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/tools.js",
+      "bytes": 137803,
+      "sha256": "b488109b7e9c6613061a3973170cced38d863736faa759ffb891e231f05f206a",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/ui.js",
+      "bytes": 51557,
+      "sha256": "be3d6e4abde421234fc85b2e9bb7b25c4c69937082d223caa694162f8f16621a",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/redteam/validate.js",
+      "bytes": 3184,
+      "sha256": "6831cae466e81c51e57142c58b3126d90394e7a62944cd13f5c526a7888c1b39",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/refusal-retry.js",
+      "bytes": 5390,
+      "sha256": "350cb61498167ff60a568c2666f2911f7caf697e60551a6656b3d8ec6f1618da",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/remove-tree.js",
+      "bytes": 3021,
+      "sha256": "7fa8e4aafe6be36d5d7ea3ed2af0572b318950959dd8e93809b996bf0caf3550",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/restart-desktop.js",
+      "bytes": 16477,
+      "sha256": "8c8e335377e3ed87d41aa0d850d2f9eae8a49f68ed2c2c470fa6f5033b3b5472",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/restart-web.js",
+      "bytes": 3006,
+      "sha256": "94c8262ca3ce8fbd4f71b21c3916b8fd0ea41f32d5f4feaf9a8fae22bba1837f",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/restore-backup.js",
+      "bytes": 1178,
+      "sha256": "e59f2ff2aba192844f8b7a96a0b3d89efdb47ec279a9334a4a495d1c35c5bfb0",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/rewind.js",
+      "bytes": 21432,
+      "sha256": "72a9096a43c7717fd06ae6739a3aa1f358e86bb0cded9c1319b78e2999adbb22",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/rollback-transaction.js",
+      "bytes": 5461,
+      "sha256": "7ed3a3e4af491221bb09f0730ce5af812d286aad1cefd6dfc300a0d4242413a1",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/rules.js",
+      "bytes": 18242,
+      "sha256": "70700b04f56071b7d1469b636d66fcec80a6c99a9a4fc9d7185d0b820bca98f7",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/runtime-layout.js",
+      "bytes": 6031,
+      "sha256": "db1a8088290781d63ef9d795e61c059428c1191d946aeee4ed9693136cd81489",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/selfcheck.js",
+      "bytes": 16514,
+      "sha256": "bfb26f2be9aabc396c1e247f6d0677cb08517d39ca9f90de734cb22c218879f5",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/settle-policy.js",
+      "bytes": 2085,
+      "sha256": "e17acfe7b8eb13b66178f02e4177ec9bbcc0a1fa02c91622207d240c19c899fa",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/skills.js",
+      "bytes": 29153,
+      "sha256": "fa80f77d27b44b68a92dd4c9b530a929cb48659de7586d5178b749fbbaac2a27",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/steering.js",
+      "bytes": 3515,
+      "sha256": "2272e89a2a3e75d9d40f59e44d282dced06e3f288fe511df7de48d6df1800dcc",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/stream-observation.js",
+      "bytes": 1203,
+      "sha256": "36d0c6e910b43ab055a043f9fac2cb241b0c097ca6a7665aaec6f791ed3c6f3a",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/surface.js",
+      "bytes": 3201,
+      "sha256": "37462891c11ba7a42f031b646e4797704423f70d0377d89474faa3c59d841fe3",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/table-key.js",
+      "bytes": 942,
+      "sha256": "b0de48b5f24731c9bd26c267b072d69a29a6e2e835036114ad277715c3f2f81c",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/table-read.js",
+      "bytes": 585,
+      "sha256": "01744c57aa976f438ca581829a4afd15106ba425aa77b46bb8de118e2973e648",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/tuning.js",
+      "bytes": 3117,
+      "sha256": "ce86c7b0b1c4cdde9c2afa46cc099a096a54a9d8566bb179edf6cf714d54bc4f",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/uninstall-restart.js",
+      "bytes": 3283,
+      "sha256": "aa3524bf9055f5b3c51ee9303dafbdfb4e30c79ac8018b9eb19e5807e7f48403",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/uninstall.js",
+      "bytes": 9812,
+      "sha256": "f34f398f208e787fae749f7bfbc53d22e5231898d3721d98e6ad1e2998b98dac",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-download.js",
+      "bytes": 1359,
+      "sha256": "cce39026ae2df0fc23ab3a5900ab5560f4500c0b4f283f5067e55a2ee1eb4fa7",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-http.js",
+      "bytes": 12082,
+      "sha256": "ed5d31ede1b0eb94a1b169de0bc664d0f96a5f3db13df1bcbbce56dd2243bee6",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-install.js",
+      "bytes": 13676,
+      "sha256": "7c15030abc197ce0faa1bb1a56934f73765a332c578aa689cb00d15dd6d2a408",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-integrity.js",
+      "bytes": 2963,
+      "sha256": "335a8fc4753d20e5d56216b16b8ff8d247e0306b1e6e99db9d05d8d814317a72",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-mirror.js",
+      "bytes": 1368,
+      "sha256": "7a97d7dbb11cd1114eb3804fc6a831b770e14ed80b9c51fc9bb4c6d5515ee465",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-net.js",
+      "bytes": 9803,
+      "sha256": "791f9e55a8ec44a736eab7caf4996665b131b188fa2a3ff9cfbabeb607a52545",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-policy.js",
+      "bytes": 13038,
+      "sha256": "2333f153bc70228edf8b156a5c41eb9aed1dd8167c50be2bc0265acc18a11609",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-secrets.js",
+      "bytes": 7200,
+      "sha256": "7cab0f7f9f389469d92d9a1623e094b7a8a6abd99ee1ea71b267e942cd6235f8",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-socks.js",
+      "bytes": 2906,
+      "sha256": "f841dfef2f34fab76c089c4c71b89c00c1041268503edb454aee6ff991827409",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-state.js",
+      "bytes": 7517,
+      "sha256": "c96a81c53dc1f836c2be749771a12783f47945b267252f0f39cc29026fc41b61",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-system-proxy.js",
+      "bytes": 2685,
+      "sha256": "2abb41e0967ae5d7cbe430792ba801bf18c1c13eefb40aa412f07cf38ff18190",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update-targets.js",
+      "bytes": 1129,
+      "sha256": "114dd8a16266d369a865fe34352c30e750b6449fb6410e0945621f9916a16b2c",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/update.js",
+      "bytes": 53054,
+      "sha256": "66158d274aef11eabc4e760c6660a7d05a275eeaa8254510c57b29c755956ad2",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/web.js",
+      "bytes": 3702,
+      "sha256": "97ac5d98259dc34e2274a3fe64e669956aa3c9ba0b2f6896526c363efbb2bba1",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/windows-asar-handoff.js",
+      "bytes": 11970,
+      "sha256": "12391d8d35e047f4a2b4808671a4eac5f9e4f522d8d6cabc08def7a6de7a5681",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "lib/zip-extract.js",
+      "bytes": 6285,
+      "sha256": "05d0a2c809b6e41d83c5f8b98344ef28faf30e36f1de81ec3b8cc23df7a717d0",
+      "kind": "runtime-source"
+    },
+    {
+      "path": "market/README.md",
+      "bytes": 1177,
+      "sha256": "f9af0d4d33aff43867997033d99ddc24dc419cfcbb9b1bf1710906399d59da47",
+      "kind": "local-market"
+    },
+    {
+      "path": "market/breeze-voice.json",
+      "bytes": 932,
+      "sha256": "d816cd3bb45f8b338bbaa640c4797c88264f85a9609b35327e460b8f7f37b5c8",
+      "kind": "local-market"
+    },
+    {
+      "path": "market/h3-video.json",
+      "bytes": 1582,
+      "sha256": "852b176d2e701d5928105a56053ccf0aa61a727c94dd87900e8dd0b8eb040f48",
+      "kind": "local-market"
+    },
+    {
+      "path": "market/package-lock.json",
+      "bytes": 1680,
+      "sha256": "1cce8ca24e8ee4869ac4c787215a5060621c2ddb3a09878b6eddccfed6d63aef",
+      "kind": "local-market"
+    },
+    {
+      "path": "market/package.json",
+      "bytes": 169,
+      "sha256": "ff7a0748e2e8eb1d5da1dc7a40d26cc950a3a68e5aafd0cf44c286984cd8d9c2",
+      "kind": "local-market"
+    },
+    {
+      "path": "market/validate.mjs",
+      "bytes": 539,
+      "sha256": "6dec9ee4b9fb558fba67a30b19cb536f03209f12026b4afda6e59b2887f56bca",
+      "kind": "local-market"
+    },
+    {
+      "path": "package-lock.json",
+      "bytes": 2639,
+      "sha256": "91d8dc7edc320d5a4a0b8524d75e6bd3b0efbf961e7e530736a0612dc8295431",
+      "kind": "repository-source"
+    },
+    {
+      "path": "package.json",
+      "bytes": 7566,
+      "sha256": "073ec116382c76d7535390abae6d3ac8a1f15718240c0569542124ed64740e1f",
+      "kind": "repository-source"
+    },
+    {
+      "path": "packages/purge-panel/.gitignore",
+      "bytes": 22,
+      "sha256": "11061887c24167088f986ae85f7dbc8bd49b444bef7a0e3abf9a67fff66322f2",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/LICENSE",
+      "bytes": 1084,
+      "sha256": "fc0852e0b944982eda5c38127faac27e14caaf09eee47c7e42682e64f01695cd",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/README.md",
+      "bytes": 4543,
+      "sha256": "7ad11e124f85032cf4da985117d06f9d24eea71c12aa91a497580d33ef645b15",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/client.js",
+      "bytes": 670889,
+      "sha256": "9d9983da06573af151f0cdb3caeb333fd036f4f502a14d48a86aa9fab246c7da",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/cordis.patch.yml",
+      "bytes": 85,
+      "sha256": "bfda102e09d41f4198ec9a5e42414c039affd286258815c86160db698f36b4fc",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/index.js",
+      "bytes": 68,
+      "sha256": "f381fe90ab6c7091ee8161a95825945f64c169514242df8129ba32c93ab39ac1",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/package-lock.json",
+      "bytes": 19621,
+      "sha256": "b23b773758a3c79b9597f66d8aacdb9662da88c86691feb2d9b8f68a0124cf28",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/package.json",
+      "bytes": 1902,
+      "sha256": "677622bfcbf674f07c8977e1fe6af8129044aa4055f27778404d495f800f74c5",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/scripts/build.mjs",
+      "bytes": 1867,
+      "sha256": "fec7e24176b831bbfca4fde564e41408523d58a3e5f13d9a188e0dd4a9167972",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/api/client.js",
+      "bytes": 7149,
+      "sha256": "c5099236dbe200190720d977845bf675f3a429d06f372f4b1fd41cbf704b86f3",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/advanced.js",
+      "bytes": 2368,
+      "sha256": "b7dce359eff0058acfca7065a127c69de60b03e3d0e2f2eebe5d1faa17f9bb2e",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/auth.js",
+      "bytes": 17497,
+      "sha256": "deb817a5951a1f677aef647f69daa48295ccbda3258ce41695c98207521e7bea",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/env-gate.js",
+      "bytes": 10525,
+      "sha256": "dd62b2eaa3d2251dc7e53818bffa9a6235c79286dc9016688131e49d867d07a8",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/maintenance.js",
+      "bytes": 28820,
+      "sha256": "036d1c069157636cdc779d7f78beee85cee7483f78c1ca21b324552bba105979",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/page.js",
+      "bytes": 12525,
+      "sha256": "1e267d84c42f918d98009ec2ccf03478484caab53e3ca4f9f661f9b38b03c095",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/patch-status.js",
+      "bytes": 6618,
+      "sha256": "8add99dbda259f927795738addc2bcbb67075cfd053196200ea8ab1a40f71203",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/primitives.js",
+      "bytes": 2475,
+      "sha256": "0ed3bf6ee5559646c3f48df87a90b7c9709fdb31b9fca3b008efe72f8cfc8aa1",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/restart.js",
+      "bytes": 5495,
+      "sha256": "751812b4e5c766db7f75f88d0b1eb4e62135e549894563c16d52edfaf6ef4161",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/rewind.js",
+      "bytes": 16492,
+      "sha256": "003cf865188620c4b185ff66e147464d5d3ad20aca619dc8863141aaf45255c5",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/rules.js",
+      "bytes": 15171,
+      "sha256": "f2c9588c874609d96984f4bf6d5f0679a43ea2ddbd6d4fbdd6b38c4027b993c9",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/settings-form.js",
+      "bytes": 37360,
+      "sha256": "45ee0c8196728e92c0f2b8a82fc56dde6093c902fab3e1b5f60dce7352f5bdbc",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/settings-shell.js",
+      "bytes": 6550,
+      "sha256": "ea99e2134754ffde41b2efdc3cb618c45630379d60a4ad289a82f04896c7e33a",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/skills.js",
+      "bytes": 13242,
+      "sha256": "97ca8a2452d5f16e77eae5b2c5fbc98a5144c4822972d9d5115af471178cdf25",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/components/welcome.js",
+      "bytes": 3200,
+      "sha256": "dfcbf8ee0450f093698c9f9602d396fcb1a96c1533e1a6a95af9f4b10bb6c8be",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/entry.js",
+      "bytes": 3596,
+      "sha256": "f6f4f4f6cdf39d6af11c49d64301189fe3029fd748ee1c83f1c3418904b5d19d",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/shared/apply-result.js",
+      "bytes": 1156,
+      "sha256": "55ffcaab0a6d6986ce8329ef68ffaa61a21139c22481dc7a59ade488157a70d1",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/shared/locale.js",
+      "bytes": 44998,
+      "sha256": "e6ec90db22f12f812b657a4819e44115f02374cbeb9c8063aab3a03cc00315a3",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/shared/react.js",
+      "bytes": 238,
+      "sha256": "3df2db3216db3f9818917add1d167684d73c4fd72c64c100c4b939e862d26946",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/shared/runtime-error.js",
+      "bytes": 1456,
+      "sha256": "5958b1d514f2de39a5d296db11f7de70e2f49b8ebeba9d2d8addf147737fb15a",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/shared/versions.js",
+      "bytes": 2946,
+      "sha256": "14c78abd65c9207e8dd05ae0f169ea591d4bc7e5cbb2b32643443819124e56e8",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/state/dock.js",
+      "bytes": 5163,
+      "sha256": "f64241561340aaae97e581813c56f3a52aa281163b2eb9660722e6f43450e7e5",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/state/legacy-visibility.js",
+      "bytes": 583,
+      "sha256": "996d4459090baa14d136248741806ea25d78215a882b694e7259abb3b41c1681",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/state/redteam-mode.js",
+      "bytes": 4828,
+      "sha256": "3083bb4f0d4abd3fbced095c596a7dd71a9a84b2ac5ed954daa0ec3783a1c6bc",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/state/rewind-draft.js",
+      "bytes": 11641,
+      "sha256": "80f9a617e7a957ffc863f82449f28f05d1c2f45db943ccf28307937a85bc91c1",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/state/session-context.js",
+      "bytes": 2053,
+      "sha256": "d02f4852dc95c9fefa3042ee020a8226a96838ffb30979d11fd5ff184e272d8a",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/styles/base.css",
+      "bytes": 25966,
+      "sha256": "53bf2aeb4b960e31b1b9d0936cf1820068e0cfd5598fc632e2476c5db9f1ab8d",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/styles/index.js",
+      "bytes": 239,
+      "sha256": "66fe5c9b211a3f52a3cb2495b49cd3cff1b4fc442533d070ec9493f0a0e09d63",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/styles/native.css",
+      "bytes": 8454,
+      "sha256": "a77e67ee6a626337777a95bec66e6fb59a0740c6adc0baeac86439b9d5b97d90",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/styles/page.css",
+      "bytes": 15507,
+      "sha256": "00770cb67e3273bbb5af77c9728d3231702416113359c3fa7330068588695b0b",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/styles/welcome.css",
+      "bytes": 2462,
+      "sha256": "2edd12f0fa9781772b62d499f0d162a51e530e6c6521fa3df95bae5b789d1e39",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/src/vendor/drill.js",
+      "bytes": 370924,
+      "sha256": "70325366c60b92b91bda9f2fa21ed8aea34474fdc7e20f36b6cd00cc27fb0543",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/api.mjs",
+      "bytes": 3587,
+      "sha256": "90ff4b9f0bb1b00e6df7bb5d1ffe493e50a5684ede988633f800f3553216309f",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/apply-result.test.cjs",
+      "bytes": 7879,
+      "sha256": "484d8390b060be1e706899c9f32dd91957c149359589ef136b24dabe150e9a65",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/check.cjs",
+      "bytes": 9794,
+      "sha256": "96e3049a1489026225fa98dc9bb0a8b94fb8e01866dce2ca8da62ede4bfcab1c",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/community.cjs",
+      "bytes": 8657,
+      "sha256": "b01b00f3b8f44d511946812ca046fb3deccae8a3c9fac80b490c59b91f5c6eca",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/layout-notice.test.cjs",
+      "bytes": 4338,
+      "sha256": "082b8e3f0ba636a632d5672dda10506e2dbecb91e8428536e62573d6ca145f0f",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/maintenance.test.cjs",
+      "bytes": 15639,
+      "sha256": "5460ec534df0c4a8473f83cc46acb3d1a89758bd225a8a54f9b4b7b20824069e",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/requests.cjs",
+      "bytes": 9809,
+      "sha256": "d569285e86148a4c1acfd5259c27824ac6e343a27294ec0b1eda88bb4e402aca",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/restart.test.cjs",
+      "bytes": 1709,
+      "sha256": "34005342f0b28bd5758ad6bc965a84e415b3f8f775c4a96edb27863f40435ff4",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/rewind-browser.mjs",
+      "bytes": 3313,
+      "sha256": "7b6ee4ad947057a141c445e7e2748fa0cd3343cb7817b40e73f28f5719671c15",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/rewind.mjs",
+      "bytes": 5433,
+      "sha256": "0451ef0402e6e36561272b668937d66cf4e49e6bda9bce64e640a5574c54e3b6",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/session-context.mjs",
+      "bytes": 2695,
+      "sha256": "b1e61120cb05f5781af3def8045ba10e4a9a97006131bf682cc482a35c61dd0e",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/status.test.cjs",
+      "bytes": 7878,
+      "sha256": "6dcfac2d2b4ac8b8570310efcd01ad10e2e6d29fb1a8bf6529155a2c6791a60d",
+      "kind": "panel-source"
+    },
+    {
+      "path": "packages/purge-panel/test/welcome.test.cjs",
+      "bytes": 1608,
+      "sha256": "d4236091707c45b409ff9a7983ef78a584e0226efc000d94fcc94e06284d71d5",
+      "kind": "panel-source"
+    },
+    {
+      "path": "presets/redteam/agent.cordis.yml",
+      "bytes": 27685,
+      "sha256": "a0130e7bcc021dca95c71ad9adc13fbfb802dde1f7cdaee5b40a4b3f0a522689",
+      "kind": "preset-source"
+    },
+    {
+      "path": "presets/redteam/anchor-gate.mjs",
+      "bytes": 8005,
+      "sha256": "2e17e967eeb7e3aeaf69aa78d6c51365dc2e7e20f3cd71d7ce5437bea3ace9ae",
+      "kind": "preset-source"
+    },
+    {
+      "path": "presets/redteam/preset.yml",
+      "bytes": 319,
+      "sha256": "269e085ef71774f94c8817aaf36d77d9f36ffa619ae635a322f818171e1539b0",
+      "kind": "preset-source"
+    },
+    {
+      "path": "presets/unrestricted/agent.cordis.yml",
+      "bytes": 15483,
+      "sha256": "09e36b0a9bd305cbe83dbc3c87fc8a5cd40f64f7aaab366b97c07ab44985d3c2",
+      "kind": "preset-source"
+    },
+    {
+      "path": "presets/unrestricted/preset.yml",
+      "bytes": 255,
+      "sha256": "ade241d0051981a8d756631e032110e96af4b699d6a9cbfc6654c9115f23d639",
+      "kind": "preset-source"
+    },
+    {
+      "path": "release-notes.md",
+      "bytes": 104937,
+      "sha256": "364c28d0c6456d85e02398b0ca5b17a6d1fec559019b93aaf61d74e3dd93958c",
+      "kind": "repository-source"
+    },
+    {
+      "path": "screenshots.json",
+      "bytes": 240,
+      "sha256": "c62dcfaec8a8b173de119fb6498d72faae31c22825dbcf31c9313121fc9a0077",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/alias-runtime-scenarios.mjs",
+      "bytes": 6603,
+      "sha256": "b0421e42534b656fddfa923b5a220b6802f9f95cc45a91b24b1178f3f590b596",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/bootstrap-install.mjs",
+      "bytes": 27346,
+      "sha256": "1c583a54e629b79f2ac64143fe6a7f773b0e4ac89762c6cd8a0edad956a603f6",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/build-client.mjs",
+      "bytes": 2895,
+      "sha256": "bfcf9b8678b6e1a23633a08162393c075846ebc6dcaac65de7c0af7719802ff7",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/build-market.mjs",
+      "bytes": 6271,
+      "sha256": "0a6413fa4e51e71e6d540ae78ea22b9f9d903235f0deb418fa6a309f408a0a66",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-alias-install-runtime.mjs",
+      "bytes": 3347,
+      "sha256": "60391912c8793275d475894e093dbd1cbf72815d37c91cd6c7cd04d6ea4d674e",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-architecture-runtime.mjs",
+      "bytes": 2315,
+      "sha256": "ec9568f513813212f7c800f9234407f3100f8e0eb8900b1ccbaac3065e2f59e9",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-audit-ownership.mjs",
+      "bytes": 3782,
+      "sha256": "05098f5e9e2f97c9e99227a9fa33fadd1e4b9dd185432859829a155e7517e669",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-bootstrap-download-runtime.mjs",
+      "bytes": 1834,
+      "sha256": "1e4d5d36fbb251ebec60b994d7dc779a942d11abe2d800654920a90b0c5fe54f",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-cordis-composition.mjs",
+      "bytes": 1941,
+      "sha256": "ceb3315544fb82dd2a16dbfbb1b4b38ea848dfb38c0152040bc67c255470d6d2",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-desktop-entry-runtime.mjs",
+      "bytes": 4402,
+      "sha256": "676f00e270aa8413e097d518086357784870feeb1c79add7e8ae071d659f91fa",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-docs.mjs",
+      "bytes": 3893,
+      "sha256": "d530cb4497f15e4e0e2c1cb797a4449510b743efe8061e3bd918e75f70890325",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-electron-diagnostic-target.mjs",
+      "bytes": 7720,
+      "sha256": "e542f64219b9dc8dd553a004a06b1982b130fc5d0abc552127962bdd9c08519a",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-electron-selfcheck.mjs",
+      "bytes": 4479,
+      "sha256": "2c351932485d5ba3f5de37692b36f0f459e8481fd25a0730b8ea25a15c725c2a",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-evidence-tools-runtime.mjs",
+      "bytes": 4097,
+      "sha256": "bd6d01d8a23b9be9061144642fc5d0ce0f61d1920b3586de28dfa5fc12eba97c",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-extraction-runtime.mjs",
+      "bytes": 2182,
+      "sha256": "9a94fcf81b363f68030c05709cc107a08292ad80f80da8673a3a145db2a5af3c",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-install-instructions-runtime.mjs",
+      "bytes": 9296,
+      "sha256": "73b149bad54fef158c4e2fb3d5cb6b573940d598178b803565608279bf4fd128",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-install-lifecycle-runtime.mjs",
+      "bytes": 3634,
+      "sha256": "1c644557c8811c224a21b108deb581126305ff19fcf3e64bed76993cb845b8e1",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-instance-diagnostics-runtime.mjs",
+      "bytes": 1946,
+      "sha256": "d1594c48e879db24f5d66a316ec3b19c9dc010ebf213202865a910337e1eb377",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-linked-install-runtime.mjs",
+      "bytes": 4751,
+      "sha256": "59c6e1b35a7464d4ad1e4dffcb9d9a9ef601ad302085db05e7d29300d060b89c",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-linux-install-runtime.mjs",
+      "bytes": 4399,
+      "sha256": "16963ec1a20c7d00b2b889b57927210fcd876ec87cf7626b6fc4a5fc2530972c",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-macos-handoff.mjs",
+      "bytes": 8290,
+      "sha256": "a9b71d6d8bd0ac35be696f0367ae412c18f767f044b521e4399b6390262c7e23",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-maintenance-runtime.mjs",
+      "bytes": 1415,
+      "sha256": "512f3e66beb380c4da07e475460d1598e72742f756feff3f8de44de6d78c5765",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-market-migration-runtime.mjs",
+      "bytes": 5053,
+      "sha256": "6143af18a626e6f4ad95cf0d5c727b441d4254f9d91d52e97798b311d2ebda64",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-native-prompt-electron.mjs",
+      "bytes": 1516,
+      "sha256": "319502592000a2f6012cb182d65e5d5a3c8be2b41a457bf1e9f7929df66609cb",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-native-prompt-integrity.mjs",
+      "bytes": 5765,
+      "sha256": "1c4e01bbd85b9a07b57326e138253df48b8d4a22ae3387c7943617bd0edc9b4f",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-native-skills-runtime.mjs",
+      "bytes": 2429,
+      "sha256": "e44ae0215aff51fdd628bfcaddce6084a3ff1a0a131b43315131ce866b8eac99",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-npm-alias-runtime.mjs",
+      "bytes": 903,
+      "sha256": "a7d58f35083778135b04be3d6dc2b3a91422ba1e9b4d9d9a70d4975244eb998f",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-npm-install-runtime.mjs",
+      "bytes": 3828,
+      "sha256": "85822734955c18a65ff7a6473e7d06c9bafbdc7e6f149eb4e3c4de49b3c22948",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-offline-dependency-migration.mjs",
+      "bytes": 2823,
+      "sha256": "b7de59c449c192b586cb6829749ceff4a982f15864e0c14db4995ada3aaff046",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-preset-runtime.mjs",
+      "bytes": 4960,
+      "sha256": "c9b6b4d6473f71fb8fa66ebea86e01d30da99c6377b5271ea54c0bb60feee14e",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-runtime-migration.mjs",
+      "bytes": 4502,
+      "sha256": "2dd17f6790fc65c2af55ac38b9bfdcd6166d723a7bdb9d42aaa40ba12bc57742",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-runtime-upgrade.mjs",
+      "bytes": 2495,
+      "sha256": "d2c5fa8efd92a4abb2e848f5e11a6983628f11f9ca0e0751385b900c2d58b6b4",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-status-runtime.mjs",
+      "bytes": 3591,
+      "sha256": "42ebe662831b0fc788e4954bbb63b0a81b7116ebc3d6e15f084e6d8c0ae0ab63",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-update-channel-runtime.mjs",
+      "bytes": 1578,
+      "sha256": "a40ba85bac716f9dd919307d7e3611c61da605c4284296d0abcbcc45300196ea",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-update-layout-runtime.mjs",
+      "bytes": 2312,
+      "sha256": "f0e875ec950b587ee19978f02e87e3c84ccd77dcdd1f885d9680846f57a93fde",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-update-runtime.mjs",
+      "bytes": 1236,
+      "sha256": "6a197b42a940053d68158ff5365f0297cc4d7635db41a8542f1670f4e8f7b02f",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/check-windows-job-handoff.ps1",
+      "bytes": 6882,
+      "sha256": "f8116cba4a848a21b367b936f5040fc1be7dc69da1b7d3c637a16f421cea3988",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/embed-default-prompt.mjs",
+      "bytes": 1119,
+      "sha256": "174d8f5b366615164942c48d02c9f2fb027472108616755d9e2bb62c767494f7",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/exec-proof.mjs",
+      "bytes": 1053,
+      "sha256": "1cde0fe167cf59d7101f3620478e448d663a9767aa59d1ecca699104e658cc91",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/export-engagement-report.mjs",
+      "bytes": 2334,
+      "sha256": "b68556f55b643dc236c3ebd2fe914834c88af73cbbd3944aaaba44be4c3fdce1",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/install-lifecycle-scenarios.mjs",
+      "bytes": 8443,
+      "sha256": "948dcb687777a9f935c6e5434244f9df71bbe99cd68dcf405d26d254d192377f",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/install.ps1",
+      "bytes": 5052,
+      "sha256": "f4495c362f421c539ff3ef1e276acb2bb4756aef6d620a8ed8b870e761df5008",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/install.sh",
+      "bytes": 3658,
+      "sha256": "a06d0641a2170ad25771c906ae9e74c6e2c387f5630d53c065bebc686b14c481",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/lib/check-install-examples.mjs",
+      "bytes": 2819,
+      "sha256": "048f02926fa3fb9ed0c495c755fbd55968d93892d8b5ffe7cf387f694fcd892d",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/patch-client-dock.mjs",
+      "bytes": 24683,
+      "sha256": "0c310d5ac208a6e68a514a7fb88a369c605845d72f09f8ce783ade60832836e1",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/prepare-install-cli-fixture.mjs",
+      "bytes": 1815,
+      "sha256": "e03cb006f652f4e862a05e37ff3340a21623bb397862cbc37a3dd63fa256614e",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/redteam-setup.sh",
+      "bytes": 25533,
+      "sha256": "a83015b01eab5b2ab9518bea13f1820b3419bfa54ab08d9b45721c2d4a59c752",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/refusal-report.mjs",
+      "bytes": 3825,
+      "sha256": "aff82c9c251e23288db09492e60d4d34508507fecf2a52a7a82eb439ff4bea6d",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/smoke.mjs",
+      "bytes": 5486,
+      "sha256": "ee86f72077fd0db6cde8f25754eb2c8622324f68d3bfc701398febf25f7b09aa",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/update-contributors.mjs",
+      "bytes": 4370,
+      "sha256": "bf67116249ce69bec2d0c98ea73d8a61e3307b276c924babab020790619d0ee1",
+      "kind": "repository-source"
+    },
+    {
+      "path": "scripts/verify-rollback-runtime.mjs",
+      "bytes": 6075,
+      "sha256": "68bf3a9594664c3c25bf999553a0908dd8db08a9ea47e25a4c6113ddd123755a",
+      "kind": "repository-source"
+    },
+    {
+      "path": "skills/redteam/active-scan.md",
+      "bytes": 1776,
+      "sha256": "c1b4d256c525d153679439531153dd67fe047e57510c13264d5c5986b24cb7f2",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/asset-correlation.md",
+      "bytes": 534,
+      "sha256": "c4958b40e581204ed9b487c395f1102bfbd7290ab9029f3d01b0f30530f52391",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/browser-automation.md",
+      "bytes": 4475,
+      "sha256": "0f5d3cd79773f6ec2f1ee3e9d6290fec878ee0f982ad291ead541d57ea2822f8",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/chisel-tunnel.md",
+      "bytes": 6190,
+      "sha256": "37ac489f90339e5378322bea0dc9d8bc3cbe7f781792c844f5e8c44631e5e54a",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/cn-proxy-pool.md",
+      "bytes": 5038,
+      "sha256": "34f35ca19b776410d0adacdc2a7733733eb4562c12668a74286533ea5ec9b633",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/credential-attack.md",
+      "bytes": 8928,
+      "sha256": "a036dcabae76642c5d014b306a6554f000d07f750c9918668d0b9a35a82524aa",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/dir-bruteforce.md",
+      "bytes": 6727,
+      "sha256": "3b9c5b7068e96d17c6ec2eadb7346b7bdf4b1d14380705ccdf28b88dec325aba",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/fofa-recon.md",
+      "bytes": 8207,
+      "sha256": "c870bc65b0d37222cc563bab2b9c9823341a27ba65275091ff54c552e636d5a3",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/frp-tunnel.md",
+      "bytes": 6417,
+      "sha256": "e2447f61d436cec6db9e0f9f0eb9ac5aa1764e2620cb678795fde77abe52422c",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/fscan-intranet.md",
+      "bytes": 9287,
+      "sha256": "7c766ed035e8bbe1ae561e705b2ff2c032c9529538af63cb84d835101ee5d4a8",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/gogo-intranet.md",
+      "bytes": 10035,
+      "sha256": "f8ba7330239c2dd90278204ed1f8595ceddb7d9c1ba03b9aa95893280fc4d7ef",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/kimi-webbridge.md",
+      "bytes": 5889,
+      "sha256": "f47369e8e040a23a4ebb13cfd8e2c0447b7482ca7cbe77d75145510d59e1428a",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/lateral-movement.md",
+      "bytes": 8140,
+      "sha256": "c01056bd82e70569282abdd3a89c9cdd574b8a47e505505262c0fed273eb6c7f",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/nuclei-scan.md",
+      "bytes": 6355,
+      "sha256": "8dd8753714ee13decb678cdfcc5d31afea56bee6942dc163db72ebe3f638acaf",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/passive-recon.md",
+      "bytes": 736,
+      "sha256": "b0f76bf87d7f6edfe6752026683c87ac278581c2f48bff9e5c0c0e5c13648f5b",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/recon-pipeline.md",
+      "bytes": 6190,
+      "sha256": "bd5721df7f179c2f70c2e9c0d5eb69667c6a04a6fc028c07b43d857ad38678a0",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/redteam-setup.md",
+      "bytes": 6828,
+      "sha256": "8133e57c756d25a08395dd04516f2f52a85bf71f06f1785c070aa60f77248f17",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/shell-handler.md",
+      "bytes": 8081,
+      "sha256": "32b959095bbc6306e14715083c436b64707a1bca066165e63a9303dc38c631fa",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/suo5-tunnel.md",
+      "bytes": 3325,
+      "sha256": "6201f6ba448a713cb2a3cf9f33c2f6493a75ad1482e87579a60f4299a1a6d3cd",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/unauth-exploit.md",
+      "bytes": 9771,
+      "sha256": "054adf976553c9eabd7f06195d1edba8f727ae80db8e6274a566ee9d40ced91a",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/vps-reverse-shell.md",
+      "bytes": 9623,
+      "sha256": "385994f12c752ca392fb8ccf1d4435c39cef0113a8c49abdb6eb42cd9c91cbf3",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/web-fingerprint.md",
+      "bytes": 980,
+      "sha256": "b627dce7cc018701d218ad668e658af674bc581d90ee9f85e36971bdec1922fb",
+      "kind": "skill-source"
+    },
+    {
+      "path": "skills/redteam/webshell-toolkit.md",
+      "bytes": 6221,
+      "sha256": "ba51d9111b0d23fe89b58b94c67e92001fd2a1ee1df5e2dc2bf236f8346f71fe",
+      "kind": "skill-source"
+    },
+    {
+      "path": "test/agent-loop-022-contract.test.mjs",
+      "bytes": 5501,
+      "sha256": "85962db16249881d2e52108c29c106f8605b1ecd5c6444f25f4fe896bc259cd1",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/agent-loop-newline.test.mjs",
+      "bytes": 2634,
+      "sha256": "0b4646a3001c75b5ff165fd110cc63134f84148ebdae24f80af15116ed5da3b1",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/anchors.test.mjs",
+      "bytes": 2056,
+      "sha256": "03112c71cba07538bcec948843617ccc9a89393ecbf8a7974be1bcd9b8dfce1c",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/apply-missing-target.test.mjs",
+      "bytes": 5891,
+      "sha256": "58b13e9e77a31292be61fc19a751e01528b207a71cfa02157fc093e051a6d3d6",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/asar-swap-fallback.test.mjs",
+      "bytes": 9605,
+      "sha256": "7c2eaf16fd79609ed67cdbf24f61fefda4d25c76eec086b85515a79d60b221b5",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/ask-user-wait.test.mjs",
+      "bytes": 1377,
+      "sha256": "7a7c7a80ae72410ef71f93579a23e97f5c14902d9398079320c5344c58eea134",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/atomic-files.test.mjs",
+      "bytes": 7098,
+      "sha256": "ac4886c2ad50630deb72cedebbecac4e9030a8db2873394cbb830b563173717a",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/audit-regressions.test.mjs",
+      "bytes": 4487,
+      "sha256": "711b06efe2a99f5f219ff5da18e0bb5de98e8e07ca75c4df6691a65db9a4c3bc",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/audit.test.mjs",
+      "bytes": 2995,
+      "sha256": "4de75afeb7101d5e0e33c65709a608243384161c35067d73af64d30671d7f4e5",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/boost.test.mjs",
+      "bytes": 2555,
+      "sha256": "bbf33bec72f50ee6d99223639a88e1deacdc6d243145dfe9ef40ed8f996ecb29",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/bootstrap-curl.test.mjs",
+      "bytes": 4298,
+      "sha256": "48c33a986b40a0344e3f466a5ffef129ac69781b7b0ed96768dc8d28d5bfb3fa",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/bootstrap-download.test.mjs",
+      "bytes": 6842,
+      "sha256": "e46b5a0fd7e5de37911251a4bc4fe735e239aa383123488ad5b1dbbe94940905",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/bootstrap-install.test.mjs",
+      "bytes": 6782,
+      "sha256": "e18198f8d7b669897d454ff19929a0e2270603db2d19fd0b9e85c3a720cf5069",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/bypass-contract.test.mjs",
+      "bytes": 2971,
+      "sha256": "478f18d0c221c68fddf9feae5a0bc64eecf7d545dcb176b49b6f89ab6ee2f42f",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/chatml-envelope.test.mjs",
+      "bytes": 1617,
+      "sha256": "d4840299feb60c8e3bcba56d9d75e6770b8d0357e1b774d647162c6246aade39",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/command-registration.test.mjs",
+      "bytes": 1479,
+      "sha256": "116491656ee434fb81026d4dd98749ea9a7dfa49680eb2dcad428db61a6e8c6c",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/community.test.mjs",
+      "bytes": 28843,
+      "sha256": "2cf71ebdf5a8bb76e62690a6d4c18deb63b60c740fdfa7f49d1e9235dac273e4",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/cwd-compat.mjs",
+      "bytes": 1709,
+      "sha256": "78f92aa5f899a0e1ce40ec3c831dd1c5b2bc2358cfb3e6970598ec002de668b0",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/desktop-cli-130.test.mjs",
+      "bytes": 8425,
+      "sha256": "331444c1510b87c8ea9b1a7b4935b8e7cd782efa3d3211b4cb04071288aec12d",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/desktop-entry.test.mjs",
+      "bytes": 5910,
+      "sha256": "7dc95207ddf584ffce78db6030fe371f660a117ffe8fac33d0d948daf8b527a0",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/desktop-identity.test.mjs",
+      "bytes": 5988,
+      "sha256": "25a8c8de07a70ef2365a87994e99275385f30ab1cbda8b0d336e6d702923753d",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/desktop-next-host.test.mjs",
+      "bytes": 15711,
+      "sha256": "f85fafa4f2b0ba9d18fd9d38a69488d00d322cc06cf0c3578120994fd0686b87",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/desktop-presets.mjs",
+      "bytes": 7352,
+      "sha256": "e2640d6efdff689f53cec3827c27cbce3cd37e89645267e06e42a108416ed4fd",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/desktop-registration.mjs",
+      "bytes": 2840,
+      "sha256": "cff2c71496ea9cc00d6921e8640c62cb47f33a79020d6a44340050665e15a85f",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/desktop-target.test.mjs",
+      "bytes": 8637,
+      "sha256": "92106cb8b5c8b87636b83cd466af85cc070faaf2e0ef9e0688d22f63252af78d",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/drift-status.test.mjs",
+      "bytes": 2880,
+      "sha256": "bf0cd925e2ae2cf48a158fb891798618f1062ca84e87d9f52888a44928024480",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/expect-contract.test.mjs",
+      "bytes": 3571,
+      "sha256": "789e3f23d29a7b63c3c7c0f2862b785689093bdd34a7021daf066f4a952b8d37",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/fixture-paths.test.mjs",
+      "bytes": 1550,
+      "sha256": "c464c815c339d4d67b9a7ea341a2ffdec4f2f47f1ef2cd8e628b91775a85faa2",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/fixtures/agent-loop-022-LICENSE",
+      "bytes": 1086,
+      "sha256": "e5b182b2fccc24c632788ed1e86a45e7a927d801bdf11c1b6b2a831854678826",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/fixtures/agent-loop-022-native.json",
+      "bytes": 5636,
+      "sha256": "91263d82e4cba7156f54b69796ccf4461e5d14d477d2f5cb0d1dca49863c3122",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/fixtures/inject-clauses.json",
+      "bytes": 6515,
+      "sha256": "1b2a4ee485500bac28628bc511deaeaa757ffe25fd55c4fccc122b45c3c89d18",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/fixtures/observed-state-rc5.js.txt",
+      "bytes": 2450,
+      "sha256": "eccde82f7f14d894558f1ea60772d527bc702f42f2096a49df257a3ee6f4d68c",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/fixtures/prompt-rc5-host.json",
+      "bytes": 1779,
+      "sha256": "15c6424cd8cc0da5178926dbbde92ac582deeb4e9e4638403a279ca6452a0f87",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/fixtures/sandbox-policy-rc5.js.txt",
+      "bytes": 1079,
+      "sha256": "20d2f7abe242f18235b5688e4c2861ca73cc8ec32a46b4690f7cf728e9cbf77a",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/fixtures/steering-rc2.json",
+      "bytes": 12616,
+      "sha256": "b7b9d68a5446fcfbf7bca0e92112eb981a1180b74e0ed336b1cf9c6e4109105c",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/fixtures/windows-handoff-errors.ps1",
+      "bytes": 2251,
+      "sha256": "9441e75d72fcc27662f54db31eb36322d784e239f5c8bed375cb5cef3982a60b",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/host-backup.test.mjs",
+      "bytes": 2557,
+      "sha256": "451bd0b8d2cb23f87953692a33d78476ba7fc7722f9341964c41447778b5788f",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/host-layout-unknown.test.mjs",
+      "bytes": 3417,
+      "sha256": "91ba88f649c6d4e0fbfc4a4889a08ccb32cd5095ba061660971174e7b8a1d196",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/host-layout.test.mjs",
+      "bytes": 4704,
+      "sha256": "127b279c6bb15c268756f117bb6281e13c31ae3e0a617881aed7b1e3ce825512",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/http-handlers-target.test.mjs",
+      "bytes": 13194,
+      "sha256": "3a0f901f184b42f61238dabf55f90ea86d4c277608839ba188ca15982a1fdd55",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/inject-contract.test.mjs",
+      "bytes": 1606,
+      "sha256": "2acebedb010af8409e725de37019f93cd2dccdccb221cf88e5b726e9c39dea09",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/inject-split.test.mjs",
+      "bytes": 1155,
+      "sha256": "70109fbcb0037481f06456443d6205fd8a8ae97d32f8fe1abd219c12741d3818",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/install-docs.test.mjs",
+      "bytes": 4222,
+      "sha256": "40e2c90f3ba64af246814197b16f0451d302656732a99ba1cbb0d69205618328",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/install-registry.test.mjs",
+      "bytes": 6357,
+      "sha256": "8894c47a841c75221f161181e0c6db818f4e11209b6efce0573709dbc7d3192a",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/install-windows.ps1",
+      "bytes": 5320,
+      "sha256": "f4fdcf6d871640fa0abeb3191193ed9bef68b45754ab3ee5d0289c4054a21716",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/installed-package.test.mjs",
+      "bytes": 3672,
+      "sha256": "d175db9c980bfa4b8f95a77a39f79f3110dc7cfe546fac8ad1027c790e808fb2",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/instance-partial-evidence.test.mjs",
+      "bytes": 2538,
+      "sha256": "ddc98bfa7dbcdb6bbb85aef60eca5452f1c83bbb4abff4fa8207767dd37f2697",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/instance.test.mjs",
+      "bytes": 26430,
+      "sha256": "863a2e99a7b603f2b8b584c0d0ff8a673cc5e89cebab1ce703caec20b9383c57",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/issue40-followup.test.mjs",
+      "bytes": 3687,
+      "sha256": "b702c1c94dc3998e64b03c3e8e273f9972e7f6eb1c70f64500ec3d6c43d993e6",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/linux-install.test.mjs",
+      "bytes": 16727,
+      "sha256": "88d4812a5cdab821f5654224e50c7c9cf0ab49473b8a82b5019958583a8066f0",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/linux-shim.test.mjs",
+      "bytes": 2251,
+      "sha256": "2f28bf905761cf535281022e353293e952c52edf2bb1f01f3c78b7ccc1826b32",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/list-performance.test.mjs",
+      "bytes": 2469,
+      "sha256": "45c9d9f66b2afeef8239d2fdf919fd45792318fba2073d2f16f59a045762fc93",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/macos-handoff.test.mjs",
+      "bytes": 6748,
+      "sha256": "2bbc0b25b05f21600aa089636babeb997cc62918537ae81e34b144c7d9b522a8",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/maintenance-boundaries.test.mjs",
+      "bytes": 9882,
+      "sha256": "5285d4aa7d77eb28e31bbb2b6887d3c009c5b6b6632e07eaad398c642295e2bb",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/maintenance-cli.test.mjs",
+      "bytes": 2743,
+      "sha256": "cd2f1a6f5187cb90480400e6a3693e81261d90d05af3e091c6baa759127ad22f",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/maintenance-lifecycle.test.mjs",
+      "bytes": 3174,
+      "sha256": "f0d9e45b394b77dede41549ae22ac4fc5055aeed1784ace1201656bdd945f187",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/market-migration.test.mjs",
+      "bytes": 3362,
+      "sha256": "e47c07d2d689df827e1d455134a1aa485ca877da2c68e3ffbe64b24ce949c07c",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/market.test.mjs",
+      "bytes": 2521,
+      "sha256": "2f97f653ba78c525bce035e1d3bcf78cfeb1967079ac7a234388ecc47bbd0608",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/native-input-integrity.test.mjs",
+      "bytes": 5014,
+      "sha256": "efe88d555350c31a14ad652dce4ba9645ab7114dabe521c713c4f71423f4ed00",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/no-region-gate.test.mjs",
+      "bytes": 1114,
+      "sha256": "9ff25c8ed248f2141492dc512d92bf51decdcb5f719e53611d71242408f3ece4",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/opt-in-patches.test.mjs",
+      "bytes": 6478,
+      "sha256": "6b560cd4b1150feeacde24dd7debea3ef4499ca2ad7c1cccee1c6db05aa4db07",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/owner-review-fixes.test.mjs",
+      "bytes": 11513,
+      "sha256": "ab3d8e1891bdce0553714c3d3d8e53054d17e29608a32ea0b0ebf22fc3ba5f9e",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/partial-status.test.mjs",
+      "bytes": 6628,
+      "sha256": "33442b9aa63efd1a415e08458635276e227e95a8a9297761c8df1f3b11ae4e59",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/patch-anchors.test.mjs",
+      "bytes": 14354,
+      "sha256": "723cc765e0ce99550c8870dbbb1ba42a63af5d830c43e34f6bb7224d6287442f",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/permission-state.test.mjs",
+      "bytes": 2805,
+      "sha256": "6212dfa068b231f279aadb2fb585a617ac845665489e594ae93f3e017a594e77",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/plugin-lifecycle.test.mjs",
+      "bytes": 4079,
+      "sha256": "7ff87ec5ae7892085f4c9e8068397c958cd8e3e34ec14f8ce3532354570adeb9",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/preset-compat.test.mjs",
+      "bytes": 8789,
+      "sha256": "8e59fab40a6464594a8be1c3f8cd01e2a2d1b568668b1614c00d79fa42f1307b",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/preset-injection.test.mjs",
+      "bytes": 8706,
+      "sha256": "b0145825a85b3c66d9146898582aae665581e9b226b93dc17e8a1e44ae585014",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/presets.test.mjs",
+      "bytes": 5455,
+      "sha256": "168cf1ea388c8fbc4409e907d57cbdbb98678daac8f7e6328b65ecdbec1b81f8",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/probe.test.mjs",
+      "bytes": 1567,
+      "sha256": "308b2c2324129301aaa4f1337a0ccb6ae24d3fecff4ade5769b42a93576bf3c6",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/prompt-preservation.test.mjs",
+      "bytes": 4028,
+      "sha256": "f8e19d64b2395d3662fa426143cbf1c469f141e112c304a1cce9e48687d45bf2",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/prompt-sections.test.mjs",
+      "bytes": 6050,
+      "sha256": "4e0531e90d69245edad2861d83bf733d9eaf3a62913329c879ce9ea3d1285e9c",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/redteam-atomic-write.test.mjs",
+      "bytes": 1655,
+      "sha256": "d59cf5950c0075ff84b06c09164717577995db65561cedd9efefdd81d1512e12",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/redteam-evidence-ledger.test.mjs",
+      "bytes": 5673,
+      "sha256": "f9d996a9dc1faee61dcfe50e03a9b5b2dc42739749cdc4b30cf095100d78eb65",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/redteam-evidence-store.test.mjs",
+      "bytes": 3567,
+      "sha256": "acbf86ad14112eee5b2145007608a5eb8ac6337d0499a70de1a74e57c3e14e35",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/redteam-host.test.mjs",
+      "bytes": 3363,
+      "sha256": "243be835c5651c494a0dc297bea02f5d32af31f3358baa0e57fb9550002395ff",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/redteam-tools-contract.test.mjs",
+      "bytes": 1372,
+      "sha256": "a177ca40bb4481d8129c372c4be559110198f77d05f04e34eddfa8466f1356a2",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/refusal-retry.test.mjs",
+      "bytes": 3849,
+      "sha256": "c2b4c0a95d47581017f10f7c5633d8b7e9fe510ed97b9a15dc00ea300d340e8a",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/remove-tree.test.mjs",
+      "bytes": 4914,
+      "sha256": "0a22707b34d25ad22d74c85c12d84e5f7404ade3d2076886637978a29de2427a",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/resolve-instance-target.test.mjs",
+      "bytes": 7829,
+      "sha256": "d98de2f249d7923507638358a445955d065e3456b8206c8598c82799481c9bf2",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/review-integrity.test.mjs",
+      "bytes": 9143,
+      "sha256": "26e7337bd5c183996078304f15321beeebba2e5afed5b86f510c6d8b8ce7f0da",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/runtime-error.test.mjs",
+      "bytes": 2212,
+      "sha256": "6c1be8a960d26fa7805583f34bcb0f3e3524fa081232ece6245ce06f72f7aef7",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/runtime-layout.test.mjs",
+      "bytes": 13004,
+      "sha256": "9c1e123b088c6acbda28d08284c648bb65e8704bf3b448047cdc5ab2ce9f653f",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/selfcheck.test.mjs",
+      "bytes": 20894,
+      "sha256": "3cb2cc6d2d637daa1204b7048553eff89f5a8db746a3d336f77395ce33ff1d9a",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/settings-api.test.mjs",
+      "bytes": 2436,
+      "sha256": "8419350dd4b261998e514ca66b2969936d35074c656599fd9447855fb4808a3e",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/settings-migration-modules.test.mjs",
+      "bytes": 2610,
+      "sha256": "b5a43fa60d10237435261abd27451c9c0ce21cde49aad23f618a9af1b071e436",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/stale-maintenance-lock.test.mjs",
+      "bytes": 11216,
+      "sha256": "9428618bfe4c3f0f6cbe6a604dda8b45cf90740e26dda006ab00eebb529fbfcb",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/steer-migration.test.mjs",
+      "bytes": 3841,
+      "sha256": "dd90ca954df38593cf8f846cbcd6f415261843efd55c5e6970fa92272a83250d",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/steering-files.test.mjs",
+      "bytes": 3111,
+      "sha256": "65945a0644508faed4e96a56bf17c590fbc697cce360d74d0c411e7d92556775",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/steering-runtime.test.mjs",
+      "bytes": 9685,
+      "sha256": "8c7e14d363aa76e716d780bc2920ca09d4cf1525bc748f2b3b37065c868faf65",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/uninstall.test.mjs",
+      "bytes": 8245,
+      "sha256": "c27dfdc364f32a18341f41d9da352214b3ca808ed723eaca2063cec7b982225d",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-download.test.mjs",
+      "bytes": 4484,
+      "sha256": "b10153bd9871b2e24cdcfeaaa7c817980206d8c37a47e9d35505f8a64e8ab745",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-http.test.mjs",
+      "bytes": 5759,
+      "sha256": "f9ed67b136801eb122452175ffb8dd487d66f3e8ad0aaea7624628e8967a02a8",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-integrity.test.mjs",
+      "bytes": 6004,
+      "sha256": "e20a1d7b972d70cee6fcf73055190fede8629489d6dc5c474a01513c5fadc277",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-mirror.test.mjs",
+      "bytes": 5083,
+      "sha256": "3549ca5ab5aef4d96d9d15347642a56e022aaeca48c2616ac3dbc83b679842c8",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-policy.test.mjs",
+      "bytes": 16032,
+      "sha256": "c3714ccc5c0b894605437940ac3dcf432100aadb3877f79a252ba6d6e407c946",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-proxy-runtime.test.mjs",
+      "bytes": 9869,
+      "sha256": "6c92bd1114592cb1775a0376b0e6629a449b3155e4ba5e5fa669a20907484134",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-recovery.test.mjs",
+      "bytes": 7398,
+      "sha256": "51be2234d8af205655b3f5613193a23919c77f6967fd8cd4f24580472bcba0af",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-resilience.test.mjs",
+      "bytes": 4394,
+      "sha256": "b6d080a9340f5c17a513ef5bc1b889b7c4d30474eb1a7bfb6d78e39eb71d2ad1",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-secrets.test.mjs",
+      "bytes": 10071,
+      "sha256": "b195ec0c5335c9b6ab8b90369d947799ae0b73c3a6a3dec910a96a75d7524c31",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-source.test.mjs",
+      "bytes": 819,
+      "sha256": "7db5b11297c379d8dab4cfbf2f09c0a92a4f70005e2240b3beae5f4752d3ae27",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/update-status.test.mjs",
+      "bytes": 9022,
+      "sha256": "83189986dba08fd055ef4710c044b55d4eefba0ff1c1afe22f39094629837031",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/web-cookie-scope.test.mjs",
+      "bytes": 3355,
+      "sha256": "b521b375475df88e1d6a65647ff80a4dd95721e1a307f8de957344d8ce98909c",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/web-restart.test.mjs",
+      "bytes": 1327,
+      "sha256": "12560c066a52e3370f7e2aa174d67b03e870810946da5e9df6f85753352957f3",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/windows-electron-handoff.test.mjs",
+      "bytes": 6519,
+      "sha256": "89aeee6768f13dd57e04ba5cd79c8f00eb025cec3bdc5c9b8e690140bcf6b090",
+      "kind": "test-fixture"
+    },
+    {
+      "path": "test/windows-lock.test.mjs",
+      "bytes": 4518,
+      "sha256": "b5187764020f1502ccbe3ac4b57dcc8954c099bdaebc7a9a93a11952b4b6dbc3",
+      "kind": "test-fixture"
+    }
+  ]
+}

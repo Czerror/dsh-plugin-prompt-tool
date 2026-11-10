@@ -1,0 +1,586 @@
+{
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "version": "1.6.86",
+  "fixedSource": {
+    "files": 499,
+    "bytes": 7189573
+  },
+  "note": "固定499快照的相关提示词、规则、技能、预设与动态输入数据子集；不搬UI/安装器/测试/私有状态。",
+  "sources": [
+    {
+      "path": "CONTRIBUTORS.md",
+      "bytes": 5352,
+      "sha256": "7f204ca6055851f518ece6022c1688f625ef1a254a870e97e16b24e10a461d31",
+      "kind": "repository-source",
+      "asset": "assets/source/CONTRIBUTORS.md.json"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 1084,
+      "sha256": "fc0852e0b944982eda5c38127faac27e14caaf09eee47c7e42682e64f01695cd",
+      "kind": "repository-source",
+      "asset": "assets/source/LICENSE.json"
+    },
+    {
+      "path": "NOTICE.md",
+      "bytes": 1159,
+      "sha256": "2a8feeae3c48b63b584b4e9bb1bb264ee55b98aa2f5b6ed1490a58e89beb83f1",
+      "kind": "repository-source",
+      "asset": "assets/source/NOTICE.md.json"
+    },
+    {
+      "path": "docs/redteam-upstream-DISCLOSURE",
+      "bytes": 4338,
+      "sha256": "06db51f90f985d59f543583d4eb6c94e0ee3c5267f08dedbb098f235e5a70dc5",
+      "kind": "documentation",
+      "asset": "assets/source/docs/redteam-upstream-DISCLOSURE.json"
+    },
+    {
+      "path": "docs/redteam-upstream-LICENSE",
+      "bytes": 1394,
+      "sha256": "ee2a80c31b460756aaf41faa67cd381df46829548e7476907d9e47fa19304667",
+      "kind": "documentation",
+      "asset": "assets/source/docs/redteam-upstream-LICENSE.json"
+    },
+    {
+      "path": "lib/anchors.js",
+      "bytes": 3112,
+      "sha256": "d4f5107aab9131c40160db9194305a1e96dcf699ddc19fc021080add62d1c662",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/anchors.js.json"
+    },
+    {
+      "path": "lib/asset-table.js",
+      "bytes": 16853,
+      "sha256": "f92bf2586c901a9c0536bdd1512cea09c3f60a206fda5123ecece5b53decc564",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/asset-table.js.json"
+    },
+    {
+      "path": "lib/boost.js",
+      "bytes": 3464,
+      "sha256": "95110a6f7e5ccbc6ad5920f85fd3a66653cef4670399f72e4bcf8e807746a77e",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/boost.js.json"
+    },
+    {
+      "path": "lib/capability-protocol.js",
+      "bytes": 3316,
+      "sha256": "283694aec8ca355c164120b91f6ed409fa142fd09f7a73b43f868983d678e485",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/capability-protocol.js.json"
+    },
+    {
+      "path": "lib/continue-retry.js",
+      "bytes": 11967,
+      "sha256": "670c8d389bc08998b0ec8b3f2830e7c2d6859d6f20865e7f14aa77e64791bedb",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/continue-retry.js.json"
+    },
+    {
+      "path": "lib/core.js",
+      "bytes": 181861,
+      "sha256": "f717154b268983cc81313537eee52f960dd56189e6d68292ae6507e103372975",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/core.js.json"
+    },
+    {
+      "path": "lib/core/shared.mjs",
+      "bytes": 11513,
+      "sha256": "9ddc643b6323684ab6eacc651429570de269a1e857f918d5b49a90abc5fc8a8e",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/core/shared.mjs.json"
+    },
+    {
+      "path": "lib/host-clean.js",
+      "bytes": 832,
+      "sha256": "76ead8a153e2159724fbd72e92e6126525bb6cffd52a981e0ce8982d79157302",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/host-clean.js.json"
+    },
+    {
+      "path": "lib/identity.js",
+      "bytes": 42966,
+      "sha256": "603523f7cc7c8053d00b21fcc66fdaed39279329e4b7417fd96b6daefbb513a8",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/identity.js.json"
+    },
+    {
+      "path": "lib/index.js",
+      "bytes": 125624,
+      "sha256": "5eba82efbcbec9331066ccf57ae71508d211d65253e259a8397cc68f54c43160",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/index.js.json"
+    },
+    {
+      "path": "lib/net-scope.js",
+      "bytes": 16338,
+      "sha256": "8277da35a325c4b683a95e74a1ab1661226ac188cbcfb0d0af68b88fc3bd78db",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/net-scope.js.json"
+    },
+    {
+      "path": "lib/patches/code.mjs",
+      "bytes": 1834,
+      "sha256": "cfc139ce559201919031940ce50a325f58559bf513456448d166629208bce20e",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/patches/code.mjs.json"
+    },
+    {
+      "path": "lib/patches/engine.mjs",
+      "bytes": 16197,
+      "sha256": "4b0fd51b2d81d20e1c2d9ab8ed62de10d3073fae522e779b4d32ab4e79624165",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/patches/engine.mjs.json"
+    },
+    {
+      "path": "lib/patches/index.mjs",
+      "bytes": 977,
+      "sha256": "cc1db9fbdabfc24cdcf7840f179e50725d418f1f62e5fc16d419da0d89e85f19",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/patches/index.mjs.json"
+    },
+    {
+      "path": "lib/patches/new-tools.mjs",
+      "bytes": 132044,
+      "sha256": "e151a7d8927f4824a4640208f30d4cbf4dad7e40e1a7ec3f55509b8e558b3776",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/patches/new-tools.mjs.json"
+    },
+    {
+      "path": "lib/patches/opt-in.mjs",
+      "bytes": 2410,
+      "sha256": "3ea85631a915d57c974afe78cad020440004721121b25ea8c56c837e46b4e2c0",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/patches/opt-in.mjs.json"
+    },
+    {
+      "path": "lib/patches/prompt.mjs",
+      "bytes": 11363,
+      "sha256": "70958618b13d92ade4fc617991a0a01fcac9aafa916892c65f8ddf96aa54962b",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/patches/prompt.mjs.json"
+    },
+    {
+      "path": "lib/patches/shared.mjs",
+      "bytes": 5435,
+      "sha256": "5377adffbdab1c49572f8584f24e9d25e74dfd6bda29f5fd6c82e65c81701509",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/patches/shared.mjs.json"
+    },
+    {
+      "path": "lib/preset-injection.js",
+      "bytes": 3927,
+      "sha256": "90361bf8348cc619a067a9ea8585c91352bbecf7473e67cd506ed9e7172c3fac",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/preset-injection.js.json"
+    },
+    {
+      "path": "lib/presets.js",
+      "bytes": 3188,
+      "sha256": "a112de65672248d44e982edf189688180269f9b5c7f226f90170ba1028b3b3e9",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/presets.js.json"
+    },
+    {
+      "path": "lib/redteam/platform-config.js",
+      "bytes": 22766,
+      "sha256": "212f228e0cd0b37295c6ca43463e8260720d045298cee08db1b180c2e13f55af",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/redteam/platform-config.js.json"
+    },
+    {
+      "path": "lib/redteam/preset-composition.js",
+      "bytes": 17320,
+      "sha256": "99cbbe989b5bef70411c0e1f1aa32d404cd50c4a87d94ac9d49b986eec919b08",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/redteam/preset-composition.js.json"
+    },
+    {
+      "path": "lib/redteam/role-section.js",
+      "bytes": 6188,
+      "sha256": "c5aaf941a2027bf70a575496e52e6f949219196a402f0488b649c06b76129c0e",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/redteam/role-section.js.json"
+    },
+    {
+      "path": "lib/redteam/schema.js",
+      "bytes": 33949,
+      "sha256": "1feb559484849fde0a4e84b646bfdaee061c9833eb9c11a83b113904621ed5c9",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/redteam/schema.js.json"
+    },
+    {
+      "path": "lib/redteam/score-rules.js",
+      "bytes": 59438,
+      "sha256": "79152fc9373f83f95baa312fae952a1eb121e8ab19a8f31ee5381a69d818712a",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/redteam/score-rules.js.json"
+    },
+    {
+      "path": "lib/redteam/skill-availability.js",
+      "bytes": 17992,
+      "sha256": "720da40a46d4ff49c322a80cda5ed05ede7a7f22d9b4a2bcc6a8c243db97bae1",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/redteam/skill-availability.js.json"
+    },
+    {
+      "path": "lib/redteam/skill-fixes.js",
+      "bytes": 35595,
+      "sha256": "f6caa780115e863cfed2cf995084838c3bf9085334f64ae83f4bd1eb002cfcbd",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/redteam/skill-fixes.js.json"
+    },
+    {
+      "path": "lib/redteam/store-core.js",
+      "bytes": 347123,
+      "sha256": "7ef114241eeda7cd88c4288bbfab0a8c2b443855df7101cbca288576c7e17889",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/redteam/store-core.js.json"
+    },
+    {
+      "path": "lib/redteam/tools.js",
+      "bytes": 137803,
+      "sha256": "b488109b7e9c6613061a3973170cced38d863736faa759ffb891e231f05f206a",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/redteam/tools.js.json"
+    },
+    {
+      "path": "lib/refusal-retry.js",
+      "bytes": 5390,
+      "sha256": "350cb61498167ff60a568c2666f2911f7caf697e60551a6656b3d8ec6f1618da",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/refusal-retry.js.json"
+    },
+    {
+      "path": "lib/rewind.js",
+      "bytes": 21432,
+      "sha256": "72a9096a43c7717fd06ae6739a3aa1f358e86bb0cded9c1319b78e2999adbb22",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/rewind.js.json"
+    },
+    {
+      "path": "lib/rules.js",
+      "bytes": 18242,
+      "sha256": "70700b04f56071b7d1469b636d66fcec80a6c99a9a4fc9d7185d0b820bca98f7",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/rules.js.json"
+    },
+    {
+      "path": "lib/steering.js",
+      "bytes": 3515,
+      "sha256": "2272e89a2a3e75d9d40f59e44d282dced06e3f288fe511df7de48d6df1800dcc",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/steering.js.json"
+    },
+    {
+      "path": "lib/table-key.js",
+      "bytes": 942,
+      "sha256": "b0de48b5f24731c9bd26c267b072d69a29a6e2e835036114ad277715c3f2f81c",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/table-key.js.json"
+    },
+    {
+      "path": "lib/table-read.js",
+      "bytes": 585,
+      "sha256": "01744c57aa976f438ca581829a4afd15106ba425aa77b46bb8de118e2973e648",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/table-read.js.json"
+    },
+    {
+      "path": "lib/tuning.js",
+      "bytes": 3117,
+      "sha256": "ce86c7b0b1c4cdde9c2afa46cc099a096a54a9d8566bb179edf6cf714d54bc4f",
+      "kind": "runtime-source",
+      "asset": "assets/source/lib/tuning.js.json"
+    },
+    {
+      "path": "presets/redteam/agent.cordis.yml",
+      "bytes": 27685,
+      "sha256": "a0130e7bcc021dca95c71ad9adc13fbfb802dde1f7cdaee5b40a4b3f0a522689",
+      "kind": "preset-source",
+      "asset": "assets/source/presets/redteam/agent.cordis.yml.json"
+    },
+    {
+      "path": "presets/redteam/anchor-gate.mjs",
+      "bytes": 8005,
+      "sha256": "2e17e967eeb7e3aeaf69aa78d6c51365dc2e7e20f3cd71d7ce5437bea3ace9ae",
+      "kind": "preset-source",
+      "asset": "assets/source/presets/redteam/anchor-gate.mjs.json"
+    },
+    {
+      "path": "presets/redteam/preset.yml",
+      "bytes": 319,
+      "sha256": "269e085ef71774f94c8817aaf36d77d9f36ffa619ae635a322f818171e1539b0",
+      "kind": "preset-source",
+      "asset": "assets/source/presets/redteam/preset.yml.json"
+    },
+    {
+      "path": "presets/unrestricted/agent.cordis.yml",
+      "bytes": 15483,
+      "sha256": "09e36b0a9bd305cbe83dbc3c87fc8a5cd40f64f7aaab366b97c07ab44985d3c2",
+      "kind": "preset-source",
+      "asset": "assets/source/presets/unrestricted/agent.cordis.yml.json"
+    },
+    {
+      "path": "presets/unrestricted/preset.yml",
+      "bytes": 255,
+      "sha256": "ade241d0051981a8d756631e032110e96af4b699d6a9cbfc6654c9115f23d639",
+      "kind": "preset-source",
+      "asset": "assets/source/presets/unrestricted/preset.yml.json"
+    },
+    {
+      "path": "skills/redteam/active-scan.md",
+      "bytes": 1776,
+      "sha256": "c1b4d256c525d153679439531153dd67fe047e57510c13264d5c5986b24cb7f2",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/active-scan.md.json"
+    },
+    {
+      "path": "skills/redteam/asset-correlation.md",
+      "bytes": 534,
+      "sha256": "c4958b40e581204ed9b487c395f1102bfbd7290ab9029f3d01b0f30530f52391",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/asset-correlation.md.json"
+    },
+    {
+      "path": "skills/redteam/browser-automation.md",
+      "bytes": 4475,
+      "sha256": "0f5d3cd79773f6ec2f1ee3e9d6290fec878ee0f982ad291ead541d57ea2822f8",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/browser-automation.md.json"
+    },
+    {
+      "path": "skills/redteam/chisel-tunnel.md",
+      "bytes": 6190,
+      "sha256": "37ac489f90339e5378322bea0dc9d8bc3cbe7f781792c844f5e8c44631e5e54a",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/chisel-tunnel.md.json"
+    },
+    {
+      "path": "skills/redteam/cn-proxy-pool.md",
+      "bytes": 5038,
+      "sha256": "34f35ca19b776410d0adacdc2a7733733eb4562c12668a74286533ea5ec9b633",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/cn-proxy-pool.md.json"
+    },
+    {
+      "path": "skills/redteam/credential-attack.md",
+      "bytes": 8928,
+      "sha256": "a036dcabae76642c5d014b306a6554f000d07f750c9918668d0b9a35a82524aa",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/credential-attack.md.json"
+    },
+    {
+      "path": "skills/redteam/dir-bruteforce.md",
+      "bytes": 6727,
+      "sha256": "3b9c5b7068e96d17c6ec2eadb7346b7bdf4b1d14380705ccdf28b88dec325aba",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/dir-bruteforce.md.json"
+    },
+    {
+      "path": "skills/redteam/fofa-recon.md",
+      "bytes": 8207,
+      "sha256": "c870bc65b0d37222cc563bab2b9c9823341a27ba65275091ff54c552e636d5a3",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/fofa-recon.md.json"
+    },
+    {
+      "path": "skills/redteam/frp-tunnel.md",
+      "bytes": 6417,
+      "sha256": "e2447f61d436cec6db9e0f9f0eb9ac5aa1764e2620cb678795fde77abe52422c",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/frp-tunnel.md.json"
+    },
+    {
+      "path": "skills/redteam/fscan-intranet.md",
+      "bytes": 9287,
+      "sha256": "7c766ed035e8bbe1ae561e705b2ff2c032c9529538af63cb84d835101ee5d4a8",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/fscan-intranet.md.json"
+    },
+    {
+      "path": "skills/redteam/gogo-intranet.md",
+      "bytes": 10035,
+      "sha256": "f8ba7330239c2dd90278204ed1f8595ceddb7d9c1ba03b9aa95893280fc4d7ef",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/gogo-intranet.md.json"
+    },
+    {
+      "path": "skills/redteam/kimi-webbridge.md",
+      "bytes": 5889,
+      "sha256": "f47369e8e040a23a4ebb13cfd8e2c0447b7482ca7cbe77d75145510d59e1428a",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/kimi-webbridge.md.json"
+    },
+    {
+      "path": "skills/redteam/lateral-movement.md",
+      "bytes": 8140,
+      "sha256": "c01056bd82e70569282abdd3a89c9cdd574b8a47e505505262c0fed273eb6c7f",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/lateral-movement.md.json"
+    },
+    {
+      "path": "skills/redteam/nuclei-scan.md",
+      "bytes": 6355,
+      "sha256": "8dd8753714ee13decb678cdfcc5d31afea56bee6942dc163db72ebe3f638acaf",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/nuclei-scan.md.json"
+    },
+    {
+      "path": "skills/redteam/passive-recon.md",
+      "bytes": 736,
+      "sha256": "b0f76bf87d7f6edfe6752026683c87ac278581c2f48bff9e5c0c0e5c13648f5b",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/passive-recon.md.json"
+    },
+    {
+      "path": "skills/redteam/recon-pipeline.md",
+      "bytes": 6190,
+      "sha256": "bd5721df7f179c2f70c2e9c0d5eb69667c6a04a6fc028c07b43d857ad38678a0",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/recon-pipeline.md.json"
+    },
+    {
+      "path": "skills/redteam/redteam-setup.md",
+      "bytes": 6828,
+      "sha256": "8133e57c756d25a08395dd04516f2f52a85bf71f06f1785c070aa60f77248f17",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/redteam-setup.md.json"
+    },
+    {
+      "path": "skills/redteam/shell-handler.md",
+      "bytes": 8081,
+      "sha256": "32b959095bbc6306e14715083c436b64707a1bca066165e63a9303dc38c631fa",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/shell-handler.md.json"
+    },
+    {
+      "path": "skills/redteam/suo5-tunnel.md",
+      "bytes": 3325,
+      "sha256": "6201f6ba448a713cb2a3cf9f33c2f6493a75ad1482e87579a60f4299a1a6d3cd",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/suo5-tunnel.md.json"
+    },
+    {
+      "path": "skills/redteam/unauth-exploit.md",
+      "bytes": 9771,
+      "sha256": "054adf976553c9eabd7f06195d1edba8f727ae80db8e6274a566ee9d40ced91a",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/unauth-exploit.md.json"
+    },
+    {
+      "path": "skills/redteam/vps-reverse-shell.md",
+      "bytes": 9623,
+      "sha256": "385994f12c752ca392fb8ccf1d4435c39cef0113a8c49abdb6eb42cd9c91cbf3",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/vps-reverse-shell.md.json"
+    },
+    {
+      "path": "skills/redteam/web-fingerprint.md",
+      "bytes": 980,
+      "sha256": "b627dce7cc018701d218ad668e658af674bc581d90ee9f85e36971bdec1922fb",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/web-fingerprint.md.json"
+    },
+    {
+      "path": "skills/redteam/webshell-toolkit.md",
+      "bytes": 6221,
+      "sha256": "ba51d9111b0d23fe89b58b94c67e92001fd2a1ee1df5e2dc2bf236f8346f71fe",
+      "kind": "skill-source",
+      "asset": "assets/source/skills/redteam/webshell-toolkit.md.json"
+    }
+  ],
+  "texts": [
+    {
+      "path": "assets/prompts/default-prompt-inject.json",
+      "bytes": 25128,
+      "sha256": "1757f1774457b448323ba036ec177c3c638d2a6dc97c9aa8ca2a1cc3e07528bc"
+    },
+    {
+      "path": "assets/prompts/redteam/plan.json",
+      "bytes": 8144,
+      "sha256": "d655bc6c89abbc5698425d8333b868a0dd9fa42997b83f2d1cc895252efc007f"
+    },
+    {
+      "path": "assets/prompts/redteam/recon.json",
+      "bytes": 12183,
+      "sha256": "d177c8d349387638f87a186a984a04680269a2fc621de449b06d40106b36bd6a"
+    },
+    {
+      "path": "assets/prompts/redteam/assess.json",
+      "bytes": 7373,
+      "sha256": "dc4617da5bd9a64f705262a78f48f49e6a84c074c0c5489b51d0a2ea22b5bee0"
+    },
+    {
+      "path": "assets/prompts/redteam/vuln-scan.json",
+      "bytes": 15409,
+      "sha256": "32cc36b62aa6f35bbdb71fbfc2435204245c5efa97a2b5d265b20e3c6ba70b45"
+    },
+    {
+      "path": "assets/prompts/redteam/exploit.json",
+      "bytes": 17298,
+      "sha256": "461a24808d3663c54b2e453f59e34a0c8966d8aabda331759139728453b56352"
+    },
+    {
+      "path": "assets/prompts/redteam/internal.json",
+      "bytes": 14289,
+      "sha256": "33e5fa496111368ea788c7e1fe97e73c29eba2febaf36934b10b8ad5a7f07e5e"
+    },
+    {
+      "path": "assets/prompts/redteam/COMMON_ENV.json",
+      "bytes": 371,
+      "sha256": "594f25bd3e39031ce80395b80dd279fcd4ce7b937bc801a2e4f9ec6fc65ba5a0"
+    },
+    {
+      "path": "assets/prompts/redteam/COMMON_BIND.json",
+      "bytes": 115,
+      "sha256": "0f3f163734c4157d050fb1dc3429b5fbcc519bec112cb5329f812bf7d72d3337"
+    },
+    {
+      "path": "assets/prompts/redteam/COMMON_SCORE_RULES.json",
+      "bytes": 4215,
+      "sha256": "b73c7609d8d4067f7afb526b0ec9ba0cde818dd834279306d2ae97f74f6fd9d1"
+    },
+    {
+      "path": "assets/prompts/redteam/COMMON_DB_LOOKUP.json",
+      "bytes": 1038,
+      "sha256": "1bc0a46c5b61bcd836244521201dc634ca2507e0ecc9bfdf65a6ac338ce91f0d"
+    },
+    {
+      "path": "assets/prompts/redteam/COMMON_EVIDENCE.json",
+      "bytes": 2895,
+      "sha256": "6df6dd5940142d8ac00cfd55ccef259e83d49cb7cdf0669e687a4e758e4b53d3"
+    },
+    {
+      "path": "assets/prompts/redteam/COMMON_HANDOFF.json",
+      "bytes": 744,
+      "sha256": "88b8f4d82866b96a9b655250b84db7475c3475a728b63634cdca000404f2666c"
+    },
+    {
+      "path": "assets/prompts/runtime/BOOST_TEXT.json",
+      "bytes": 1850,
+      "sha256": "e6258f1806f0ea8b9918960f95acf5e698f659d93c846067f56f760b031619c4"
+    },
+    {
+      "path": "assets/prompts/runtime/OFFICIAL_PROTOCOL.json",
+      "bytes": 1066,
+      "sha256": "4c03a088127857fc73de5bd5fcbcce279e4197717b707b671a58a735d769cc3c"
+    },
+    {
+      "path": "assets/prompts/runtime/REDTEAM_LEAD_PROTOCOL.json",
+      "bytes": 681,
+      "sha256": "6622b9f1112858a9d8431552bfe42430b93690b76b16c51e869f6ce01221516c"
+    },
+    {
+      "path": "assets/prompts/runtime/REDTEAM_CHILD_PROTOCOL.json",
+      "bytes": 414,
+      "sha256": "8a59306e76b70b505befa8298d74303a73dec93e6e500bd71fa86ccea20fc4b1"
+    },
+    {
+      "path": "assets/prompts/runtime/RETRY_NUDGE.json",
+      "bytes": 358,
+      "sha256": "2361f6cd70addf9522dda3734f30ef89bcecb4560ad353c4280992654568c161"
+    }
+  ]
+}

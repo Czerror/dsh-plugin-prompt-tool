@@ -257,7 +257,8 @@ test('实际插件 modulesEnabled 总闸撤回后续身份贡献且保留模块�
   const { setModuleEnabled, readStorageConfig } = await import('../../src/host/config-store.ts')
   ensureModuleSeed(moduleRoot)
   const dir = join(moduleRoot, 'limit-breaker'), current = readModuleRules(dir)
-  editModuleRules(dir, { expectedRevisions: current.revisions, edits: current.rules.map(rule => ({ previousId: rule.id, rule: { ...rule, enabled: true }, settingsChanged: true })) })
+  const identityRules = rules => rules.filter(rule => ['purge-4', 'purge-25'].includes(rule.id))
+  editModuleRules(dir, { expectedRevisions: current.revisions, edits: identityRules(current.rules).map(rule => ({ previousId: rule.id, rule: { ...rule, enabled: true }, settingsChanged: true })) })
   setModuleEnabled(moduleRoot, 'limit-breaker', true)
   let modulesEnabled = true
   const world = await personaWorld(t, () => [], { modulesEnabled: { get: () => modulesEnabled } })
@@ -266,7 +267,9 @@ test('实际插件 modulesEnabled 总闸撤回后续身份贡献且保留模块�
   modulesEnabled = false; world.root.emit('loader/volatile-update'); await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(await world.texts(agent), [IDENTITY, 'You are a coding agent powered by the {{model}} model.\nFUNCTION', 'TAIL'])
   assert.ok(readStorageConfig(moduleRoot).source.enabled.includes('limit-breaker'))
-  assert.ok(readModuleRules(dir).rules.every(rule => rule.enabled === true))
+  const saved = readModuleRules(dir).rules
+  assert.ok(identityRules(saved).every(rule => rule.enabled === true))
+  assert.ok(saved.filter(rule => !['purge-4', 'purge-25'].includes(rule.id)).every(rule => rule.enabled === false))
   modulesEnabled = true; world.root.emit('loader/volatile-update'); await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(await world.texts(agent), ['', '\nFUNCTION', 'TAIL'])
 })

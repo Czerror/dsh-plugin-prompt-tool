@@ -1,0 +1,7 @@
+{
+  "source": "skills/redteam/web-fingerprint.md",
+  "commit": "126caa2c99297223a7e0e87e604aecfc802f396e",
+  "bytes": 980,
+  "sha256": "b627dce7cc018701d218ad668e658af674bc581d90ee9f85e36971bdec1922fb",
+  "text": "---\r\nname: web-fingerprint\r\ndescription: Web 服务指纹识别：框架、中间件、CMS、组件版本\r\nwhenToUse: 已发现 HTTP/HTTPS 服务，需要识别技术栈时\r\nrole: recon\r\nenabled: true\r\n---\r\n\r\n## 方法\r\n1. 响应头：`Server`、`X-Powered-By`、`Set-Cookie` 特征。\r\n2. 页面特征：favicon 哈希、静态资源路径、报错页、robots.txt。\r\n3. 主动探测：nuclei 技术识别模板 `nuclei -u <url> -tags tech`；HTTP 存活与技术栈汇总用 `~/.local/bin/pd-httpx -l urls.txt -tech-detect -title -status-code -web-server`（**ProjectDiscovery 版必须用 pd-httpx，`/usr/bin/httpx` 是 Python 库的 CLI**）。\r\n4. 大网段批量指纹用技能 `gogo-intranet`（`gogo -i <cidr> -p top2 -v --af`，主动指纹要加 `-v`）。\r\n5. 版本比对：从指纹推断产品与版本，为漏洞检测做准备。\r\n\r\n## 落库要求\r\n写入 fingerprint 表：category（框架/中间件/CMS/组件）、vendor、product、version、evidence。\r\n"
+}

@@ -1,0 +1,13 @@
+{
+  "sources": [
+    "lib/asset-table.js",
+    "lib/table-key.js",
+    "lib/table-read.js"
+  ],
+  "transformation": "AES-256-GCM authentication, zlib inflate, UTF-8; no trim or rewrite",
+  "bytes": 25128,
+  "utf16Units": 21194,
+  "lines": 226,
+  "sha256": "1757f1774457b448323ba036ec177c3c638d2a6dc97c9aa8ca2a1cc3e07528bc",
+  "normalizedSha256": "111bcf3a26ec7e300d592e298231fe7d611526de3b86c1cdd1002c94d89536ed"
+}
