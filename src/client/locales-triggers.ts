@@ -1,5 +1,6 @@
 /** 判断与执行声明编辑文案；已知字段名称本地化，配置值保留协议原文。 */
 export const TRIGGERS_ZH = {
+  'triggers.label.toolReady': '工具执行就绪',
   'triggers.label.compacted': '已经压缩', 'triggers.label.promoteOn': '晋升触发事件',
   'triggers.label.promoteEvents': '晋升事件名单',
   'triggers.label.subscribe': '订阅事件更新',
@@ -190,6 +191,7 @@ export const TRIGGERS_ZH = {
 } as const
 
 export const TRIGGERS_EN: Record<keyof typeof TRIGGERS_ZH, string> = {
+  'triggers.label.toolReady': 'Tool execution ready',
   'triggers.label.compacted': 'Compacted', 'triggers.label.promoteOn': 'Promotion trigger',
   'triggers.label.promoteEvents': 'Promotion event names',
   'triggers.label.subscribe': 'Subscribe to event updates',

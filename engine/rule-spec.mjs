@@ -421,6 +421,7 @@ function needsMountContext(node) {
   if (Object.hasOwn(node, 'variable')) return true
   // manifest 要读挂载 scope 的清单检查服务（准备期没有）。
   if (Object.hasOwn(node, 'manifest')) return true
+  if (Object.hasOwn(node, 'tool')) return true
   if (Object.hasOwn(node, 'soul')) return true
   if (Object.hasOwn(node, 'phase') && node.phase?.subscribe !== false) return true
   if (node.anchor?.after !== undefined) return true

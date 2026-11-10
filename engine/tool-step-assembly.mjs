@@ -1,4 +1,5 @@
 import { associateToolStep, associateToolSelection, associateToolAssembly, beginToolCatalog, settleToolCatalog, toolAssemblyContext, hasToolStep, toolStepOf } from './tool-scope.mjs'
+import { toolDependenciesReady } from './tool-definition.mjs'
 
 const installations = new WeakMap()
 const guardedRoots = new WeakSet()
@@ -40,7 +41,7 @@ function createInstallation(ctx) {
   const closes = new Set()
   let active = true
   const selected = agent => [...owners].filter(owner => owner.knows(agent))
-  const wrap = (original, context) => {
+  const wrap = (original, context, tools) => {
     const existing = wrappers.get(original)
     if (existing !== undefined) {
       if (toolStepOf(existing, context.agent) === undefined) throw new Error('prompt-tool: tool set belongs to another Agent')
@@ -50,7 +51,7 @@ function createInstallation(ctx) {
       ? undefined : Object.freeze({ ...context.modelSelection }) }
     const wrapped = Object.freeze({
       view(scope) {
-        const admitted = original.view(scope)
+        const admitted = new Map([...original.view(scope)].filter(([, definition]) => toolDependenciesReady(tools, definition, context.agent, original)))
         if (step.status === 'closed') return new Map()
         return step.allowed === undefined ? admitted : new Map([...admitted].filter(([name]) => step.allowed.has(name)))
       },
@@ -85,7 +86,7 @@ function createInstallation(ctx) {
         try {
           context.signal.throwIfAborted()
           if (!active) throw unavailable()
-          const wrapped = wrap(original, captured)
+          const wrapped = wrap(original, captured, target)
           associateToolSelection(context.modelSelection, context.agent, toolStepOf(wrapped, context.agent))
           return wrapped
         } catch (error) { original.dispose(); throw error }

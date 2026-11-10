@@ -83,6 +83,25 @@ test('公开 resolve/assemble 后置收窄最终声明与实际执行，官方 w
   toolSet.dispose()
 })
 
+test('显式工具就绪条件读取执行owner，缺失暂停说明且恢复后下一集合生效', async t => {
+  const rules = [{ id: 'dependent', if: { tool: { name: 'late_delegate' } }, then: [{ id: 'body', kind: 'inject-text', config: { layer: 'system-section', text: 'TOOL READY BODY' } }] },
+    { id: 'independent', then: [{ id: 'body', kind: 'inject-text', config: { layer: 'system-section', text: 'CONTROL BODY' } }] }]
+  const h = await harness(t, rules)
+  await h.agent.ctx.plugin({ inject: ['tools'], apply(ctx) { applyCustomTools(ctx, { tools: [{ id: 'late_delegate', name: 'late_delegate', description: 'late delegate', output: { schema: { type: 'object' } }, execute: { kind: 'delegate', tool: 'late_target' } }] }) } })
+  let expected = false
+  const render = async () => { const set = await h.services.tools.resolve(h.context); assert.equal(set.view(h.agent).has('late_delegate'), expected); const assembly = await h.services.prompt.assemble({ ...h.context, toolSet: set }); set.dispose(); return assembly.sections.map(section => section.text).join('\n') }
+  assert.doesNotMatch(await render(), /TOOL READY BODY/)
+  assert.match(await render(), /CONTROL BODY/)
+  const off = h.root.tools.register({ name: 'late_target', description: 'late', parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({}) })
+  expected = true
+  assert.match(await render(), /TOOL READY BODY/)
+  off(); expected = false
+  assert.doesNotMatch(await render(), /TOOL READY BODY/)
+  rules[0].enabled = false; h.write(); await h.runtime.refresh()
+  h.root.tools.register({ name: 'late_target', description: 'restored', parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({}) }); expected = true
+  assert.doesNotMatch(await render(), /TOOL READY BODY/, '暂停期间用户关闭后恢复目标不重启说明')
+})
+
 test('pending 拒绝公开批次和原服务 guard，失败或取消关闭一次，重试复用封存快照', async t => {
   const h = await harness(t)
   const resolve = h.rawTools.resolve

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createServer } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -227,6 +228,72 @@ test('delegate 执行器：嵌套身份和步骤准入保留，最终值、上�
   assert.deepEqual(notifications[0].result.content, [{ type: 'text', text: 'final nested content' }])
   assert.equal(notifications[0].result.concludesTurn, true)
   assert.equal(notifications[1].result, result)
+})
+
+test('内联工具注册冲突整组撤销，同名delegate拒绝而不假装透传祖先', async t => {
+  const { root, agent, scope } = await realHarness(t)
+  const ancestor = { name: 'probe', description: 'ancestor', parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({ ancestor: true }) }
+  root.tools.register(ancestor)
+  const existing = { name: 'taken', description: 'existing', parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({}) }
+  await mountTools(scope, ctx => {
+    ctx.tools.register(existing)
+    assert.throws(() => apply(ctx, { tools: [toolOf({ kind: 'fs', action: 'list', path: '.' }), { ...toolOf({ kind: 'fs', action: 'list', path: '.' }), id: 'taken', name: 'taken' }] }), /already registered|duplicate/)
+    assert.equal(ctx.tools.get('probe', agent), ancestor, '失败候选不留第一项工具，祖先继续可见')
+    assert.equal(ctx.tools.get('taken', agent), existing)
+    assert.throws(() => apply(ctx, { tools: [toolOf({ kind: 'delegate', tool: 'probe' })] }), /delegate.*same|delegate.*itself|递归/)
+    assert.throws(() => apply(ctx, { tools: [{ ...toolOf({ kind: 'fs', action: 'list', path: '.' }), name: 'run_code' }] }), /reserved/)
+  })
+  const owner = await scope.ctx.plugin({ inject: ['tools'], apply(ctx) { apply(ctx, { tools: [toolOf({ kind: 'fs', action: 'list', path: '.' })] }) } })
+  assert.notEqual(root.tools.get('probe', agent), ancestor, '较近scope遮蔽祖先')
+  await owner.dispose()
+  assert.equal(root.tools.get('probe', agent), ancestor, '关闭来源恢复仍存活祖先')
+})
+
+test('delegate依赖缺失暂停执行资格，真实目标恢复后下一集合可调用', async t => {
+  const { root, agent, scope } = await realHarness(t)
+  await mountTools(scope, ctx => apply(ctx, { tools: [toolOf({ kind: 'delegate', tool: 'late_target' })] }))
+  const context = { agent, signal: new AbortController().signal }
+  const missing = await root.tools.execute({ ...context, calls: [{ type: 'tool-call', id: 'missing-call', name: 'probe', arguments: '{}' }] })
+  assert.equal(missing.results[0].result.value.ok, false)
+  assert.match(missing.results[0].result.value.error, /unknown tool/)
+  const off = root.tools.register({ name: 'late_target', description: 'target', parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({ answer: 42 }) })
+  const ready = await root.tools.resolve(context)
+  assert.equal(ready.view(agent).has('probe'), true)
+  const batch = await root.tools.execute({ ...context, toolSet: ready, calls: [{ type: 'tool-call', id: 'ready-call', name: 'probe', arguments: '{}' }] })
+  assert.deepEqual(batch.results[0].result.value, { ok: true, value: { answer: 42 } })
+  ready.dispose(); off()
+})
+
+test('HTTP执行器在真实请求中保留caller取消，不等待工具超时', async t => {
+  const entered = Promise.withResolvers(), server = createServer((_req, res) => { entered.resolve(); res.on('close', () => {}) })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => { server.closeAllConnections(); server.close() })
+  const controller = new AbortController(), marker = new Error('caller stopped')
+  const { tool } = registerTool(toolOf({ kind: 'http', url: 'http://127.0.0.1:' + server.address().port }, 2000))
+  const pending = tool.execute({}, { signal: controller.signal })
+  await entered.promise; controller.abort(marker)
+  const outcome = await Promise.race([pending.then(() => 'resolved', error => error), new Promise(resolve => setTimeout(() => resolve('still-running'), 100))])
+  assert.equal(outcome, marker)
+  await pending.catch(() => {})
+})
+
+test('shell执行器转发caller取消并结束本次子进程', async t => {
+  const controller = new AbortController(), marker = new Error('cancel shell')
+  const { tool } = registerTool(toolOf({ kind: 'shell', command: nodeEval('setTimeout(()=>{},10000)') }, 15000))
+  const pending = tool.execute({}, { agent: { session: { header: { cwd: tempRoot(t) } } }, signal: controller.signal })
+  const timer = setTimeout(() => controller.abort(marker), 50)
+  try { await assert.rejects(pending, error => error === marker) } finally { clearTimeout(timer) }
+  let sideEffects = 0
+  const server = createServer((_req, res) => { sideEffects++; res.end('OK') })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => { server.closeAllConnections(); server.close() })
+  const cancelled = new AbortController(), stopped = new Error('cancelled during approval')
+  let approvedTool
+  apply({ tools: { register: tool => { approvedTool = tool; return () => {} } }, logger: { info() {}, warn() {} },
+    get: name => name === 'approval' ? { request: async () => { cancelled.abort(stopped); return 'allowed-once' } } : undefined },
+  { requireApproval: ['shell'], tools: [toolOf({ kind: 'shell', command: nodeEval(`fetch('http://127.0.0.1:${server.address().port}').then(r=>r.text())`) }, 2000)] })
+  await assert.rejects(approvedTool.execute({}, { name: 'probe', callId: 'approval-cancel', agent: { session: { header: { cwd: tempRoot(t) } } }, signal: cancelled.signal }), error => error === stopped)
+  assert.equal(sideEffects, 0, '审批返回前取消后不得启动shell本地HTTP副作用')
 })
 
 test('ask-user 执行器：批准结果经真实工具管线透传', async (t) => {

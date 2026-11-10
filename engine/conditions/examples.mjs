@@ -11,4 +11,5 @@ export const PREDICATE_EXAMPLES = {
   variable: { key: 'quota', op: 'lte', value: '0', scope: 'effective' },
   manifest: { ok: true },
   soul: { pending: true },
+  tool: { name: 'tool_name' },
 }

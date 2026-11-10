@@ -10,6 +10,7 @@ import { createAnchorPredicate } from './anchor.mjs'
 import { createVariablePredicate } from './variable.mjs'
 import { createManifestPredicate } from './manifest.mjs'
 import { createSoulPredicate } from './soul.mjs'
+import { createToolPredicate } from './tool.mjs'
 import { withAvailableInput } from './availability.mjs'
 import { composite } from './composite.mjs'
 import { COMPOSITE_OPERATORS } from './operators.mjs'
@@ -40,6 +41,7 @@ export const PREDICATE_FACTORIES = Object.freeze({
   variable: createVariablePredicate,
   manifest: createManifestPredicate,
   soul: createSoulPredicate,
+  tool: createToolPredicate,
 })
 export { COMPOSITE_OPERATORS }
 
@@ -106,5 +108,6 @@ export function compileWhen(node, context = {}) {
     return createManifestPredicate(options, { manifestCheck: context.manifestCheck, moduleId: context.moduleId })
   }
   if (key === 'soul') return createSoulPredicate(options, context)
+  if (key === 'tool') return createToolPredicate(options, context)
   return withAvailableInput(key, options, factory(options))
 }

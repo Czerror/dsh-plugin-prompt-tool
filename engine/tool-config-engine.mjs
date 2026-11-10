@@ -52,7 +52,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse as parseYaml } from './vendor/yaml/index.js'
 import { importHostPackage } from './host-package.mjs'
 import { resolveRealWithin } from './path-safety.mjs'
-import { validateDefinition } from './tool-definition.mjs'
+import { validateDefinition, DELEGATE_TARGET } from './tool-definition.mjs'
 import { defineConfig, passthrough } from './fields.mjs'
 import { keepDisposer } from './shared.mjs'
 
@@ -227,6 +227,7 @@ function createExecute(ctx, def, requireApproval) {
   // 同一外层调用里重复 delegate 同名工具时，序号保证调用身份不塌缩。
   let delegateSeq = 0
   return async (args, run) => {
+    run.signal?.throwIfAborted()
     if (def.parameters !== undefined) {
       const violations = validateJsonSchemaValue(def.parameters, args)
       if (violations.length > 0) {
@@ -235,6 +236,7 @@ function createExecute(ctx, def, requireApproval) {
     }
     if (requireApproval.includes(exec.kind)) {
       const gate = await approvalGate(ctx, run, exec.kind, `custom tool ${def.name} (${exec.kind})`)
+      run.signal?.throwIfAborted()
       if (!gate.ok) return { ok: false, error: gate.message }
     }
     if (exec.kind === 'shell') {
@@ -256,6 +258,7 @@ function createExecute(ctx, def, requireApproval) {
         let timedOut = false
         const child = execFile(shell, argv, { cwd, env, windowsHide: true, maxBuffer: SHELL_MAX_OUTPUT_BYTES }, (error, stdout, stderr) => {
           clearTimeout(killTimer)
+          run.signal?.removeEventListener('abort', cancel)
           // 超时被杀与输出超限都不是普通退出码：error 文本必须能区分二者（不新增输出字段）。
           const reason = error === null ? undefined
             : timedOut ? `shell command timed out after ${def.timeoutMs} ms and was killed`
@@ -269,11 +272,14 @@ function createExecute(ctx, def, requireApproval) {
             ...(reason === undefined ? {} : { error: reason }),
           })
         })
+        const cancel = () => killShellTree(child)
+        run.signal?.addEventListener('abort', cancel, { once: true })
         const timeout = def.timeoutMs
         if (timeout !== undefined && Number.isSafeInteger(timeout) && timeout > 0) {
           killTimer = setTimeout(() => { timedOut = true; killShellTree(child) }, timeout)
         }
       })
+      run.signal?.throwIfAborted()
       return output
     }
     if (exec.kind === 'http') {
@@ -286,12 +292,13 @@ function createExecute(ctx, def, requireApproval) {
         method: interpolateArgs(String(exec.method ?? 'GET'), args).toUpperCase(),
         headers,
         ...(body !== undefined ? { body } : {}),
-        signal: AbortSignal.timeout(timeout),
+        signal: run.signal === undefined ? AbortSignal.timeout(timeout) : AbortSignal.any([run.signal, AbortSignal.timeout(timeout)]),
       })
       const text = await response.text()
       return { status: response.status, ok: response.ok, body: text }
     }
     if (exec.kind === 'delegate') {
+      if ((run.callId.match(/:delegate:/g)?.length ?? 0) >= 32) throw new ToolArgsError(['delegate recursion limit exceeded'])
       const delegatedArgs = mapDelegateArgs(exec.args, args)
       // nested dispatch：走完整官方管线（校验/allow-deny-ask/pre-execute/post/
       // timeout/nested token/durable result），调用身份由外层 callId 稳定派生，
@@ -384,6 +391,7 @@ function sanitizeDescription(text) {
  *  工具补空 object Schema（真实 ctx.tools.schemas() 需要 parameters 存在）。 */
 function compileTool(ctx, def, requireApproval) {
   return {
+    ...(def.execute.kind === 'delegate' ? { [DELEGATE_TARGET]: def.execute.tool } : {}),
     name: def.name,
     description: sanitizeDescription(def.description),
     parameters: def.parameters ?? { type: 'object', properties: {} },
@@ -471,6 +479,7 @@ export function apply(ctx, config) {
       return
     }
   }
+  const registered = []
   for (const def of definitions) {
     try {
       validateDefinition(def)
@@ -483,9 +492,15 @@ export function apply(ctx, config) {
       // keepDisposer 把该 disposer 纳入本插件的资源所有权（卸载即撤销）。fiber 已卸载时
       // register() 内部先抛 INACTIVE_EFFECT（与改写前 ctx.effect 的前置断言同一错误），
       // 因此注册不会发生——降级语义与错误消息逐字不变。
-      keepDisposer(ctx, ctx.tools.register(tool), `${name}: ${def.name}`)
+      const off = ctx.tools.register(tool)
+      registered.push(off)
+      keepDisposer(ctx, off, `${name}: ${def.name}`)
       ctx.logger?.info(`${name}: registered custom tool ${def.name} (${def.execute.kind})`)
     } catch (error) {
+      if (Object.hasOwn(source, 'tools')) {
+        for (const off of registered.reverse()) off()
+        throw error
+      }
       ctx.logger?.warn(`${name}: skipping tool ${JSON.stringify(def?.id ?? def?.name)}: ${error?.message ?? error}`)
     }
   }

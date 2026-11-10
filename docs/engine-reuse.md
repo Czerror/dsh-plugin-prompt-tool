@@ -130,6 +130,10 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 ## 复制协议（跨项目复用）
 
+显式工具依赖可用 `if: { tool: { name: target_tool } }` 组合原条件树；读取当前真实Agent的原toolStep及官方executable执行集合，不按目录/schema或普通变量判断。缺步骤、缺目标或显式delegate目标链不可执行均为UNAVAILABLE，not/else不能将缺失反转为命中；目标恢复后仅下一次正常集合重判，原次数/Epoch和用户关闭保持。delegate目标只附在当前工具定义的Symbol，不新增状态库；步骤view按官方原集合过滤缺目标/循环链，原工具次序和disposer保持。
+
+内联customTools整组注册失败先撤本组成功项再抛原异常，由原Slot/lastGood处理，不发布半组。较近scope仍可遮蔽祖先，同层重名及run_code保留名由官方拒绝。delegate同名自委派在定义校验时拒绝，其他递归在执行嵌套身份超过32层时明确拒绝；不把当前遮蔽者假装成祖先原实现。HTTP合并caller signal与timeout；shell取消清理本次进程树并保留caller异常身份。
+
 预算依赖沿唯一分支展开器携带的结构路径关联：预算所在分支的后代then/else均依赖它，兄弟分支和其他模块不受牵连；不按条件JSON或正文猜测。预算诊断只在完整计划已接受且真实装配结算后发布；条件miss、缺事实、异常和受众不符分别保留原判定，失败候选不覆盖旧有效观测。
 
 官方指令预算是persona可选正安全整数 `instructionsMaxBytes`，按当前真实Agent的有效动作聚合，同值共存、异值拒绝完整候选并保旧；与prefix/complete同一计划预检。预算不新建指令owner，不复制正文，不改已有baseline/projection或历史。当前步预算附在原toolStep接受计划，modelSelection反查同一步；取消信号为turn级，不能充当step键。后台projection在compose入口读取本Agent已提交计划一次，不修改在途step。

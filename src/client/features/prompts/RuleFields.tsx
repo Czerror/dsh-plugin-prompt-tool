@@ -116,7 +116,7 @@ export function RuleConditionFields(props: FieldContext & { expanded: Map<string
   const add = kind !== 'not' && (composite || !props.nested && value !== undefined) && <StepAdd
     creation={props.creation} path={props.fieldKey} label={t('rules.addCondition')} disabled={props.disabled}>
     <MenuSelect compact ariaLabel={t('rules.steps.addConditionType')} value={selected?.kind ?? ''} disabled={props.disabled || selected === undefined}
-      options={meta.predicates.map(item => ({ value: item.kind, label: triggerLabel(t, item.kind) }))} onChange={setAddKind} />
+      options={meta.predicates.map(item => ({ value: item.kind, label: triggerLabel(t, item.kind === 'tool' ? 'toolReady' : item.kind) }))} onChange={setAddKind} />
     <Button variant="outline" shape="pill" disabled={props.disabled || selected === undefined} onClick={() => {
       if (!selected || value === undefined) return
       if (composite) {

@@ -1,6 +1,15 @@
 /** 自定义工具物化定义的纯校验：host 保存/物化与运行时共用，不加载宿主服务。 */
 
 const TOOL_NAME_RE = /^[a-z][a-z0-9_]*$/
+export const DELEGATE_TARGET = Symbol.for('prompt-tool:delegate-target')
+export function toolDependenciesReady(tools, definition, agent, toolSet, seen = new Set()) {
+  const target = definition?.[DELEGATE_TARGET]
+  if (target === undefined) return true
+  if (seen.has(definition)) return false
+  seen.add(definition)
+  const dependency = tools.executable(target, agent, toolSet)
+  return dependency !== undefined && toolDependenciesReady(tools, dependency, agent, toolSet, seen)
+}
 const JSON_SCHEMA_TYPES = new Set(['string', 'number', 'integer', 'boolean', 'null', 'array', 'object'])
 const JSON_SCHEMA_ANNOTATIONS = new Set(['description', 'title', 'default', 'examples'])
 
@@ -88,6 +97,7 @@ export function validateDefinition(def) {
   if (exec.kind === 'delegate' && (typeof exec.tool !== 'string' || exec.tool.length === 0)) {
     throw new TypeError(`tool ${def.id}: execute.tool is required for delegate`)
   }
+  if (exec.kind === 'delegate' && exec.tool === def.name) throw new TypeError(`tool ${def.id}: delegate cannot target the same tool name (递归)`)
   if (exec.kind === 'delegate' && ['character_import', 'character_list', 'character_apply', 'character_remove', 'character_delete',
     'world_book_list', 'world_book_upsert', 'world_book_delete', 'world_book_read_memory', 'session_var'].includes(exec.tool)) {
     throw new TypeError(`tool ${def.id}: delegate ${exec.tool} 已退役；请重新导入或显式转换为模块工具`)

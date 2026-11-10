@@ -48,6 +48,8 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 ## 规则与变量事务
 
+工具模板继续由tools-editor整组草稿、既有customTools保存与原发布链持有；此通道沿现有契约不增加逐工具CAS。工具说明的显式依赖使用普通tool条件，工具编辑与规则正文仍各自保存，不扫描正文自动登记依赖。
+
 人设动作预算 `instructionsMaxBytes` 仍归module.yml普通规则，合法值为正安全整数。工作台直接复用RuleParameterFields数字原文、fields错误草稿、hasRuleFields保存阻断和原rule-drafts/CAS；切回继承清除此字段的原草稿，不创建独立预算保存。参考初值65536不限制用户采用其他合法值。
 
 ### 规则事务与互斥
