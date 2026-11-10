@@ -42,6 +42,19 @@ test('工具可见面：名单、发现工具与 requireMatch 按声明渲染', 
   assert.deepEqual(action, before)
 })
 
+test('装配替句沿普通规则编辑面展示原文、替文与局部开关', () => {
+  for (const target of ['sections', 'contexts']) {
+    const action = { id: 'policy', kind: 'assembly', target: { [target]: { replace: [
+      { name: 'sandbox:policy', match: 'KNOWN ORIGINAL', text: 'EDITED TEXT' },
+    ] } } }
+    const before = structuredClone(action), html = render(action)
+    for (const key of ['matchEnabled', 'entryMatch']) assert.ok(labels(html).includes(t(`rules.surface.${key}`)))
+    assert.ok(html.includes('KNOWN ORIGINAL'))
+    assert.ok(html.includes('EDITED TEXT'))
+    assert.deepEqual(action, before, '展示沿原规则草稿，不改变匹配内容')
+  }
+})
+
 test('模型流动作：模式与正文沿普通动作编辑面渲染，不修改作者声明', () => {
   const action = { id: 'output', kind: 'stream-output', mode: 'replace', text: '替代输出' }
   const before = structuredClone(action)

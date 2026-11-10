@@ -145,7 +145,7 @@ function mountSources(ctx, sources, options = {}) {
         const created = []
         const on = (channel, handler) => {
           if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
-          const entry = { rule, handler, toolSurface: action.kind === 'tool-visibility', sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
+          const entry = { rule, handler, toolSurface: action.kind === 'tool-visibility', contextReplacement: action.kind === 'assembly' && action.target?.contexts?.replace?.length > 0, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
           else handlers.push(entry)
           created.push(entry)
@@ -522,10 +522,10 @@ export function createRuleRuntime(ctx, options = {}) {
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },

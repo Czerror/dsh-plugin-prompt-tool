@@ -1,5 +1,6 @@
 export const RULES_ZH = {
-  'rules.surface.replaceEntries': '替换已有非空系统段',
+  'rules.surface.replaceEntries': '替换已有非空条目',
+  'rules.surface.matchEnabled': '局部替换', 'rules.surface.entryMatch': '匹配原文',
   'persona.instructions.label': '官方指令预算', 'persona.instructions.hint': '沿官方指令所有者限制每条指令链字节数；需要早期入口验证通过，缺失时暂停本规则的依赖贡献。',
   'rules.identity.enabled': '启用意图：开启', 'rules.identity.disabled': '启用意图：关闭',
   'rules.identity.unverified': '实际可用性：未验证', 'rules.identity.matched': '实际可用性：最近装配已匹配',
@@ -80,7 +81,8 @@ export const RULES_ZH = {
   'rules.create.none': '暂无已安装模块',
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
-  'rules.surface.replaceEntries': 'Replace an existing non-empty system section',
+  'rules.surface.replaceEntries': 'Replace an existing non-empty entry',
+  'rules.surface.matchEnabled': 'Replace matching text only', 'rules.surface.entryMatch': 'Exact original text',
   'persona.instructions.label': 'Official instruction budget', 'persona.instructions.hint': 'Limit bytes per chain through the official instruction owner. Requires the verified early entry; dependent contributions pause when unavailable.',
   'rules.identity.enabled': 'Intent: enabled', 'rules.identity.disabled': 'Intent: disabled',
   'rules.identity.unverified': 'Availability: unverified', 'rules.identity.matched': 'Availability: matched in the latest assembly',

@@ -10,8 +10,43 @@
 
 import { NAME_LIST, requireString } from './shared.mjs'
 import { interpolateVariables } from '../interpolate.mjs'
+import { toolStepFor } from '../tool-scope.mjs'
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+function replaceEntries(list, entries, target, plugin, warnOnce) {
+  if (!Array.isArray(list) || entries === undefined) return list
+  let result = list
+  for (const entry of entries) {
+    const index = result.findIndex(value => value?.name === entry.name && typeof value.text === 'string' && value.text.trim().length > 0)
+    if (entry.match !== undefined && (index < 0 || result.filter(value => value?.name === entry.name).length !== 1)) {
+      warnOnce(`${plugin}: assembly.${target}.replace target ${JSON.stringify(entry.name)} missing or ambiguous; skipped`)
+      continue
+    }
+    if (index < 0) continue
+    const current = result[index]
+    let text = entry.text
+    if (entry.match !== undefined) {
+      const at = current.text.indexOf(entry.match)
+      if (at < 0 || current.text.indexOf(entry.match, at + 1) >= 0) {
+        warnOnce(`${plugin}: assembly.${target}.replace match in ${JSON.stringify(entry.name)} missing or ambiguous; skipped`)
+        continue
+      }
+      text = current.text.slice(0, at) + entry.text + current.text.slice(at + entry.match.length)
+    }
+    if (current.text === text) continue
+    if (result === list) result = [...list]
+    result[index] = { ...current, text }
+  }
+  return result
+}
+
+/** 官方刷新仍读取原provider，只重用该步骤已接受的文本配置。 */
+export function applyAcceptedContextReplacements(assembly, step) {
+  let contexts = assembly.contexts
+  for (const plan of step?.contextReplacements ?? []) contexts = replaceEntries(contexts, plan.entries, 'contexts', plan.plugin, plan.warnOnce)
+  return contexts === assembly.contexts ? assembly : { ...assembly, contexts }
+}
 
 export function prepareAssembly(action, plugin) {
   const target = action.target
@@ -26,13 +61,18 @@ export function prepareAssembly(action, plugin) {
   const sectionsKeep = NAME_LIST.parse(target.sections?.keep, plugin, 'assembly.sections.keep')
   const sectionsAppend = target.sections?.append
   const sectionsReplace = target.sections?.replace
-  if (sectionsReplace !== undefined) {
-    if (!Array.isArray(sectionsReplace)) throw new TypeError(`${plugin}: assembly.sections.replace must be an array of { name, text }`)
-    for (const entry of sectionsReplace) {
-      if (!record(entry) || Object.keys(entry).some(key => !['name', 'text'].includes(key))) throw new TypeError(`${plugin}: assembly.sections.replace entries must be { name, text }`)
-      requireString(entry.name, 'assembly.sections.replace[].name', plugin)
-      requireString(entry.text, 'assembly.sections.replace[].text', plugin)
-      if (sectionsRemove?.has(entry.name) || sectionsKeep !== undefined && !sectionsKeep.has(entry.name)) throw new TypeError(`${plugin}: assembly.sections.replace target cannot also be removed`)
+  const contextsReplace = target.contexts?.replace
+  const contextsRemove = NAME_LIST.parse(target.contexts?.remove, plugin, 'assembly.contexts.remove')
+  for (const [key, entries] of [['sections', sectionsReplace], ['contexts', contextsReplace]]) {
+    if (entries === undefined) continue
+    if (!Array.isArray(entries)) throw new TypeError(`${plugin}: assembly.${key}.replace must be an array of { name, text, match? }`)
+    for (const entry of entries) {
+      if (!record(entry) || Object.keys(entry).some(key => !['name', 'text', 'match'].includes(key))) throw new TypeError(`${plugin}: assembly.${key}.replace entries must be { name, text, match? }`)
+      requireString(entry.name, `assembly.${key}.replace[].name`, plugin)
+      requireString(entry.text, `assembly.${key}.replace[].text`, plugin)
+      if (entry.match !== undefined && (typeof entry.match !== 'string' || entry.match.length === 0)) throw new TypeError(`${plugin}: assembly.${key}.replace[].match must be a non-empty string`)
+      if (key === 'sections' && (sectionsRemove?.has(entry.name) || sectionsKeep !== undefined && !sectionsKeep.has(entry.name))
+        || key === 'contexts' && contextsRemove?.has(entry.name)) throw new TypeError(`${plugin}: assembly.${key}.replace target cannot also be removed`)
     }
   }
   if (sectionsAppend !== undefined) {
@@ -49,7 +89,6 @@ export function prepareAssembly(action, plugin) {
     }
   }
   const contextsAdd = target.contexts?.add
-  const contextsRemove = NAME_LIST.parse(target.contexts?.remove, plugin, 'assembly.contexts.remove')
   if (target.contexts?.clear !== undefined && typeof target.contexts.clear !== 'boolean') {
     throw new TypeError(`${plugin}: assembly.contexts.clear must be boolean`)
   }
@@ -63,8 +102,8 @@ export function prepareAssembly(action, plugin) {
       requireString(entry.text, `assembly.${key}[].text`, plugin)
     }
   }
-  if (contextsClear && (contextsAdd !== undefined || contextsRemove !== undefined)) {
-    throw new TypeError(`${plugin}: assembly.contexts.clear cannot combine with add or remove — clear 已清空全部条目，同时声明语义不明`)
+  if (contextsClear && (contextsAdd !== undefined || contextsRemove !== undefined || contextsReplace !== undefined)) {
+    throw new TypeError(`${plugin}: assembly.contexts.clear cannot combine with add or remove or replace — clear 已清空全部条目，同时声明语义不明`)
   }
   if (sectionsKeep !== undefined && sectionsRemove !== undefined) {
     throw new TypeError(`${plugin}: assembly.sections cannot combine keep with remove — 一种是白名单、一种是黑名单，同时声明语义不明`)
@@ -73,15 +112,13 @@ export function prepareAssembly(action, plugin) {
     const assembled = await next()
     try {
       let result = assembled
-      if (Array.isArray(result.sections) && sectionsReplace !== undefined) {
-        let nextSections = result.sections
-        for (const entry of sectionsReplace) {
-          const index = nextSections.findIndex(section => section?.name === entry.name && typeof section.text === 'string' && section.text.trim().length > 0)
-          if (index < 0 || nextSections[index].text === entry.text) continue
-          if (nextSections === result.sections) nextSections = [...result.sections]
-          nextSections[index] = { ...nextSections[index], text: entry.text }
-        }
-        if (nextSections !== result.sections) result = { ...result, sections: nextSections }
+      let contextPlan
+      const replacedSections = replaceEntries(result.sections, sectionsReplace, 'sections', plugin, warnOnce)
+      if (replacedSections !== result.sections) result = { ...result, sections: replacedSections }
+      if (contextsReplace?.length > 0) {
+        contextPlan = Object.freeze({ entries: Object.freeze(contextsReplace.map(entry => Object.freeze({ ...entry }))), plugin, warnOnce })
+        const contexts = replaceEntries(result.contexts, contextPlan.entries, 'contexts', plugin, warnOnce)
+        if (contexts !== result.contexts) result = { ...result, contexts }
       }
       if (Array.isArray(result.sections) && (sectionsAdd !== undefined || sectionsRemove !== undefined || sectionsKeep !== undefined)) {
         const kept = sectionsKeep !== undefined
@@ -137,6 +174,8 @@ export function prepareAssembly(action, plugin) {
           }
         }
       }
+      const step = toolStepFor(context)
+      if (contextPlan !== undefined && step?.status === 'pending') (step.contextReplacements ??= []).push(contextPlan)
       return result !== assembled ? result : assembled
     } catch (error) {
       warnOnce(`${plugin}: assembly action failed, keeping the assembled sections/contexts: ${String(error?.message ?? error)}`)

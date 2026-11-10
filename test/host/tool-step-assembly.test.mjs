@@ -83,6 +83,41 @@ test('公开 resolve/assemble 后置收窄最终声明与实际执行，官方 w
   toolSet.dispose()
 })
 
+test('运行上下文替句保留官方refresh和已接受步骤，热更新及关闭只影响后续步骤', async t => {
+  const rules = [{ id: 'policy', then: [{ id: 'policy', kind: 'assembly', target: { contexts: { replace: [
+    { name: 'approval:policy', match: 'ORIGINAL POLICY', text: 'FIRST POLICY' },
+  ] } } }] }]
+  const h = await harness(t, rules)
+  let suffix = 'ONE'
+  h.root.systemPrompt.context({ name: 'approval:policy', order: 20, required: true, text: () => `BEFORE ORIGINAL POLICY ${suffix}` })
+  const render = async () => {
+    const set = await h.services.tools.resolve(h.context)
+    return { set, assembly: await h.services.prompt.assemble({ ...h.context, toolSet: set }) }
+  }
+  const text = assembly => assembly.contexts.find(entry => entry.name === 'approval:policy').text
+  const first = await render()
+  assert.equal(text(first.assembly), 'BEFORE FIRST POLICY ONE')
+  suffix = 'TWO'
+  assert.equal(text(h.services.prompt.refreshContext(first.assembly, h.context)), 'BEFORE FIRST POLICY TWO', '仍调用官方动态provider，只保留本步接受的替句配置')
+  rules[0].then[0].target.contexts.replace[0].text = 'SECOND POLICY'
+  h.write(); await h.runtime.refresh()
+  const second = await render()
+  assert.equal(text(second.assembly), 'BEFORE SECOND POLICY TWO')
+  assert.equal(text(h.services.prompt.refreshContext(first.assembly, h.context)), 'BEFORE FIRST POLICY TWO')
+  rules[0].enabled = false
+  h.write(); await h.runtime.refresh()
+  const disabled = await render()
+  assert.equal(text(disabled.assembly), 'BEFORE ORIGINAL POLICY TWO')
+  assert.equal(text(h.services.prompt.refreshContext(second.assembly, h.context)), 'BEFORE SECOND POLICY TWO')
+  const other = { id: 'policy-child', session: { id: 'policy-child', header: { delegationDepth: 1 } } }
+  assert.throws(() => h.services.prompt.refreshContext(first.assembly, { ...h.context, agent: other }), { code: 'TOOL_STEP_UNAVAILABLE' })
+  assert.equal(text(await h.root.systemPrompt.assemble({ agent: other, scope: other })), 'BEFORE ORIGINAL POLICY TWO', '其他Agent不继承此Agent的关闭前快照')
+  assert.throws(() => compileRules([{ id: 'invalid', then: [{ id: 'invalid', kind: 'assembly', target: { contexts: {
+    clear: true, replace: [{ name: 'approval:policy', match: 'OLD', text: 'NEW' }],
+  } } }] }]), /clear cannot combine/)
+  for (const entry of [first, second, disabled]) entry.set.dispose()
+})
+
 test('普通委派参数使用已接受步骤快照，数值冲突拒绝且关闭恢复原owner', async t => {
   const rules = [{ id: 'depth', then: [{ id: 'depth', kind: 'subagent-params', provider: 'spawn', tool: 'subagent', maxDepth: 1 }] }]
   const h = await harness(t, rules)

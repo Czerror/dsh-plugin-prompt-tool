@@ -49,6 +49,13 @@ function AddedEntries(props: SurfaceProps & { entryKey?: 'add' | 'replace' }): R
         value={String(entry.name ?? '')} onChange={event => set((entries as RecordValue[]).map((item, at) => at === index ? { ...item, name: event.target.value } : item))} /></FormField>
         <CloseButton label={t('rules.surface.removeEntry', { index: index + 1 })} disabled={props.disabled}
           onClick={() => set((entries as RecordValue[]).filter((_, at) => at !== index))} /></div>
+      {key === 'replace' && <>
+        <div className={css.surfaceSwitchRow}><span>{t('rules.surface.matchEnabled')}</span><Switch label={t('rules.surface.matchEnabled')}
+          checked={entry.match !== undefined} disabled={props.disabled}
+          onChange={enabled => set((entries as RecordValue[]).map((item, at) => at === index ? patched(item, { match: enabled ? '' : undefined }) : item))} /></div>
+        {entry.match !== undefined && <FormField label={t('rules.surface.entryMatch')}><textarea className={ui.configTextarea} aria-label={t('rules.surface.entryMatch')} rows={3} readOnly={props.disabled}
+          value={String(entry.match)} onChange={event => set((entries as RecordValue[]).map((item, at) => at === index ? { ...item, match: event.target.value } : item))} /></FormField>}
+      </>}
       <FormField label={t('rules.surface.entryText')}><textarea className={ui.configTextarea} aria-label={t('rules.surface.entryText')} rows={3} readOnly={props.disabled}
         value={String(entry.text ?? '')} onChange={event => set((entries as RecordValue[]).map((item, at) => at === index ? { ...item, text: event.target.value } : item))} /></FormField>
     </div>)}
@@ -64,13 +71,13 @@ function TextSurfaceFields(props: SurfaceProps & { target: 'sections' | 'context
     <Mode {...props} label={t('rules.surface.textMode')} value={mode} options={options} onChange={next => {
       cleared(props.fields, props.fieldKey)
       props.onChange(patched(value, { ...(target === 'sections' ? { keep: undefined } : { clear: undefined }), remove: undefined,
-        ...(next === 'clear' ? { clear: true, add: undefined } : next === '' ? {} : { [next]: Array.isArray(value[mode]) ? value[mode] : [] }) }))
+        ...(next === 'clear' ? { clear: true, add: undefined, replace: undefined } : next === '' ? {} : { [next]: Array.isArray(value[mode]) ? value[mode] : [] }) }))
     }} />
     {(mode === 'keep' || mode === 'remove') && <NameList {...props} fieldKey={`${props.fieldKey}:${mode}`} label={t(mode === 'keep' ? 'rules.surface.keptNames' : 'rules.surface.removedNames')}
       value={value[mode]} onChange={next => props.onChange({ ...value, [mode]: next })} />}
     {mode !== 'clear' && <AddedEntries {...props} />}
-    {target === 'sections' && <AddedEntries {...props} entryKey="replace" />}
-    <RuleParameterFields {...props} omit={target === 'sections' ? ['keep', 'remove', 'add', 'replace'] : ['clear', 'remove', 'add']} />
+    {mode !== 'clear' && <AddedEntries {...props} entryKey="replace" />}
+    <RuleParameterFields {...props} omit={target === 'sections' ? ['keep', 'remove', 'add', 'replace'] : ['clear', 'remove', 'add', 'replace']} />
   </>
 }
 

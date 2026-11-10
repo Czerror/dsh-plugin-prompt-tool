@@ -2,6 +2,7 @@ import { associateToolStep, associateToolSelection, associateToolAssembly, begin
 import { toolDependenciesReady } from './tool-definition.mjs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { applySubagentDepthContexts } from './subagent-params.mjs'
+import { applyAcceptedContextReplacements } from './actions/assembly.mjs'
 
 const installations = new WeakMap()
 const guardedRoots = new WeakSet()
@@ -113,8 +114,8 @@ function createInstallation(ctx) {
       if (name === 'systemPrompt' && property === 'refreshContext') return (assembly, context = {}) => {
         const captured = toolAssemblyContext(assembly, context)
         if (captured === undefined) throw unavailable()
-        const refreshed = applySubagentDepthContexts(Reflect.apply(value, target, [assembly, captured]), captured, toolStepOf(captured.toolSet, captured.agent))
         const step = toolStepOf(captured.toolSet, captured.agent)
+        const refreshed = applyAcceptedContextReplacements(applySubagentDepthContexts(Reflect.apply(value, target, [assembly, captured]), captured, step), step)
         if (step !== undefined) associateToolAssembly(refreshed, captured.agent, step)
         return refreshed
       }
@@ -151,6 +152,7 @@ function createInstallation(ctx) {
             if (step !== undefined) {
               if (step.status === 'closed') throw unavailable()
               step.allowed ??= new Set(wrapped.view(agent).keys())
+              if (step.contextReplacements !== undefined) Object.freeze(step.contextReplacements)
               step.status = 'sealed'
               snapshots.set(step, final)
               associateToolAssembly(final, agent, step)

@@ -174,6 +174,35 @@ test('(2) 改装配 sections/contexts：增删改与既有形态一致，异常�
   assert.equal(failing.warnings.length, 1)
 })
 
+test('assembly.sections.replace 字面量仅替换唯一目标，歧义和失配透传并诊断', async () => {
+  const { ctx, events } = recordingCtx()
+  const replacement = { name: 'sandbox:policy', match: 'OLD POLICY', text: 'EDITED POLICY' }
+  registerAction(ctx, { kind: 'assembly', id: 'policy', target: { sections: { replace: [replacement] } } })
+  const transform = only(events, 'system-prompt/assemble')
+  const neighbor = { name: 'other', text: 'OLD POLICY', order: 50 }
+  const original = { sections: [{ name: 'sandbox:policy', text: 'BEFORE OLD POLICY AFTER', order: 10, complete: false }, neighbor], contexts: [], variables: {} }
+  const result = await transform({}, {}, async () => original)
+  assert.deepEqual(result.sections[0], { name: 'sandbox:policy', text: 'BEFORE EDITED POLICY AFTER', order: 10, complete: false })
+  assert.equal(result.sections[1], neighbor)
+  assert.equal(original.sections[0].text, 'BEFORE OLD POLICY AFTER')
+  assert.equal(await transform({}, {}, async () => result), result, '重复投递不追加或重复转换')
+  for (const sections of [
+    [{ name: 'sandbox:policy', text: 'OLD POLICY OLD POLICY' }],
+    [{ name: 'sandbox:policy', text: 'UNKNOWN POLICY' }],
+    [{ name: 'sandbox:policy', text: 'OLD POLICY' }, { name: 'sandbox:policy', text: 'OLD POLICY' }],
+    [],
+  ]) {
+    const invalid = recordingCtx()
+    registerAction(invalid.ctx, { kind: 'assembly', id: 'policy', target: { sections: { replace: [replacement] } } })
+    const candidate = { sections, contexts: [], variables: {} }
+    assert.equal(await only(invalid.events, 'system-prompt/assemble')({}, {}, async () => candidate), candidate)
+    assert.ok(invalid.warnings.length > 0, '目标缺失或匹配歧义须有诊断')
+  }
+  for (const match of ['', 2, null]) assert.throws(() => registerAction(recordingCtx().ctx, {
+    kind: 'assembly', target: { sections: { replace: [{ ...replacement, match }] } },
+  }), /replace.*match/)
+})
+
 test('assembly.sections.replace 只替换实际非空具名段，保留官方元数据与计划关闭语义', async () => {
   const { ctx, events } = recordingCtx()
   registerAction(ctx, { kind: 'assembly', id: 'plan', target: { sections: { replace: [{ name: 'plan:policy', text: 'EDITABLE PLAN' }] } } })

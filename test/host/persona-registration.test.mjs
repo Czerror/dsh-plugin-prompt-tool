@@ -134,7 +134,8 @@ test('真实插件总闸撤回身份贡献，重新开启保持已保存的规�
   const { setModuleEnabled, readStorageConfig } = await import('../../src/host/config-store.ts')
   ensureModuleSeed(moduleRoot)
   const dir = join(moduleRoot, 'limit-breaker'), current = readModuleRules(dir)
-  editModuleRules(dir, { expectedRevisions: current.revisions, edits: current.rules.map(rule => ({ previousId: rule.id, rule: { ...rule, enabled: true }, settingsChanged: true })) })
+  const identityRuleIds = ['default-preset-identity', 'default-harness-identity']
+  editModuleRules(dir, { expectedRevisions: current.revisions, edits: current.rules.filter(rule => identityRuleIds.includes(rule.id)).map(rule => ({ previousId: rule.id, rule: { ...rule, enabled: true }, settingsChanged: true })) })
   setModuleEnabled(moduleRoot, 'limit-breaker', true)
   let modulesEnabled = true
   const world = await personaWorld(t, () => [], { modulesEnabled: { get: () => modulesEnabled } })
@@ -144,7 +145,7 @@ test('真实插件总闸撤回身份贡献，重新开启保持已保存的规�
   modulesEnabled = false; world.root.emit('loader/volatile-update'); await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(await world.texts(agent), [IDENTITY, prefix, 'TAIL'])
   assert.equal(readStorageConfig(moduleRoot).source.enabled.includes('limit-breaker'), true)
-  assert.equal(readModuleRules(dir).rules.every(rule => rule.enabled === true), true)
+  assert.deepEqual(readModuleRules(dir).rules.filter(rule => rule.enabled === true).map(rule => rule.id), identityRuleIds)
   modulesEnabled = true; world.root.emit('loader/volatile-update'); await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(await world.texts(agent), ['', '\nFUNCTION', 'TAIL'])
 })

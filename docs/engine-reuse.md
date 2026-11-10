@@ -132,6 +132,10 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 普通 `assembly.target.sections.replace: [{ name, text }]` 只原位替换实际装配中已存在且正文非空的具名段，保留 order、complete 等官方元数据；目标缺失或正文为空时不补段。计划模式可据此编辑 `plan:policy` 全文，真实开关、日志、审批和退出工具仍归官方 planMode，不按工具是否可见猜测计划状态。
 
+`sections.replace` 与 `contexts.replace` 均可声明 `{ name, match, text }`：`match` 是非空字面量，只替换唯一具名条目内唯一出现的原文，保留其他正文和元数据；缺失或歧义时透传并告警，不接受正则或代码。省略 `match` 沿用非空条目全文替换；`contexts.clear` 不与替换并存。官方审批与沙箱说明属于运行上下文，计划说明属于系统段，不能混用两种目标。上下文替换复用已接受工具步骤的配置快照；官方 `refreshContext` 仍调用原 provider，再应用该步骤已接受的替句，热更新、条件变化和关闭只影响后续步骤，不重算旧步骤条件或改写其他 Agent。
+
+核心破限模块提供独立默认关闭的审批关闭、审批询问、沙箱只读、中性沙箱和计划说明规则。两种审批关闭文案复用模块内显式互斥，防止同句不同文本按顺序选赢家。它们只配置模型看到的说明，审批结果、沙箱权限和真实计划状态仍由原所有者决定；文字中的自动放行措辞不构成执行授权。沙箱中性说明只替精确品牌句，动态工作区、附加可写根与临时目录说明保持。未知或已定制原文不靠关键词改写。
+
 普通 `subagent-params` 动作声明 `provider: spawn`、明确的 `tool` 和非负安全整数 `maxDepth`（0 禁止委派）。装配沿当前 Agent 的真实工具集合和 provider.depthLimit 接受参数，存于原 toolStep；同目标同时有效的同值贡献共存，静态异值候选拒绝并保旧，正常重判产生的动态异值冲突暂停该目标贡献并显示原因。缺工具、提供者或能力只暂停此动作所在分支及后代的显式关联正文，无关规则继续；恢复后下一正常步骤重新判断，不重放已有动作。
 
 执行适配复用官方 `tools/execute` waterfall 的真实调用上下文，调用期只代理 `subagents.startActivation`：工具名、spawn、真实 parent 和 sealed step 全部匹配才替换原请求的 maxDepth，其余调用透传。官方 0.2.2-rc.1 发行物使用 `spec.request.parent/maxDepth`，支持证据以发行物为准，不依据源码构建的不同请求形状宣称兼容。深度上下文与 refreshContext 使用同一已接受值；已有工具集合不读热更值，取消仍沿原管线，dispose 关闭步骤。没有第二套深度配置库，也不修改宿主默认深度或 provider。
