@@ -27,6 +27,8 @@ export interface RuleOutcomeReport {
   ruleId: string
   channel: string
   outcome: string
+  identityOutcome?: 'matched' | 'target-mismatch' | 'condition-miss' | 'condition-unavailable' | 'error'
+  definitionRevision?: string
 }
 
 /** 一次挂载的规则来源；规则对象是 `rule-spec.mjs#compileRules` 的产物。 */

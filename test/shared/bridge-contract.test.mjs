@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import { createRuleDiagnosticsLedger } from '../../src/runtime/rule-diagnostics.ts'
 import { fakeReq, fakeRes, handlerTable, isolatedHome } from '../fixtures/host-harness.mjs'
 // 隔离 DSH_HOME：夹具登记 after 清理并在文件末尾还原旧值（别让后续用例读到临时 HOME）；
 // 设置必须在动态 import 那些 import 时冻结路径的模块之前。
@@ -19,6 +20,15 @@ const { bridgeTransaction } = await import('../../src/runtime/bridge-transaction
 const { MODULE_CAPABILITIES, ENGINE_EDITOR_GROUP_MAP, INJECTION_POINT_ORDER } = await import('../../src/shared/engine-capabilities.ts')
 const { getEngineMeta, LAYER_ORDER } = await import('../../engine/schema.mjs')
 const bridgeDisposers = []
+test('公开规则诊断契约区分条件缺事实与身份目标失配，携带已观测定义版本', () => {
+  const ledger = createRuleDiagnosticsLedger()
+  ledger.record({ moduleId: 'm', ruleId: 'condition', channel: 'system-prompt/assemble', outcome: 'unavailable' })
+  ledger.record({ moduleId: 'm', ruleId: 'identity', channel: 'persona:identity:preset', outcome: 'hit', identityOutcome: 'target-mismatch', definitionRevision: 'saved-rule-v1' })
+  assert.deepEqual(ledger.snapshot().records, [
+    { moduleId: 'm', ruleId: 'condition', channel: 'system-prompt/assemble', hit: 0, miss: 0, unavailable: 1, error: 0 },
+    { moduleId: 'm', ruleId: 'identity', channel: 'persona:identity:preset', hit: 0, miss: 0, unavailable: 0, error: 0, identityOutcome: 'target-mismatch', definitionRevision: 'saved-rule-v1' },
+  ])
+})
 // 先放掉本轮注册的端点，再让夹具的 after 清掉 home（登记顺序即执行顺序）。
 test.after(() => {
   for (const dispose of bridgeDisposers) dispose()

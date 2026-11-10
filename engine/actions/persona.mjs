@@ -2,8 +2,12 @@ import { renderTemplate } from '../template-frame.mjs'
 
 export const PERSONA_PREFIX = 'deployment:persona-prefix'
 const PERSONA_SUFFIX = 'deployment:persona-suffix'
+const HARNESS_IDENTITY = 'harness:identity'
+const DEFAULT_PRESET_IDENTITY = 'You are a coding agent powered by the {{model}} model.'
+const DEFAULT_HARNESS_IDENTITY = 'You are an AI agent powered by DeepSeek Harness.'
 
 export function validatePersonaAction(action) {
+  if (action.stripDefaultIdentity !== undefined && !['preset', 'harness'].includes(action.stripDefaultIdentity)) throw new TypeError('persona.stripDefaultIdentity must be preset or harness')
   if (action.audience !== undefined && !['main', 'subagent'].includes(action.audience)) throw new TypeError('persona.audience must be main or subagent')
   for (const field of ['prefix', 'suffix']) {
     if (action[field] === undefined) continue
@@ -46,5 +50,25 @@ export function planPersonaActions(entries, context, prompt, adapter, variableSt
       ...base?.interpolate === undefined ? {} : { interpolate: base.interpolate },
     })
   }
-  return { sections, suppressRuntimeContext: flags.includeRuntimeContext === false }
+  return { sections, suppressRuntimeContext: flags.includeRuntimeContext === false,
+    customPrefix: entries.some(entry => entry.action.prefix !== undefined),
+    identityEntries: entries.filter(entry => entry.action.stripDefaultIdentity !== undefined) }
+}
+
+/** 只处理官方装配已解析的具名段；每次请求独立变换，不遮蔽或重建任何 owner。 */
+export function stripPersonaIdentity(assembly, entries, report, customPrefix = false) {
+  let sections = assembly.sections
+  for (const entry of entries) {
+    const preset = entry.action.stripDefaultIdentity === 'preset'
+    const name = preset ? PERSONA_PREFIX : HARNESS_IDENTITY
+    const identity = preset ? DEFAULT_PRESET_IDENTITY : DEFAULT_HARNESS_IDENTITY
+    const target = assembly.sections.find(section => section.name === name)
+    const matched = !(preset && customPrefix) && typeof target?.text === 'string' && (preset
+      ? target.text.startsWith(identity) && /^(?:\s|$)/.test(target.text.slice(identity.length))
+      : target.text === identity)
+    try { report?.({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, channel: `persona:identity:${entry.action.stripDefaultIdentity}`, outcome: 'hit',
+      identityOutcome: matched ? 'matched' : 'target-mismatch', definitionRevision: entry.rule.definitionRevision }) } catch { /* 只读诊断不能改变装配 */ }
+    if (matched) sections = sections.map(section => section.name !== name ? section : { ...section, text: target.text.slice(identity.length) })
+  }
+  return sections === assembly.sections ? assembly : { ...assembly, sections }
 }

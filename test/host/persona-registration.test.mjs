@@ -34,7 +34,7 @@ function writeModule(id, rules, variables) {
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'module.yml'), stringify({ id, modules: [], rules, ...(variables === undefined ? {} : { variables }) }))
 }
-async function personaWorld(t, enabled) {
+async function personaWorld(t, enabled, pluginConfig) {
   const root = new Context(), handles = []
   const storage = new Storage(root), backend = new JsonStorageBackend(join(moduleRoot, 'persona-storage'))
   storage.backend.register('json', backend)
@@ -70,13 +70,20 @@ async function personaWorld(t, enabled) {
   root.provide('tools', {}); root.provide('llm', {})
   root.systemPrompt.context({ name: 'fixture:runtime', order: 0, text: 'CONTEXT' })
   const warnings = []
-  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: enabled, personaCapture: capture, warn: text => warnings.push(text) })
-  const moduleIds = id => runtime.moduleIds(id)
-  installSoulRuntime(root, { root: moduleRoot, target: (exec, id) => resolveModuleToolTarget(exec, moduleRoot, moduleIds, id),
-    rebuild: id => runtime.refresh(id) }, moduleIds, () => sessions)
-  t.after(async () => { await runtime.dispose(); for (const handle of handles.reverse()) await handle.dispose(); await standing.dispose(); await root.fiber.dispose() })
+  let plugin
+  const runtime = pluginConfig === undefined ? createAgentAssembly(root, { moduleRoot, enabledModules: enabled, personaCapture: capture, warn: text => warnings.push(text) }) : undefined
+  if (pluginConfig !== undefined) {
+    const { apply } = await import('../../src/index.ts')
+    plugin = root.plugin({ name: 'live-limit-breaker', apply: ctx => apply(ctx, pluginConfig) }); await plugin
+  }
+  if (runtime !== undefined) {
+    const moduleIds = id => runtime.moduleIds(id)
+    installSoulRuntime(root, { root: moduleRoot, target: (exec, id) => resolveModuleToolTarget(exec, moduleRoot, moduleIds, id),
+      rebuild: id => runtime.refresh(id) }, moduleIds, () => sessions)
+  }
+  t.after(async () => { await runtime?.dispose(); await plugin?.dispose(); for (const handle of handles.reverse()) await handle.dispose(); await standing.dispose(); await root.fiber.dispose() })
   const assembly = agent => agent.ctx.systemPrompt.assemble({ scope: scopeOf(agent.ctx), agent })
-  return { root, runtime, warnings, assembly, texts: async agent => (await assembly(agent)).sections.map(section => section.text),
+  return { root, standing, runtime, plugin, warnings, assembly, texts: async agent => (await assembly(agent)).sections.map(section => section.text),
     create: async (id, meta = {}, setup) => (await driver.agents.create({ sessionId: id, meta, setup })).agent }
 }
 
@@ -166,9 +173,108 @@ test('同层人设恢复：失配和卸载恢复原对象，原 owner 撤销后�
   assert.deepEqual(await third.texts(disposed), ['OFFICIAL'], '暂撤期间原插件释放后不复活')
 })
 
+test('默认身份规则只去来源身份句，保留混合功能及其他模块，逐闸撤回且不复活 owner', async t => {
+  const rules = [persona('purge-4', { stripDefaultIdentity: 'preset' }, { variable: { key: 'mode', value: 'on' } }),
+    persona('purge-25', { stripDefaultIdentity: 'harness' }, { variable: { key: 'mode', value: 'on' } })]
+  writeModule('limit-test', rules, { mode: 'on' })
+  writeModule('peer', [{ id: 'feature', then: [{ id: 'body', kind: 'inject-text', config: { layer: 'system-section', strategy: 'static', text: 'OTHER MODULE' } }] }])
+  let enabled = ['limit-test', 'peer']
+  const world = await personaWorld(t, () => enabled)
+  world.root.systemPrompt.section({ name: 'tool:fixture', order: 500, text: 'TOOL INSTRUCTIONS' })
+  world.root.systemPrompt.section({ name: 'environment:fixture', order: 10000, text: 'ENVIRONMENT' })
+  const mixed = 'You are a coding agent powered by the {{model}} model.\nKeep every functional sentence.'
+  let cancel
+  const main = await world.create('strip-main', {}, ctx => {
+    cancel = ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: mixed, interpolate: false })
+  })
+  const child = await world.create('strip-child', { delegationDepth: 1 }, ctx => {
+    ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: 'CUSTOM IDENTITY.\nCHILD FUNCTION', interpolate: false })
+  })
+  const [first, second] = await Promise.all([world.texts(main), world.texts(child)])
+  assert.deepEqual(first, ['', '\nKeep every functional sentence.', 'OTHER MODULE', 'TOOL INSTRUCTIONS', 'ENVIRONMENT', 'TAIL'])
+  assert.deepEqual(second, ['', 'CUSTOM IDENTITY.\nCHILD FUNCTION', 'OTHER MODULE', 'TOOL INSTRUCTIONS', 'ENVIRONMENT', 'TAIL'])
+  assert.deepEqual((await world.assembly(main)).contexts.map(item => item.text), ['CONTEXT'])
+  writeModule('limit-test', [{ ...rules[0], enabled: false }, rules[1]], { mode: 'on' })
+  assert.deepEqual(await world.texts(main), ['', mixed, 'OTHER MODULE', 'TOOL INSTRUCTIONS', 'ENVIRONMENT', 'TAIL'])
+  writeModule('limit-test', [rules[0], { ...rules[1], enabled: false }], { mode: 'on' })
+  assert.deepEqual(await world.texts(main), [IDENTITY, '\nKeep every functional sentence.', 'OTHER MODULE', 'TOOL INSTRUCTIONS', 'ENVIRONMENT', 'TAIL'])
+  writeModule('limit-test', rules, { mode: 'off' })
+  assert.deepEqual(await world.texts(main), [IDENTITY, mixed, 'OTHER MODULE', 'TOOL INSTRUCTIONS', 'ENVIRONMENT', 'TAIL'])
+  assert.equal(world.runtime.ruleDiagnostics().records.find(record => record.ruleId === 'purge-25' && record.channel === 'persona:identity:harness').identityOutcome, 'condition-miss')
+  writeModule('limit-test', rules, { mode: 'on' })
+  enabled = ['peer']; await world.runtime.refresh()
+  assert.deepEqual(await world.texts(main), [IDENTITY, mixed, 'OTHER MODULE', 'TOOL INSTRUCTIONS', 'ENVIRONMENT', 'TAIL'])
+  enabled = []; await world.runtime.refresh()
+  assert.deepEqual(await world.texts(main), [IDENTITY, mixed, 'TOOL INSTRUCTIONS', 'ENVIRONMENT', 'TAIL'])
+  enabled = ['limit-test']; await world.runtime.refresh()
+  cancel()
+  await world.runtime.dispose()
+  assert.deepEqual(await world.texts(main), ['OFFICIAL'])
+})
+
+test('默认身份接管读取真实动态段，保留自定义与其他人设贡献，目标失配只诊断', async t => {
+  writeModule('strip-dynamic', [persona('preset', { stripDefaultIdentity: 'preset' }), persona('harness', { stripDefaultIdentity: 'harness' })])
+  const world = await personaWorld(t, () => ['strip-dynamic'])
+  let identity = 'CUSTOM HARNESS', prefix = 'You are a coding agent powered by the {{model}} model.\nFUNCTION'
+  const offAncestor = world.standing.ctx.systemPrompt.section({ name: 'harness:identity', order: -1000, text: () => identity, interpolate: false })
+  const agent = await world.create('dynamic-providers', {}, ctx => {
+    ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: () => prefix, interpolate: false })
+  })
+  assert.deepEqual(await world.texts(agent), ['CUSTOM HARNESS', '\nFUNCTION', 'TAIL'])
+  identity = IDENTITY; prefix = 'CUSTOM PERSONA\nFUNCTION'
+  assert.deepEqual(await world.texts(agent), ['', prefix, 'TAIL'])
+  const diagnostics = world.runtime.ruleDiagnostics().records
+  assert.equal(diagnostics.find(record => record.ruleId === 'preset' && record.channel === 'persona:identity:preset').identityOutcome, 'target-mismatch')
+  assert.equal(diagnostics.find(record => record.ruleId === 'harness' && record.channel === 'persona:identity:harness').identityOutcome, 'matched')
+  assert.equal(diagnostics.filter(record => record.channel.startsWith('persona:identity:')).reduce((sum, record) => sum + record.unavailable, 0), 0, '目标失配不属于条件缺事实')
+  const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
+  const dir = join(moduleRoot, 'strip-dynamic'), current = readModuleRules(dir)
+  const oldObservation = diagnostics.find(record => record.ruleId === 'preset' && record.channel === 'persona:identity:preset')
+  assert.equal(oldObservation.definitionRevision, current.revisions.rules.preset)
+  const changed = { ...current.rules[0], then: [{ ...current.rules[0].then[0], stripDefaultIdentity: 'harness' }] }
+  const saved = editModuleRules(dir, { expectedRevisions: current.revisions, edits: [{ previousId: 'preset', rule: changed }] })
+  assert.notEqual(saved.revisions.rules.preset, oldObservation.definitionRevision)
+  assert.equal(world.runtime.ruleDiagnostics().records.find(record => record.ruleId === 'preset' && record.channel === 'persona:identity:preset').definitionRevision, oldObservation.definitionRevision, '保存不伪造新定义的目标观测')
+  await world.texts(agent)
+  assert.equal(world.runtime.ruleDiagnostics().records.find(record => record.ruleId === 'preset' && record.channel === 'persona:identity:harness').definitionRevision, saved.revisions.rules.preset)
+  offAncestor()
+  writeModule('strip-dynamic', [persona('preset', { stripDefaultIdentity: 'preset' }), persona('peer', { prefix: 'You are a coding agent powered by the {{model}} model.\nOTHER PERSONA', complete: false })])
+  assert.deepEqual(await world.texts(agent), [IDENTITY, 'You are a coding agent powered by the  model.\nOTHER PERSONA', 'TAIL'])
+})
+
+test('P4与仅修改complete的人设组合保留继承功能，重复同语义规则各自观测成功', async t => {
+  writeModule('strip-inherited', [persona('first', { stripDefaultIdentity: 'preset' }), persona('second', { stripDefaultIdentity: 'preset' })])
+  writeModule('open-complete', [persona('options', { complete: false })])
+  const world = await personaWorld(t, () => ['strip-inherited', 'open-complete'])
+  const agent = await world.create('inherited-complete', {}, ctx => { ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: 'You are a coding agent powered by the {{model}} model.\nFUNCTION', interpolate: false, complete: true }) })
+  assert.deepEqual(await world.texts(agent), [IDENTITY, '\nFUNCTION', 'TAIL'])
+  for (const ruleId of ['first', 'second']) assert.equal(world.runtime.ruleDiagnostics().records.find(record => record.ruleId === ruleId && record.channel === 'persona:identity:preset').identityOutcome, 'matched')
+})
+
+test('实际插件 modulesEnabled 总闸撤回后续身份贡献且保留模块选择和规则保存', async t => {
+  const { ensureModuleSeed } = await import('../../src/host/module-catalog.ts')
+  const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
+  const { setModuleEnabled, readStorageConfig } = await import('../../src/host/config-store.ts')
+  ensureModuleSeed(moduleRoot)
+  const dir = join(moduleRoot, 'limit-breaker'), current = readModuleRules(dir)
+  editModuleRules(dir, { expectedRevisions: current.revisions, edits: current.rules.map(rule => ({ previousId: rule.id, rule: { ...rule, enabled: true }, settingsChanged: true })) })
+  setModuleEnabled(moduleRoot, 'limit-breaker', true)
+  let modulesEnabled = true
+  const world = await personaWorld(t, () => [], { modulesEnabled: { get: () => modulesEnabled } })
+  const agent = await world.create('full-plugin-gate', {}, ctx => { ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: 'You are a coding agent powered by the {{model}} model.\nFUNCTION', interpolate: false }) })
+  assert.deepEqual(await world.texts(agent), ['', '\nFUNCTION', 'TAIL'])
+  modulesEnabled = false; world.root.emit('loader/volatile-update'); await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(await world.texts(agent), [IDENTITY, 'You are a coding agent powered by the {{model}} model.\nFUNCTION', 'TAIL'])
+  assert.ok(readStorageConfig(moduleRoot).source.enabled.includes('limit-breaker'))
+  assert.ok(readModuleRules(dir).rules.every(rule => rule.enabled === true))
+  modulesEnabled = true; world.root.emit('loader/volatile-update'); await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(await world.texts(agent), ['', '\nFUNCTION', 'TAIL'])
+})
+
 test('同 Agent 装配串行，其他 Agent 可独立完成且每轮候选固定', async t => {
   const rules = [{ ...persona('ours', { prefix: 'A', complete: false }, { variable: { key: 'mode', value: 'A' } }),
-    else: [{ id: 'fallback', kind: 'persona', prefix: 'B', complete: false }] }]
+    else: [{ id: 'fallback', kind: 'persona', prefix: 'B', complete: false }] },
+    persona('strip', { stripDefaultIdentity: 'harness' }, { variable: { key: 'mode', value: 'A' } })]
   writeModule('concurrent', rules, { mode: 'A' })
   const world = await personaWorld(t, () => ['concurrent'])
   const first = await world.create('serial-first'), other = await world.create('serial-other')
@@ -186,6 +292,6 @@ test('同 Agent 装配串行，其他 Agent 可独立完成且每轮候选固定
   const b = world.texts(first)
   assert.deepEqual(await world.texts(other), [IDENTITY, 'B', 'TAIL'])
   release()
-  assert.deepEqual(await a, [IDENTITY, 'A', 'TAIL'])
+  assert.deepEqual(await a, ['', 'A', 'TAIL'])
   assert.deepEqual(await b, [IDENTITY, 'B', 'TAIL'])
 })

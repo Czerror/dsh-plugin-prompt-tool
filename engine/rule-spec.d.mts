@@ -46,6 +46,7 @@ export interface CompileRulesOptions {
   variables?: Record<string, string>
   variablesEnabled?: boolean
   contextActivationRecursive?: boolean
+  ruleRevisions?: Record<string, string>
   promptConfigOptions?: PromptConfigCompileOptions
   /** 挂载期输入：编译期显式剥掉，绑定由 `rule-runtime.mjs` 完成。 */
   ctx?: unknown

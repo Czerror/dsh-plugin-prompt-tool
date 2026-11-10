@@ -16,6 +16,11 @@ export function ModulePersonaCard(props: { t: PromptToolTranslate; action: RuleA
     props.onChange(next)
   }
   return <div className={styles.configForm} data-persona-action={action.id}>
+    <FormField label={t('persona.stripDefaultIdentity')}>
+      <MenuSelect compact ariaLabel={t('persona.stripDefaultIdentity')} disabled={disabled} value={String(action.stripDefaultIdentity ?? '')}
+        options={[{ value: '', label: t('persona.stripNone') }, { value: 'preset', label: t('persona.stripPreset') }, { value: 'harness', label: t('persona.stripHarness') }]}
+        onChange={value => patch('stripDefaultIdentity', value || undefined)} />
+    </FormField>
     <FormField label={t('persona.audience')}>
       <MenuSelect compact ariaLabel={t('persona.audience')} disabled={disabled} value={String(action.audience ?? '')}
         options={[{ value: '', label: t('persona.all') }, { value: 'main', label: t('persona.main') }, { value: 'subagent', label: t('persona.subagent') }]}

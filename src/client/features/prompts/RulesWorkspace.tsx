@@ -8,6 +8,7 @@ import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { useModuleRuleEditors, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
 import { BLANK_MODULE_TEMPLATE, canEditModule, moduleDeclares, writableModuleTargets } from '../../data/module-subject.ts'
 import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
+import { useRuleDiagnostics } from '../../data/use-rule-diagnostics.ts'
 import { reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
@@ -69,6 +70,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const ownersRef = useRef<ModuleRuleEditor[]>([])
   const order = useModuleConfigOrder(t, async () => (await Promise.all(ownersRef.current.map(owner => owner.editor.load(true)))).every(Boolean))
   const owners = useModuleRuleEditors(store, ownerIds)
+  const diagnostics = useRuleDiagnostics(fields.modulesEnabled && enabledModules.length > 0, JSON.stringify(owners.map(owner => [owner.moduleId, owner.draft.revisions])))
   ownersRef.current = owners
   const revisions = JSON.stringify(owners.map(owner => [owner.moduleId, owner.draft.revisions?.settings]))
   const [discard, setDiscard] = useState<string>()
@@ -237,6 +239,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
             void saveOrder(source, dropId, event.clientY < rect.top + rect.height / 2)
           }}>
           <RuleCard t={t} entry={entry} draft={draft} editor={editor} meta={store.meta} source={id} moduleId={id} disabled={readOnly(id)} expanded={expanded === key} onToggle={() => toggle(key)} onDuplicate={() => duplicate(row, entry.value)}
+            diagnostics={fields.modulesEnabled ? diagnostics.records : []}
             expandedRows={store.editorDrafts.expanded}
             headerActions={orderEntry && <><HintTooltip label={slotPinned(orderEntry) ? t('rules.orderPinnedHint') : t('card.dragHint')}><button type="button" className={ui.dragHandle} disabled={sortDisabled || !!query} draggable={!sortDisabled && !query} aria-label={t('card.dragHint')} aria-keyshortcuts="ArrowUp ArrowDown"
               onDragStart={event => { dragId.current = configIdentityKey(orderEntry); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragId.current) }} onDragEnd={() => { dragId.current = undefined }}

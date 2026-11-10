@@ -8,6 +8,7 @@ export type RuleCondition = Record<string, unknown>
 export interface RuleAction extends Record<string, unknown> {
   id: string
   kind: string
+  stripDefaultIdentity?: 'preset' | 'harness'
   channelOrder?: number
   waterfallPosition?: 'default' | 'outermost'
 }
@@ -25,6 +26,8 @@ export interface RuleDefinition {
   layer?: InjectionPoint
   group?: string
   exclusive?: boolean
+  /** 只读来源事实，不参与规则执行或能力授权。 */
+  source?: { format: string; id: number; name: string; path: string; commit: string }
   /** 分支条件；缺省 = 无条件。 */
   if?: RuleCondition
   /** 动作列表。 */

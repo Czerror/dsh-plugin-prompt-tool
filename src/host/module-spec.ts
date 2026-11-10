@@ -55,6 +55,7 @@ export interface ModuleSpec {
   configOrder?: Record<string, number>
   /** 模块唯一的条件→动作定义；旧 `triggers` 声明不再被读取。 */
   rules?: RuleDefinition[]
+  ruleRevisions?: Record<string, string>
   /** 可选:引擎组合模块行参数直写(行级 map config 浅合并;参数桥未覆盖的键生效,参数桥优先)。 */
   moduleConfigs?: Record<string, Record<string, unknown>>
   upstream?: Record<string, unknown>
@@ -93,9 +94,9 @@ export function loadModuleSpec(dir: string): ModuleSpec {
   // 完整性检查先于缓存；mtime/size 不能掩盖手改切片或伪造清单。
   const snapshot = ensureModuleSlices(dir, { writable: !resolve(dir).startsWith(resolve(packageModulesDir()) + sep) })
   const cached = moduleSpecCache.get(snapshot.file)
-  if (cached?.revision === snapshot.revision) return withGlobalParams(structuredClone(cached.spec), dir)
+  if (cached?.revision === snapshot.revision) return withGlobalParams({ ...structuredClone(cached.spec), ruleRevisions: snapshot.revisions.rules }, dir)
   const parsed = { ...snapshot.source, id: snapshot.source.id ?? basename(dir), rules: snapshot.rules,
-    configOrder: snapshot.configOrder, variables: snapshot.variables, variablesEnabled: snapshot.variablesEnabled } as unknown as ModuleSpec
+    configOrder: snapshot.configOrder, ruleRevisions: snapshot.revisions.rules, variables: snapshot.variables, variablesEnabled: snapshot.variablesEnabled } as unknown as ModuleSpec
   const params = readModuleLayerSettings(parsed)
   if (parsed.layerSettings !== undefined || parsed.params !== undefined) parsed.params = params
   // 缓存只存 module.yml 的事实：全局层每次现读，config.yml 改动不靠签名也能立即生效。

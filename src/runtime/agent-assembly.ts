@@ -179,6 +179,7 @@ export async function prepareAssembly(
     .filter(rule => !declaredRules.some(declared => declared.id === rule.id))
   const rules = compileRules([...declaredRules, ...syntheticRules], {
     moduleId,
+    ruleRevisions: spec.ruleRevisions,
     configOrder: readConfigOrder(spec.configOrder),
     variables: spec.variables, variablesEnabled: spec.variablesEnabled,
     contextActivationRecursive: spec.contextActivationRecursive,

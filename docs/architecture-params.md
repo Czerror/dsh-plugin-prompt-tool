@@ -16,6 +16,7 @@
 | 人设正文与选项 | module.yml.rules 中的 persona 动作 | 按真实受众聚合的官方有效声明 |
 | 自定义工具 | customTools | 经验证的内联运行输入 |
 | 外部来源事实 | 注入动作 params.source | 导入报告与导出元数据 |
+| 来源规则追溯 | rules[].source（format/id/name/path/commit） | 规则卡只读来源；不参与执行或授权 |
 | 模块显示名称 | module.yml.name | 模块卡与编辑目标选择；不改变模块 ID 或目录 |
 
 当前格式的决策见 [ADR-0013](adr/0013-native-context-module-state.md)。模块不注册为官方会话预设、不保存会话绑定，不通过 settings 携带规则正文或大文本。
@@ -251,5 +252,7 @@ Soul 运行时与状态工具必须显式接入会话变量 owner 的 getter；�
 | 请求/草稿 | shared/bridge-contract.ts、client/data/、settings-bridge.ts |
 
 随包内置模块只在用户模块根缺失同名目录时补建；已有副本（含用户修改）不覆盖，也不比较内容。见 [ADR-0015](adr/0015-builtin-module-seed-missing-only.md)。
+
+`limit-breaker`（核心破限模块）沿同一补种与模块启用表，包内初始规则 `purge-4`、`purge-25` 均显式关闭。规则来源事实通过普通规则版本事务、切片、复制和导出保留；来源字段有大小与形状校验，不是第二套能力开关或执行目录。用户已有同名目录不自动追加规则。
 
 长期测试只进入注入行为、写盘语义、bridge 载荷、安全拒绝 seam，期望来自独立规格/字面样例，断言公共接口。提交前跑完整 package gates，涉及宿主/包接入补对应验证；一次性探针放隔离临时目录，不能用仅检查旧符号消失的测试替代行为验收。

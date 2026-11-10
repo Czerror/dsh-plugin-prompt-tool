@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { countEnabledConfigs } from '../../shared/module-config-order.ts'
 import { bridgeCall } from './bridge-client.ts'
+import type { RuleDiagnosticRecord } from '../../shared/bridge-contract.ts'
 
 /**
  * 状态栏的全仓只读摘要：一次 `/rule-diagnostics` 拿回
@@ -8,14 +9,15 @@ import { bridgeCall } from './bridge-client.ts'
  * 数据就绪后读一次（不轮询）；`revision` 变化（模块启用表变了）时重读，
  * 否则启停模块后计数会停在旧值。读取失败按 0 处理——摘要读不到不该影响工作台。
  */
-export function useRuleDiagnostics(enabled: boolean, revision = ''): { unavailableCount: number; configs: { enabled: number; total: number } } {
-  const [summary, setSummary] = useState({ unavailableCount: 0, configs: { enabled: 0, total: 0 } })
+export function useRuleDiagnostics(enabled: boolean, revision = ''): { unavailableCount: number; configs: { enabled: number; total: number }; records: RuleDiagnosticRecord[] } {
+  const [summary, setSummary] = useState<{ unavailableCount: number; configs: { enabled: number; total: number }; records: RuleDiagnosticRecord[] }>({ unavailableCount: 0, configs: { enabled: 0, total: 0 }, records: [] })
   useEffect(() => {
     if (!enabled) return
     let active = true
     void bridgeCall('ruleDiagnostics').then((result) => {
       if (!active || result.ok !== true) return
       setSummary({
+        records: result.value.records,
         unavailableCount: result.value.records.filter(record => record.unavailable > 0).length,
         configs: countEnabledConfigs(result.value.configs?.entries ?? []),
       })

@@ -44,6 +44,10 @@ module.yml 支持 UI 保存与直接手改。rules/ 从完整定义分解，手�
 
 人设与其他规则共用规则草稿和保存事务；工具、变量与指令策略保留各自的保存边界。布局、无障碍、locale 和 typed bridge 规范见 [UI 框架](docs/ui-architecture.md)。
 
+随包的“核心破限模块”（`limit-breaker`）是普通内置模块，首次只补缺失定义，模块和新增规则均不自动启用，也不覆盖已有用户副本。目前提供 P4 预设默认身份句与 P25 Harness 默认身份句两条独立规则；其余核心能力按后续版本逐项交付，不创建无动作的占位开关。规则卡分别显示来源、启用意图和最近装配可用性；开启不代表已经生效。
+
+两条规则复用 persona 的 `stripDefaultIdentity: preset | harness`。它们只变换后续真实装配出口的具名默认身份：P4 仅移除 `deployment:persona-prefix` 开头准确的 `You are a coding agent powered by the {{model}} model.`，保留其余字节；P25 仅移除 `harness:identity` 中准确的固定身份句。自定义身份、其他人设规则、工具、环境、功能段与运行上下文保留，目标不匹配保持原文并诊断。规则关闭、条件失配、模块或总闸关闭、插件释放后，后续装配自然读取仍存活的原声明；不修改宿主、预设或既有历史。
+
 ## 原生模块格式
 
 ```yaml

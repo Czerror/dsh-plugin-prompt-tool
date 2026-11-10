@@ -344,9 +344,15 @@ export interface ContextActivationDiagnosticRecord {
 
 /** 规则判定类别：`unavailable` = 条件因缺事实无法判定（三值语义）；`miss` = 条件按设计不满足。 */
 export type RuleOutcomeKind = 'hit' | 'miss' | 'unavailable' | 'error' | 'disabled'
+/** 身份目标观测独立于条件三值判定；目标失配不计入条件 unavailable。 */
+export type IdentityOutcomeKind = 'matched' | 'target-mismatch' | 'condition-miss' | 'condition-unavailable' | 'error'
 
 /** 单条规则的判定计数（只读派生数据）；只含身份与计数，不含规则正文、事件载荷或会话文本。 */
 export interface RuleDiagnosticRecord {
+  /** 最近一次真实身份目标观测；不计入条件判定计数。 */
+  identityOutcome?: IdentityOutcomeKind
+  /** 已装配规则的正文版本；历史观测不能当作当前定义成功。 */
+  definitionRevision?: string
   moduleId?: string
   ruleId: string
   channel: string

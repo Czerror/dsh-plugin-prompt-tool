@@ -122,6 +122,12 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 **触发式债务**：`apply` 内二次解析配置与加载器准备期解析并存（如上）；发现适配器的宿主挂载与行挂载不对称（宿主挂载的 `skill-search` 不登记 adapter，今天无消费者）。两者都等具体触发条件再动，不在本轮顺手改。
 
+### 默认身份接管
+
+persona 的可选 `stripDefaultIdentity` 只接受 `preset` 或 `harness`，沿普通规则条件、真实受众、模块启用与总闸判定。候选随每次装配固定，在已有装配适配器出口处理官方已解析的具名段，不重新调用 provider、不遮蔽或恢复默认段 owner。`preset` 仅移除 `deployment:persona-prefix` 开头精确默认句 `You are a coding agent powered by the {{model}} model.`，且后接空白或结束；`harness` 仅清空 `harness:identity` 的精确默认句。其余字节、工具、环境、功能、上下文及其他人设规则贡献保持。
+
+目标缺失、已自定义或正文来自其他 persona 规则时原样保留；只修改 complete 而继承官方正文不属于自定义正文。实际目标匹配/失配通过既有 rule-diagnostics 的 `persona:identity:preset|harness` 通道以独立 `identityOutcome` 上报，不增加条件三值判定的 unavailable 计数；观测携已装配规则的 `definitionRevision`。规则卡只接纳当前目标、当前保存版本且无正文草稿变化的观测，旧版本或旧目标显示未验证。挂载预检不生成匹配成功。关闭规则、模块、总闸或释放后不变换下一次装配，原 owner 已释放也不会被复活；已接受的装配快照不因热更新改变。
+
 ## 复制协议（跨项目复用）
 
 复制完整 `engine/` 可复用纯编译器、动作、条件、历史与模板求值。宿主接线仍需要相应官方服务，五个模块工具外壳还需要 Prompt Tool 的 provider。独立引擎不偷偷读取插件 DSH_HOME 或 session 变量表。`env-safety.mjs` 与 `path-safety.mjs` 是纯安全 helper，随复制协议一起带走；`env-facts` 白名单外键在构造期 fail loud，`instruction-hint` 的 `params.file` 只允许指令文件候选名且 realpath 必须落在 cwd→最近项目根或 DSH_HOME。

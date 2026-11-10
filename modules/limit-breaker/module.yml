@@ -1,0 +1,22 @@
+id: limit-breaker
+name: 核心破限模块
+version: 1.0.0
+description: 按规则接管官方默认身份；各条规则默认关闭，不改变工具、环境和功能正文。
+modules: [rule-engine]
+rules:
+  - id: purge-4
+    name: 去掉预设默认身份句（P4 · SYSTEM_PROMPT_PERSONA）
+    enabled: false
+    source: { format: dsh-purge, id: 4, name: SYSTEM_PROMPT_PERSONA, path: lib/patches/prompt.mjs, commit: 126caa2c99297223a7e0e87e604aecfc802f396e }
+    then:
+      - id: identity
+        kind: persona
+        stripDefaultIdentity: preset
+  - id: purge-25
+    name: 去掉 Harness 默认身份句（P25 · HARNESS_IDENTITY_STRIP）
+    enabled: false
+    source: { format: dsh-purge, id: 25, name: HARNESS_IDENTITY_STRIP, path: lib/patches/new-tools.mjs, commit: 126caa2c99297223a7e0e87e604aecfc802f396e }
+    then:
+      - id: identity
+        kind: persona
+        stripDefaultIdentity: harness

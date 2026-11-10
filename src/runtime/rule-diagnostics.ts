@@ -6,7 +6,7 @@
  * 有界：达到身份上限后不再新增，只累加已有身份，长会话不会无界增长；被丢弃的判定次数
  * 记在实例的 `dropped`，仅在大于 0 时随响应下发。多个装配实例互不串账。
  */
-import type { RuleDiagnosticRecord, RuleOutcomeKind } from '../shared/bridge-contract.ts'
+import type { IdentityOutcomeKind, RuleDiagnosticRecord, RuleOutcomeKind } from '../shared/bridge-contract.ts'
 
 /** 记账身份上限；超出后不再新增。 */
 export const RULE_DIAGNOSTIC_LIMIT = 512
@@ -17,6 +17,8 @@ export interface RuleOutcomeReport {
   ruleId: string
   channel: string
   outcome: RuleOutcomeKind
+  identityOutcome?: IdentityOutcomeKind
+  definitionRevision?: string
 }
 
 export interface RuleDiagnosticsSnapshot {
@@ -62,7 +64,10 @@ export function createRuleDiagnosticsLedger(): RuleDiagnosticsLedger {
         }
         counters.set(key, record)
       }
-      record[outcome] += 1
+      if (report.identityOutcome !== undefined) {
+        record.identityOutcome = report.identityOutcome
+        record.definitionRevision = report.definitionRevision
+      } else record[outcome] += 1
     },
     snapshot() {
       return { records: [...counters.values()].map(record => ({ ...record })), dropped }

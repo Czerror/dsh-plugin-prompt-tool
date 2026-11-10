@@ -7,7 +7,7 @@ import { wireTriggerObservers } from './trigger.mjs'
 import { ruleFrame, actionMatches } from './conditions/evaluation.mjs'
 import { createPromotionPool } from './promotion-pool.mjs'
 import { PROMOTE_EVENTS, createWarnOnce, getService, isDelegated, matchesAudience } from './shared.mjs'
-import { PERSONA_PREFIX, planPersonaActions } from './actions/persona.mjs'
+import { PERSONA_PREFIX, planPersonaActions, stripPersonaIdentity } from './actions/persona.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
 import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { installToolStepAssembly } from './tool-step-assembly.mjs'
@@ -202,6 +202,7 @@ export function createRuleRuntime(ctx, options = {}) {
   const memo = new Map()
   const report = options.onOutcome === undefined ? undefined : (rule, channel, outcome) => options.onOutcome({ moduleId: ruleOwners.get(rule), ruleId: rule.id, channel, outcome })
   const assemblyFrames = new WeakMap()
+  const assemblyPersonaPlans = new WeakMap()
   const assemblyFrame = (context, assembly = {}) => {
     let frame = assemblyFrames.get(context)
     if (frame === undefined) {
@@ -323,7 +324,8 @@ export function createRuleRuntime(ctx, options = {}) {
   }
   const commitPersona = plan => {
     const old = persona?.plan
-    if (old?.suppressRuntimeContext === plan.suppressRuntimeContext && old.sections.length === plan.sections.length
+    if (old?.customPrefix === plan.customPrefix && old?.identityEntries?.length === plan.identityEntries?.length && old?.identityEntries?.every((entry, index) => entry === plan.identityEntries[index])
+      && old?.suppressRuntimeContext === plan.suppressRuntimeContext && old.sections.length === plan.sections.length
       && old.sections.every((section, index) => ['name', 'text', 'order', 'complete', 'interpolate'].every(key => section[key] === plan.sections[index][key]))) return
     releasePersona(persona)
     persona = undefined
@@ -347,6 +349,13 @@ export function createRuleRuntime(ctx, options = {}) {
     const audience = isDelegated(context.agent?.session) ? 'subagent' : 'main'
     const frame = assemblyFrame(context)
     const selected = entries.filter(entry => matchesAudience(entry.action.audience, audience) && actionMatches(entry, frame))
+    if (!preview) for (const entry of entries) {
+      if (entry.action.stripDefaultIdentity === undefined || selected.includes(entry)) continue
+      const outcome = frame.decisions.get(entry.rule)?.outcome ?? 'miss'
+      try { options.onOutcome?.({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, channel: `persona:identity:${entry.action.stripDefaultIdentity}`, outcome,
+        identityOutcome: outcome === 'error' ? 'error' : outcome === 'unavailable' ? 'condition-unavailable' : 'condition-miss',
+        definitionRevision: entry.rule.definitionRevision }) } catch { /* 只读诊断不能改变装配 */ }
+    }
     if ([...frame.decisions.values()].some(decision => decision.outcome === 'error')) throw new Error('persona condition evaluation failed; keeping previous contribution')
     const prompt = getService(ctx, 'systemPrompt')
     const plan = planPersonaActions(selected, context, prompt, options.persona, options.variableStore, warnOnce, preview)
@@ -393,10 +402,10 @@ export function createRuleRuntime(ctx, options = {}) {
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && [...points.values()].some(point => point.handlers.some(entry => entry.toolSurface))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface)) || [...records.values()].some(record => record.personas.length > 0))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && [...points.values()].some(point => point.handlers.some(entry => entry.toolSurface))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface)) || [...records.values()].some(record => record.personas.length > 0))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
@@ -421,7 +430,10 @@ export function createRuleRuntime(ctx, options = {}) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
       const plan = preparePersona(context)
-      if (plan !== undefined) commitPersona(plan)
+      if (plan !== undefined) {
+        commitPersona(plan)
+        if (context !== undefined) assemblyPersonaPlans.set(context, plan)
+      }
     },
     async settleToolSurface(assembly, context) {
       const frame = assemblyFrame(context, assembly)
@@ -432,7 +444,8 @@ export function createRuleRuntime(ctx, options = {}) {
         if (!actionMatches(entry, frame)) { entry.miss?.(frame); continue }
         result = await entry.handler(result, context, () => result, frame)
       }
-      return result
+      const accepted = assemblyPersonaPlans.get(context) ?? persona?.plan
+      return stripPersonaIdentity(result, accepted?.identityEntries ?? [], options.onOutcome, accepted?.customPrefix)
     },
     dispose() {
       if (!active) return

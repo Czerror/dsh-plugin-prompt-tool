@@ -16,7 +16,7 @@ import { isFixedRegistration } from './fixed-registration.mjs'
 import { record } from './record.mjs'
 
 /** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
-const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
+const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do', 'source'])
 const nonempty = value => typeof value === 'string' && value.trim().length > 0
 const hasSoulCondition = node => node !== null && typeof node === 'object'
   && (Object.hasOwn(node, 'soul') || Object.values(node).some(hasSoulCondition))
@@ -245,6 +245,9 @@ export function compileRules(specs, options = {}) {
     assertRuleId(spec.id)
     if (ids.has(spec.id)) throw new TypeError(`rules: duplicate id ${spec.id}`)
     ids.add(spec.id)
+    if (spec.source !== undefined && (!record(spec.source) || Object.keys(spec.source).some(key => !['format', 'id', 'name', 'path', 'commit'].includes(key))
+      || !Number.isSafeInteger(spec.source.id) || spec.source.id < 1
+      || ['format', 'name', 'path', 'commit'].some(key => !nonempty(spec.source[key]) || spec.source[key].length > 512))) throw new TypeError(`rule ${spec.id}.source must be bounded source metadata`)
     for (const key of ['enabled', 'exclusive']) if (spec[key] !== undefined && typeof spec[key] !== 'boolean') throw new TypeError(`rule ${spec.id}.${key} must be boolean`)
     for (const key of ['name', 'group']) if (spec[key] !== undefined && typeof spec[key] !== 'string') throw new TypeError(`rule ${spec.id}.${key} must be string`)
     if (spec.layer !== undefined && !KNOWN_LAYERS.has(spec.layer)) throw new TypeError(`rule ${spec.id}: unknown layer ${spec.layer}`)
@@ -365,7 +368,7 @@ export function compileRules(specs, options = {}) {
     }
     return {
       id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, exclusive: spec.exclusive === true, enabled: spec.enabled !== false,
-      sequence, when, actions, promptConfigOptions: options.promptConfigOptions,
+      sequence, when, actions, definitionRevision: options.ruleRevisions?.[spec.id], promptConfigOptions: options.promptConfigOptions,
       variables: options.variables, variablesEnabled: options.variablesEnabled,
       // 绑定所需的树：规则级 `if` + 每个动作展开后的条件（动作那半与 `action.conditions` 同一引用）。
       // **只有引擎内部读它**（`rebindConditions` 绑定、`actionAudiences` 推导受众）——调用方与挂载缝都不需要知道这个形状。
