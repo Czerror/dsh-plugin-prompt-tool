@@ -1,15 +1,17 @@
 /** 人设动作字段只修改所属规则草稿，保存与冲突由规则编辑器管理。 */
 import { useId, type ReactNode } from 'react'
 import type { RuleAction } from '../../../shared/rules.ts'
+import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { FormField } from '../../ui/FormField.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
+import { RuleParameterFields } from './RuleFields.tsx'
 import styles from '../../ui/controls.module.css'
 
-export function ModulePersonaCard(props: { t: PromptToolTranslate; action: RuleAction; disabled?: boolean; onChange: (action: RuleAction) => void }): ReactNode {
+export function ModulePersonaCard(props: { t: PromptToolTranslate; action: RuleAction; fields: Map<string, FieldDraft>; fieldKey: string; onDraft: () => void; disabled?: boolean; onChange: (action: RuleAction) => void }): ReactNode {
   const { t, action, disabled } = props
   const id = useId()
-  const patch = (field: string, value: string | boolean | undefined): void => {
+  const patch = (field: string, value: string | number | boolean | undefined): void => {
     const next = { ...action }
     if (value === undefined) delete next[field]
     else next[field] = value
@@ -26,6 +28,9 @@ export function ModulePersonaCard(props: { t: PromptToolTranslate; action: RuleA
         options={[{ value: '', label: t('persona.all') }, { value: 'main', label: t('persona.main') }, { value: 'subagent', label: t('persona.subagent') }]}
         onChange={value => patch('audience', value || undefined)} />
     </FormField>
+    <RuleParameterFields t={t} fields={props.fields} fieldKey={props.fieldKey} onDraft={props.onDraft} disabled={disabled}
+      value={{ instructionMaxBytes: action.instructionMaxBytes }} onChange={next => patch('instructionMaxBytes', next.instructionMaxBytes as number | undefined)} />
+    <p className={styles.configFieldHint}>{t('persona.instructionMaxBytes.hint')}</p>
     {(['prefix', 'suffix'] as const).map(field => <FormField key={field} label={t(`persona.${field}.label`)}>
       <MenuSelect compact ariaLabel={`${t(`persona.${field}.label`)} ${t('persona.mode')}`} disabled={disabled}
         value={action[field] === undefined ? 'inherit' : 'custom'}

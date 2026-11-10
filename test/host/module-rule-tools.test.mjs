@@ -108,6 +108,7 @@ test('规则工具完整往返：嵌套/else/来源参数和注释保留，开�
   assert.ok(before.meta.actions.some(action => action.kind === 'inject-text'))
   const changed = structuredClone(before.rules[0])
   changed.then[0].then[0].config.text = 'UPDATED'
+  changed.then.push({ id: 'persona', kind: 'persona', instructionMaxBytes: 65536, complete: false })
   const saved = await f.success('module_rules_edit', { moduleId: before.moduleId, expectedRevisions: before.revisions, edits: [{ previousId: 'mixed', rule: changed }] })
   assert.equal(saved.persisted, true)
   const after = await f.success('module_rules_read', { moduleId: before.moduleId })

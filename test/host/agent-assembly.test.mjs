@@ -12,6 +12,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseDocument } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
 import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -71,6 +72,9 @@ test('核心来源正文只按所选普通规则投递精确文本，主子模�
   const root = tempDir('pt-limit-assembly-')
   assert.equal(cloneBuiltinModule('limit-breaker', false, root).ok, true)
   const dir = join(root, 'limit-breaker')
+  const definition = parseDocument(readFileSync(join(dir, 'module.yml'), 'utf8'))
+  definition.set('rules', definition.toJS().rules.filter(rule => rule.id === 'source-default-prompt-inject'))
+  writeFileSync(join(dir, 'module.yml'), definition.toString())
   const enabled = ['limit-breaker']
   const h = await liveAssembly(t, () => enabled, { moduleRoot: root })
   const main = await h.makeAgent('source-main'), child = await h.makeAgent('source-child', 1)

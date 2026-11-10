@@ -28,11 +28,24 @@ test('核心来源目录保留66稳定身份，未验证条目无动作且拒绝
   assert.equal(core.length, 66)
   assert.equal(new Set(core.map(rule => rule.source.id)).size, 66)
   assert.ok(core.every(rule => rule.enabled === false && rule.id === `purge-${rule.source.id}`))
-  const pending = core.filter(rule => !['purge-4', 'purge-25'].includes(rule.id))
+  const pending = core.filter(rule => !['purge-4', 'purge-25', 'purge-26', 'purge-40', 'purge-43', 'purge-71', 'purge-76'].includes(rule.id))
   assert.ok(pending.every(rule => rule.then.length === 0 && rule.name.includes('未验证')))
   assert.deepEqual(core.map(rule => rule.source.id).sort((a, b) => a - b), [1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 40, 43, 47, 48, 51, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 70, 71, 72, 73, 74, 75, 76, 77, 87, 88, 89, 93, 94])
   assert.throws(() => editModuleRules(dir, { expectedRevisions: snapshot.revisions, activateRuleId: 'purge-1' }), /未验证|尚无可执行动作/)
   assert.deepEqual(readModuleRules(dir), snapshot, '拒绝启用不改定义或版本')
+})
+
+test('来源身份与complete规则可通过普通事务启用，保持来源和独立开关', () => {
+  const { dir } = fixture()
+  let snapshot = readModuleRules(dir)
+  for (const id of ['purge-26', 'purge-40', 'purge-43', 'purge-71', 'purge-76']) {
+    snapshot = editModuleRules(dir, { expectedRevisions: snapshot.revisions, activateRuleId: id })
+    const rule = snapshot.rules.find(rule => rule.id === id)
+    assert.equal(rule.enabled, true)
+    assert.equal(rule.source.id, Number(id.slice(6)))
+    assert.equal(rule.then[0].kind, 'persona')
+  }
+  assert.ok(snapshot.rules.filter(rule => !['purge-26', 'purge-40', 'purge-43', 'purge-71', 'purge-76'].includes(rule.id)).every(rule => rule.enabled === false))
 })
 
 test('内置默认正文经公共文件读取保持25128字节与固定来源哈希', () => {

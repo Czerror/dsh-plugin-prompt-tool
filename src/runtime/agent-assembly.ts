@@ -41,6 +41,7 @@ import { createModuleInitialization } from './module-initialization.ts'
 import { createPublicationQueue } from './publication-queue.ts'
 import type { PublicationFailure } from '../shared/publication.ts'
 import type { PersonaCapture } from './persona-registration.ts'
+import { createPersonaInstructions } from './persona-instructions.ts'
 import { MODULE_TOOL_CAPABILITIES, OFFICIAL_RECIPE_ROWS, enabledRowIds } from '../shared/engine-capabilities.ts'
 import { enableTablePath, readGlobalLayerSettings } from '../host/config-store.ts'
 import { createGenerationRecoveryState } from '../host/generation-recovery-state.ts'
@@ -361,6 +362,10 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (options.warn !== undefined) options.warn(message)
     else ctx.logger?.warn?.(message)
   }
+  const instructions = createPersonaInstructions(ctx, message => {
+    if (options.warn !== undefined) options.warn(`prompt-tool: ${message}`)
+    else ctx.logger?.warn?.(message)
+  }, initialization)
   // 官方 persona 行以公开 config 提供人设声明；解析不到就当没有继承源，不阻断装配。
   let personaPlugin: Plugin | undefined
   let personaKnowledge: Promise<void> | undefined
@@ -424,6 +429,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (current === undefined) return
     if (agent !== undefined && current.agent !== agent) return
     mounts.delete(sessionId)
+    await (await instructions.prepare(current.agent, undefined))?.commit()
     await current.fiber.dispose()
   }
   const release = async (sessionId: string, agent?: Agent): Promise<void> => {
@@ -778,7 +784,9 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       installToolStepAssembly(ctx, {
         knows: agent => knownAgents.has(agent), ensureFresh,
         assemble: (context, invoke) => withAgent(context.agent!, async () => {
-          try { mounts.get(context.agent!.id)?.rules.prepareAssembly(context) } catch (error) {
+          try {
+            await mounts.get(context.agent!.id)?.rules.prepareAssembly(context, maxBytes => instructions.prepare(context.agent!, maxBytes))
+          } catch (error) {
             if (error !== null && typeof error === 'object' && 'recoveryFailed' in error && error.recoveryFailed === true) await releaseNow(context.agent!.id, context.agent)
             warn(error)
           }
@@ -805,7 +813,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       ctx.on('agent/disposed', ({ agent }) => {
         disposed.add(agent)
         knownAgents.delete(agent)
-        void serial(() => release(agent.id, agent)).catch(warn)
+        void serial(async () => { await instructions.release(agent); await release(agent.id, agent) }).catch(warn)
       }),
     ]
   ctx.effect(() => () => {
@@ -815,6 +823,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     watched.clear()
     knownAgents.clear()
     return publication.dispose().then(() => pending).then(async () => {
+      await instructions.dispose()
       for (const id of mounts.keys()) await release(id)
     })
   }, 'prompt-tool assembly runtime')
@@ -858,6 +867,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       knownAgents.clear()
       await publication.dispose()
       await pending
+      await instructions.dispose()
       for (const id of mounts.keys()) await release(id)
     },
   }

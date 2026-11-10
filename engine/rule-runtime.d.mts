@@ -69,7 +69,7 @@ export function mountRuleSources(
 /** 同 moduleId 与 rules 引用保持未变来源；候选拒绝时恢复受影响来源的旧贡献。 */
 export function createRuleRuntime(ctx: unknown, options?: MountRuleSourcesOptions): {
   replace(sources: ReadonlyArray<RuleSourceLike>): void
-  prepareAssembly(context?: { agent?: unknown; signal?: AbortSignal; scope?: unknown }): void
+  prepareAssembly(context?: { agent?: unknown; signal?: AbortSignal; scope?: unknown }, beforeCommit?: (maxBytes: number | undefined) => Promise<void | { ready?: boolean; commit(): Promise<void>; rollback(): Promise<void> }>): void | Promise<void>
   settleToolSurface(assembly: PromptAssembly, context: AssembleContext): Promise<PromptAssembly>
   dispose(): void
 }

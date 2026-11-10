@@ -44,11 +44,13 @@ module.yml 支持 UI 保存与直接手改。rules/ 从完整定义分解，手�
 
 人设与其他规则共用规则草稿和保存事务；工具、变量与指令策略保留各自的保存边界。布局、无障碍、locale 和 typed bridge 规范见 [UI 框架](docs/ui-architecture.md)。
 
-随包的“核心破限模块”（`limit-breaker`）是普通内置模块，首次只补缺失定义，模块和新增规则均不自动启用，也不覆盖已有用户副本。66 项核心来源使用稳定 `purge-<id>` 身份：P4 预设默认身份句与 P25 Harness 默认身份句已有独立动作；其余条目标明“未验证”，仅保存关闭的来源目录，开启会明确拒绝，未挂载假动作。7 项原生和 13 项外围只作来源对照，不生成开关。规则卡分别显示来源、启用意图和最近装配可用性；开启不代表已经生效。
+随包的“核心破限模块”（`limit-breaker`）是普通内置模块，首次只补缺失定义，模块和新增规则均不自动启用，也不覆盖已有用户副本。66 项核心来源使用稳定 `purge-<id>` 身份：P4/P25 为通用去身份，P26 为 minimal 人设与官方指令装配，P40 为解除人设独占，P43/P71/P76 用普通预设条件复用去身份；其余条目标明“未验证”，仅保存关闭的来源目录，开启会明确拒绝。P28 的可选梁神阶段 owner 尚未安装验证，保留未验证；P71/P76 规则可表达不表示可选产物已验证。7 项原生和 13 项外围只作来源对照，不生成开关。规则卡分别显示来源、启用意图和最近装配可用性；开启不代表已经生效。
 
 模块另附 18 条默认关闭的“来源正文”普通规则，通过既有 `templateFile` 选择精确 JSON 的 `text`；未选素材不注入。默认全文、六角色、六公共段落、三种协议、增强和重试正文均保留精确字节与 SHA-256，动态模板、输入、描述符及许可保存为惰性来源数据。规则只投递文本，不提供原文提及的工具、计分后端或自动红队流程；无限制模式、红队模式的完整行为仍归各自独立模块，素材入口不代表它们已完成适配。来源与转换边界见[资产索引](modules/limit-breaker/assets/README.md)。
 
-两条规则复用 persona 的 `stripDefaultIdentity: preset | harness`。它们只变换后续真实装配出口的具名默认身份：P4 仅移除 `deployment:persona-prefix` 开头准确的 `You are a coding agent powered by the {{model}} model.`，保留其余字节；P25 仅移除 `harness:identity` 中准确的固定身份句。自定义身份、其他人设规则、工具、环境、功能段与运行上下文保留，目标不匹配保持原文并诊断。规则关闭、条件失配、模块或总闸关闭、插件释放后，后续装配自然读取仍存活的原声明；不修改宿主、预设或既有历史。
+身份规则复用 persona 的 `stripDefaultIdentity: preset | harness`。`preset` 仅移除 `deployment:persona-prefix` 开头准确的 `You are a coding agent powered by the {{model}} model.` 或 `You are a helpful software engineer assistant.`，保留其余字节；`harness` 仅移除 `harness:identity` 中准确的固定身份句。自定义身份、其他人设规则、工具、环境、功能段与运行上下文保留，目标不匹配保持原文并诊断。规则关闭、条件失配、模块或总闸关闭、插件释放后，后续装配自然读取仍存活的原声明；不修改宿主、预设或既有历史。
+
+persona 的可选 `instructionMaxBytes` 用正安全整数字节预算补装当前 Agent 缺失的官方 `agent-instructions` owner；P26 声明 65536。已有 scope 链官方 owner 优先，沿用并诊断其实际预算，不覆盖用户配置或重复装配。官方包与 agents/workingDirectory/fs 服务缺失时报告或等待，不自行读指令正文；关闭只撤本来源 owner，已有历史与原官方 owner 保持。所选来源正文仍由普通注入规则独立启用；P40 不强制追加被 complete 裁掉的正文，也不绕过同受众 complete/append 冲突。
 
 ## 原生模块格式
 

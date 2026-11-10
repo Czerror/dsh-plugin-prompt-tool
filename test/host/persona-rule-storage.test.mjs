@@ -33,7 +33,7 @@ test('人设动作通过普通规则事务保存三态，陈旧规则版本拒�
   const peer = { id: 'peer', then: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 12 } }] }
   writeFileSync(file, '# retained\n' + JSON.stringify({ id: 'rule-persona', modules: [], rules: [identity, peer] }))
   const initial = readModuleRules(dir)
-  const changed = { ...identity, then: [{ ...identity.then[0], suffix: 'TAIL', stripDefaultIdentity: 'harness' }] }
+  const changed = { ...identity, then: [{ ...identity.then[0], suffix: 'TAIL', stripDefaultIdentity: 'harness', instructionMaxBytes: 65536 }] }
   const saved = editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: identity.id, rule: changed }] })
   assert.deepEqual(saved.rules, [changed, peer])
   const bytes = readFileSync(file, 'utf8')

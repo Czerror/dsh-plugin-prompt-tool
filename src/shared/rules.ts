@@ -9,6 +9,7 @@ export interface RuleAction extends Record<string, unknown> {
   id: string
   kind: string
   stripDefaultIdentity?: 'preset' | 'harness'
+  instructionMaxBytes?: number
   channelOrder?: number
   waterfallPosition?: 'default' | 'outermost'
 }

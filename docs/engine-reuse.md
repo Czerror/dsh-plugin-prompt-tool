@@ -124,9 +124,15 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 ### 默认身份接管
 
-persona 的可选 `stripDefaultIdentity` 只接受 `preset` 或 `harness`，沿普通规则条件、真实受众、模块启用与总闸判定。候选随每次装配固定，在已有装配适配器出口处理官方已解析的具名段，不重新调用 provider、不遮蔽或恢复默认段 owner。`preset` 仅移除 `deployment:persona-prefix` 开头精确默认句 `You are a coding agent powered by the {{model}} model.`，且后接空白或结束；`harness` 仅清空 `harness:identity` 的精确默认句。其余字节、工具、环境、功能、上下文及其他人设规则贡献保持。
+persona 的可选 `stripDefaultIdentity` 只接受 `preset` 或 `harness`，沿普通规则条件、真实受众、模块启用与总闸判定。候选随每次装配固定，在已有装配适配器出口处理官方已解析的具名段，不重新调用 provider、不遮蔽或恢复默认段 owner。`preset` 仅移除 `deployment:persona-prefix` 开头精确默认句 `You are a coding agent powered by the {{model}} model.` 或 `You are a helpful software engineer assistant.`，且后接空白或结束；`harness` 仅清空 `harness:identity` 的精确默认句。其余字节、工具、环境、功能、上下文及其他人设规则贡献保持。
 
 目标缺失、已自定义或正文来自其他 persona 规则时原样保留；只修改 complete 而继承官方正文不属于自定义正文。实际目标匹配/失配通过既有 rule-diagnostics 的 `persona:identity:preset|harness` 通道以独立 `identityOutcome` 上报，不增加条件三值判定的 unavailable 计数；观测携已装配规则的 `definitionRevision`。规则卡只接纳当前目标、当前保存版本且无正文草稿变化的观测，旧版本或旧目标显示未验证。挂载预检不生成匹配成功。关闭规则、模块、总闸或释放后不变换下一次装配，原 owner 已释放也不会被复活；已接受的装配快照不因热更新改变。
+
+`persona.instructionMaxBytes` 经宿主异步 assemble 准备调用 `src/runtime/persona-instructions.ts`，不注册新宿主预设、不复制正文发现和预算算法。官方 agent-loop 0.2.2-rc.1 先 assemble 再 pre-step，因此补装的官方 owner 可参与首次请求。已存在的同 scope/祖先官方实例优先，保留并诊断其实际预算；晚到实例也阻止本来源重复投递。缺少依赖时沿 ctx.inject 等待，关闭或释放撤本来源 fiber。候选准备后人设注册失败或取消会回滚新 owner；原 owner 不撤、不恢复。独立引擎未提供宿主 adapter 时对该字段明确拒绝。
+
+包含官方指令预算的候选只在 owner 就绪后与人设共同接受，规则替换预览不提前发布其人设。等待期沿用最后有效人设与已接受 owner；晚到初始化由现有 module-initialization 生命周期观察，失败撤待准备 fiber，不以 PENDING 时一次 await 代替持续观察。预算编辑直接复用 RuleParameterFields 的数字原文/错误草稿，失焦与折叠不会保存半成品。
+
+P26/P40 与正文来源相互独立；P40 通过 complete:false 解除人设独占而不改官方 SystemPrompt 的 complete 规则。普通 phase 的晋升/压缩事实不是第三方梁神 phase-1 的权威事实；目标未安装时 P28 保留未验证，不用普通 phase 命中冒充第三方适配。
 
 ## 复制协议（跨项目复用）
 

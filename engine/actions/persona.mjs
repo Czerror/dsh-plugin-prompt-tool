@@ -3,10 +3,11 @@ import { renderTemplate } from '../template-frame.mjs'
 export const PERSONA_PREFIX = 'deployment:persona-prefix'
 const PERSONA_SUFFIX = 'deployment:persona-suffix'
 const HARNESS_IDENTITY = 'harness:identity'
-const DEFAULT_PRESET_IDENTITY = 'You are a coding agent powered by the {{model}} model.'
+const DEFAULT_PRESET_IDENTITIES = ['You are a coding agent powered by the {{model}} model.', 'You are a helpful software engineer assistant.']
 const DEFAULT_HARNESS_IDENTITY = 'You are an AI agent powered by DeepSeek Harness.'
 
 export function validatePersonaAction(action) {
+  if (action.instructionMaxBytes !== undefined && (!Number.isSafeInteger(action.instructionMaxBytes) || action.instructionMaxBytes <= 0)) throw new TypeError('persona.instructionMaxBytes must be a positive safe integer')
   if (action.stripDefaultIdentity !== undefined && !['preset', 'harness'].includes(action.stripDefaultIdentity)) throw new TypeError('persona.stripDefaultIdentity must be preset or harness')
   if (action.audience !== undefined && !['main', 'subagent'].includes(action.audience)) throw new TypeError('persona.audience must be main or subagent')
   for (const field of ['prefix', 'suffix']) {
@@ -23,7 +24,7 @@ export function validatePersonaAction(action) {
 /** 已获准动作的完整候选；所有校验和正文求值都早于撤销旧注册。 */
 export function planPersonaActions(entries, context, prompt, adapter, variableStore, warn, preview = false) {
   const flags = {}
-  for (const { action } of entries) for (const field of ['complete', 'includeRuntimeContext']) {
+  for (const { action } of entries) for (const field of ['complete', 'includeRuntimeContext', 'instructionMaxBytes']) {
     const value = action[field]
     if (value === undefined) continue
     if (flags[field] !== undefined && flags[field] !== value) throw new TypeError(`persona ${field} conflict`)
@@ -50,7 +51,7 @@ export function planPersonaActions(entries, context, prompt, adapter, variableSt
       ...base?.interpolate === undefined ? {} : { interpolate: base.interpolate },
     })
   }
-  return { sections, suppressRuntimeContext: flags.includeRuntimeContext === false,
+  return { sections, suppressRuntimeContext: flags.includeRuntimeContext === false, instructionMaxBytes: flags.instructionMaxBytes,
     customPrefix: entries.some(entry => entry.action.prefix !== undefined),
     identityEntries: entries.filter(entry => entry.action.stripDefaultIdentity !== undefined) }
 }
@@ -61,10 +62,11 @@ export function stripPersonaIdentity(assembly, entries, report, customPrefix = f
   for (const entry of entries) {
     const preset = entry.action.stripDefaultIdentity === 'preset'
     const name = preset ? PERSONA_PREFIX : HARNESS_IDENTITY
-    const identity = preset ? DEFAULT_PRESET_IDENTITY : DEFAULT_HARNESS_IDENTITY
     const target = assembly.sections.find(section => section.name === name)
+    const identity = preset ? DEFAULT_PRESET_IDENTITIES.find(text => typeof target?.text === 'string'
+      && target.text.startsWith(text) && /^(?:\s|$)/.test(target.text.slice(text.length))) : DEFAULT_HARNESS_IDENTITY
     const matched = !(preset && customPrefix) && typeof target?.text === 'string' && (preset
-      ? target.text.startsWith(identity) && /^(?:\s|$)/.test(target.text.slice(identity.length))
+      ? identity !== undefined
       : target.text === identity)
     try { report?.({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, channel: `persona:identity:${entry.action.stripDefaultIdentity}`, outcome: 'hit',
       identityOutcome: matched ? 'matched' : 'target-mismatch', definitionRevision: entry.rule.definitionRevision }) } catch { /* 只读诊断不能改变装配 */ }

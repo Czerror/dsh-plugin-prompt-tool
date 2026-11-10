@@ -20,7 +20,7 @@ export const ACTION_DEGRADE = Object.freeze({
 export const ACTION_KINDS = Object.freeze({
   persona: {
     title: '人设',
-    fields: ['audience', 'prefix', 'suffix', 'complete', 'includeRuntimeContext', 'stripDefaultIdentity'],
+    fields: ['audience', 'prefix', 'suffix', 'complete', 'includeRuntimeContext', 'stripDefaultIdentity', 'instructionMaxBytes'],
     events: ['system-prompt/assemble'],
     services: ['systemPrompt.section', 'systemPrompt.suppressRuntimeContext'],
     degrade: ACTION_DEGRADE.keep,

@@ -1,7 +1,7 @@
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { stringify } from 'yaml'
@@ -14,8 +14,16 @@ import { openSessionVariables } from '../../src/host/session-variables.ts'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { bindScopeParent, createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
+import * as OfficialInstructions from '../fixtures/official-instructions.mjs'
 
 const { moduleRoot } = isolatedHome('pt-persona-registration-')
+const hostBase = dirname(dirname(moduleRoot)), originalEntry = process.argv[1]
+const instructionsPackage = join(hostBase, 'node_modules', '@deepseek-ai', 'dsh-agent-instructions')
+mkdirSync(instructionsPackage, { recursive: true })
+writeFileSync(join(instructionsPackage, 'package.json'), JSON.stringify({ type: 'module', main: 'index.mjs' }))
+writeFileSync(join(instructionsPackage, 'index.mjs'), `export * from ${JSON.stringify(new URL('../fixtures/official-instructions.mjs', import.meta.url).href)}`)
+process.argv[1] = join(hostBase, 'entry.mjs')
+after(() => { process.argv[1] = originalEntry })
 const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
 const { createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { installSoulRuntime } = await import('../../src/runtime/soul-runtime.ts')
@@ -24,6 +32,7 @@ const dependencies = createRequire(createRequire(import.meta.url).resolve('@deep
 const { default: Loader } = await import(pathToFileURL(dependencies.resolve('@deepseek-ai/cordis-plugin-loader')).href)
 const { default: SessionProjections } = await import(pathToFileURL(dependencies.resolve('@deepseek-ai/dsh-session-projection')).href)
 const IDENTITY = 'You are an AI agent powered by DeepSeek Harness.'
+const instructionDeliveries = OfficialInstructions.deliveries
 const OfficialPersona = { name: 'fixture-official-persona', inject: ['systemPrompt'], apply(ctx, config) {
   ctx.systemPrompt.section(Object.freeze({ name: 'deployment:persona-prefix', order: 0, text: config.prefix, complete: config.complete }))
   ctx.systemPrompt.section(Object.freeze({ name: 'deployment:persona-suffix', order: 10200, text: config.suffix ?? '' }))
@@ -65,9 +74,10 @@ async function personaWorld(t, enabled, pluginConfig) {
   await root.loader.root.update([{ id: 'prompt', name: 'cordis:prompt' }, { id: 'projections', name: 'cordis:projections' }, { id: 'agents', name: 'cordis:agents' }, { id: 'driver', name: 'cordis:driver' }])
   await root.loader.await()
   const originalImport = root.loader.import.bind(root.loader)
-  root.loader.import = (name, ...args) => name === '@deepseek-ai/dsh-persona' ? OfficialPersona : originalImport(name, ...args)
+  root.loader.import = (name, ...args) => name === '@deepseek-ai/dsh-persona' ? OfficialPersona
+    : name === '@deepseek-ai/dsh-agent-instructions' ? OfficialInstructions : originalImport(name, ...args)
   await root.loader.create({ id: 'adapter', name: 'cordis:adapter' }); await root.loader.await()
-  root.provide('tools', {}); root.provide('llm', {})
+  root.provide('tools', {}); root.provide('llm', {}); root.provide('workingDirectory', {}); root.provide('fs', {})
   root.systemPrompt.context({ name: 'fixture:runtime', order: 0, text: 'CONTEXT' })
   const warnings = []
   let plugin
@@ -240,6 +250,220 @@ test('默认身份接管读取真实动态段，保留自定义与其他人设�
   offAncestor()
   writeModule('strip-dynamic', [persona('preset', { stripDefaultIdentity: 'preset' }), persona('peer', { prefix: 'You are a coding agent powered by the {{model}} model.\nOTHER PERSONA', complete: false })])
   assert.deepEqual(await world.texts(agent), [IDENTITY, 'You are a coding agent powered by the  model.\nOTHER PERSONA', 'TAIL'])
+})
+
+test('通用预设去身份覆盖来源的 helpful engineer 句且保留模式纪律和工具', async t => {
+  writeModule('strip-engineer', [persona('identity', { stripDefaultIdentity: 'preset' })])
+  const world = await personaWorld(t, () => ['strip-engineer'])
+  world.root.systemPrompt.section({ name: 'tool:engineer', order: 500, text: 'KEEP TOOLS' })
+  const agent = await world.create('strip-engineer-agent', {}, ctx => {
+    ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0,
+      text: 'You are a helpful software engineer assistant.\n\n- Thinking Disruption:\nKEEP DISCIPLINE', interpolate: false })
+  })
+  assert.deepEqual(await world.texts(agent), [IDENTITY, '\n\n- Thinking Disruption:\nKEEP DISCIPLINE', 'KEEP TOOLS', 'TAIL'])
+  assert.equal(world.runtime.ruleDiagnostics().records.find(record => record.ruleId === 'identity' && record.channel === 'persona:identity:preset').identityOutcome, 'matched')
+})
+
+test('来源规则由普通预设事实决定，主子切换及缺事实撤回，不按名称分叉引擎', async t => {
+  const { readFileSync } = await import('node:fs')
+  const { parse } = await import('yaml')
+  const builtin = parse(readFileSync(new URL('../../modules/limit-breaker/module.yml', import.meta.url), 'utf8'))
+  const rules = builtin.rules.filter(rule => ['purge-43', 'purge-71', 'purge-76'].includes(rule.id)).map(rule => ({ ...rule, enabled: true }))
+  writeModule('preset-identities', rules)
+  const world = await personaWorld(t, () => ['preset-identities'])
+  const selections = new WeakMap()
+  world.root.provide('agentPresets', { composedPreset: ctx => selections.get(ctx) })
+  const mixed = 'You are a helpful software engineer assistant.\nKEEP DISCIPLINE'
+  const setup = ctx => { ctx.systemPrompt.section({ name: 'deployment:persona-prefix', order: 0, text: mixed, interpolate: false }) }
+  const main = await world.create('preset-identity-main', { agentPreset: 'unrestricted' }, setup)
+  const child = await world.create('preset-identity-child', { delegationDepth: 1, agentPreset: 'standard' }, setup)
+  for (const preset of ['standard', 'ptc', 'cordis', 'minimal', 'liangshen', 'unrestricted']) {
+    selections.set(main.ctx, preset)
+    selections.set(child.ctx, 'custom')
+    const [mainText, childText] = await Promise.all([world.texts(main), world.texts(child)])
+    assert.deepEqual(mainText, [IDENTITY, '\nKEEP DISCIPLINE', 'TAIL'], preset)
+    assert.deepEqual(childText, [IDENTITY, mixed, 'TAIL'], '真实当前预设优先于出生header，子代理不串用主事实')
+  }
+  selections.delete(main.ctx)
+  assert.deepEqual(await world.texts(main), [IDENTITY, mixed, 'TAIL'])
+  assert.equal(world.runtime.ruleDiagnostics().records.find(record => record.ruleId === 'purge-76' && record.channel === 'persona:identity:preset').identityOutcome, 'condition-unavailable')
+  selections.set(main.ctx, 'unrestricted')
+  writeModule('preset-identities', rules.map(rule => ({ ...rule, enabled: false })))
+  assert.deepEqual(await world.texts(main), [IDENTITY, mixed, 'TAIL'])
+})
+
+test('所选完整正文随complete配置首次装配一次，追加冲突拒绝保旧，关闭恢复', async t => {
+  const { readFileSync } = await import('node:fs')
+  const { createHash } = await import('node:crypto')
+  const { parse } = await import('yaml')
+  const builtin = parse(readFileSync(new URL('../../modules/limit-breaker/module.yml', import.meta.url), 'utf8'))
+  const open = { ...builtin.rules.find(rule => rule.id === 'purge-40'), enabled: true }
+  const exact = JSON.parse(readFileSync(new URL('../../modules/limit-breaker/assets/prompts/default-prompt-inject.json', import.meta.url), 'utf8')).text
+  assert.equal(Buffer.byteLength(exact), 25128)
+  assert.equal(createHash('sha256').update(exact).digest('hex'), '1757f1774457b448323ba036ec177c3c638d2a6dc97c9aa8ca2a1cc3e07528bc')
+  const inject = { id: 'selected-body', if: { variable: { key: 'selected', value: 'yes' } }, then: [
+    { id: 'body', kind: 'inject-text', config: { layer: 'system-section', strategy: 'static', text: exact } },
+  ] }
+  writeModule('complete-source', [open, inject], { selected: 'yes' })
+  const world = await personaWorld(t, () => ['complete-source'])
+  const main = await world.create('complete-source-main'), child = await world.create('complete-source-child', { delegationDepth: 1 })
+  for (const agent of [main, child]) {
+    const text = renderPrompt(await world.assembly(agent))
+    assert.equal(text.split(exact).length - 1, 1, '首次实际官方装配保留所选精确正文一次')
+    assert.ok(text.includes('OFFICIAL'))
+  }
+  writeModule('complete-source', [open, inject, persona('exclusive', { prefix: 'REJECT', complete: true })], { selected: 'yes' })
+  await assert.rejects(world.runtime.refresh(), /conflict|冲突/)
+  assert.equal(renderPrompt(await world.assembly(main)).split(exact).length - 1, 1, '非法完整候选保旧')
+  writeModule('complete-source', [persona('exclusive', { prefix: 'UNIQUE', complete: true }), { id: 'append', then: [
+    { id: 'append', kind: 'assembly', target: { sections: { append: [{ name: 'deployment:persona-prefix', text: 'REJECT APPEND' }] } } },
+  ] }], { selected: 'yes' })
+  await assert.rejects(world.runtime.refresh(), /append|追加|冲突/)
+  assert.equal(renderPrompt(await world.assembly(main)).split(exact).length - 1, 1)
+  writeModule('complete-source', [open, inject], { selected: 'no' })
+  assert.ok(!renderPrompt(await world.assembly(main)).includes(exact), '所选正文条件失配撤回')
+  writeModule('complete-source', [{ ...open, enabled: false }, inject], { selected: 'yes' })
+  assert.deepEqual(await world.texts(main), ['OFFICIAL'], '关闭P40恢复官方complete，普通系统段按原生规则裁掉')
+})
+
+test('通用官方指令预算在首次请求前挂载，复用原owner，冲突保旧且主子关闭独立', async t => {
+  const rules = [persona('instructions', { instructionMaxBytes: 65536, complete: false }, { variable: { key: 'selected', value: 'yes' } })]
+  writeModule('official-instructions', rules, { selected: 'yes' })
+  const world = await personaWorld(t, () => ['official-instructions'])
+  const main = await world.create('instructions-main'), child = await world.create('instructions-child', { delegationDepth: 1 })
+  const step = async agent => {
+    await world.assembly(agent)
+    return world.root.waterfall(scopeTarget(agent, scopeOf(agent.ctx)), 'agent/pre-step', { agent, messages: [], step: 1, signal: new AbortController().signal }, async () => ({ kind: 'enter', messages: [] }))
+  }
+  assert.equal((await step(main)).messages.length, 1)
+  assert.deepEqual(instructionDeliveries.get(main), [65536])
+  assert.equal((await step(child)).messages.length, 1)
+  writeModule('official-instructions', [persona('instructions', { instructionMaxBytes: 32768, complete: false })], { selected: 'yes' })
+  assert.equal((await step(main)).messages.length, 1, '预算替换不让新旧owner重复投递')
+  assert.equal(instructionDeliveries.get(main).at(-1), 32768)
+  writeModule('official-instructions', rules, { selected: 'yes' })
+  writeModule('official-instructions', [...rules, persona('conflict', { instructionMaxBytes: 32 })], { selected: 'yes' })
+  await assert.rejects(world.runtime.refresh(), /instructionMaxBytes|冲突/)
+  assert.equal((await step(main)).messages.length, 1)
+  assert.deepEqual(instructionDeliveries.get(main), [65536, 32768, 32768], '冲突保留上次预算与整份贡献')
+  writeModule('official-instructions', rules, { selected: 'yes' })
+  const original = world.standing.ctx.plugin(OfficialInstructions, { maxBytes: 1234 }); await original
+  assert.equal((await step(main)).messages.length, 1, '晚到原owner优先，不重复投递或改用户预算')
+  assert.equal(instructionDeliveries.get(main).at(-1), 1234)
+  writeModule('official-instructions', rules, { selected: 'no' })
+  assert.equal((await step(main)).messages.length, 1, '关闭只撤本来源，原owner仍投递')
+  assert.equal(instructionDeliveries.get(main).at(-1), 1234)
+  await original.dispose()
+  assert.equal((await step(main)).messages.length, 0, '释放原owner后关闭态不复活')
+  assert.equal((await step(child)).messages.length, 0)
+  writeModule('official-instructions', rules, { selected: 'yes' })
+  const sameScope = await main.ctx.plugin(OfficialInstructions, { maxBytes: 2468 })
+  assert.equal((await step(main)).messages.length, 1)
+  assert.equal(instructionDeliveries.get(main).at(-1), 2468, '同scope原owner优先')
+  await sameScope.dispose()
+  assert.equal((await step(main)).messages.length, 1, '释放原owner后仍命中才创建本来源owner')
+  assert.equal(instructionDeliveries.get(main).at(-1), 65536)
+  await world.runtime.dispose()
+  assert.equal((await world.root.waterfall(scopeTarget(main, scopeOf(main.ctx)), 'agent/pre-step', { agent: main }, async () => ({ kind: 'enter', messages: [] }))).messages.length, 0)
+})
+
+test('官方指令服务晚到继续沿inject挂载，关闭等待中的owner不复活', async t => {
+  let offFs
+  const lateRoot = new Context()
+  t.after(() => lateRoot.fiber.dispose())
+  lateRoot.provide('agents', {}); lateRoot.provide('workingDirectory', {})
+  const { createPersonaInstructions } = await import('../../src/runtime/persona-instructions.ts')
+  const diagnostics = [], adapter = createPersonaInstructions(lateRoot, value => diagnostics.push(value))
+  const agent = { id: 'late-budget-agent', session: {} }; agent.ctx = createScope(lateRoot, agent).ctx
+  t.after(() => adapter.dispose())
+  await (await adapter.prepare(agent, 65536))?.commit()
+  assert.match(diagnostics.at(-1), /等待/)
+  offFs = lateRoot.plugin({ apply(ctx) { ctx.provide('fs', {}) } }); await offFs
+  await new Promise(resolve => setImmediate(resolve))
+  await (await adapter.prepare(agent, 65536))?.commit()
+  const deliver = () => lateRoot.waterfall(scopeTarget(agent, scopeOf(agent.ctx)), 'agent/pre-step', { agent }, async () => ({ kind: 'enter', messages: [] }))
+  assert.equal((await deliver()).messages.length, 1)
+  await offFs.dispose()
+  await (await adapter.prepare(agent, undefined))?.commit()
+  await lateRoot.plugin({ apply(ctx) { ctx.provide('fs', {}) } })
+  assert.equal((await deliver()).messages.length, 0, '等待中的已关闭owner不因服务恢复复活')
+})
+
+test('人设注册失败回滚新指令owner，既有完整贡献继续生效', async t => {
+  writeModule('atomic-instructions', [persona('body', { prefix: 'OLD', complete: false })])
+  const world = await personaWorld(t, () => ['atomic-instructions'])
+  const agent = await world.create('atomic-instruction-agent')
+  assert.ok((await world.texts(agent)).includes('OLD'))
+  const original = world.root.systemPrompt.section
+  t.mock.method(world.root.systemPrompt, 'section', function (section) {
+    if (section.text === 'FAIL') throw new Error('PERSONA REGISTER FAILURE')
+    return original.call(this, section)
+  })
+  writeModule('atomic-instructions', [persona('body', { prefix: 'FAIL', instructionMaxBytes: 65536, complete: false })])
+  await world.runtime.refresh()
+  assert.ok((await world.texts(agent)).includes('OLD'))
+  assert.ok(world.warnings.some(text => text.includes('PERSONA REGISTER FAILURE')))
+  const result = await world.root.waterfall(scopeTarget(agent, scopeOf(agent.ctx)), 'agent/pre-step', { agent }, async () => ({ kind: 'enter', messages: [] }))
+  assert.equal(result.messages.length, 0, '被拒候选不能留指令owner')
+})
+
+test('官方指令晚到初始化失败撤候选，原预算owner恢复且关闭不复活', async t => {
+  const root = new Context(); root.provide('agents', {}); root.provide('workingDirectory', {})
+  let fs = root.plugin({ apply(ctx) { ctx.provide('fs', {}) } }); await fs
+  const { createPersonaInstructions } = await import('../../src/runtime/persona-instructions.ts')
+  const diagnostics = [], adapter = createPersonaInstructions(root, text => diagnostics.push(text))
+  const agent = { id: 'late-failure', session: {} }; agent.ctx = createScope(root, agent).ctx
+  t.after(async () => { OfficialInstructions.failingBudgets.clear(); await adapter.dispose(); await root.fiber.dispose() })
+  await (await adapter.prepare(agent, 65536))?.commit()
+  await fs.dispose()
+  OfficialInstructions.failingBudgets.add(32768)
+  const waiting = await adapter.prepare(agent, 32768); await waiting?.commit()
+  fs = root.plugin({ apply(ctx) { ctx.provide('fs', {}) } }); await fs
+  await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve))
+  const deliver = () => root.waterfall(scopeTarget(agent, scopeOf(agent.ctx)), 'agent/pre-step', { agent }, async () => ({ kind: 'enter', messages: [] }))
+  const actual = await deliver()
+  assert.equal(actual.messages.length, 1, '晚到失败不屏蔽已接受的旧owner')
+  assert.equal(instructionDeliveries.get(agent).at(-1), 65536)
+  assert.ok(diagnostics.some(text => text.includes('LATE OFFICIAL INIT FAILURE')))
+  await (await adapter.prepare(agent, undefined))?.commit()
+  await fs.dispose(); await root.plugin({ apply(ctx) { ctx.provide('fs', {}) } })
+  assert.equal((await deliver()).messages.length, 0)
+})
+
+test('等待官方指令的NEW人设不提前生效，晚到抛错后仍保持OLD', async t => {
+  const root = new Context(); await root.plugin(SystemPrompt)
+  root.provide('agents', {}); root.provide('workingDirectory', {})
+  const agent = { id: 'joint-late', session: { id: 'joint-late', header: {}, snapshotEvents: () => [] } }; agent.ctx = createScope(root, agent).ctx
+  const { createPersonaInstructions } = await import('../../src/runtime/persona-instructions.ts')
+  const { createRuleRuntime } = await import('../../engine/rule-runtime.mjs'), { compileRules } = await import('../../engine/rule-spec.mjs')
+  const errors = [], adapter = createPersonaInstructions(root, text => errors.push(text)), runtime = createRuleRuntime(agent.ctx, { agent, externalAssembly: true })
+  t.after(async () => { OfficialInstructions.failingBudgets.clear(); runtime.dispose(); await adapter.dispose(); await root.fiber.dispose() })
+  const source = (prefix, budget) => [{ moduleId: 'source', rules: compileRules([persona('identity', { prefix, complete: false, ...(budget === undefined ? {} : { instructionMaxBytes: budget }) })]) }]
+  const context = { agent, scope: scopeOf(agent.ctx) }, text = async () => (await agent.ctx.get('systemPrompt').assemble(context)).sections.find(section => section.name === 'deployment:persona-prefix').text
+  runtime.replace(source('OLD')); runtime.prepareAssembly(context)
+  runtime.replace(source('NEW', 32768)); OfficialInstructions.failingBudgets.add(32768)
+  await runtime.prepareAssembly(context, value => adapter.prepare(agent, value))
+  assert.equal(await text(), 'OLD', 'PENDING不能提前接受NEW')
+  await root.plugin({ apply(ctx) { ctx.provide('fs', {}) } })
+  await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve))
+  assert.ok(errors.some(value => value.includes('LATE OFFICIAL INIT FAILURE')))
+  assert.equal(await text(), 'OLD', '晚到失败未发布任何NEW片段')
+  await assert.rejects(runtime.prepareAssembly(context, value => adapter.prepare(agent, value)), /LATE OFFICIAL INIT FAILURE/)
+  assert.equal(await text(), 'OLD')
+})
+
+test('普通phase事实重判人设与首阶段注入，成功压缩重置而失败压缩不重置', async t => {
+  writeModule('phase-persona', [persona('phase', { prefix: 'PHASE ONE', complete: false }, { phase: { promoted: false, includeSubagents: true, subscribe: false } })])
+  const world = await personaWorld(t, () => ['phase-persona'])
+  const agent = await world.create('ordinary-phase-agent'), events = []
+  agent.session.snapshotEvents = () => events
+  assert.ok((await world.texts(agent)).includes('PHASE ONE'))
+  events.push({ type: 'assistant/message', seq: 0, data: { content: [] } })
+  assert.deepEqual(await world.texts(agent), ['OFFICIAL'])
+  events.push({ type: 'compaction/end', seq: 1, data: { error: 'FAILED' } })
+  assert.deepEqual(await world.texts(agent), ['OFFICIAL'])
+  events.push({ type: 'compaction/end', seq: 2, data: {} })
+  assert.ok((await world.texts(agent)).includes('PHASE ONE'))
 })
 
 test('P4与仅修改complete的人设组合保留继承功能，重复同语义规则各自观测成功', async t => {

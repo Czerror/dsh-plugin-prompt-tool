@@ -20,7 +20,7 @@ import css from './rules.module.css'
 export interface FieldContext { t: PromptToolTranslate; fields: Map<string, FieldDraft>; fieldKey: string; disabled?: boolean; engineMeta?: EngineMeta; onDraft: () => void }
 const FIELD_LABELS: Record<string, PromptToolLocaleKey> = { layer: 'form.layer.label', strategy: 'form.strategy.label', position: 'form.position.label', audience: 'form.audience.label', modelScope: 'form.modelScope.label', subject: 'form.subject.label', mergeMode: 'form.merge.label', dedupe: 'form.dedupe.label', promotion: 'form.promotion.label', configKind: 'form.kind.label', role: 'form.role.label', fill: 'form.fill.label', order: 'form.order.label',
   // 动作字段：tool-gate 的 `decision` 与 tool-result 的 `action` 是动作类型名之外的两份含义，不能借 triggerLabel。
-  action: 'rules.actionField.action', decision: 'rules.actionField.decision' }
+  action: 'rules.actionField.action', decision: 'rules.actionField.decision', instructionMaxBytes: 'persona.instructionMaxBytes' }
 /** 清掉某个字段前缀下的原始草稿（含嵌套键）。 */
 export const cleared = <T,>(fields: Map<string, T>, prefix: string): void => { for (const key of fields.keys()) if (key === prefix || key.startsWith(prefix + ':')) fields.delete(key) }
 function moveConditionDrafts<T>(fields: Map<string, T>, from: string, to: string): void {
@@ -76,12 +76,13 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     if (typeof value === 'boolean') return <div key={key} className={css.toggle}><span>{label}</span><span className={css.switchLine}><Switch label={label} checked={value} disabled={props.disabled} onChange={patch} /></span></div>
     const fallbackNumber = key === 'fallbackAfter' && props.fieldKey.endsWith(':anchor')
     const textLength = ['minChars', 'maxChars'].includes(key) && props.fieldKey.endsWith(':text')
-    const optionalNumber = requestField && ['temperature', 'maxTokens'].includes(key)
+    const instructionBudget = key === 'instructionMaxBytes'
+    const optionalNumber = instructionBudget || requestField && ['temperature', 'maxTokens'].includes(key)
     if (typeof value === 'number' || optionalNumber) {
       const retained = props.fields.get(fieldKey)
       const draft = retained && (retained.error || retained.text !== retained.source || retained.text === String(value ?? '') || typeof value === 'number' && Number(retained.text) === value) ? retained : undefined
       return <FormField key={key} label={label} error={draft?.error}><TextInput aria-label={label} inputMode="decimal" readOnly={props.disabled} value={draft?.text ?? String(value ?? '')}
-        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0) && (!textLength || Number.isSafeInteger(Number(text)) && Number(text) >= 0); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
+        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0) && (!textLength || Number.isSafeInteger(Number(text)) && Number(text) >= 0) && (!instructionBudget || Number.isSafeInteger(Number(text)) && Number(text) > 0); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
     }
     const multiline = ['text', 'prompt', 'prefix', 'suffix', 'template', 'description'].includes(key)
     const text = String(value ?? '')

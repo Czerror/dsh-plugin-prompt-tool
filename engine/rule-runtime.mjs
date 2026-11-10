@@ -324,7 +324,7 @@ export function createRuleRuntime(ctx, options = {}) {
   }
   const commitPersona = plan => {
     const old = persona?.plan
-    if (old?.customPrefix === plan.customPrefix && old?.identityEntries?.length === plan.identityEntries?.length && old?.identityEntries?.every((entry, index) => entry === plan.identityEntries[index])
+    if (old?.instructionMaxBytes === plan.instructionMaxBytes && old?.customPrefix === plan.customPrefix && old?.identityEntries?.length === plan.identityEntries?.length && old?.identityEntries?.every((entry, index) => entry === plan.identityEntries[index])
       && old?.suppressRuntimeContext === plan.suppressRuntimeContext && old.sections.length === plan.sections.length
       && old.sections.every((section, index) => ['name', 'text', 'order', 'complete', 'interpolate'].every(key => section[key] === plan.sections[index][key]))) return
     releasePersona(persona)
@@ -412,7 +412,8 @@ export function createRuleRuntime(ctx, options = {}) {
             settle: (assembly, context) => runtime.settleToolSurface(assembly, context),
           })
         }
-        if (personaPlan !== undefined) commitPersona(personaPlan)
+        const needsInstructions = [...records.values()].some(record => record.personas.some(entry => entry.action.instructionMaxBytes !== undefined))
+        if (personaPlan !== undefined && !needsInstructions && persona?.plan.instructionMaxBytes === undefined) commitPersona(personaPlan)
       } catch (error) {
         for (const record of created.reverse()) record.dispose()
         records = new Map(old)
@@ -426,14 +427,33 @@ export function createRuleRuntime(ctx, options = {}) {
         throw error
       }
     },
-    prepareAssembly(context) {
+    prepareAssembly(context, beforeCommit) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
       const plan = preparePersona(context)
-      if (plan !== undefined) {
-        commitPersona(plan)
-        if (context !== undefined) assemblyPersonaPlans.set(context, plan)
+      const oldPlan = persona?.plan
+      const commit = () => {
+        if (!active) return
+        context?.signal?.throwIfAborted()
+        if (plan !== undefined) {
+          commitPersona(plan)
+          if (context !== undefined) assemblyPersonaPlans.set(context, plan)
+        }
       }
+      if (plan?.instructionMaxBytes !== undefined && beforeCommit === undefined) throw new Error('persona.instructionMaxBytes requires the official instruction host adapter')
+      if (beforeCommit !== undefined) return Promise.resolve(beforeCommit(plan?.instructionMaxBytes)).then(async transaction => {
+        try {
+          if (!active) { await transaction?.rollback(); return }
+          if (transaction?.ready === false) { if (context !== undefined && oldPlan !== undefined) assemblyPersonaPlans.set(context, oldPlan); return }
+          commit(); await transaction?.commit()
+        } catch (error) {
+          await transaction?.rollback()
+          if (active && oldPlan !== undefined) commitPersona(oldPlan)
+          if (context !== undefined && oldPlan !== undefined) assemblyPersonaPlans.set(context, oldPlan)
+          throw error
+        }
+      })
+      commit()
     },
     async settleToolSurface(assembly, context) {
       const frame = assemblyFrame(context, assembly)

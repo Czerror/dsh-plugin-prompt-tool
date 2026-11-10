@@ -45,25 +45,38 @@ rules:
       commit: 126caa2c99297223a7e0e87e604aecfc802f396e
     then: []
   - id: purge-43
-    name: Web 四预设身份（P43 · 未验证）
+    name: Web 四预设去默认身份句（P43）
     enabled: false
+    if:
+      any:
+        - preset: { presetId: standard }
+        - preset: { presetId: ptc }
+        - preset: { presetId: cordis }
+        - preset: { presetId: minimal }
     source:
       format: dsh-purge
       id: 43
       name: WEB_PRESET_IDENTITY_STRIP
       path: lib/patches/prompt.mjs
       commit: 126caa2c99297223a7e0e87e604aecfc802f396e
-    then: []
+    then:
+      - id: identity
+        kind: persona
+        stripDefaultIdentity: preset
   - id: purge-76
-    name: 自建 unrestricted 身份（P76 · 未验证）
+    name: 自建 unrestricted 去默认身份句（P76 · 需目标存在）
     enabled: false
+    if: { preset: { presetId: unrestricted } }
     source:
       format: dsh-purge
       id: 76
       name: PRESET_UNRESTRICTED_IDENTITY_STRIP
       path: lib/patches/prompt.mjs
       commit: 126caa2c99297223a7e0e87e604aecfc802f396e
-    then: []
+    then:
+      - id: identity
+        kind: persona
+        stripDefaultIdentity: preset
   - id: purge-70
     name: minimal 网络说明（P70 · 未验证）
     enabled: false
@@ -85,15 +98,19 @@ rules:
       commit: 126caa2c99297223a7e0e87e604aecfc802f396e
     then: []
   - id: purge-71
-    name: 梁神默认身份（P71 · 未验证）
+    name: 梁神去默认身份句（P71 · 需目标存在）
     enabled: false
+    if: { preset: { presetId: liangshen } }
     source:
       format: dsh-purge
       id: 71
       name: LIANGSHEN_IDENTITY_LINE
       path: lib/patches/prompt.mjs
       commit: 126caa2c99297223a7e0e87e604aecfc802f396e
-    then: []
+    then:
+      - id: identity
+        kind: persona
+        stripDefaultIdentity: preset
   - id: purge-5
     name: never 审批提示（P5 · 未验证）
     enabled: false
@@ -275,15 +292,22 @@ rules:
       commit: 126caa2c99297223a7e0e87e604aecfc802f396e
     then: []
   - id: purge-26
-    name: minimal 身份及注入（P26 · 未验证）
+    name: minimal 人设与官方指令装配（P26）
     enabled: false
+    if: { preset: { presetId: minimal } }
     source:
       format: dsh-purge
       id: 26
       name: MINIMAL_PERSONA_PURGE
       path: lib/patches/new-tools.mjs
       commit: 126caa2c99297223a7e0e87e604aecfc802f396e
-    then: []
+    then:
+      - id: persona
+        kind: persona
+        prefix: ''
+        complete: false
+        includeRuntimeContext: false
+        instructionMaxBytes: 65536
   - id: purge-28
     name: 梁神首阶段注入（P28 · 未验证）
     enabled: false
@@ -385,7 +409,7 @@ rules:
       commit: 126caa2c99297223a7e0e87e604aecfc802f396e
     then: []
   - id: purge-40
-    name: complete 保留注入（P40 · 未验证）
+    name: 解除人设独占以保留所选注入（P40）
     enabled: false
     source:
       format: dsh-purge
@@ -393,7 +417,10 @@ rules:
       name: COMPLETE_PROMPT_KEEP_INJECT
       path: lib/patches/new-tools.mjs
       commit: 126caa2c99297223a7e0e87e604aecfc802f396e
-    then: []
+    then:
+      - id: complete
+        kind: persona
+        complete: false
   - id: purge-47
     name: OAuth 首段身份（P47 · 未验证）
     enabled: false

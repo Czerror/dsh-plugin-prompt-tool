@@ -112,6 +112,8 @@ persona 动作复用规则 if/then/else、嵌套分支、enabled、configOrder �
 
 某字段全省略才继承官方，显式空串阻止该字段继承而不清除其他规则正文。complete/includeRuntimeContext 的显式值须一致，同值幂等、省略继承；冲突拒绝整组，不部分替换。complete:false 解除人设 prefix 独占。includeRuntimeContext:false 增加本插件抑制，true 只撤本插件抑制，祖先 scope 的抑制仍生效。
 
+`instructionMaxBytes` 是 persona 的可选正安全整数字节预算，沿相同规则条件、受众与候选冲突校验；不同显式预算拒绝并保旧。缺省不补装官方指令。宿主 adapter 只在当前 Agent 缺少官方 `agent-instructions` owner 时调用其已发布入口，已有官方 scope 链实例优先且保留原预算；其预算与本声明不同会诊断，不修改共享配置。来源规则 P26 在普通 minimal 条件下组合空 prefix、complete:false、includeRuntimeContext:false 与 65536 预算。
+
 规则是唯一正文所有者；人设卡编辑具体规则动作，读写共用 `/rules` 的逐规则 CAS、保存队列、草稿保留与发布重试。没有独立正文端点、来源下拉或 settings 正文投影。旧顶层 persona（含 main/subagent）及 config.yml.personaSources 在读取根明确拒绝，用户手工重建规则并移除旧键；插件不双读、不迁移、不自动改用户文件。
 
 统一 ruleRuntime 在原官方 assemble 之前求值、聚合、预检并事务化替换本 Agent 的完整人设贡献；同时预检同受众普通 complete 与 sections.append。全部失配或必要事实不可用撤回插件贡献并恢复官方；配置、解析、注册错误报告并保留最后有效组。自定义正文按来源模块读取会话→模块→全局变量和只读 runtime，继承官方正文原样保留，不重新求模板。同步人设出口拒绝 session setter。

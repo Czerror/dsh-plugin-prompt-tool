@@ -141,3 +141,41 @@ test('人设字段省略、空串和不可用条件分别保留继承与三值�
   runtimeValue = undefined
   assert.equal((await read()).text, 'RAW {{untouched}}', '正文所需事实不可用时同样撤回身份')
 })
+
+test('官方指令声明无宿主adapter明确拒绝，异步准备期间释放不提交已取消人设', async t => {
+  const root = new Context(); await root.plugin(SystemPrompt)
+  const agent = { id: 'released-prepare', session: { id: 'released-prepare', header: {}, snapshotEvents: () => [] } }
+  const scope = createScope(root, agent); agent.ctx = scope.ctx
+  const runtime = createRuleRuntime(scope.ctx, { agent, externalAssembly: true })
+  t.after(async () => { runtime.dispose(); await scope.dispose(); await root.fiber.dispose() })
+  const context = { agent, scope: scopeOf(scope.ctx) }
+  runtime.replace([{ moduleId: 'budget', rules: compileRules([{ id: 'budget', then: [
+    { id: 'persona', kind: 'persona', instructionMaxBytes: 65536, prefix: 'RELEASED', complete: false },
+  ] }]) }])
+  assert.throws(() => runtime.prepareAssembly(context), /official instruction host adapter/)
+  let release, rollback = 0
+  const gate = new Promise(resolve => { release = resolve })
+  const pending = runtime.prepareAssembly(context, async value => { assert.equal(value, 65536); await gate; return { commit: async () => assert.fail('已释放不可提交'), rollback: async () => { rollback++ } } })
+  runtime.dispose(); release(); await pending
+  assert.equal(rollback, 1)
+  assert.ok(!(await scope.ctx.get('systemPrompt').assemble(context)).sections.some(section => section.text === 'RELEASED'))
+  for (const value of [0, -1, 1.5, '65536', Number.MAX_SAFE_INTEGER + 1]) assert.throws(() => compileRules([{ id: 'bad', then: [{ id: 'bad', kind: 'persona', instructionMaxBytes: value }] }]), /instructionMaxBytes/)
+})
+
+test('官方指令准备失败拒绝联合候选，最终装配保持完整旧人设', async t => {
+  const root = new Context(); await root.plugin(SystemPrompt)
+  const agent = { id: 'joint-persona', session: { id: 'joint-persona', header: {}, snapshotEvents: () => [] } }
+  const scope = createScope(root, agent); agent.ctx = scope.ctx
+  const runtime = createRuleRuntime(scope.ctx, { agent, externalAssembly: true })
+  t.after(async () => { runtime.dispose(); await scope.dispose(); await root.fiber.dispose() })
+  const source = (prefix, budget) => [{ moduleId: 'source', rules: compileRules([{ id: 'persona', then: [
+    { id: 'body', kind: 'persona', prefix, complete: false, ...(budget === undefined ? {} : { instructionMaxBytes: budget }) },
+  ] }]) }]
+  const context = { agent, scope: scopeOf(scope.ctx) }
+  const text = async () => (await scope.ctx.get('systemPrompt').assemble(context)).sections.find(section => section.name === 'deployment:persona-prefix')?.text
+  runtime.replace(source('OLD')); runtime.prepareAssembly(context)
+  assert.equal(await text(), 'OLD')
+  runtime.replace(source('NEW', 65536))
+  await assert.rejects(runtime.prepareAssembly(context, async () => { throw new Error('OFFICIAL INIT FAILURE') }), /OFFICIAL INIT FAILURE/)
+  assert.equal(await text(), 'OLD', '导入或初始化失败不能提前发布NEW')
+})
