@@ -18,6 +18,15 @@ export const ACTION_DEGRADE = Object.freeze({
  * 的动作写分支键会被编译期点名拒绝（`expandActions` 只认无 `kind` 的分支节点）。
  */
 export const ACTION_KINDS = Object.freeze({
+  'subagent-params': {
+    title: '委派参数',
+    fields: ['provider', 'tool', 'maxDepth'],
+    events: ['system-prompt/assemble'],
+    services: ['subagents.startActivation'],
+    degrade: ACTION_DEGRADE.keep,
+    timing: '装配时接受当前 Agent 的委派参数，工具调用只读取该步骤快照。',
+    note: '只覆盖明确工具与 spawn 提供者的实际委派深度；其它入口透传。',
+  },
   persona: {
     title: '人设',
     fields: ['audience', 'prefix', 'suffix', 'complete', 'includeRuntimeContext', 'stripDefaultIdentity', 'instructionsMaxBytes'],

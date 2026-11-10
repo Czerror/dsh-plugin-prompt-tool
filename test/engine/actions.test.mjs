@@ -174,6 +174,22 @@ test('(2) 改装配 sections/contexts：增删改与既有形态一致，异常�
   assert.equal(failing.warnings.length, 1)
 })
 
+test('assembly.sections.replace 只替换实际非空具名段，保留官方元数据与计划关闭语义', async () => {
+  const { ctx, events } = recordingCtx()
+  registerAction(ctx, { kind: 'assembly', id: 'plan', target: { sections: { replace: [{ name: 'plan:policy', text: 'EDITABLE PLAN' }] } } })
+  const invoke = only(events, 'system-prompt/assemble')
+  const section = { name: 'plan:policy', text: 'OFFICIAL PLAN', order: 42, complete: true }
+  const input = assembled([], { sections: [section, { name: 'other', text: 'KEEP' }] })
+  const output = await invoke(input, { agent: agent() }, async () => input)
+  assert.deepEqual(output.sections, [{ ...section, text: 'EDITABLE PLAN' }, { name: 'other', text: 'KEEP' }])
+  assert.equal(section.text, 'OFFICIAL PLAN')
+  for (const sections of [[], [{ name: 'plan:policy', text: '' }], [{ name: 'plan:policy', text: '  ' }]]) {
+    const inactive = assembled([], { sections })
+    assert.equal(await invoke(inactive, { agent: agent() }, async () => inactive), inactive)
+  }
+  assert.throws(() => registerAction(recordingCtx().ctx, { kind: 'assembly', target: { sections: { replace: [{ name: 'plan:policy', text: 2 }] } } }), /replace.*text/)
+})
+
 test('(2f) contexts：clear 单独清空；跨动作拆分的 [clear, add] 仍是 after-next 串接', async () => {
   const clear = recordingCtx()
   registerAction(clear.ctx, { kind: 'assembly', id: 'clear', target: { contexts: { clear: true } } })

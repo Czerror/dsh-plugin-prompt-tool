@@ -130,6 +130,14 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 ## 复制协议（跨项目复用）
 
+普通 `assembly.target.sections.replace: [{ name, text }]` 只原位替换实际装配中已存在且正文非空的具名段，保留 order、complete 等官方元数据；目标缺失或正文为空时不补段。计划模式可据此编辑 `plan:policy` 全文，真实开关、日志、审批和退出工具仍归官方 planMode，不按工具是否可见猜测计划状态。
+
+普通 `subagent-params` 动作声明 `provider: spawn`、明确的 `tool` 和非负安全整数 `maxDepth`（0 禁止委派）。装配沿当前 Agent 的真实工具集合和 provider.depthLimit 接受参数，存于原 toolStep；同目标同时有效的同值贡献共存，静态异值候选拒绝并保旧，正常重判产生的动态异值冲突暂停该目标贡献并显示原因。缺工具、提供者或能力只暂停此动作所在分支及后代的显式关联正文，无关规则继续；恢复后下一正常步骤重新判断，不重放已有动作。
+
+执行适配复用官方 `tools/execute` waterfall 的真实调用上下文，调用期只代理 `subagents.startActivation`：工具名、spawn、真实 parent 和 sealed step 全部匹配才替换原请求的 maxDepth，其余调用透传。官方 0.2.2-rc.1 发行物使用 `spec.request.parent/maxDepth`，支持证据以发行物为准，不依据源码构建的不同请求形状宣称兼容。深度上下文与 refreshContext 使用同一已接受值；已有工具集合不读热更值，取消仍沿原管线，dispose 关闭步骤。没有第二套深度配置库，也不修改宿主默认深度或 provider。
+
+内置 `unrestricted` 的模块与全部新增规则默认关闭，各条可独立编辑启用。人设和计划正文随普通 module.yml 保存；65536 是可编辑预算初值，仍须原 early 接缝；显式 spawn 深度初值为 1，子代理工具面沿 scope 条件排除 subagent_fork/workflow/ralph，不注册子预设。搜索工具面启用时使用已有 web_fetch 的 deny；需要抓取时用户先关闭该限制，再按实际已安装能力另行配置。模块不隐式启用核心破限规则，不补装官方工具、计划或压缩 owner；现有预设的外围参数继续由其原所有者控制。
+
 显式工具依赖可用 `if: { tool: { name: target_tool } }` 组合原条件树；读取当前真实Agent的原toolStep及官方executable执行集合，不按目录/schema或普通变量判断。缺步骤、缺目标或显式delegate目标链不可执行均为UNAVAILABLE，not/else不能将缺失反转为命中；目标恢复后仅下一次正常集合重判，原次数/Epoch和用户关闭保持。delegate目标只附在当前工具定义的Symbol，不新增状态库；步骤view按官方原集合过滤缺目标/循环链，原工具次序和disposer保持。
 
 内联customTools整组注册失败先撤本组成功项再抛原异常，由原Slot/lastGood处理，不发布半组。较近scope仍可遮蔽祖先，同层重名及run_code保留名由官方拒绝。delegate同名自委派在定义校验时拒绝，其他递归在执行嵌套身份超过32层时明确拒绝；不把当前遮蔽者假装成祖先原实现。HTTP合并caller signal与timeout；shell取消清理本次进程树并保留caller异常身份。

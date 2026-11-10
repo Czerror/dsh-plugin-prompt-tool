@@ -36,12 +36,13 @@ function Mode(props: { t: SurfaceProps['t']; label: string; value: string; optio
 }
 
 
-function AddedEntries(props: SurfaceProps): ReactNode {
+function AddedEntries(props: SurfaceProps & { entryKey?: 'add' | 'replace' }): ReactNode {
   const { t, value } = props
-  const entries = value.add
-  const set = (next: unknown): void => { cleared(props.fields, `${props.fieldKey}:add`); props.onChange({ ...value, add: next }) }
+  const key = props.entryKey ?? 'add', label = t(key === 'replace' ? 'rules.surface.replaceEntries' : 'rules.surface.addEntries')
+  const entries = value[key]
+  const set = (next: unknown): void => { cleared(props.fields, `${props.fieldKey}:${key}`); props.onChange({ ...value, [key]: next }) }
   if (entries !== undefined && (!Array.isArray(entries) || !entries.every(record))) return <TriggerJsonField {...props}
-    label={t('rules.surface.addEntries')} fieldKey={`${props.fieldKey}:add`} value={entries} shape="array" onChange={set} />
+    label={label} fieldKey={`${props.fieldKey}:${key}`} value={entries} shape="array" onChange={set} />
   return <div className={css.surfaceGroup}>
     {(entries as RecordValue[] | undefined)?.map((entry, index) => <div key={index} className={css.surfaceEntry}>
       <div className={css.surfaceHeading}><FormField label={t('rules.surface.entryName')}><TextInput aria-label={t('rules.surface.entryName')} readOnly={props.disabled}
@@ -51,7 +52,7 @@ function AddedEntries(props: SurfaceProps): ReactNode {
       <FormField label={t('rules.surface.entryText')}><textarea className={ui.configTextarea} aria-label={t('rules.surface.entryText')} rows={3} readOnly={props.disabled}
         value={String(entry.text ?? '')} onChange={event => set((entries as RecordValue[]).map((item, at) => at === index ? { ...item, text: event.target.value } : item))} /></FormField>
     </div>)}
-    <div><Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => set([...(entries as RecordValue[] | undefined ?? []), { name: '', text: '' }])}>{t('rules.surface.addEntries')}</Button></div>
+    <div><Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => set([...(entries as RecordValue[] | undefined ?? []), { name: '', text: '' }])}>{label}</Button></div>
   </div>
 }
 
@@ -68,7 +69,8 @@ function TextSurfaceFields(props: SurfaceProps & { target: 'sections' | 'context
     {(mode === 'keep' || mode === 'remove') && <NameList {...props} fieldKey={`${props.fieldKey}:${mode}`} label={t(mode === 'keep' ? 'rules.surface.keptNames' : 'rules.surface.removedNames')}
       value={value[mode]} onChange={next => props.onChange({ ...value, [mode]: next })} />}
     {mode !== 'clear' && <AddedEntries {...props} />}
-    <RuleParameterFields {...props} omit={target === 'sections' ? ['keep', 'remove', 'add'] : ['clear', 'remove', 'add']} />
+    {target === 'sections' && <AddedEntries {...props} entryKey="replace" />}
+    <RuleParameterFields {...props} omit={target === 'sections' ? ['keep', 'remove', 'add', 'replace'] : ['clear', 'remove', 'add']} />
   </>
 }
 

@@ -36,7 +36,7 @@ export const NEXT_FREE_CHANNELS = new Set([
 
 /** 动作的固定执行点；声明编译与 when 接线共用，不能用声明字段改变注册器。 */
 export function actionExecutionPoint(action) {
-  if (action.kind === 'persona') return { channel: 'system-prompt/assemble', phase: 'before-assemble' }
+  if (action.kind === 'persona' || action.kind === 'subagent-params') return { channel: 'system-prompt/assemble', phase: 'before-assemble' }
   if (action.kind === 'tool-gate') return { channel: 'tools/pre-execute', phase: 'before-next' }
   if (action.kind === 'tool-result') return { channel: 'tools/post-execute', phase: 'before-next' }
   if (action.kind === 'append-context') return { channel: 'tools/post-execute', phase: 'after-next' }

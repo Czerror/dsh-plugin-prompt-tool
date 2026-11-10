@@ -1,4 +1,5 @@
 export const ACTION_EXAMPLES = {
+  'subagent-params': { provider: 'spawn', tool: 'subagent', maxDepth: 1 },
   persona: { prefix: '' },
   'inject-text': { config: { id: 'notice', layer: 'pre-step', text: '' } },
   assembly: { target: {} },

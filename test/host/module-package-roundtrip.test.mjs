@@ -179,6 +179,21 @@ test('模块私有 data/ 不随包导出；覆盖安装旧数据优先，包内�
   assert.equal(readFileSync(join(moduleRoot, 'data-keep', 'data', 'new.txt'), 'utf8'), 'PACKAGED NEW', '包内只补缺失')
 })
 
+test('无限制模式完整定义经导入导出回读，规则与许可保持且不带研究资产', async () => {
+  const definition = readFileSync(join(packageModulesDir(), 'unrestricted', 'module.yml'), 'utf8')
+  const original = parse(definition)
+  const installed = await install([{ path: 'module.yml', content: definition }], 'unrestricted-copy')
+  const exported = await exportModulePackage(moduleRoot, { id: installed.id, mode: 'zip' })
+  const files = await expandModuleSource([{ path: 'module.zip', content: exported.content, encoding: 'base64' }])
+  assert.deepEqual(files.map(file => file.path), ['module.yml'])
+  const text = decodeAssetFile(files[0]).toString('utf8')
+  const restored = parse(text)
+  assert.deepEqual(restored.rules, original.rules)
+  assert.deepEqual(restored.modules, ['rule-engine'])
+  assert.match(text, /Copyright \(c\) 2026 小杨/)
+  assert.match(text, /Permission is hereby granted/)
+})
+
 test('内置定义包无资产也能安装导出，另存补齐资产并保留用户覆盖', async () => {
   const definition = readFileSync(join(packageModulesDir(), 'soul', 'module.yml'), 'utf8')
   const files = [{ path: 'module.yml', content: definition }]

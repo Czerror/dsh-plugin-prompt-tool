@@ -13,6 +13,7 @@ import { toolStepFor } from './tool-scope.mjs'
 import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
 import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { installToolStepAssembly } from './tool-step-assembly.mjs'
+import { subagentParamsStatus } from './subagent-params.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -120,8 +121,9 @@ function mountSources(ctx, sources, options = {}) {
       }
       for (const item of point.items) {
         const { action, rule, moduleId } = item
-        if (action.kind === 'persona') {
-          options.collectPersona({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
+        if (action.kind === 'persona' || action.kind === 'subagent-params') {
+          const collect = action.kind === 'persona' ? options.collectPersona : options.collectSubagentParams
+          collect({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
             ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
           continue
         }
@@ -241,11 +243,19 @@ export function createRuleRuntime(ctx, options = {}) {
     } catch (error) { releaseMemo(); releaseMemo = undefined; throw error }
   }
   const mount = source => {
-    const record = { source, points: [], text: [], personas: [], dispose: undefined }
+    const record = { source, points: [], text: [], personas: [], subagentParams: [], dispose: undefined }
     for (const rule of source.rules) if (rule.actions.some(action => action.kind === 'persona' && action.instructionsMaxBytes !== undefined)) {
       const dependent = new Set(rule.actions.filter(action => rule.actions.some(budget => budget.kind === 'persona' && budget.instructionsMaxBytes !== undefined
         && budget.branchPath.every((part, index) => action.branchPath[index] === part))).map(action => action.id))
       rule.instructionsAvailable = entry => !dependent.has(entry.ruleActionId ?? entry.id) || instructionsBudgetStatus(options.agent).available
+    }
+    for (const rule of source.rules) {
+      const params = rule.actions.filter(action => action.kind === 'subagent-params').map(action => ({ action,
+        dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, index) => candidate.branchPath[index] === part)).map(candidate => candidate.id)) }))
+      if (params.length === 0) continue
+      rule.subagentAvailable = (entry, frame) => params.every(({ action, dependent }) => !dependent.has(entry.ruleActionId ?? entry.id)
+        || !frame.subagentConflicts?.has(`${action.tool}/${action.provider}`) && subagentParamsStatus(ctx, action,
+          frame.args[frame.channel === 'system-prompt/assemble' ? 1 : 0], options.agent).available)
     }
     for (const rule of source.rules) ruleOwners.set(rule, source.moduleId)
     record.dispose = mountSources(ctx, [source], {
@@ -276,6 +286,7 @@ export function createRuleRuntime(ctx, options = {}) {
       },
       collectPoint(point, handlers) { record.points.push({ point, handlers }) },
       collectPersona(entry) { record.personas.push(entry) },
+      collectSubagentParams(entry) { record.subagentParams.push(entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -392,6 +403,34 @@ export function createRuleRuntime(ctx, options = {}) {
     })
     return plan
   }
+  const prepareSubagentParams = (context = {}, preview = false) => {
+    context = context.agent === undefined ? { agent: options.agent, ...context } : context
+    const frame = assemblyFrame(context)
+    frame.ignoreSubagentDependency = preview
+    const entries = [...records.values()].flatMap(record => record.subagentParams).sort(compareEntries)
+    const selected = entries.filter(entry => actionMatches(entry, frame))
+    frame.ignoreSubagentDependency = false
+    const plan = []
+    const conflicts = new Set()
+    for (const entry of selected) {
+      const action = entry.action
+      const previous = plan.find(value => value.tool === action.tool && value.provider === action.provider)
+      if (previous !== undefined && previous.maxDepth !== action.maxDepth) conflicts.add(`${action.tool}/${action.provider}`)
+      if (previous === undefined) plan.push(Object.freeze({ tool: action.tool, provider: action.provider, maxDepth: action.maxDepth,
+        contextOrder: getService(ctx, 'systemPrompt')?.getContextOrder?.('SUBAGENT_DELEGATION') ?? 0 }))
+    }
+    if (preview && conflicts.size > 0) throw new TypeError(`subagent-params maxDepth conflict for ${[...conflicts].join(', ')}`)
+    frame.subagentConflicts = conflicts
+    return { values: Object.freeze(plan.filter(entry => !conflicts.has(`${entry.tool}/${entry.provider}`))), observations: preview ? [] : entries.map(entry => {
+      const conflict = conflicts.has(`${entry.action.tool}/${entry.action.provider}`)
+      const outcome = conflict ? 'unavailable' : frame.actionOutcomes.get(entry) ?? 'miss'
+      const status = subagentParamsStatus(ctx, entry.action, context)
+      return { moduleId: entry.sourceModuleId, ruleId: entry.rule.id, channel: 'subagent:params', outcome,
+        identityOutcome: outcome === 'hit' ? 'matched' : outcome === 'error' ? 'error' : outcome === 'unavailable' ? 'condition-unavailable' : 'condition-miss',
+        definitionRevision: entry.rule.definitionRevision, actionId: entry.id, agentId: context.agent?.id,
+        ...(outcome === 'unavailable' ? { reason: conflict ? `委派深度 maxDepth conflict: ${entry.action.tool}/${entry.action.provider}` : status.reason } : {}) }
+    }) }
+  }
   const runtime = {
     replace(sources) {
       if (!active) throw new Error('rule runtime disposed')
@@ -417,16 +456,17 @@ export function createRuleRuntime(ctx, options = {}) {
           next.set(source.moduleId, record)
         }
         records = next
+        prepareSubagentParams({}, true)
         const personaPlan = preparePersona({}, true)
         const text = [...records.values()].flatMap(record => record.text)
         if (text.length > 0) layers ??= createLayerRuntime(ctx, warnOnce, { agent: options.agent, turnStopBudgets: new Map(), sourceError })
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface)) || [...records.values()].some(record => record.personas.length > 0))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface)) || [...records.values()].some(record => record.personas.length > 0))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
@@ -450,6 +490,9 @@ export function createRuleRuntime(ctx, options = {}) {
     prepareAssembly(context) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
+      const step = toolStepFor(context)
+      const delegation = prepareSubagentParams(context)
+      if (step != null) { step.subagentParams = delegation.values; step.subagentObservations = delegation.observations }
       let plan
       try { plan = preparePersona(context) } catch (error) {
         const step = toolStepFor(context)
@@ -478,6 +521,9 @@ export function createRuleRuntime(ctx, options = {}) {
         result = await entry.handler(result, context, () => result, frame)
       }
       for (const observation of assemblyPersonaPlans.get(context)?.instructionsObservations ?? []) {
+        try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
+      }
+      for (const observation of toolStepFor(context)?.subagentObservations ?? []) {
         try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
       }
       return stripPersonaIdentity(result, assemblyPersonaPlans.get(context), options.onOutcome, context.agent?.id)

@@ -34,6 +34,33 @@ test('核心破限模块沿普通补种与启用表，默认关闭且已有用�
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before)
 })
 
+test('无限制模式是普通独立模块，补缺默认关闭，编辑与复制保留完整规则和许可', async () => {
+  const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
+  const { readStorageConfig } = await import('../../src/host/config-store.ts')
+  const root = tempDir('pt-unrestricted-seed-')
+  ensureModuleSeed(root)
+  const dir = join(root, 'unrestricted')
+  const definition = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
+  assert.equal(definition.name, '无限制模式')
+  assert.deepEqual(definition.modules, ['rule-engine'])
+  assert.ok(definition.rules.every(rule => rule.enabled === false))
+  assert.equal(readStorageConfig(root).source.enabled.includes('unrestricted'), false)
+  const initial = readModuleRules(dir)
+  const depth = initial.rules.find(rule => rule.id === 'spawn-depth')
+  assert.equal(depth.then[0].maxDepth, 1)
+  const changed = { ...depth, then: [{ ...depth.then[0], maxDepth: 2 }] }
+  editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: depth.id, rule: changed }] })
+  const before = readFileSync(join(dir, 'module.yml'), 'utf8')
+  ensureModuleSeed(root)
+  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before)
+  const copied = duplicateUserModule('unrestricted', root)
+  assert.equal(copied.ok, true, copied.message)
+  const clone = parseYaml(readFileSync(join(root, copied.id, 'module.yml'), 'utf8'))
+  assert.deepEqual(clone.rules, parseYaml(before).rules)
+  assert.match(readFileSync(join(root, copied.id, 'module.yml'), 'utf8'), /Copyright \(c\) 2026 小杨/)
+  assert.match(readFileSync(join(root, copied.id, 'module.yml'), 'utf8'), /Permission is hereby granted/)
+})
+
 test('ensureModuleSeed：首次复制内置模板，二次幂等，删除后自动补建', () => {
   const first = ensureModuleSeed()
   assert.ok(first.created.length > 0, '首次应复制内置模板')

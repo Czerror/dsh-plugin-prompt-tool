@@ -46,7 +46,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
   const { t } = props
   return Object.entries({ ...props.example, ...props.value }).map(([key, value]) => {
     if (props.omit?.includes(key)) return null
-    const fieldKey = props.fieldKey + ':' + key, label = key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
+    const fieldKey = props.fieldKey + ':' + key, label = props.value.kind === 'subagent-params' && key === 'tool' ? t('triggers.label.delegationTool') : props.value.kind === 'subagent-params' && key === 'provider' ? t('triggers.label.delegationProvider') : key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
     const patch = (next: unknown): void => { const value = { ...props.value }; if (next === undefined) delete value[key]; else value[key] = next; props.onChange(value) }
     const requestField = props.requestPatch && props.fieldKey.endsWith(':patch')
     const choices = ruleFieldOptions(t, String(props.value.id === undefined ? props.fieldKey.split(':').at(-1) ?? '' : props.value.kind ?? ''), key)
@@ -77,12 +77,13 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     const fallbackNumber = key === 'fallbackAfter' && props.fieldKey.endsWith(':anchor')
     const textLength = ['minChars', 'maxChars'].includes(key) && props.fieldKey.endsWith(':text')
     const instructionsBudget = key === 'instructionsMaxBytes'
+    const delegationDepth = key === 'maxDepth'
     const optionalNumber = requestField && ['temperature', 'maxTokens'].includes(key)
     if (typeof value === 'number' || optionalNumber) {
       const retained = props.fields.get(fieldKey)
       const draft = retained && (retained.error || retained.text !== retained.source || retained.text === String(value ?? '') || typeof value === 'number' && Number(retained.text) === value) ? retained : undefined
       return <FormField key={key} label={label} error={draft?.error}><TextInput aria-label={label} inputMode="decimal" readOnly={props.disabled} value={draft?.text ?? String(value ?? '')}
-        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0) && (!textLength || Number.isSafeInteger(Number(text)) && Number(text) >= 0) && (!instructionsBudget || Number.isSafeInteger(Number(text)) && Number(text) > 0); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
+        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0) && (!textLength || Number.isSafeInteger(Number(text)) && Number(text) >= 0) && (!instructionsBudget || Number.isSafeInteger(Number(text)) && Number(text) > 0) && (!delegationDepth || Number.isSafeInteger(Number(text)) && Number(text) >= 0); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
     }
     const multiline = ['text', 'prompt', 'prefix', 'suffix', 'template', 'description'].includes(key)
     const text = String(value ?? '')

@@ -1,5 +1,7 @@
 import { associateToolStep, associateToolSelection, associateToolAssembly, beginToolCatalog, settleToolCatalog, toolAssemblyContext, hasToolStep, toolStepOf } from './tool-scope.mjs'
 import { toolDependenciesReady } from './tool-definition.mjs'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { applySubagentDepthContexts } from './subagent-params.mjs'
 
 const installations = new WeakMap()
 const guardedRoots = new WeakSet()
@@ -39,7 +41,9 @@ function createInstallation(ctx) {
   const snapshots = new WeakMap()
   const settling = new WeakMap()
   const closes = new Set()
+  const calls = new AsyncLocalStorage()
   let active = true
+  const offExecute = ctx.on('tools/execute', (exec, next) => calls.run(exec, next), { global: true, prepend: true })
   const selected = agent => [...owners].filter(owner => owner.knows(agent))
   const wrap = (original, context, tools) => {
     const existing = wrappers.get(original)
@@ -71,9 +75,19 @@ function createInstallation(ctx) {
   }
   const off = ctx.on('internal/get', (_caller, name, _error, next) => {
     const service = next()
-    if ((name !== 'tools' && name !== 'systemPrompt') || service === undefined) return service
+    if ((name !== 'tools' && name !== 'systemPrompt' && name !== 'subagents') || service === undefined) return service
     return new Proxy(service, { get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver)
+      if (name === 'subagents' && property === 'startActivation') return spec => {
+        const exec = calls.getStore()
+        const step = exec === undefined ? undefined : toolStepOf(exec.toolSet, exec.agent)
+        const entry = step?.subagentParams?.find(entry => entry.tool === exec.name && entry.provider === spec.provider)
+        if (entry === undefined || spec.request?.parent !== exec.agent) return Reflect.apply(value, target, [spec])
+        if (step.status !== 'sealed') throw unavailable()
+        exec.signal.throwIfAborted()
+        if (target.getProvider(spec.provider)?.capabilities?.depthLimit !== true) throw new Error('prompt-tool: delegation provider no longer supports depth limits')
+        return Reflect.apply(value, target, [{ ...spec, request: { ...spec.request, maxDepth: entry.maxDepth } }])
+      }
       if (name === 'tools' && property === 'resolve') return async context => {
         const current = selected(context.agent)
         if (current.length === 0) return Reflect.apply(value, target, [context])
@@ -99,7 +113,7 @@ function createInstallation(ctx) {
       if (name === 'systemPrompt' && property === 'refreshContext') return (assembly, context = {}) => {
         const captured = toolAssemblyContext(assembly, context)
         if (captured === undefined) throw unavailable()
-        const refreshed = Reflect.apply(value, target, [assembly, captured])
+        const refreshed = applySubagentDepthContexts(Reflect.apply(value, target, [assembly, captured]), captured, toolStepOf(captured.toolSet, captured.agent))
         const step = toolStepOf(captured.toolSet, captured.agent)
         if (step !== undefined) associateToolAssembly(refreshed, captured.agent, step)
         return refreshed
@@ -130,6 +144,7 @@ function createInstallation(ctx) {
               captured.signal?.throwIfAborted()
               final = await owner.settle(final, captured)
             }
+            final = applySubagentDepthContexts(final, captured, step)
             captured.signal?.throwIfAborted()
             await settleToolCatalog(final, captured)
             captured.signal?.throwIfAborted()
@@ -149,5 +164,5 @@ function createInstallation(ctx) {
       }
     } })
   }, { global: true })
-  return { owners, dispose() { active = false; off(); for (const close of closes) close() } }
+  return { owners, dispose() { active = false; off(); offExecute(); for (const close of closes) close() } }
 }

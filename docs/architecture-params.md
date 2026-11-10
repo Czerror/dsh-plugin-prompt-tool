@@ -52,6 +52,8 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 人设动作预算 `instructionsMaxBytes` 仍归module.yml普通规则，合法值为正安全整数。工作台直接复用RuleParameterFields数字原文、fields错误草稿、hasRuleFields保存阻断和原rule-drafts/CAS；切回继承清除此字段的原草稿，不创建独立预算保存。参考初值65536不限制用户采用其他合法值。
 
+委派参数同样保存在普通规则动作 `subagent-params`，当前只接受 `provider: spawn`、合法工具名 `tool` 与必填非负安全整数 `maxDepth`。0 表示明确禁止委派；空值、负数、小数与非数值均拒绝，撤回贡献通过关闭规则或删除动作表达。数字沿原 RuleParameterFields、fields/hasRuleFields、规则 CAS 与发布，不新增深度草稿或保存端点。`assembly.target.sections.replace` 的名称与完整正文沿原装配表单及规则事务编辑。内置 unrestricted 只补缺失定义，模块及所有规则初始关闭，复制导出保留完整规则与所选文本许可，已有用户副本不覆盖。
+
 ### 规则事务与互斥
 
 `readModuleRules` 返回完整原始规则和 `revisions: { rules, settings, variables }`。`editModuleRules`、`/rules`、TUI 与模型工具统一携带 `expectedRevisions`，规则接口不再接受整文档 expectedRevision。其它领域的字节版本不因此删除。

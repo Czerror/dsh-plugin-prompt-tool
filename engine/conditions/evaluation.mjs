@@ -69,6 +69,11 @@ export function ruleMatches(rule, frame) {
  * `hit` 再记 `miss`。没有分支的动作最终判定就是规则级判定，沿用规则级上报。
  */
 export function actionMatches(entry, frame) {
+  if (!frame.ignoreSubagentDependency && entry.rule?.subagentAvailable?.(entry, frame) === false) {
+    frame.actionOutcomes.set(entry, 'unavailable')
+    if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
+    return false
+  }
   if (!frame.ignoreInstructionsDependency && entry.rule?.instructionsAvailable?.(entry) === false) {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }

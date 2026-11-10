@@ -25,6 +25,16 @@ export function prepareAssembly(action, plugin) {
   const sectionsRemove = NAME_LIST.parse(target.sections?.remove, plugin, 'assembly.sections.remove')
   const sectionsKeep = NAME_LIST.parse(target.sections?.keep, plugin, 'assembly.sections.keep')
   const sectionsAppend = target.sections?.append
+  const sectionsReplace = target.sections?.replace
+  if (sectionsReplace !== undefined) {
+    if (!Array.isArray(sectionsReplace)) throw new TypeError(`${plugin}: assembly.sections.replace must be an array of { name, text }`)
+    for (const entry of sectionsReplace) {
+      if (!record(entry) || Object.keys(entry).some(key => !['name', 'text'].includes(key))) throw new TypeError(`${plugin}: assembly.sections.replace entries must be { name, text }`)
+      requireString(entry.name, 'assembly.sections.replace[].name', plugin)
+      requireString(entry.text, 'assembly.sections.replace[].text', plugin)
+      if (sectionsRemove?.has(entry.name) || sectionsKeep !== undefined && !sectionsKeep.has(entry.name)) throw new TypeError(`${plugin}: assembly.sections.replace target cannot also be removed`)
+    }
+  }
   if (sectionsAppend !== undefined) {
     if (!Array.isArray(sectionsAppend)) throw new TypeError(`${plugin}: assembly.sections.append must be an array of { name, text, once? }`)
     for (const entry of sectionsAppend) {
@@ -63,6 +73,16 @@ export function prepareAssembly(action, plugin) {
     const assembled = await next()
     try {
       let result = assembled
+      if (Array.isArray(result.sections) && sectionsReplace !== undefined) {
+        let nextSections = result.sections
+        for (const entry of sectionsReplace) {
+          const index = nextSections.findIndex(section => section?.name === entry.name && typeof section.text === 'string' && section.text.trim().length > 0)
+          if (index < 0 || nextSections[index].text === entry.text) continue
+          if (nextSections === result.sections) nextSections = [...result.sections]
+          nextSections[index] = { ...nextSections[index], text: entry.text }
+        }
+        if (nextSections !== result.sections) result = { ...result, sections: nextSections }
+      }
       if (Array.isArray(result.sections) && (sectionsAdd !== undefined || sectionsRemove !== undefined || sectionsKeep !== undefined)) {
         const kept = sectionsKeep !== undefined
           ? result.sections.filter((section) => sectionsKeep.has(section?.name))

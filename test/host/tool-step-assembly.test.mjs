@@ -83,6 +83,99 @@ test('公开 resolve/assemble 后置收窄最终声明与实际执行，官方 w
   toolSet.dispose()
 })
 
+test('普通委派参数使用已接受步骤快照，数值冲突拒绝且关闭恢复原owner', async t => {
+  const rules = [{ id: 'depth', then: [{ id: 'depth', kind: 'subagent-params', provider: 'spawn', tool: 'subagent', maxDepth: 1 }] }]
+  const h = await harness(t, rules)
+  h.root.systemPrompt.context({ name: 'tool:subagent:depth', order: 20, text: 'ORIGINAL DEPTH' })
+  const service = { getProvider: () => ({ capabilities: { depthLimit: true } }), startActivation: async spec => ({ maxDepth: spec.request.maxDepth }) }
+  h.root.provide('subagents', service)
+  await h.agent.ctx.plugin({ inject: ['tools', 'subagents'], apply(ctx) {
+    for (const name of ['subagent', 'subagent_fork']) ctx.tools.register({ name, description: name, parameters: { type: 'object', properties: {} },
+      output: { schema: { type: 'object' }, render: () => [] }, execute: (_args, run) => ctx.subagents.startActivation({ provider: name === 'subagent' ? 'spawn' : 'fork', request: { parent: run.agent, maxDepth: 9 } }) })
+  } })
+  const resolve = async () => { const set = await h.services.tools.resolve(h.context); const assembly = await h.services.prompt.assemble({ ...h.context, toolSet: set }); return { set, assembly } }
+  const value = async (set, name = 'subagent') => (await h.execute(set, name)).results[0].result.value.maxDepth
+  const first = await resolve()
+  assert.equal(await value(first.set), 1)
+  assert.equal(first.assembly.contexts.some(context => context.name === 'tool:subagent:depth'), false, '当前深度0低于接受上限1，撤掉原配置的错误说明')
+  assert.equal(await value(first.set, 'subagent_fork'), 9)
+  rules[0].then[0].maxDepth = 2; h.write(); await h.runtime.refresh()
+  const second = await resolve()
+  assert.equal(await value(second.set), 2)
+  assert.equal(await value(first.set), 1, '旧工具集合保留已接受配置，不读取热更后的值')
+  rules.push({ id: 'same', then: [{ ...rules[0].then[0] }] }); h.write(); await h.runtime.refresh()
+  const same = await resolve(); assert.equal(await value(same.set), 2)
+  rules[1].then[0].maxDepth = 3; h.write()
+  await assert.rejects(h.runtime.refresh(), /maxDepth.*conflict/)
+  const retained = await resolve(); assert.equal(await value(retained.set), 2)
+  const events = []
+  h.agent.session.snapshotEvents = () => events
+  rules[1].if = { session: { type: 'conflict', present: true } }
+  rules[1].then.push({ id: 'dependent-body', kind: 'inject-text', config: { layer: 'system-section', text: 'CONFLICTING BODY' } })
+  h.write(); await h.runtime.refresh()
+  events.push({ type: 'conflict', seq: 1, data: {} })
+  const conflict = await resolve()
+  assert.equal(await value(conflict.set), 9, '动态异值冲突暂停该参数贡献，透传原owner')
+  assert.doesNotMatch(conflict.assembly.sections.map(section => section.text).join('\n'), /CONFLICTING BODY/)
+  assert.ok(h.runtime.ruleDiagnostics().records.some(record => /maxDepth conflict/.test(record.reason ?? '')))
+  events.length = 0
+  const recovered = await resolve(); assert.equal(await value(recovered.set), 2)
+  rules.splice(1); rules[0].enabled = false; h.write(); await h.runtime.refresh()
+  const disabled = await resolve(); assert.equal(await value(disabled.set), 9)
+  assert.equal(await value(first.set), 1, '关闭不改写已发行步骤')
+  rules[0].enabled = true; rules[0].then[0].maxDepth = 0; h.write(); await h.runtime.refresh()
+  const zero = await resolve()
+  assert.equal(await value(zero.set), 0)
+  assert.match(zero.assembly.contexts.find(context => context.name === 'tool:subagent:depth').text, /current 0, maximum 0, remaining levels 0/)
+  const refreshed = h.services.prompt.refreshContext(zero.assembly, { ...h.context, toolSet: zero.set })
+  assert.match(refreshed.contexts.find(context => context.name === 'tool:subagent:depth').text, /current 0, maximum 0, remaining levels 0/)
+  assert.equal((await service.startActivation({ provider: 'spawn', request: { parent: h.agent, maxDepth: 7 } })).maxDepth, 7, '直接服务调用不借用模型工具步骤')
+  for (const set of [first.set, second.set, same.set, retained.set, conflict.set, recovered.set, disabled.set, zero.set]) set.dispose()
+})
+
+test('委派依赖缺失只暂停同分支正文，恢复后正常重判且原关闭意图保留', async t => {
+  const rules = [{ id: 'depth', then: [{ id: 'depth', kind: 'subagent-params', provider: 'spawn', tool: 'subagent', maxDepth: 1 },
+    { id: 'body', kind: 'inject-text', config: { layer: 'system-section', text: 'DEPTH READY BODY' } },
+    { id: 'pre-body', kind: 'inject-text', config: { layer: 'pre-step', position: 'after-all', text: 'DEPENDENT PRESTEP BODY' } }] },
+  { id: 'independent', then: [{ id: 'body', kind: 'inject-text', config: { layer: 'system-section', text: 'CONTROL BODY' } },
+    { id: 'pre-control', kind: 'inject-text', config: { layer: 'pre-step', position: 'after-all', text: 'CONTROL PRESTEP' } }] }]
+  const h = await harness(t, rules)
+  let providerReady = false
+  h.root.provide('subagents', { getProvider: () => { if (providerReady === 'error') throw new Error('provider lookup failed'); return providerReady ? { capabilities: { depthLimit: true } } : undefined }, startActivation: async () => ({}) })
+  const render = async () => {
+    const set = await h.services.tools.resolve(h.context)
+    try {
+      const result = await h.services.prompt.assemble({ ...h.context, toolSet: set })
+      const decision = await h.root.waterfall(scopeTarget(h.agent, h.agent), 'agent/pre-step', { ...h.context, toolSet: set, step: 1, turn: 1 }, async () => ({ kind: 'enter', messages: [] }))
+      return { sections: result.sections.map(section => section.text).join('\n'), preStep: decision.messages.flatMap(message => message.content.map(block => block.text ?? '')).join('\n') }
+    } finally { set.dispose() }
+  }
+  const missing = await render()
+  assert.doesNotMatch(missing.sections, /DEPTH READY BODY/)
+  assert.doesNotMatch(missing.preStep, /DEPENDENT PRESTEP BODY/)
+  assert.match(missing.sections, /CONTROL BODY/)
+  assert.match(missing.preStep, /CONTROL PRESTEP/)
+  h.root.tools.register({ name: 'subagent', description: 'delegate', parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] }, execute: async () => ({}) })
+  providerReady = true
+  const restored = await render()
+  assert.match(restored.sections, /DEPTH READY BODY/)
+  assert.match(restored.preStep, /DEPENDENT PRESTEP BODY/)
+  assert.match(restored.preStep, /CONTROL PRESTEP/)
+  providerReady = false
+  const paused = await render()
+  assert.doesNotMatch(paused.sections, /DEPTH READY BODY/)
+  assert.doesNotMatch(paused.preStep, /DEPENDENT PRESTEP BODY/)
+  providerReady = 'error'
+  const failed = await render()
+  assert.match(failed.sections, /CONTROL BODY/, '提供者读取失败不能阻断无关规则')
+  assert.match(failed.preStep, /CONTROL PRESTEP/)
+  rules[0].enabled = false; h.write(); await h.runtime.refresh(); providerReady = true
+  const disabled = await render()
+  assert.doesNotMatch(disabled.sections, /DEPTH READY BODY/)
+  assert.doesNotMatch(disabled.preStep, /DEPENDENT PRESTEP BODY/)
+  assert.match(disabled.preStep, /CONTROL PRESTEP/)
+})
+
 test('显式工具就绪条件读取执行owner，缺失暂停说明且恢复后下一集合生效', async t => {
   const rules = [{ id: 'dependent', if: { tool: { name: 'late_delegate' } }, then: [{ id: 'body', kind: 'inject-text', config: { layer: 'system-section', text: 'TOOL READY BODY' } }] },
     { id: 'independent', then: [{ id: 'body', kind: 'inject-text', config: { layer: 'system-section', text: 'CONTROL BODY' } }] }]

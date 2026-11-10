@@ -52,3 +52,22 @@ test('人设动作通过普通规则事务保存三态，陈旧规则版本拒�
     assert.equal(readFileSync(file, 'utf8'), bytes, '非法预算不写完整定义')
   }
 })
+
+test('委派深度沿普通规则版本保存，非法值拒写并保留已有定义', () => {
+  const dir = join(moduleRoot, 'delegation-params')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, 'module.yml')
+  const rule = { id: 'depth', enabled: false, then: [{ id: 'depth', kind: 'subagent-params', provider: 'spawn', tool: 'subagent', maxDepth: 1 }] }
+  writeFileSync(file, JSON.stringify({ id: 'delegation-params', modules: ['rule-engine'], rules: [rule] }))
+  let snapshot = readModuleRules(dir)
+  for (const maxDepth of [2, 0]) {
+    const next = { ...rule, then: [{ ...rule.then[0], maxDepth }] }
+    snapshot = editModuleRules(dir, { expectedRevisions: snapshot.revisions, edits: [{ previousId: 'depth', rule: next }] })
+    assert.equal(readModuleRules(dir).rules[0].then[0].maxDepth, maxDepth)
+  }
+  const before = readFileSync(file, 'utf8')
+  for (const maxDepth of [-1, 1.5, '2', null, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => editModuleRules(dir, { expectedRevisions: snapshot.revisions, edits: [{ previousId: 'depth', rule: { ...rule, then: [{ ...rule.then[0], maxDepth }] } }] }), /maxDepth/)
+    assert.equal(readFileSync(file, 'utf8'), before)
+  }
+})
