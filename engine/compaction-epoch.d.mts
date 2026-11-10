@@ -15,6 +15,7 @@ export interface EpochPromotionOptions {
   includeSubagents?: boolean
   promoteGate?: boolean
   promoteAfterFirstResponse?: boolean
+  promoteAfterFirstTool?: boolean
   maxPromoteSteps?: number
   reasoningPattern?: string
   reasoningNegativePattern?: string

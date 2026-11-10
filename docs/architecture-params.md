@@ -54,6 +54,8 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 委派参数同样保存在普通规则动作 `subagent-params`，当前只接受 `provider: spawn`、合法工具名 `tool` 与必填非负安全整数 `maxDepth`。0 表示明确禁止委派；空值、负数、小数与非数值均拒绝，撤回贡献通过关闭规则或删除动作表达。数字沿原 RuleParameterFields、fields/hasRuleFields、规则 CAS 与发布，不新增深度草稿或保存端点。`assembly.target.sections.replace` 的名称与完整正文沿原装配表单及规则事务编辑。内置 unrestricted 只补缺失定义，模块及所有规则初始关闭，复制导出保留完整规则与所选文本许可，已有用户副本不覆盖。
 
+显式瞬时额度 `request-params.maxTokens` 与 `phase.maxPromoteSteps` 同样沿原数字原文草稿和规则事务保存，合法范围均为正安全整数。非法或未完成原文不发保存请求，折叠保留草稿。该额度与同动作的patch/unset.maxTokens及replace互斥；原有patch组合不迁移。`pre-step-filter.instructionHint` 是普通规则中的可编辑完整模板。内置redteam只补缺失定义，七规则全部初始关闭；复制导出保留已保存数值、条件、正文和适用许可，不覆盖用户副本。请求额度运行接缝和指令字节预算分别取资格，详见[引擎指南](engine-reuse.md)。
+
 ### 规则事务与互斥
 
 `readModuleRules` 返回完整原始规则和 `revisions: { rules, settings, variables }`。`editModuleRules`、`/rules`、TUI 与模型工具统一携带 `expectedRevisions`，规则接口不再接受整文档 expectedRevision。其它领域的字节版本不因此删除。

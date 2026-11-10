@@ -17,6 +17,7 @@ import { createNameListPredicate, subjectOf, FACT_PREDICATE_SUBJECTS, createAnch
 import { UNAVAILABLE } from '../../engine/conditions/availability.mjs'
 import { lastContextActivationDiagnostics, conversationMessages } from '../../engine/context-activation.mjs'
 import { currentEvents, viewRestricted } from '../../engine/history.mjs'
+import { requestBudgetState, requestBudgetOwner } from '../../engine/request-budget-bridge.mjs'
 
 function harness(services = {}) {
   const events = new Map()
@@ -46,6 +47,111 @@ function harness(services = {}) {
 }
 const actor = () => ({ session: { id: 'session', header: {}, snapshotEvents: () => [] }, options: { model: 'deepseek-chat' } })
 const textAction = (id, text, extra = {}) => ({ id, kind: 'inject-text', config: { id, layer: 'pre-step', text, ...extra } })
+
+test('普通规则首工具晋升后转换指令提示，成功压缩重开且撤回释放', async () => {
+  const events = []
+  const agent = actor()
+  agent.session.snapshotEvents = () => events
+  agent.session.deriveMessages = () => []
+  const h = harness()
+  const off = mountRuleSources(h.ctx, [{ moduleId: 'mode', rules: compileRules([{
+    id: 'hint', if: { phase: { promoted: true, includeSubagents: true, promoteGate: true,
+      promoteAfterFirstResponse: true, promoteAfterFirstTool: true, maxPromoteSteps: 2 } },
+    then: [{ id: 'hint', kind: 'pre-step-filter', instructionHint: 'Reference: {{FILES}}' }],
+  }]) }])
+  const original = { id: 'instructions', role: 'user', source: { kind: 'agent-instructions' },
+    content: [{ type: 'text', text: 'Instructions from: /workspace/AGENTS.md\n\nRULES' }] }
+  const unknown = { id: 'unknown', role: 'user', source: { kind: 'agent-instructions' }, content: [{ type: 'text', text: 'UNRECOGNIZED INSTRUCTION' }] }
+  const step = () => h.run('agent/pre-step', [{ agent, messages: [] }], () => ({ kind: 'enter', messages: [original, unknown] }))
+  assert.equal((await step()).messages[0], original)
+  const push = async (type, data = {}) => { const event = { seq: events.length, type, data }; events.push(event); await h.emit('session/event', agent.session, event) }
+  await push('step/start')
+  await push('tool/call')
+  assert.equal((await step()).messages[0].content[0].text, 'Reference: /workspace/AGENTS.md')
+  await push('compaction/end', { error: 'failed' })
+  assert.equal((await step()).messages[0].source.kind, 'instruction-hint')
+  await push('compaction/end')
+  assert.equal((await step()).messages[0], original)
+  await push('assistant/message', { message: { content: [{ type: 'text', text: 'done' }] } })
+  assert.equal((await step()).messages[0].source.kind, 'instruction-hint')
+  agent.session.deriveMessages = () => [{ source: { kind: 'instruction-hint' } }]
+  assert.deepEqual((await step()).messages, [unknown], '不可识别的官方消息不因可见提示而丢弃')
+  off()
+  assert.equal((await step()).messages[0], original)
+})
+
+test('显式请求额度同值共存，异值完整候选拒绝，动态冲突暂停关联正文并正常恢复', async t => {
+  const { createRuleRuntime } = await import('../../engine/rule-runtime.mjs')
+  const h = harness()
+  const agent = actor()
+  const originalAvailability = requestBudgetState.available
+  t.after(() => { requestBudgetState.available = originalAvailability })
+  requestBudgetState.available = true
+  agent[requestBudgetOwner] = true
+  const runtime = createRuleRuntime(h.ctx, { agent })
+  const source = (id, amount, condition) => ({ moduleId: id, rules: compileRules([{
+    id, ...(condition ? { if: condition } : {}), then: [
+      { id: 'budget', kind: 'request-params', maxTokens: amount },
+      textAction('dependent', id.toUpperCase(), { position: 'before-all' }),
+    ],
+  }]) })
+  const a = source('a', 8192), same = source('b', 8192)
+  const request = () => h.run('agent/request', [{ agent }], () => ({ model: 'chat', maxTokens: 12000 }))
+  const step = () => h.run('agent/pre-step', [{ agent, messages: [] }], () => ({ kind: 'enter', messages: [] }))
+  runtime.replace([a, same])
+  requestBudgetState.available = false
+  assert.equal((await request()).maxTokens, 12000, '无已验证early接缝时保留宿主预算')
+  assert.deepEqual((await step()).messages, [], '显式依赖额度的正文同时暂停')
+  requestBudgetState.available = true
+  assert.equal((await request()).maxTokens, 8192)
+  assert.throws(() => runtime.replace([a, source('b', 4096)]), /maxTokens.*conflict/)
+  assert.equal((await request()).maxTokens, 8192, '非法完整候选不替换上一有效组')
+  let enabled = false
+  const dynamic = source('b', 4096)
+  dynamic.rules[0].when = () => enabled
+  runtime.replace([a, dynamic])
+  assert.equal((await request()).maxTokens, 8192)
+  enabled = true
+  assert.equal((await request()).maxTokens, 12000, '冲突目标整体回宿主，不按顺序选赢家')
+  assert.deepEqual((await step()).messages, [], '冲突能力的关联正文同时暂停')
+  assert.ok(h.warnings.some(message => /maxTokens.*conflict/.test(message)))
+  enabled = false
+  assert.equal((await request()).maxTokens, 8192)
+  assert.deepEqual((await step()).messages.map(message => message.content[0].text), ['A'], JSON.stringify(h.warnings))
+  runtime.dispose()
+  assert.equal((await request()).maxTokens, 12000)
+  assert.throws(() => compileRules([{ id: 'mixed', then: [{ id: 'budget', kind: 'request-params', maxTokens: 8192, patch: { maxTokens: 4096 } }] }]), /maxTokens/)
+  for (const patch of [null, [], 4, 'oops']) {
+    for (const budget of [{}, { maxTokens: 1024 }]) {
+      assert.throws(() => compileRules([{ id: 'invalid-patch', then: [{ id: 'request', kind: 'request-params', patch, ...budget }] }]), /patch must be an object/)
+    }
+  }
+  const counts = createRuleRuntime(h.ctx, { agent })
+  const gate = steps => ({ phase: { promoted: false, includeSubagents: true, promoteGate: true, maxPromoteSteps: steps } })
+  counts.replace([source('a', 8192, gate(2)), source('b', 8192, gate(2))])
+  assert.equal((await request()).maxTokens, 8192)
+  assert.throws(() => counts.replace([source('a', 8192, gate(2)), source('b', 8192, gate(3))]), /bootstrap step conflict/)
+  assert.equal((await request()).maxTokens, 8192)
+  assert.throws(() => counts.replace([source('a', 8192, gate(2)), source('b', 8192, { any: [gate(3)] })]), /bootstrap step conflict/)
+  assert.throws(() => counts.replace([source('a', 8192, gate(2)), source('b', 8192, { all: [{ scope: { audience: 'main' } }, { any: [gate(3)] }] })]), /bootstrap step conflict/)
+  counts.replace([source('a', 8192, gate(2)), source('b', 8192, { any: [{ scope: { audience: 'main' } }, gate(3)] })])
+  assert.equal((await request()).maxTokens, 8192, '已短路的or后续phase不参与计数目标')
+  counts.replace([source('a', 8192, gate(2)), source('b', 8192, { not: { phase: { ...gate(3).phase, promoted: true } } })])
+  assert.equal((await request()).maxTokens, 8192, '否定phase不声明正向计数贡献')
+  counts.replace([source('a', 8192, gate(2)), source('b', 8192, { any: [
+    { all: [{ scope: { audience: 'subagent' } }, gate(3)] }, { scope: { audience: 'main' } },
+  ] })])
+  assert.equal((await request()).maxTokens, 8192, '未命中的or支路不制造冲突')
+  agent.session.header.delegationDepth = 1
+  assert.equal((await request()).maxTokens, 12000, '事实变化后实际命中or内不同步数，暂停全部冲突额度')
+  assert.deepEqual((await step()).messages, [], '实际or计数冲突同时暂停关联正文')
+  agent.session.header.delegationDepth = 0
+  assert.equal((await request()).maxTokens, 8192, '原事实恢复后正常重判恢复额度')
+  counts.dispose()
+  for (const invalid of [0, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => source('invalid', 8192, gate(invalid)), /maxPromoteSteps/)
+  }
+})
 
 test('规则来源增量替换保留未变观察器、跨来源顺序与失败前贡献', async () => {
   const { createRuleRuntime } = await import('../../engine/rule-runtime.mjs')

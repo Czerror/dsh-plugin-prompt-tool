@@ -97,12 +97,13 @@ export const ACTION_KINDS = Object.freeze({
   },
   'request-params': {
     title: '改模型请求参数',
-    fields: ['patch', 'unset', 'replace'],
+    fields: ['patch', 'unset', 'replace', 'maxTokens'],
     events: ['agent/request'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
     timing: 'agent/request 的下游结算之后（`await next()` 拿到已冻结的 LlmCallConfig 再改写）。',
-    note: '请求改写的唯一入口；删键仅删本声明指定的那个值。',
+    note: '请求改写的唯一入口；删键仅删本声明指定的那个值。显式maxTokens是需已验证early接缝的瞬时额度，'
+      + '同值共存、异值冲突，不与本动作patch/unset.maxTokens或replace混用；旧patch/unset组合保持。',
   },
   'stream-output': {
     title: '控制模型输出流',
@@ -125,7 +126,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   'pre-step-filter': {
     title: '过滤 pre-step 注入消息',
-    fields: ['sources', 'keepKinds', 'blockPlugins'],
+    fields: ['sources', 'keepKinds', 'blockPlugins', 'instructionHint'],
     events: ['agent/pre-step'],
     services: [],
     degrade: ACTION_DEGRADE.exposeAll,
@@ -135,6 +136,7 @@ export const ACTION_KINDS = Object.freeze({
       + '`blockPlugins` 是与二者**正交**的另一维度、可共存：仅当来源 kind 为 plugin 时按 `source.plugin` '
       + '做大小写不敏感的**精确等值**匹配并剔除命中项，不做子串/正则/glob；空名单 = 关闭'
       + '（与白名单「空 = 全拦」不同），未声明 = 不过滤。'
+      + 'instructionHint为显式文件提示模板，仅转换可靠识别的官方指令消息；原始正文与其它来源不扫描猜依赖。'
       + '**永不吞上下文**：异常一律返回未过滤的 decision（`expose-all`）。',
   },
 })

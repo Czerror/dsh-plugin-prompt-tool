@@ -95,12 +95,13 @@ export function createEpochPromotion(promoteEvents, options = {}) {
   const includeSubagents = options.includeSubagents === true
   const promoteGate = options.promoteGate === true
   const promoteAfterFirstResponse = options.promoteAfterFirstResponse === true
+  const promoteAfterFirstTool = options.promoteAfterFirstTool === true
   const classify = reasoningClassifier(options)
   // 门控回退步数由调用方配置提供（tool-bootstrap 在开启门控时做必填校验）：
   // 引擎不内置默认；未提供时步数兜底不生效，只按 anchored 判定。
   const maxPromoteSteps = options.maxPromoteSteps
   const promote = new Set(promoteEvents)
-  const gated = promoteGate || promoteAfterFirstResponse
+  const gated = promoteGate || promoteAfterFirstResponse || promoteAfterFirstTool
   const freshEntry = (boundary) => ({
     boundary,
     promoted: false,
@@ -132,6 +133,7 @@ export function createEpochPromotion(promoteEvents, options = {}) {
   const decideGate = (entry) => {
     if (entry.promoted) return true
     if (entry.toolCalled && !promoteGate) return true
+    if (entry.toolCalled && entry.steps >= 1 && promoteAfterFirstTool) return true
     if (entry.toolCalled && promoteGate && (entry.anchored || entry.steps >= maxPromoteSteps)) return true
     if (entry.toolCalled && promoteGate && promoteAfterFirstResponse && entry.turnEnded) return true
     if (!entry.toolCalled && entry.responded && promoteAfterFirstResponse) return true

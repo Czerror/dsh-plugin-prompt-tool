@@ -199,7 +199,7 @@ export function instructionHintMessages(messages, state, sourceName = 'instructi
     }
     const paths = extractInstructionPaths(message)
     if (paths.length === 0) {
-      if (!state.instructionHinted) kept.push(message)
+      kept.push(message)
       continue
     }
     const hint = buildInstructionHint(message, paths, sourceName, templates)

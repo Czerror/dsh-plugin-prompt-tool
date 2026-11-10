@@ -14,6 +14,8 @@ import { PRE_STEP_COORDINATOR_SERVICE } from './service-names.mjs'
 import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { installToolStepAssembly } from './tool-step-assembly.mjs'
 import { subagentParamsStatus } from './subagent-params.mjs'
+import { requestBudgetStatus } from './request-budget-bridge.mjs'
+import { compileWhen } from './conditions/index.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -86,7 +88,10 @@ function mountSources(ctx, sources, options = {}) {
   const injections = new Map(sources.map(source => [source.moduleId, { moduleId: source.moduleId, sourceId: moduleSourceId(source.moduleId), configs: [], ruleActions: [] }]))
   // 动作级分支条件（actionWhen）也要喂 session/event：否则 else / 嵌套 if 里的 phase / count
   // 谓词永远收不到事件，状态停在冷扫那一刻（规则级 when 已由 rules 覆盖，动作级单独补齐）。
-  const bind = (item, on) => prepareAction(item.action, { plugin: options.plugin, warnOnce, promptConfigOptions: item.rule.promptConfigOptions, on })(ctx)
+  const bind = (item, on) => prepareAction(item.action, { plugin: options.plugin, warnOnce, promptConfigOptions: item.rule.promptConfigOptions, on,
+    requestBudgetOutcome: (agent, matched) => options.onOutcome?.({ moduleId: item.moduleId, ruleId: item.rule.id, channel: 'request:budget',
+      outcome: matched ? 'hit' : 'unavailable', identityOutcome: matched ? 'matched' : 'target-mismatch', actionId: item.action.id,
+      definitionRevision: item.rule.definitionRevision, agentId: agent?.id, ...(matched ? {} : { reason: 'maxTokens changed by another request owner' }) }) })(ctx)
   try {
     for (const source of sources) {
       try { rebindConditions([source], { ctx, standingMountFor: options.standingMountFor, promotionPool: pool, variableStore: options.variableStore, manifestCheck: options.manifestCheck, soulReminder: options.soulReminder }) }
@@ -121,6 +126,8 @@ function mountSources(ctx, sources, options = {}) {
       }
       for (const item of point.items) {
         const { action, rule, moduleId } = item
+        if (action.kind === 'request-params' && action.maxTokens !== undefined) options.collectRequestBudget({ action, rule, id: action.id, sourceModuleId: moduleId,
+          actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
         if (action.kind === 'persona' || action.kind === 'subagent-params') {
           const collect = action.kind === 'persona' ? options.collectPersona : options.collectSubagentParams
           collect({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
@@ -243,7 +250,23 @@ export function createRuleRuntime(ctx, options = {}) {
     } catch (error) { releaseMemo(); releaseMemo = undefined; throw error }
   }
   const mount = source => {
-    const record = { source, points: [], text: [], personas: [], subagentParams: [], dispose: undefined }
+    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], dispose: undefined }
+    for (const rule of source.rules) {
+      const budgets = rule.actions.filter(action => action.kind === 'request-params' && action.maxTokens !== undefined)
+      if (budgets.length === 0) continue
+      const dependent = new Set(rule.actions.filter(action => budgets.some(budget => budget.branchPath.every((part, index) => action.branchPath[index] === part))).map(action => action.id))
+      rule.requestBudgetAvailable = (entry, frame) => {
+        if (!dependent.has(entry.ruleActionId ?? entry.id)) return true
+        const agent = frame.subject?.agent ?? options.agent
+        const status = requestBudgetStatus(agent)
+        const conflict = requestBudgetConflict(frame)
+        if (status.available && !conflict) return true
+        try { options.onOutcome?.({ moduleId: source.moduleId, ruleId: rule.id, channel: 'request:budget', outcome: 'unavailable',
+          identityOutcome: 'condition-unavailable', definitionRevision: rule.definitionRevision, agentId: agent?.id,
+          actionId: budgets[0].id, reason: conflict ? frame.requestBudgetReason : status.reason }) } catch { /* 只读诊断 */ }
+        return false
+      }
+    }
     for (const rule of source.rules) if (rule.actions.some(action => action.kind === 'persona' && action.instructionsMaxBytes !== undefined)) {
       const dependent = new Set(rule.actions.filter(action => rule.actions.some(budget => budget.kind === 'persona' && budget.instructionsMaxBytes !== undefined
         && budget.branchPath.every((part, index) => action.branchPath[index] === part))).map(action => action.id))
@@ -287,6 +310,7 @@ export function createRuleRuntime(ctx, options = {}) {
       collectPoint(point, handlers) { record.points.push({ point, handlers }) },
       collectPersona(entry) { record.personas.push(entry) },
       collectSubagentParams(entry) { record.subagentParams.push(entry) },
+      collectRequestBudget(entry) { record.requestBudgets.push(entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -431,6 +455,40 @@ export function createRuleRuntime(ctx, options = {}) {
         ...(outcome === 'unavailable' ? { reason: conflict ? `委派深度 maxDepth conflict: ${entry.action.tool}/${entry.action.provider}` : status.reason } : {}) }
     }) }
   }
+  const requestBudgetConflict = (frame, preview = false) => {
+    if (frame.requestBudgetConflict !== undefined) return frame.requestBudgetConflict
+    const checking = { ...frame, decisions: new Map(), actionDecisions: new Set(), actionOutcomes: new Map(), reminders: new Map(),
+      ignoreRequestBudgetDependency: true, onOutcome: undefined }
+    const selected = [...records.values()].flatMap(record => record.requestBudgets).filter(entry => actionMatches(entry, checking))
+    const values = new Set(selected.map(entry => entry.action.maxTokens))
+    const counts = new Set()
+    const addCounts = (node, entry) => {
+      if (node?.phase?.maxPromoteSteps !== undefined) counts.add(node.phase.maxPromoteSteps)
+      for (const child of node?.all ?? []) addCounts(child, entry)
+      for (const child of node?.any ?? []) {
+        const matches = compileWhen(child, { ctx, promotionPool: pool, moduleId: entry.sourceModuleId,
+          standingMountFor: options.standingMountFor, variableStore: options.variableStore,
+          manifestCheck: options.manifestCheck, soulReminder: options.soulReminder,
+          resolveAction: id => {
+            const config = entry.rule.actions.find(action => action.id === id)?.compiledConfig
+            return config === undefined ? undefined : { ...config, sourceModuleId: entry.sourceModuleId }
+          } })(checking.subject)
+        if (matches !== true) continue
+        addCounts(child, entry)
+        break
+      }
+    }
+    for (const entry of selected) {
+      if (!entry.bypassRuleWhen) addCounts(entry.rule.conditionTrees.when, entry)
+      addCounts(entry.action.conditions, entry)
+    }
+    const reason = values.size > 1 ? 'request-params maxTokens conflict' : counts.size > 1 ? 'request-params maxTokens bootstrap step conflict' : undefined
+    if (reason !== undefined && preview) throw new TypeError(reason)
+    if (reason !== undefined) warnOnce(reason)
+    frame.requestBudgetConflict = reason !== undefined
+    frame.requestBudgetReason = reason
+    return frame.requestBudgetConflict
+  }
   const runtime = {
     replace(sources) {
       if (!active) throw new Error('rule runtime disposed')
@@ -456,6 +514,7 @@ export function createRuleRuntime(ctx, options = {}) {
           next.set(source.moduleId, record)
         }
         records = next
+        requestBudgetConflict(ruleFrame('agent/request', [{ agent: options.agent }], warnOnce, ctx), true)
         prepareSubagentParams({}, true)
         const personaPlan = preparePersona({}, true)
         const text = [...records.values()].flatMap(record => record.text)

@@ -1,6 +1,7 @@
 import { labelOf } from './shared.mjs'
 import { matchesAgentScope } from '../layers.mjs'
 import { assertReplacePatch } from '../schema.mjs'
+import { markRequestBudget, requestBudgetStatus } from '../request-budget-bridge.mjs'
 
 /** 浅合并或整体替换；unset 只删除值仍等于声明期望的键，保留其他来源的覆盖。 */
 function applyAgentRequestParams(params, base) {
@@ -18,10 +19,17 @@ function applyAgentRequestParams(params, base) {
 
 export function prepareRequestParams(action, plugin) {
   const label = labelOf(action)
-  const patch = action.patch
-  if (patch !== undefined && (patch === null || typeof patch !== 'object' || Array.isArray(patch))) {
+  if (action.maxTokens !== undefined && (!Number.isSafeInteger(action.maxTokens) || action.maxTokens <= 0)) {
+    throw new TypeError(`${plugin}: ${label}.maxTokens must be a positive safe integer`)
+  }
+  if (action.maxTokens !== undefined && (Object.hasOwn(action.patch ?? {}, 'maxTokens') || Object.hasOwn(action.unset ?? {}, 'maxTokens') || action.replace === true)) {
+    throw new TypeError(`${plugin}: ${label}.maxTokens cannot combine with patch/unset.maxTokens or replace`)
+  }
+  const originalPatch = action.patch
+  if (originalPatch !== undefined && (originalPatch === null || typeof originalPatch !== 'object' || Array.isArray(originalPatch))) {
     throw new TypeError(`${plugin}: ${label}.patch must be an object`)
   }
+  const patch = action.maxTokens === undefined ? originalPatch : { ...originalPatch, maxTokens: action.maxTokens }
   const unset = action.unset
   if (unset !== undefined && (unset === null || typeof unset !== 'object' || Array.isArray(unset))) {
     throw new TypeError(`${plugin}: ${label}.unset must be an object of { key: expectedValue }`)
@@ -35,14 +43,22 @@ export function prepareRequestParams(action, plugin) {
   }
   assertReplacePatch(patch, action.replace, `${plugin}: ${label}.patch`)
   const params = { ...(patch !== undefined ? { patch } : {}), ...(unset !== undefined ? { unset } : {}), ...(action.replace === true ? { replace: true } : {}) }
-  return (_ctx, { warnOnce, on, collect, take }) => collect(on('agent/request', async (payload, next) => {
+  return (_ctx, { warnOnce, on, collect, take, requestBudgetOutcome }) => collect(on('agent/request', async (payload, next) => {
     const base = await next()
     try {
       if (!matchesAgentScope(action, payload?.agent, payload)) return base
+      if (action.maxTokens !== undefined && !requestBudgetStatus(payload?.agent).available) {
+        warnOnce(`${plugin}: request-params ${label}: ${requestBudgetStatus(payload?.agent).reason}`)
+        return base
+      }
       const result = applyAgentRequestParams(params, base)
       const keys = Object.keys(result)
       const changed = base == null || keys.length !== Object.keys(base).length
         || keys.some((key) => !Object.hasOwn(base, key) || !Object.is(result[key], base[key]))
+      if (action.maxTokens !== undefined && take(payload)) {
+        markRequestBudget(result, base, action.maxTokens, requestBudgetOutcome)
+        return result
+      }
       return changed && take(payload) ? result : base
     } catch (error) {
       warnOnce(`${plugin}: request-params action ${label} failed: ${String(error?.message ?? error)}`)

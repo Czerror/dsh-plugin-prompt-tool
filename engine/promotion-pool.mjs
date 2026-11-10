@@ -22,6 +22,7 @@ const KEYED_OPTIONS = [
   'includeSubagents',
   'promoteGate',
   'promoteAfterFirstResponse',
+  'promoteAfterFirstTool',
   'reasoningPattern',
   'reasoningNegativePattern',
   'reasoningFlags',

@@ -138,6 +138,14 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 内置 `unrestricted` 的模块与全部新增规则默认关闭，各条可独立编辑启用。人设和计划正文随普通 module.yml 保存；65536 是可编辑预算初值，仍须原 early 接缝；显式 spawn 深度初值为 1，子代理工具面沿 scope 条件排除 subagent_fork/workflow/ralph，不注册子预设。搜索工具面启用时使用已有 web_fetch 的 deny；需要抓取时用户先关闭该限制，再按实际已安装能力另行配置。模块不隐式启用核心破限规则，不补装官方工具、计划或压缩 owner；现有预设的外围参数继续由其原所有者控制。
 
+内置 `redteam`（红队模式内容）同样是默认关闭的普通模块，七条规则均显式关闭。独立指挥正文、官方指令字节预算、首轮请求额度、晋升后指令提示、spawn深度、子代理叶子工具面与外部平台说明可分别编辑。8192 是请求输出token初值，2 是可编辑晋升兜底步数，65536 是独立的指令字节预算；三者不混用。平台正文显式依赖当前十二个实际可执行的 redteam_* 工具，缺失只暂停此段；普通指挥正文继续。模块不创建这些工具、SQLite平台、计分、面板或自动角色注入，不通过工具同名推断这些额外能力；具体工具schema、并发限制及目标绑定仍归外部提供者。角色职责直接写进普通任务正文，不声明 redteamRole 标签自动生效。
+
+普通 `request-params.maxTokens` 是正安全整数的瞬时额度贡献，不能与本动作的 `patch/unset.maxTokens` 或 `replace:true` 混用。原 `patch/unset` 的有序组合语义保持。当前真实Agent和请求目标上有效的显式额度同值共存、异值拒绝完整候选并保旧；运行事实翻转形成冲突时，全部冲突额度及其分支后代正文暂停，后续正常重判恢复。只有实际参与同一额度目标的正向phase条件才比较 `maxPromoteSteps`，不同值同样冲突；独立phase追踪器不建立全局互斥。
+
+瞬时额度沿同一 `/early` 入口接入官方 `@deepseek-ai/dsh-agent-loop@0.2.2-rc.1`，入口SHA-256为 `a6fa8e0c7c90191caf5f4a3bb5c624a86e9845cf3c79d020b71420d0e20ae4c1`。包版本、完整指纹与三处唯一锚点必须全部匹配，且目标须在早期入口之后求值。普通入口、已缓存原始实例或指纹失配时只暂停该额度及同分支后代正文，诊断给出原因；不暂停其它规则。官方prepared配置、request/header和实际provider请求使用同一真实额度，不伪造prepared配置。官方loop自身持有上次瞬时覆盖的原值凭据，下一步seed只在其值仍归本贡献时恢复并消费凭据；后续第三方不同值保持，旧patch仍按原行为持久组合。关闭规则、移除模块或直接卸载插件后，恢复不依赖残留监听，不改写已有历史。代码与early入口变更需要用户重启DSH服务，不自动重启。
+
+`phase.promoteAfterFirstTool:true` 显式允许首步已实际调用工具后晋升，默认false，原锚点/首响应语义保持；`maxPromoteSteps` 必须是正安全整数。phase在主/子会话分别计数，只有成功压缩开启新Epoch，失败压缩不重置；这与参考脚本对任意compaction/end重置的行为不同。`pre-step-filter.instructionHint` 为非空可编辑模板，使用 `{{FILES}}` 填入本次可靠识别的官方指令路径。它复用既有指令提示转换，仅在规则命中时把后续官方全文替换为一次提示；已有可见提示时不再重复，无法识别路径和非目标来源保持，撤回后放行后续全文，不补发历史。
+
 显式工具依赖可用 `if: { tool: { name: target_tool } }` 组合原条件树；读取当前真实Agent的原toolStep及官方executable执行集合，不按目录/schema或普通变量判断。缺步骤、缺目标或显式delegate目标链不可执行均为UNAVAILABLE，not/else不能将缺失反转为命中；目标恢复后仅下一次正常集合重判，原次数/Epoch和用户关闭保持。delegate目标只附在当前工具定义的Symbol，不新增状态库；步骤view按官方原集合过滤缺目标/循环链，原工具次序和disposer保持。
 
 内联customTools整组注册失败先撤本组成功项再抛原异常，由原Slot/lastGood处理，不发布半组。较近scope仍可遮蔽祖先，同层重名及run_code保留名由官方拒绝。delegate同名自委派在定义校验时拒绝，其他递归在执行嵌套身份超过32层时明确拒绝；不把当前遮蔽者假装成祖先原实现。HTTP合并caller signal与timeout；shell取消清理本次进程树并保留caller异常身份。

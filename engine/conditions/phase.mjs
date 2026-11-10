@@ -9,10 +9,14 @@ export function createPhasePredicate(options = {}) {
     throw new TypeError('predicates: promoteEvents must be an array of event type strings')
   }
   const subscribe = optionalBoolean(options.subscribe, 'subscribe', true)
+  if (options.maxPromoteSteps !== undefined && (!Number.isSafeInteger(options.maxPromoteSteps) || options.maxPromoteSteps <= 0)) {
+    throw new TypeError('predicates: maxPromoteSteps must be a positive safe integer')
+  }
   const trackerOptions = {
     includeSubagents: options.includeSubagents === true,
     promoteGate: options.promoteGate === true,
     promoteAfterFirstResponse: options.promoteAfterFirstResponse === true,
+    promoteAfterFirstTool: optionalBoolean(options.promoteAfterFirstTool, 'promoteAfterFirstTool', false),
     maxPromoteSteps: options.maxPromoteSteps,
     reasoningPattern: options.reasoningPattern,
     reasoningNegativePattern: options.reasoningNegativePattern,

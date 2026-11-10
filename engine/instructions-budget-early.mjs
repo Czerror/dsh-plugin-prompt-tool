@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
 import { resolveHostPackage } from './host-package.mjs'
 import { instructionsBudgetState as state } from './instructions-budget-bridge.mjs'
+import './request-budget-early.mjs'
 
 const digest = 'afbd526d1e3126a368774f24105140adc3ef532ca4aa93cfa0fb1318d5b9b75d'
 let target

@@ -105,7 +105,7 @@ export function prepareAction(action, options = {}) {
     }
     try {
       if (budget !== undefined) collect(ctx.on('session/event', (session, event) => budget.observe(session, event)))
-      bind?.(ctx, { warnOnce, on, collect, take, onMiss, agent: options.agent })
+      bind?.(ctx, { warnOnce, on, collect, take, onMiss, agent: options.agent, requestBudgetOutcome: options.requestBudgetOutcome })
       keepDisposer(ctx, dispose, `${plugin}: action ${labelOf(action)}`)
     } catch (error) { dispose(); throw error }
     // 调用方（rule-runtime）把 miss 挂到该动作的条目上；没有回调时保持 undefined。

@@ -1,8 +1,12 @@
 import { NAME_LIST, labelOf } from './shared.mjs'
 import { isPluginKind } from '../source-kind.mjs'
+import { instructionHintMessages } from '../instruction-hint.mjs'
 
 export function preparePreStepFilter(action, plugin) {
   const label = labelOf(action)
+  if (action.instructionHint !== undefined && (typeof action.instructionHint !== 'string' || !action.instructionHint.trim())) {
+    throw new TypeError(`${plugin}: ${label}.instructionHint must be a non-empty template string`)
+  }
   const sources = NAME_LIST.parse(action.sources, plugin, `${label}.sources`)
   const keepKinds = NAME_LIST.parse(action.keepKinds, plugin, `${label}.keepKinds`)
   // `blockPlugins`（B8 T8，2026-09-22 拍板「大小写不敏感的精确等值」）：与上面两种白名单**正交**，
@@ -15,7 +19,7 @@ export function preparePreStepFilter(action, plugin) {
   if (sources !== undefined && keepKinds !== undefined) {
     throw new TypeError(`${plugin}: ${label} cannot combine sources with keepKinds — 两种过滤语义的保留集定义不同`)
   }
-  if (sources === undefined && keepKinds === undefined && blockPlugins === undefined) return
+  if (sources === undefined && keepKinds === undefined && blockPlugins === undefined && action.instructionHint === undefined) return
   return (_ctx, { warnOnce, on, collect, take }) => collect(on('agent/pre-step', async ({ agent, messages: claimed } = {}, next) => {
     const decision = await next()
     try {
@@ -45,7 +49,12 @@ export function preparePreStepFilter(action, plugin) {
           return typeof name !== 'string' || !blockPlugins.has(name.toLowerCase())
         })
       }
-      return messages.length !== decision.messages.length && take({ agent }) ? { ...decision, messages } : decision
+      if (action.instructionHint !== undefined) {
+        const instructionHinted = agent?.session?.deriveMessages?.().some(message => message?.source?.kind === 'instruction-hint') === true
+        messages = instructionHintMessages(messages, { instructionHinted }, plugin, { messageTemplate: action.instructionHint })
+      }
+      const changed = messages.length !== decision.messages.length || messages.some((message, index) => message !== decision.messages[index])
+      return changed && take({ agent }) ? { ...decision, messages } : decision
     } catch (error) {
       warnOnce(`${plugin}: pre-step-filter action ${label} failed, keeping every message: ${String(error?.message ?? error)}`)
       return decision
