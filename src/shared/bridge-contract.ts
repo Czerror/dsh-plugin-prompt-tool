@@ -359,6 +359,7 @@ export interface RuleDiagnosticRecord {
   definitionRevision?: string
   actionId?: string
   agentId?: string
+  reason?: string
 }
 
 /** 顺序组候选：多 prompt_order 组需要用户先选择时的有界选项（不含转换结果）。 */

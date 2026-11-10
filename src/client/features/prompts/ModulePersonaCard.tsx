@@ -5,17 +5,24 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { FormField } from '../../ui/FormField.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import styles from '../../ui/controls.module.css'
+import { RuleParameterFields, cleared, type FieldContext } from './RuleFields.tsx'
 
-export function ModulePersonaCard(props: { t: PromptToolTranslate; action: RuleAction; disabled?: boolean; onChange: (action: RuleAction) => void }): ReactNode {
+export function ModulePersonaCard(props: { t: PromptToolTranslate; action: RuleAction; disabled?: boolean; context?: FieldContext; onChange: (action: RuleAction) => void }): ReactNode {
   const { t, action, disabled } = props
   const id = useId()
-  const patch = (field: string, value: string | boolean | undefined): void => {
+  const patch = (field: string, value: string | number | boolean | undefined): void => {
     const next = { ...action }
     if (value === undefined) delete next[field]
     else next[field] = value
     props.onChange(next)
   }
   return <div className={styles.configForm} data-persona-action={action.id}>
+    {props.context && <FormField label={t('persona.instructions.label')} hint={t('persona.instructions.hint')}>
+      <MenuSelect compact ariaLabel={t('persona.instructions.label')} disabled={disabled} value={action.instructionsMaxBytes === undefined ? 'inherit' : 'custom'}
+        options={[{ value: 'inherit', label: t('persona.inherit') }, { value: 'custom', label: t('persona.custom') }]}
+        onChange={value => { if (value === 'inherit') cleared(props.context!.fields, props.context!.fieldKey + ':instructionsMaxBytes'); patch('instructionsMaxBytes', value === 'inherit' ? undefined : 65536); props.context!.onDraft() }} />
+      {action.instructionsMaxBytes !== undefined && <RuleParameterFields {...props.context} value={{ instructionsMaxBytes: action.instructionsMaxBytes }} onChange={value => props.onChange({ ...action, ...value })} />}
+    </FormField>}
     <FormField label={t('persona.identity.label')} hint={t('persona.identity.hint')}>
       <MenuSelect compact ariaLabel={t('persona.identity.label')} disabled={disabled} value={String(action.stripDefaultIdentity ?? '')}
         options={[{ value: '', label: t('persona.identity.keep') }, { value: 'preset', label: t('persona.identity.preset') }, { value: 'harness', label: t('persona.identity.harness') }]}

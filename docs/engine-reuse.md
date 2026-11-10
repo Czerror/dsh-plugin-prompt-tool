@@ -130,6 +130,12 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 ## 复制协议（跨项目复用）
 
+预算依赖沿唯一分支展开器携带的结构路径关联：预算所在分支的后代then/else均依赖它，兄弟分支和其他模块不受牵连；不按条件JSON或正文猜测。预算诊断只在完整计划已接受且真实装配结算后发布；条件miss、缺事实、异常和受众不符分别保留原判定，失败候选不覆盖旧有效观测。
+
+官方指令预算是persona可选正安全整数 `instructionsMaxBytes`，按当前真实Agent的有效动作聚合，同值共存、异值拒绝完整候选并保旧；与prefix/complete同一计划预检。预算不新建指令owner，不复制正文，不改已有baseline/projection或历史。当前步预算附在原toolStep接受计划，modelSelection反查同一步；取消信号为turn级，不能充当step键。后台projection在compose入口读取本Agent已提交计划一次，不修改在途step。
+
+可选包出口 `/early` 仅在目标求值前按包名、版本、完整SHA-256和唯一结构锚点进行内存接入。官方instructions compose局部resolved读取预算，其余读取/身份/投影仍由官方闭包负责。当前支持0.2.2-rc.1入口SHA-256 afbd526d1e3126a368774f24105140adc3ef532ca4aa93cfa0fb1318d5b9b75d；失配保持原行为。运行资格来自已验证接缝及实际scope链官方实例和fs/workingDirectory，依赖缺失只暂停同条件分支的预算动作与关联正文，else及无关规则保持；恢复后正常重判，不补发过去动作。关闭插件注销reader后内存接缝透传，卸载加载钩子不清ESM缓存。
+
 复制完整 `engine/` 可复用纯编译器、动作、条件、历史与模板求值。宿主接线仍需要相应官方服务，五个模块工具外壳还需要 Prompt Tool 的 provider。独立引擎不偷偷读取插件 DSH_HOME 或 session 变量表。`env-safety.mjs` 与 `path-safety.mjs` 是纯安全 helper，随复制协议一起带走；`env-facts` 白名单外键在构造期 fail loud，`instruction-hint` 的 `params.file` 只允许指令文件候选名且 realpath 必须落在 cwd→最近项目根或 DSH_HOME。
 
 `instruction-files.mjs` 只提供探测（纯函数 + 引擎侧执行器）；`instruction-hint.mjs` 既可挂载为行，也为 placeholder 填充器提供消息构造——复制方可以只要探测、不挂该行。执行器与宿主探测都只走到最近的项目根为止（marker 首命中即停），不继续向盘根探测。

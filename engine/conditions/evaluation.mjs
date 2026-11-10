@@ -9,7 +9,7 @@ import { UNAVAILABLE } from './availability.mjs'
  * 缺省不传即零开销，也不改变任何判定结果。
  */
 export function ruleFrame(channel, args, warnOnce = () => {}, ctx, onOutcome) {
-  return { channel, args, subject: subjectOf(channel, args, warnOnce, ctx), decisions: new Map(), actionDecisions: new Set(), reminders: new Map(), warnOnce, onOutcome }
+  return { channel, args, subject: subjectOf(channel, args, warnOnce, ctx), decisions: new Map(), actionDecisions: new Set(), actionOutcomes: new Map(), reminders: new Map(), warnOnce, onOutcome }
 }
 
 /** 条件返回值的三值归一：词表与 bridge 的 `RuleOutcomeKind` 共享，故只此一处定义。 */
@@ -69,9 +69,15 @@ export function ruleMatches(rule, frame) {
  * `hit` 再记 `miss`。没有分支的动作最终判定就是规则级判定，沿用规则级上报。
  */
 export function actionMatches(entry, frame) {
+  if (!frame.ignoreInstructionsDependency && entry.rule?.instructionsAvailable?.(entry) === false) {
+    frame.actionOutcomes.set(entry, 'unavailable')
+    if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
+    return false
+  }
   const branched = entry.actionWhen !== undefined || entry.bypassRuleWhen === true
   if (!branched) {
     const hit = ruleMatches(entry.rule, frame)
+    frame.actionOutcomes.set(entry, decideRule(entry.rule, frame).outcome)
     frame.reminders.set(entry, hit ? decideRule(entry.rule, frame).reminders ?? [] : [])
     return hit
   }
@@ -97,6 +103,7 @@ export function actionMatches(entry, frame) {
     report(frame, entry.rule, outcome)
   }
   frame.reminders.set(entry, hit ? [...(ruled.reminders ?? []), ...(entry.actionWhen?.soulReminders ?? [])] : [])
+  frame.actionOutcomes.set(entry, outcome)
   return hit
 }
 

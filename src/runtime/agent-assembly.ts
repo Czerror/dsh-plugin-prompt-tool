@@ -46,6 +46,7 @@ import { enableTablePath, readGlobalLayerSettings } from '../host/config-store.t
 import { createGenerationRecoveryState } from '../host/generation-recovery-state.ts'
 import { contextRuntimeOf } from '../../engine/context-provenance.mjs'
 import { installToolStepAssembly } from '../../engine/tool-step-assembly.mjs'
+import { registerInstructionsBudgetReader } from '../../engine/instructions-budget-bridge.mjs'
 
 import { actionAudiences, compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
 import type { RuleAudience } from '../../engine/rule-spec.mjs'
@@ -343,6 +344,11 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     live: boolean; committed: boolean; mutating: boolean
   }
   const mounts = new Map<string, Mounted>()
+  ctx.effect(() => registerInstructionsBudgetReader((value, selection) => {
+    const agent = value as Agent | undefined
+    const mounted = agent === undefined ? undefined : mounts.get(agent.id)
+    return mounted?.agent === agent ? mounted?.rules.readInstructionsBudget(selection) : undefined
+  }), 'prompt-tool instructions budget reader')
   const knownAgents = new Set<Agent>()
   const watched = new Map<string, () => void>()
   const disposed = new WeakSet<Agent>()

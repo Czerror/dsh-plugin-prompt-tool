@@ -76,12 +76,13 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     if (typeof value === 'boolean') return <div key={key} className={css.toggle}><span>{label}</span><span className={css.switchLine}><Switch label={label} checked={value} disabled={props.disabled} onChange={patch} /></span></div>
     const fallbackNumber = key === 'fallbackAfter' && props.fieldKey.endsWith(':anchor')
     const textLength = ['minChars', 'maxChars'].includes(key) && props.fieldKey.endsWith(':text')
+    const instructionsBudget = key === 'instructionsMaxBytes'
     const optionalNumber = requestField && ['temperature', 'maxTokens'].includes(key)
     if (typeof value === 'number' || optionalNumber) {
       const retained = props.fields.get(fieldKey)
       const draft = retained && (retained.error || retained.text !== retained.source || retained.text === String(value ?? '') || typeof value === 'number' && Number(retained.text) === value) ? retained : undefined
       return <FormField key={key} label={label} error={draft?.error}><TextInput aria-label={label} inputMode="decimal" readOnly={props.disabled} value={draft?.text ?? String(value ?? '')}
-        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0) && (!textLength || Number.isSafeInteger(Number(text)) && Number(text) >= 0); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
+        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0) && (!textLength || Number.isSafeInteger(Number(text)) && Number(text) >= 0) && (!instructionsBudget || Number.isSafeInteger(Number(text)) && Number(text) > 0); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
     }
     const multiline = ['text', 'prompt', 'prefix', 'suffix', 'template', 'description'].includes(key)
     const text = String(value ?? '')

@@ -21,6 +21,7 @@ export interface RuleOutcomeReport {
   definitionRevision?: string
   actionId?: string
   agentId?: string
+  reason?: string
 }
 
 export interface RuleDiagnosticsSnapshot {
@@ -76,6 +77,8 @@ export function createRuleDiagnosticsLedger(): RuleDiagnosticsLedger {
         record.definitionRevision = report.definitionRevision
         if (report.actionId !== undefined) record.actionId = report.actionId
         if (report.agentId !== undefined) record.agentId = report.agentId
+        if (report.reason === undefined) delete record.reason
+        else record.reason = report.reason
       }
     },
     snapshot() {

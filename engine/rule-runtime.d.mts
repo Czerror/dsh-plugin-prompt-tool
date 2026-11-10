@@ -31,6 +31,7 @@ export interface RuleOutcomeReport {
   definitionRevision?: string
   actionId?: string
   agentId?: string
+  reason?: string
 }
 
 /** 一次挂载的规则来源；规则对象是 `rule-spec.mjs#compileRules` 的产物。 */
@@ -72,6 +73,7 @@ export function mountRuleSources(
 export function createRuleRuntime(ctx: unknown, options?: MountRuleSourcesOptions): {
   replace(sources: ReadonlyArray<RuleSourceLike>): void
   prepareAssembly(context?: { agent?: unknown; signal?: AbortSignal; scope?: unknown }): void
+  readInstructionsBudget(modelSelection?: unknown): number | undefined
   settleToolSurface(assembly: PromptAssembly, context: AssembleContext): Promise<PromptAssembly>
   dispose(): void
 }

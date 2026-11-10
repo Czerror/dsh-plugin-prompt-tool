@@ -5,6 +5,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { createRuleRuntime } from '../../engine/rule-runtime.mjs'
+import { instructionsBudgetState } from '../../engine/instructions-budget-bridge.mjs'
 
 test('人设规则按配置序号拼接，动态失配撤回并恢复官方身份', async t => {
   const root = new Context()
@@ -101,6 +102,9 @@ test('人设候选布尔冲突或半组注册失败时保留完整旧贡献', as
   })
   assert.throws(() => runtime.replace([source([{ id: 'broken', kind: 'persona', prefix: 'PARTIAL', suffix: 'FAIL', complete: false }])]), /REGISTER-FAIL/)
   assert.deepEqual(await texts(), ['GOOD', 'TAIL'])
+  assert.throws(() => runtime.replace([source([{ id: 'one', kind: 'persona', prefix: 'NEW', instructionsMaxBytes: 65536 },
+    { id: 'two', kind: 'persona', instructionsMaxBytes: 512 }])]), /instructionsMaxBytes.*conflict/)
+  assert.deepEqual(await texts(), ['GOOD', 'TAIL'], '预算与人设作为完整候选拒绝，旧正文不被替换')
   const complete = { id: 'complete', then: [{ id: 'exclusive', kind: 'inject-text', config: { layer: 'system-section', text: 'EXCLUSIVE', params: { complete: true } } }] }
   assert.throws(() => runtime.replace([{ moduleId: 'source', rules: compileRules([complete, { id: 'persona', then: [{ id: 'identity', kind: 'persona', prefix: 'BAD', complete: true }] }]) }]), /multiple complete/)
   assert.deepEqual(await texts(), ['GOOD', 'TAIL'])
@@ -140,4 +144,30 @@ test('人设字段省略、空串和不可用条件分别保留继承与三值�
   assert.equal((await read()).text, 'FACT')
   runtimeValue = undefined
   assert.equal((await read()).text, 'RAW {{untouched}}', '正文所需事实不可用时同样撤回身份')
+})
+
+test('预算观测只来自实际采用的完整计划，冲突保留旧观测且正常else按miss记录', async t => {
+  const root = new Context(); await root.plugin(SystemPrompt)
+  root.provide('fs', {}); root.provide('workingDirectory', {})
+  const agent = { id: 'budget-observation', session: { id: 'budget-observation', header: {}, snapshotEvents: () => [] } }
+  const scope = createScope(root, agent); agent.ctx = scope.ctx
+  instructionsBudgetState.available = true; instructionsBudgetState.track(root)
+  const reports = []; let conflict = false
+  const runtime = createRuleRuntime(scope.ctx, { agent, externalAssembly: true, onOutcome: report => reports.push(report),
+    variableStore: { read: () => ({ module: {}, global: {}, effective: { conflict: conflict ? 'yes' : 'no' } }) } })
+  t.after(async () => { runtime.dispose(); instructionsBudgetState.available = false; await scope.dispose(); await root.fiber.dispose() })
+  runtime.replace([{ moduleId: 'budget', rules: compileRules([
+    { id: 'stable', if: { scope: { audience: 'main' } }, then: [{ id: 'main', kind: 'persona', prefix: 'OLD', complete: false, instructionsMaxBytes: 1024 }], else: [{ id: 'child', kind: 'persona', instructionsMaxBytes: 512 }] },
+    { id: 'dynamic', if: { variable: { key: 'conflict', value: 'yes' } }, then: [{ id: 'new', kind: 'persona', prefix: 'NEW', instructionsMaxBytes: 2048 }] },
+  ]) }])
+  const context = { agent, scope: scopeOf(scope.ctx) }
+  runtime.prepareAssembly(context)
+  const assembly = await runtime.settleToolSurface(await scope.ctx.get('systemPrompt').assemble(context), context)
+  assert.ok(assembly.sections.some(section => section.text === 'OLD'))
+  assert.equal(reports.find(report => report.actionId === 'child' && report.channel === 'persona:instructions').identityOutcome, 'condition-miss')
+  const before = reports.filter(report => report.channel === 'persona:instructions').length
+  conflict = true
+  assert.throws(() => runtime.prepareAssembly({ ...context }), /instructionsMaxBytes.*conflict/)
+  assert.equal(runtime.readInstructionsBudget(), 1024)
+  assert.equal(reports.filter(report => report.channel === 'persona:instructions').length, before, '失败候选不发布任何新预算观测')
 })

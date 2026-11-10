@@ -110,7 +110,7 @@ function ActionCard(props: {
             cleared(context.fields, fieldKey)
             props.onChange({ ...structuredClone(next.example), id: action.id, kind } as unknown as RuleAction)
           }} /></div>
-        {action.kind === 'persona' ? <ModulePersonaCard t={t} action={action} disabled={context.disabled} onChange={props.onChange} />
+        {action.kind === 'persona' ? <ModulePersonaCard t={t} action={action} disabled={context.disabled} context={{ ...context, fieldKey }} onChange={props.onChange} />
           : action.kind === 'assembly' ? <AssemblyFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : action.kind === 'tool-visibility' ? <VisibilityFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : action.kind === 'pre-step-filter' ? <MessageFilterFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />

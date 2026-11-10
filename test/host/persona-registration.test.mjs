@@ -149,6 +149,25 @@ test('真实插件总闸撤回身份贡献，重新开启保持已保存的规�
   assert.deepEqual(await world.texts(agent), ['', '\nFUNCTION', 'TAIL'])
 })
 
+test('官方预算接缝缺失只暂停同分支依赖，else和无关规则保持原行为', async t => {
+  writeModule('budget-unavailable', [{ id: 'dependent', if: { scope: { audience: 'main' } }, then: [
+    { id: 'budget', kind: 'persona', prefix: 'DEPENDENT PERSONA', complete: false, instructionsMaxBytes: 65536 },
+    { id: 'body', kind: 'inject-text', config: { layer: 'system-section', text: 'DEPENDENT BODY' } },
+    { if: { scope: { audience: 'main' } }, then: [{ id: 'nested', kind: 'inject-text', config: { layer: 'system-section', text: 'NESTED DEPENDENT BODY' } }],
+      else: [{ id: 'nested-else', kind: 'inject-text', config: { layer: 'system-section', text: 'NESTED ELSE BODY' } }] },
+  ], else: [{ id: 'child', kind: 'persona', prefix: 'CHILD UNRELATED', complete: false }] },
+  persona('independent', { suffix: 'UNRELATED TAIL', complete: false }),
+  { id: 'siblings', then: [{ if: { scope: { audience: 'main' } }, then: [
+    { id: 'nested-budget', kind: 'persona', instructionsMaxBytes: 65536 },
+    { if: { scope: { audience: 'subagent' } }, then: [{ id: 'deep-then', kind: 'inject-text', config: { layer: 'system-section', text: 'DEEP THEN' } }],
+      else: [{ id: 'deep-else', kind: 'inject-text', config: { layer: 'system-section', text: 'DEEP ELSE' } }] },
+  ] }, { id: 'sibling', kind: 'inject-text', config: { layer: 'system-section', text: 'SIBLING CONTROL' } }] }])
+  const world = await personaWorld(t, () => ['budget-unavailable'])
+  const main = await world.create('budget-unavailable-main'), child = await world.create('budget-unavailable-child', { delegationDepth: 1 })
+  assert.deepEqual((await world.texts(main)).filter(Boolean), [IDENTITY, 'OFFICIAL', 'SIBLING CONTROL', 'UNRELATED TAIL'])
+  assert.deepEqual((await world.texts(child)).filter(Boolean), [IDENTITY, 'CHILD UNRELATED', 'SIBLING CONTROL', 'UNRELATED TAIL'])
+})
+
 test('身份观测来自当前装配和保存版本，自定义正文与complete继承保持', async t => {
   writeModule('identity-observe', [{ ...persona('strip', { stripDefaultIdentity: 'preset' }), enabled: true }])
   writeFileSync(join(moduleRoot, 'identity-observe', 'module.yml'), stringify({ id: 'identity-observe', modules: [], configOrder: { strip: 0 }, rules: [{ ...persona('strip', { stripDefaultIdentity: 'preset' }), enabled: true }] }))

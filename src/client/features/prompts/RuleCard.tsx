@@ -59,6 +59,7 @@ export function RuleCard(props: {
   const collectTargets = (values: readonly unknown[]): void => { for (const value of values) {
     if (value === null || typeof value !== 'object') continue
     const node = value as Record<string, unknown>
+    if (node.kind === 'persona' && node.instructionsMaxBytes !== undefined) targets.add('persona:instructions')
     if (node.kind === 'persona' && (node.stripDefaultIdentity === 'preset' || node.stripDefaultIdentity === 'harness')) targets.add(`persona:identity:${node.stripDefaultIdentity}`)
     collectTargets(nodeList(node.then)); collectTargets(nodeList(node.else))
   } }
@@ -88,6 +89,7 @@ export function RuleCard(props: {
       </span></span>}>
     <div className={css.body} data-rule-editor>
       {targets.size > 0 && <p role="status">{t(rule.enabled === false ? 'rules.identity.disabled' : 'rules.identity.enabled')} · {t(rule.enabled === false || props.disabled ? 'rules.identity.unverified' : availability)}</p>}
+      {observed.some(record => record.reason) && <p>{observed.filter(record => record.reason).map(record => record.reason).join(' · ')}</p>}
       <div className={css.fields}>
         <FormField label={t('rules.rename')}><TextInput value={rule.id} spellCheck={false} readOnly={disabled} onChange={event => patch({ id: event.target.value })} /></FormField>
         <FormField label={t('rules.name')}><TextInput value={rule.name ?? ''} readOnly={disabled} onChange={event => patch({ name: event.target.value || undefined })} /></FormField>

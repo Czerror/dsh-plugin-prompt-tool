@@ -6,6 +6,7 @@ const IDENTITIES = { preset: [PERSONA_PREFIX, 'You are a coding agent powered by
   harness: ['harness:identity', 'You are an AI agent powered by DeepSeek Harness.'] }
 
 export function validatePersonaAction(action) {
+  if (action.instructionsMaxBytes !== undefined && (typeof action.instructionsMaxBytes !== 'number' || !Number.isSafeInteger(action.instructionsMaxBytes) || action.instructionsMaxBytes <= 0)) throw new TypeError('persona.instructionsMaxBytes must be a positive safe integer')
   if (action.stripDefaultIdentity !== undefined && (typeof action.stripDefaultIdentity !== 'string' || !Object.hasOwn(IDENTITIES, action.stripDefaultIdentity))) throw new TypeError('persona.stripDefaultIdentity must be preset or harness')
   if (action.audience !== undefined && !['main', 'subagent'].includes(action.audience)) throw new TypeError('persona.audience must be main or subagent')
   for (const field of ['prefix', 'suffix']) {
@@ -21,6 +22,8 @@ export function validatePersonaAction(action) {
 
 /** 已获准动作的完整候选；所有校验和正文求值都早于撤销旧注册。 */
 export function planPersonaActions(entries, context, prompt, adapter, variableStore, warn, preview = false) {
+  const budgets = new Set(entries.flatMap(entry => entry.action.instructionsMaxBytes === undefined ? [] : [entry.action.instructionsMaxBytes]))
+  if (budgets.size > 1) throw new TypeError('persona instructionsMaxBytes conflict')
   const flags = {}
   for (const { action } of entries) for (const field of ['complete', 'includeRuntimeContext']) {
     const value = action[field]
@@ -49,7 +52,7 @@ export function planPersonaActions(entries, context, prompt, adapter, variableSt
       ...base?.interpolate === undefined ? {} : { interpolate: base.interpolate },
     })
   }
-  return { sections, suppressRuntimeContext: flags.includeRuntimeContext === false,
+  return { sections, suppressRuntimeContext: flags.includeRuntimeContext === false, instructionsMaxBytes: [...budgets][0],
     customPrefix: entries.some(entry => entry.action.prefix !== undefined),
     identityEntries: entries.filter(entry => entry.action.stripDefaultIdentity !== undefined) }
 }

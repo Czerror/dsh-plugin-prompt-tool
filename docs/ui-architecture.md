@@ -746,6 +746,8 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 
 ## 10. 样式所有权
 
+人设卡的官方指令预算通过原FieldContext传给RuleParameterFields；数字原文及错误保留在同一fields Map，非法或未完成输入阻止原规则保存，切回继承清除对应字段。预算启用与运行可用性分开，实际接缝/owner缺失不能因草稿保存成功显示能力成功。
+
 样式使用 CSS Modules 和 DSH 语义 token，当前 owner 为：
 
     app/workbench/Workbench.module.css

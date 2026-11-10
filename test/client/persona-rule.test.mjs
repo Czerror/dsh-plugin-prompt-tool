@@ -4,7 +4,7 @@ import { withSsr, renderElement, makeTranslate } from './support/ssr-render.mjs'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { createRuleEditor, getRulesDraft } from '../../src/client/data/rule-drafts.ts'
 
-const { ModulePersonaCard } = await withSsr([new URL('../../src/client/features/prompts/ModulePersonaCard.tsx', import.meta.url).href])
+const { ModulePersonaCard, RuleParameterFields } = await withSsr([new URL('../../src/client/features/prompts/ModulePersonaCard.tsx', import.meta.url).href, new URL('../../src/client/features/prompts/RuleFields.tsx', import.meta.url).href])
 const t = makeTranslate()
 const { RuleCard } = await withSsr([new URL('../../src/client/features/prompts/RuleCard.tsx', import.meta.url).href])
 
@@ -66,4 +66,24 @@ test('人设动作编辑只提交所属规则及其版本，冲突保留空串�
   assert.equal(draft.entries[0].value.then[0].prefix, '')
   assert.equal(draft.entries[0].value.then[0].complete, false)
   assert.deepEqual(draft.entries[1].value, untouched)
+})
+
+test('官方预算沿原数字草稿和规则保存，非法未完成原文保留且不发写请求', async () => {
+  const fields = new Map(), calls = [], action = { id: 'budget', kind: 'persona', instructionsMaxBytes: 65536 }
+  let value = { instructionsMaxBytes: 65536 }
+  const draft = getRulesDraft(createWorkspaceDrafts(), 'module-budget')
+  const editor = createRuleEditor('module-budget', draft, { request: async body => { calls.push(body); return { ok: true, value: { rules: [{ id: 'r', then: [action] }], revisions: { rules: { r: 'R' }, settings: 'S', variables: 'V' }, meta: { actions: [], predicates: [], composites: [], waterfallPositions: ['default'] } } } }, enqueue: async (_id, task) => task(), isCurrent: () => true, changed() {} })
+  await editor.load(); draft.fields = fields
+  const input = () => RuleParameterFields({ t, fields, fieldKey: 'r:budget', value, onChange: next => { value = next }, onDraft() {} })[0].props.children
+  for (const text of ['-', '1e', '', '0', '1.5']) {
+    input().props.onChange({ target: { value: text } })
+    assert.equal(fields.get('r:budget:instructionsMaxBytes').text, text)
+    assert.ok(fields.get('r:budget:instructionsMaxBytes').error)
+    assert.equal(value.instructionsMaxBytes, 65536)
+    assert.equal(await editor.submit(), false)
+    assert.equal(calls.length, 1, '原hasRuleFields阻止保存请求')
+  }
+  input().props.onChange({ target: { value: '1024' } })
+  assert.equal(value.instructionsMaxBytes, 1024)
+  assert.equal(fields.get('r:budget:instructionsMaxBytes').error, '')
 })

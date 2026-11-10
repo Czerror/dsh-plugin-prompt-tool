@@ -23,7 +23,7 @@ const branchOuters = (node, outer) => ({
   else: node.if === undefined ? outer : [...outer, { not: node.if }],
 })
 
-function walkActions(list, { outer = [], bypass = false, lenient = false, label } = {}) {
+function walkActions(list, { outer = [], bypass = false, lenient = false, label, branchPath = [] } = {}) {
   if (!Array.isArray(list)) {
     if (!lenient) throw new TypeError(`${label} must be an array`)
     return []
@@ -40,14 +40,14 @@ function walkActions(list, { outer = [], bypass = false, lenient = false, label 
       const thenList = lenient && !Array.isArray(node.then) ? undefined : node.then
       if (thenList !== undefined) {
         out.push(...walkActions(thenList, {
-          outer: thenOuter, bypass, lenient,
+          outer: thenOuter, bypass, lenient, branchPath: [...branchPath, index, 'then'],
           ...(lenient ? {} : { label: `${at}.then` }),
         }))
       }
       const elseList = lenient && !Array.isArray(node.else) ? undefined : node.else
       if (elseList !== undefined) {
         out.push(...walkActions(elseList, {
-          outer: elseOuter, bypass, lenient,
+          outer: elseOuter, bypass, lenient, branchPath: [...branchPath, index, 'else'],
           ...(lenient ? {} : { label: `${at}.else` }),
         }))
       }
@@ -56,7 +56,7 @@ function walkActions(list, { outer = [], bypass = false, lenient = false, label 
     if (lenient) {
       if (record(node) && typeof node.kind === 'string') out.push({ node, conditions: outer, bypass })
     } else {
-      out.push({ node, conditions: outer, bypass })
+      out.push({ node, conditions: outer, bypass, branchPath })
     }
   }
   return out

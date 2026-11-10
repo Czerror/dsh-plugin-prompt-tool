@@ -268,14 +268,15 @@ export function compileRules(specs, options = {}) {
     // 规则级 `if` 由 `rule.when` 判定，then 分支的动作不再重复叠加它；规则级 `else` 的动作
     // 自带 `not(if)` 并标记跳过规则级判定——否则两者自相矛盾，else 分支永远不会执行。
     const expanded = [
-      ...expandActions(ruleThen, {}, `rule ${spec.id}.then`),
+      ...expandActions(ruleThen, { branchPath: ['then'] }, `rule ${spec.id}.then`),
       ...(spec.else === undefined ? [] : expandActions(spec.else, {
         outer: [ruleNegation],
         bypass: true,
+        branchPath: ['else'],
       }, `rule ${spec.id}.else`)),
     ]
     const actionIds = new Set()
-    const actions = expanded.map(({ node: source, conditions, bypass }, actionIndex) => {
+    const actions = expanded.map(({ node: source, conditions, bypass, branchPath }, actionIndex) => {
       if (!record(source) || !nonempty(source.id)) throw new TypeError(`rule ${spec.id}: action id must be non-empty`)
       if (actionIds.has(source.id)) throw new TypeError(`rule ${spec.id}: duplicate action id ${source.id}`)
       actionIds.add(source.id)
@@ -354,7 +355,7 @@ export function compileRules(specs, options = {}) {
       if (actionWhen !== undefined && execution.lifecycle === 'registration') {
         throw new TypeError(`action ${action.id}: registration effects do not support conditional branches`)
       }
-      return Object.assign(action, { execution, channelOrder, waterfallPosition, actionIndex, actionWhen, bypassRuleWhen: bypass, conditions: structuredClone(actionConditions) })
+      return Object.assign(action, { execution, channelOrder, waterfallPosition, actionIndex, actionWhen, bypassRuleWhen: bypass, branchPath, conditions: structuredClone(actionConditions) })
     })
     const pointOrders = new Map()
     for (const action of actions) {

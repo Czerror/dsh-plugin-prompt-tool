@@ -47,4 +47,8 @@ test('人设动作通过普通规则事务保存三态，陈旧规则版本拒�
     assert.throws(() => editModuleRules(dir, { expectedRevisions: saved.revisions, edits: [{ previousId: identity.id, rule: { ...changed, then: [{ ...changed.then[0], stripDefaultIdentity: target }] } }] }), /stripDefaultIdentity/)
     assert.equal(readFileSync(file, 'utf8'), bytes, '数组目标不得写完整定义')
   }
+  for (const instructionsMaxBytes of [0, -1, 1.5, '65536', Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => editModuleRules(dir, { expectedRevisions: saved.revisions, edits: [{ previousId: identity.id, rule: { ...changed, then: [{ ...changed.then[0], instructionsMaxBytes }] } }] }), /instructionsMaxBytes/)
+    assert.equal(readFileSync(file, 'utf8'), bytes, '非法预算不写完整定义')
+  }
 })
