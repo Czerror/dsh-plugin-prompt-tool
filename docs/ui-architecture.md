@@ -742,6 +742,8 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 - 字段错误、只读警告、保存状态和空状态不是帮助说明，继续就地显示，不藏入 Tooltip。
 - 系统提示段动作保留显式参数；`RuleSteps` 的 persona 动作由 `features/prompts/ModulePersonaCard.tsx` 呈现受控字段，只修改所属规则草稿，沿 `/rules` 事务保存。prefix/suffix 分别支持省略与显式空串，complete/includeRuntimeContext 保留省略、false、true 三态；受众可选主会话、子代理或两者。没有独立正文、来源下拉或版本 owner。字段按内容宽度排列，窄容器自然换行。
 
+默认身份接管复用人设动作的 `stripDefaultIdentity` 字段与规则卡：启用意图来自规则定义，可用性来自既有 `/rule-diagnostics` 的真实装配观测。开启工作台时定时刷新，复用最新优先请求序号，不持久化观测；只接纳当前目标、已保存版本且无正文草稿变化的结果。成功来源发布及释放使旧身份观测失效，启停哈希回环也需重判；按动作和真实 Agent 记录，正常未选分支不抵消有效成功，实际失败保持可见。关闭和未经验证不显示成功，匹配失效不冒充条件缺事实计数；中英文同步。
+
 ## 10. 样式所有权
 
 样式使用 CSS Modules 和 DSH 语义 token，当前 owner 为：

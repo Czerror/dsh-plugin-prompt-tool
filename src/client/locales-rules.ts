@@ -1,4 +1,9 @@
 export const RULES_ZH = {
+  'rules.identity.enabled': '启用意图：开启', 'rules.identity.disabled': '启用意图：关闭',
+  'rules.identity.unverified': '实际可用性：未验证', 'rules.identity.matched': '实际可用性：最近装配已匹配',
+  'rules.identity.unavailable': '实际可用性：最近装配未生效',
+  'persona.identity.label': '默认身份接管', 'persona.identity.hint': '仅移除具名段中的准确默认身份；保留自定义人设和其他正文。实际结果以装配观测为准。',
+  'persona.identity.keep': '保留默认身份', 'persona.identity.preset': '接管预设默认身份', 'persona.identity.harness': '接管 Harness 默认身份',
   'rules.tokens.placeholder': '输入名称', 'rules.tokens.remove': '移除 {tag}',
   'rules.surface.tools': '模型工具', 'rules.surface.sections': '系统段', 'rules.surface.contexts': '运行上下文',
   'rules.surface.editTarget': '调整{target}',
@@ -73,6 +78,11 @@ export const RULES_ZH = {
   'rules.create.none': '暂无已安装模块',
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
+  'rules.identity.enabled': 'Intent: enabled', 'rules.identity.disabled': 'Intent: disabled',
+  'rules.identity.unverified': 'Availability: unverified', 'rules.identity.matched': 'Availability: matched in the latest assembly',
+  'rules.identity.unavailable': 'Availability: inactive in the latest assembly',
+  'persona.identity.label': 'Default identity control', 'persona.identity.hint': 'Remove only the exact default identity from its named section. Custom personas and other prose remain. Assembly observations determine availability.',
+  'persona.identity.keep': 'Keep default identities', 'persona.identity.preset': 'Control the default preset identity', 'persona.identity.harness': 'Control the default Harness identity',
   'rules.tokens.placeholder': 'Enter a name', 'rules.tokens.remove': 'Remove {tag}',
   'rules.surface.tools': 'Model tools', 'rules.surface.sections': 'System sections', 'rules.surface.contexts': 'Runtime context',
   'rules.surface.editTarget': 'Adjust {target}',

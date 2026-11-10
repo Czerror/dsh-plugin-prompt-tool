@@ -33,7 +33,7 @@ test('人设动作通过普通规则事务保存三态，陈旧规则版本拒�
   const peer = { id: 'peer', then: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 12 } }] }
   writeFileSync(file, '# retained\n' + JSON.stringify({ id: 'rule-persona', modules: [], rules: [identity, peer] }))
   const initial = readModuleRules(dir)
-  const changed = { ...identity, then: [{ ...identity.then[0], suffix: 'TAIL' }] }
+  const changed = { ...identity, then: [{ ...identity.then[0], suffix: 'TAIL', stripDefaultIdentity: 'harness' }] }
   const saved = editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: identity.id, rule: changed }] })
   assert.deepEqual(saved.rules, [changed, peer])
   const bytes = readFileSync(file, 'utf8')
@@ -41,4 +41,10 @@ test('人设动作通过普通规则事务保存三态，陈旧规则版本拒�
   assert.match(bytes, /# retained/)
   assert.throws(() => editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: identity.id, rule: identity }] }), error => error.code === 'rules-conflict')
   assert.equal(readFileSync(file, 'utf8'), bytes)
+  assert.throws(() => editModuleRules(dir, { expectedRevisions: saved.revisions, edits: [{ previousId: identity.id, rule: { ...changed, then: [{ ...changed.then[0], stripDefaultIdentity: 'all' }] } }] }), /stripDefaultIdentity/)
+  assert.equal(readFileSync(file, 'utf8'), bytes, '非法身份目标不写完整定义')
+  for (const target of [['preset'], ['harness']]) {
+    assert.throws(() => editModuleRules(dir, { expectedRevisions: saved.revisions, edits: [{ previousId: identity.id, rule: { ...changed, then: [{ ...changed.then[0], stripDefaultIdentity: target }] } }] }), /stripDefaultIdentity/)
+    assert.equal(readFileSync(file, 'utf8'), bytes, '数组目标不得写完整定义')
+  }
 })

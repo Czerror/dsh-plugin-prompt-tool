@@ -6,7 +6,7 @@
  * 有界：达到身份上限后不再新增，只累加已有身份，长会话不会无界增长；被丢弃的判定次数
  * 记在实例的 `dropped`，仅在大于 0 时随响应下发。多个装配实例互不串账。
  */
-import type { RuleDiagnosticRecord, RuleOutcomeKind } from '../shared/bridge-contract.ts'
+import type { PersonaIdentityOutcome, RuleDiagnosticRecord, RuleOutcomeKind } from '../shared/bridge-contract.ts'
 
 /** 记账身份上限；超出后不再新增。 */
 export const RULE_DIAGNOSTIC_LIMIT = 512
@@ -17,6 +17,10 @@ export interface RuleOutcomeReport {
   ruleId: string
   channel: string
   outcome: RuleOutcomeKind
+  identityOutcome?: PersonaIdentityOutcome
+  definitionRevision?: string
+  actionId?: string
+  agentId?: string
 }
 
 export interface RuleDiagnosticsSnapshot {
@@ -31,16 +35,20 @@ export interface RuleDiagnosticsLedger {
   record(report: RuleOutcomeReport): void
   /** 只读快照：每次返回新对象，不外泄内部引用，也不触发任何求值。 */
   snapshot(): RuleDiagnosticsSnapshot
+  invalidateIdentity(moduleIds: readonly string[]): void
 }
 
 const keyOf = (report: RuleOutcomeReport): string =>
-  `${report.moduleId ?? ''}\u0000${report.ruleId}\u0000${report.channel}`
+  `${report.moduleId ?? ''}\u0000${report.ruleId}\u0000${report.channel}\u0000${report.actionId ?? ''}\u0000${report.agentId ?? ''}`
 
 /** 一次装配实例的判定账本；随实例创建与释放，不共享全局状态。 */
 export function createRuleDiagnosticsLedger(): RuleDiagnosticsLedger {
   const counters = new Map<string, RuleDiagnosticRecord>()
   let dropped = 0
   return {
+    invalidateIdentity(moduleIds) {
+      for (const [key, record] of counters) if (record.identityOutcome !== undefined && moduleIds.includes(record.moduleId ?? '')) counters.delete(key)
+    },
     record(report) {
       const outcome = report.outcome
       if (outcome === 'disabled') return
@@ -62,7 +70,13 @@ export function createRuleDiagnosticsLedger(): RuleDiagnosticsLedger {
         }
         counters.set(key, record)
       }
-      record[outcome] += 1
+      if (report.identityOutcome === undefined) record[outcome] += 1
+      else {
+        record.identityOutcome = report.identityOutcome
+        record.definitionRevision = report.definitionRevision
+        if (report.actionId !== undefined) record.actionId = report.actionId
+        if (report.agentId !== undefined) record.agentId = report.agentId
+      }
     },
     snapshot() {
       return { records: [...counters.values()].map(record => ({ ...record })), dropped }

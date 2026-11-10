@@ -2,8 +2,11 @@ import { renderTemplate } from '../template-frame.mjs'
 
 export const PERSONA_PREFIX = 'deployment:persona-prefix'
 const PERSONA_SUFFIX = 'deployment:persona-suffix'
+const IDENTITIES = { preset: [PERSONA_PREFIX, 'You are a coding agent powered by the {{model}} model.'],
+  harness: ['harness:identity', 'You are an AI agent powered by DeepSeek Harness.'] }
 
 export function validatePersonaAction(action) {
+  if (action.stripDefaultIdentity !== undefined && (typeof action.stripDefaultIdentity !== 'string' || !Object.hasOwn(IDENTITIES, action.stripDefaultIdentity))) throw new TypeError('persona.stripDefaultIdentity must be preset or harness')
   if (action.audience !== undefined && !['main', 'subagent'].includes(action.audience)) throw new TypeError('persona.audience must be main or subagent')
   for (const field of ['prefix', 'suffix']) {
     if (action[field] === undefined) continue
@@ -46,5 +49,26 @@ export function planPersonaActions(entries, context, prompt, adapter, variableSt
       ...base?.interpolate === undefined ? {} : { interpolate: base.interpolate },
     })
   }
-  return { sections, suppressRuntimeContext: flags.includeRuntimeContext === false }
+  return { sections, suppressRuntimeContext: flags.includeRuntimeContext === false,
+    customPrefix: entries.some(entry => entry.action.prefix !== undefined),
+    identityEntries: entries.filter(entry => entry.action.stripDefaultIdentity !== undefined) }
+}
+
+/** 变换已接受装配，不重读 provider，也不接管原声明的生命周期。 */
+export function stripPersonaIdentity(assembly, plan, report, agentId) {
+  let result = assembly
+  for (const entry of plan?.identityEntries ?? []) {
+    const target = entry.action.stripDefaultIdentity
+    const [name, identity] = IDENTITIES[target]
+    const section = assembly.sections.find(value => value.name === name)
+    const matched = !(target === 'preset' && plan.customPrefix) && typeof section?.text === 'string' && (target === 'preset'
+      ? section.text.startsWith(identity) && /^(?:\s|$)/.test(section.text.slice(identity.length)) : section.text === identity)
+    try { report?.({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, channel: `persona:identity:${target}`, outcome: 'hit',
+      identityOutcome: matched ? 'matched' : 'target-mismatch', definitionRevision: entry.rule.definitionRevision, actionId: entry.id, agentId }) } catch { /* 诊断不改变装配 */ }
+    if (matched) {
+      const transform = value => value?.name === name ? { ...value, text: section.text.slice(identity.length) } : value
+      result = { ...result, sections: result.sections.map(transform) }
+    }
+  }
+  return result
 }

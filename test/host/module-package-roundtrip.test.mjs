@@ -33,6 +33,7 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
   writeFileSync(join(dir, 'assets', 'notice.txt'), 'PACKAGED TEMPLATE')
   const spec = source(id, { rules: [{
     ...rule('hello', 'TOP'), if: { scope: { audience: 'main' } },
+    then: [...rule('hello', 'TOP').then, { id: 'identity', kind: 'persona', stripDefaultIdentity: 'harness' }],
     else: [{ if: { scope: { audience: 'subagent' } }, then: [{ id: 'nested', kind: 'inject-text', config: { templateFile: './assets/notice.txt' } }],
       else: [{ id: 'fallback', kind: 'inject-text', config: { templateFile: './assets/notice.txt' } }] }],
   }] })
@@ -62,6 +63,7 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
     const copied = join(moduleRoot, id)
     const restored = readRulesDir(copied)
     assert.equal(restored.contents[0].id, 'hello')
+    assert.deepEqual(restored.contents[0].then, spec.rules[0].then)
     assert.deepEqual(restored.contents[0].else, spec.rules[0].else)
     assert.equal(restored.settings.hello.enabled, false)
     assert.equal(restored.settings.hello.order, 40)

@@ -41,6 +41,7 @@ export interface PromptConfigCompileOptions {
 
 export interface CompileRulesOptions {
   moduleId?: string
+  ruleRevisions?: Record<string, string>
   sourceModuleId?: string
   configOrder?: Record<string, number>
   variables?: Record<string, string>

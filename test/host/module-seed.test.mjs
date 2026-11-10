@@ -14,6 +14,25 @@ const { packageModulesDir } = await import('../../src/host/module-dirs.ts')
 
 const PRESETS_DIR = join(storageRootOf(home), 'modules')
 
+test('核心破限模块沿普通补种与启用表，默认关闭且已有用户选择不覆盖', async () => {
+  const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
+  const { readStorageConfig } = await import('../../src/host/config-store.ts')
+  const root = tempDir('pt-identity-seed-')
+  ensureModuleSeed(root)
+  const dir = join(root, 'limit-breaker')
+  const definition = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
+  assert.equal(definition.name, '核心破限模块')
+  assert.deepEqual(definition.rules.map(rule => [rule.id, rule.enabled, rule.then[0].stripDefaultIdentity]), [
+    ['default-preset-identity', false, 'preset'], ['default-harness-identity', false, 'harness'],
+  ])
+  assert.equal(readStorageConfig(root).source.enabled.includes('limit-breaker'), false)
+  const initial = readModuleRules(dir), changed = { ...initial.rules[0], enabled: true, name: 'USER CHOICE' }
+  editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: changed.id, rule: changed, settingsChanged: true }] })
+  const before = readFileSync(join(dir, 'module.yml'), 'utf8')
+  ensureModuleSeed(root)
+  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before)
+})
+
 test('ensureModuleSeed：首次复制内置模板，二次幂等，删除后自动补建', () => {
   const first = ensureModuleSeed()
   assert.ok(first.created.length > 0, '首次应复制内置模板')

@@ -1,0 +1,21 @@
+id: limit-breaker
+name: 核心破限模块
+version: 1.0.0
+engineCompat: '>=0.4.2'
+description: 按需接管准确默认身份；每条规则独立启停，保留工具、环境和功能正文。
+modules: [rule-engine]
+rules:
+  - id: default-preset-identity
+    name: 接管预设默认身份
+    enabled: false
+    then:
+      - id: identity
+        kind: persona
+        stripDefaultIdentity: preset
+  - id: default-harness-identity
+    name: 接管 Harness 默认身份
+    enabled: false
+    then:
+      - id: identity
+        kind: persona
+        stripDefaultIdentity: harness

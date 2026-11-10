@@ -25,6 +25,8 @@ export interface ModuleSpec {
   content?: { presetText?: string; agentsText?: string }
   /** 模块清单(参数文件决定组合内容):按序装配 source/local 与 library 中的唯一模块。 */
   modules?: string[]
+  /** 当前完整定义派生的规则内容版本，仅用于运行观测。 */
+  ruleRevisions?: Record<string, string>
   /** 手写组合：内联文本或组合清单名。 */
   composition?: string
   /** 内部运行时平铺适配面；磁盘上的同名段不参与运行参数。 */
@@ -95,6 +97,7 @@ export function loadModuleSpec(dir: string): ModuleSpec {
   const cached = moduleSpecCache.get(snapshot.file)
   if (cached?.revision === snapshot.revision) return withGlobalParams(structuredClone(cached.spec), dir)
   const parsed = { ...snapshot.source, id: snapshot.source.id ?? basename(dir), rules: snapshot.rules,
+    ruleRevisions: Object.fromEntries(Object.entries(snapshot.revisions.rules).map(([id, revision]) => [id, `${revision}:${snapshot.revisions.settings}`])),
     configOrder: snapshot.configOrder, variables: snapshot.variables, variablesEnabled: snapshot.variablesEnabled } as unknown as ModuleSpec
   const params = readModuleLayerSettings(parsed)
   if (parsed.layerSettings !== undefined || parsed.params !== undefined) parsed.params = params

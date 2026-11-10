@@ -122,6 +122,12 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 **触发式债务**：`apply` 内二次解析配置与加载器准备期解析并存（如上）；发现适配器的宿主挂载与行挂载不对称（宿主挂载的 `skill-search` 不登记 adapter，今天无消费者）。两者都等具体触发条件再动，不在本轮顺手改。
 
+### 默认身份接管
+
+普通 `persona` 动作可选 `stripDefaultIdentity: preset | harness`，条件、受众、规则与模块启停沿既有运行时。`preset` 只移除已解析 `deployment:persona-prefix` 开头准确的 `You are a coding agent powered by the {{model}} model.`，后接空白或结尾；`harness` 只移除 `harness:identity` 的准确全文 `You are an AI agent powered by DeepSeek Harness.`。自定义 persona 前缀不参与默认身份接管，其余字节保持。
+
+变换在公开装配适配器的最终结算出口进行，同次装配使用已接受候选；不重读 provider、不遮蔽身份声明、不修改已有历史。目标不匹配原样保留。预检不产生成功观测；真实装配沿既有规则诊断账本按动作与真实 Agent 记录目标结果及已保存版本，独立于条件缺事实计数。成功发布替换或释放来源时清除其身份观测，内容哈希启停回环也须重新观测；普通条件计数保留。规则卡只接纳当前目标、已保存版本且无正文草稿的观测，未选分支不抵消有效成功，同目标其他有效动作或 Agent 的真实失败不被成功掩盖。关闭或释放后自然回到仍存活的声明，不复活已释放 owner。
+
 ## 复制协议（跨项目复用）
 
 复制完整 `engine/` 可复用纯编译器、动作、条件、历史与模板求值。宿主接线仍需要相应官方服务，五个模块工具外壳还需要 Prompt Tool 的 provider。独立引擎不偷偷读取插件 DSH_HOME 或 session 变量表。`env-safety.mjs` 与 `path-safety.mjs` 是纯安全 helper，随复制协议一起带走；`env-facts` 白名单外键在构造期 fail loud，`instruction-hint` 的 `params.file` 只允许指令文件候选名且 realpath 必须落在 cwd→最近项目根或 DSH_HOME。

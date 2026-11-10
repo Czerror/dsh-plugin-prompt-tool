@@ -1,6 +1,7 @@
 import { useId, useState, type ReactNode } from 'react'
 import { AutoSaveSelection } from '../../ui/AutoSaveSelection.ts'
 import type { RuleDefinition } from '../../../shared/rules.ts'
+import type { RuleDiagnosticRecord } from '../../../shared/bridge-contract.ts'
 import type { RuleEditor, RuleEntry, RulesDraft } from '../../data/rule-drafts.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { useAutosave } from '../../data/use-autosave.ts'
@@ -18,6 +19,7 @@ import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleStepsPanel } from './RuleSteps.tsx'
 import { conditionalActions, countConditions, countNodes, isValidNode, nodeList } from './rule-steps.ts'
+import { deepEqual } from '../../data/dirty-state.ts'
 import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
@@ -30,6 +32,7 @@ export function RuleCard(props: {
   source?: string
   /** 本卡的主语（它所属的模块）：层内设置按它取，不从任何会话状态兜底。 */
   moduleId: string
+  diagnostics?: readonly RuleDiagnosticRecord[]
   renderSettings?: (rule: RuleDefinition, moduleId: string) => ReactNode
 }): ReactNode {
   const { t, entry, editor, draft } = props, rule = entry.value
@@ -52,6 +55,22 @@ export function RuleCard(props: {
   const save = (): void => { if (draft.loaded && draft.busy === undefined) autosave.flush() }
   const onDraft = (): void => { editor.changed() }
   const fieldContext = { t, fields: draft.fields, disabled, engineMeta: props.meta, onDraft }
+  const targets = new Set<string>()
+  const collectTargets = (values: readonly unknown[]): void => { for (const value of values) {
+    if (value === null || typeof value !== 'object') continue
+    const node = value as Record<string, unknown>
+    if (node.kind === 'persona' && (node.stripDefaultIdentity === 'preset' || node.stripDefaultIdentity === 'harness')) targets.add(`persona:identity:${node.stripDefaultIdentity}`)
+    collectTargets(nodeList(node.then)); collectTargets(nodeList(node.else))
+  } }
+  collectTargets(nodes)
+  const saved = draft.saved.find(value => value.id === entry.previousId)
+  const contentRevision = deepEqual(saved, rule) ? draft.revisions?.rules[rule.id] : undefined
+  const revision = contentRevision === undefined ? undefined : `${contentRevision}:${draft.revisions?.settings}`
+  const observed = props.diagnostics?.filter(record => revision !== undefined && record.definitionRevision === revision
+    && record.moduleId === props.moduleId && record.ruleId === rule.id && targets.has(record.channel)) ?? []
+  const effective = observed.filter(record => record.identityOutcome !== 'condition-miss')
+  const availability = effective.some(record => record.identityOutcome !== 'matched') ? 'rules.identity.unavailable'
+    : effective.length > 0 ? 'rules.identity.matched' : 'rules.identity.unverified'
   return <AutoSaveSelection.Provider value={save}><CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(props.source ? t('rules.source', { module: props.source }) + ' · ' : '') + (rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + summary}
     expanded={props.expanded} onToggle={() => { if (props.expanded) save(); props.onToggle() }} bodyClassName={`${ui.configForm} ${css.cardPanel}`}
     data-rule-id={rule.id} data-rule-key={entry.key}
@@ -68,6 +87,7 @@ export function RuleCard(props: {
       }} /></AutoSaveSelection.Provider>
       </span></span>}>
     <div className={css.body} data-rule-editor>
+      {targets.size > 0 && <p role="status">{t(rule.enabled === false ? 'rules.identity.disabled' : 'rules.identity.enabled')} · {t(rule.enabled === false || props.disabled ? 'rules.identity.unverified' : availability)}</p>}
       <div className={css.fields}>
         <FormField label={t('rules.rename')}><TextInput value={rule.id} spellCheck={false} readOnly={disabled} onChange={event => patch({ id: event.target.value })} /></FormField>
         <FormField label={t('rules.name')}><TextInput value={rule.name ?? ''} readOnly={disabled} onChange={event => patch({ name: event.target.value || undefined })} /></FormField>

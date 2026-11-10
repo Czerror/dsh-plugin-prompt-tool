@@ -366,6 +366,7 @@ export function compileRules(specs, options = {}) {
     return {
       id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, exclusive: spec.exclusive === true, enabled: spec.enabled !== false,
       sequence, when, actions, promptConfigOptions: options.promptConfigOptions,
+      definitionRevision: options.ruleRevisions?.[spec.id],
       variables: options.variables, variablesEnabled: options.variablesEnabled,
       // 绑定所需的树：规则级 `if` + 每个动作展开后的条件（动作那半与 `action.conditions` 同一引用）。
       // **只有引擎内部读它**（`rebindConditions` 绑定、`actionAudiences` 推导受众）——调用方与挂载缝都不需要知道这个形状。

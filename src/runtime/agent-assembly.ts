@@ -179,6 +179,7 @@ export async function prepareAssembly(
     .filter(rule => !declaredRules.some(declared => declared.id === rule.id))
   const rules = compileRules([...declaredRules, ...syntheticRules], {
     moduleId,
+    ruleRevisions: spec.ruleRevisions,
     configOrder: readConfigOrder(spec.configOrder),
     variables: spec.variables, variablesEnabled: spec.variablesEnabled,
     contextActivationRecursive: spec.contextActivationRecursive,
@@ -423,6 +424,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (current === undefined) return
     if (agent !== undefined && current.agent !== agent) return
     mounts.delete(sessionId)
+    ruleDiagnostics.invalidateIdentity(current.moduleIds)
     await current.fiber.dispose()
   }
   const release = async (sessionId: string, agent?: Agent): Promise<void> => {
@@ -537,6 +539,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       // 来源授权与规则提交同栈完成；求值失败先恢复授权，再进入异步回滚。
       record.moduleIds = prepared.map(item => item.moduleId)
       record.rules.replace(prepared.filter(item => item.rules.length > 0).map(item => ({ moduleId: item.moduleId, rules: item.rules })))
+      ruleDiagnostics.invalidateIdentity([...new Set([...record.prepared.filter(item => !prepared.includes(item)).map(item => item.moduleId),
+        ...prepared.filter(item => !record.prepared.includes(item)).map(item => item.moduleId)])])
       record.prepared = prepared
       record.stamp = stamp; record.content = content; record.committed = true
       for (const item of duplicateIdentities) {
