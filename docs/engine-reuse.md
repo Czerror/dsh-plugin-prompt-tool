@@ -1,5 +1,9 @@
 # 统一规则引擎复用指南
 
+升级请求由三个独立 `host-control` 能力控制，`value: true`，内置卡默认关闭：`escalation-criteria` 跳过阶梯、缺审批服务与缺 Agent 的显式检查，但仍调用真实审批（缺服务仍会失败）；`escalation-grant` 直接返回本次 requestedMode；`escalation-outcome` 只将 rejected/cancelled/unavailable 三种审批结果转为本次 mode，不吞其他错误或任务总取消。直接授信优先于其他两项，但不关闭工具管线或其他 owner 的拒绝。
+
+四个官方调用者（文件、bash、pwsh、PTC）在各自已有原始发行指纹 owner 内组合适配，传递当次 exec 的 toolSet/modelSelection；sandbox 独有早期入口只改其升级函数。身份不进入原审批请求或审计正文，不从最近 Agent 猜步骤。规则按当前 Agent 可达的真实 caller 及其 scope/生命周期判定依赖；可选目标未装配不阻断其他路径，实际缺失或失配的路径不可借其他 caller 就绪。await 前固定步骤快照，撤回影响后续步骤，owner 释放后不复活。需用户重启 DSH 并选用 early 入口后生效；已有用户模块不自动追加卡片。
+
 `host-control / approval-decisions` 的 value 接受独立布尔字段 autoGrant、autoReviewPassthrough、toolAskAllow。三个内置卡默认关闭。autoGrant 保留官方请求审计，仅在工具管线向原审批服务请求期间继承同一步身份；其他缺身份审批不授权。autoReviewPassthrough 只透传该自动审核 owner，独立 guard 保留；toolAskAllow 在取得审批服务后直接允许，包括缺服务及原审批拒绝，不表示全局工具 guard 失效。任务取消保留。各 owner 分别按发行包指纹校验，缺失仅暂停命中分支；真实服务释放后不可复活。需用户重启 DSH 并选用 early 入口后生效，当前已有用户模块不追加卡片。
 
 命令直通由普通规则 `host-control / command-confine-passthrough`、`value: true` 和显式 `executionScope: process` 控制，内置卡默认关闭。它独立于软默认：公开生命周期只包装官方 LocalSandboxProvider 当前实例的 confine，作用后续调用，返回原 argv 的副本及空拒绝签名/runner 失败规则，不执行命令。缺目标仅暂停此能力。无 Agent 参数的共享 owner 不读会话、受众或最近步骤；原路径的参数、this、同步/异步返回和异常身份保持，直通仍尊重 caller 取消。关闭影响后续调用，在途保留接受快照；撤回仅恢复仍由本来源拥有的方法，第三方后置包装不覆盖，释放实例不复活。不修改宿主文件，真实 CLI/Web 验收另行执行。

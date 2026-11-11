@@ -70,6 +70,7 @@ export function ruleMatches(rule, frame) {
  */
 export function actionMatches(entry, frame) {
   if (frame.frozenActionMatches?.has(entry)) return frame.frozenActionMatches.get(entry)
+  if (!frame.ignoreEscalationDecisionsDependency && entry.rule?.escalationDecisionsAvailable?.(entry, frame) === false) return false
   if (!frame.ignoreApprovalDecisionsDependency && entry.rule?.approvalDecisionsAvailable?.(entry, frame) === false) return false
   if (!frame.ignoreFilesystemPolicyDependency && entry.rule?.filesystemPolicyAvailable?.(entry, frame) === false) {
     frame.actionOutcomes.set(entry, 'unavailable')

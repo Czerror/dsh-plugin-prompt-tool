@@ -1,5 +1,7 @@
 # Web 客户端 UI 结构框架
 
+升级动作编辑沿现有规则卡：`escalation-criteria`、`escalation-grant`、`escalation-outcome` 均使用布尔 value，分别显示当前能力诊断；开启意图不等于真实 caller 就绪，运行契约见 [引擎复用](engine-reuse.md)。
+
 > 适用范围：dsh-plugin-prompt-tool 的 src/client/ 结构、宿主 SlotRegistry 接入、工作台页面编排、客户端状态与 bridge 边界、共享交互和样式所有权。
 > 本文描述当前实现，不是实施计划；与代码不一致时以代码为准。
 > 相关代码：src/client/index.ts、src/client/app/、src/client/data/、src/client/features/、src/client/ui/、src/shared/bridge-contract.ts。

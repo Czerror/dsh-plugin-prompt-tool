@@ -6,6 +6,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolveHostPackage } from './host-package.mjs'
 import { resultTextOwners as state } from './result-text-owners.mjs'
 import './fs-tool-early.mjs'
+import { transformEscalationCaller, escalationDecisionsState } from './escalation-decisions.mjs'
+
+const escalationOwners = { '@deepseek-ai/dsh-tool-executor-ptc': 'ptc', '@deepseek-ai/dsh-tool-bash': 'bash', '@deepseek-ai/dsh-tool-pwsh': 'pwsh' }
 
 const artifacts = [
   ['dsh-tool-web', '129af8e6bf485d47d3f5f562877b5c266fd57f1a5cc14bfebacc2780b2837d46'],
@@ -33,11 +36,13 @@ registerHooks({ load(url, context, next) {
   const imports = [...source.matchAll(/import \{[^\n]+\bdefineTool\b[^\n]*\} from "@deepseek-ai\/dsh-tools";/g)]
   if (createHash('sha256').update(source).digest('hex') !== artifact.digest || imports.length !== 1) {
     state.status.set(artifact.owner, { available: false, reason: 'result owner artifact fingerprint or structure mismatch' })
+    if (escalationOwners[artifact.owner]) escalationDecisionsState.status.set(escalationOwners[artifact.owner], { available: false, reason: 'escalation caller artifact fingerprint mismatch' })
     return loaded
   }
   const original = imports[0][0]
   const replacement = original.replace(/\bdefineTool\b/, 'defineTool as promptToolResultDefineTool')
     + `\nconst defineTool = (...args) => { const tool = promptToolResultDefineTool(...args); return globalThis[Symbol.for("prompt-tool:result-text")]?.mark(tool, ${JSON.stringify(artifact.owner)}) ?? tool; };`
   state.status.set(artifact.owner, { available: true, reason: '' })
-  return { ...loaded, source: source.replace(original, replacement) }
+  const transformed = source.replace(original, replacement)
+  return { ...loaded, source: escalationOwners[artifact.owner] ? transformEscalationCaller(transformed, escalationOwners[artifact.owner]) : transformed }
 } })

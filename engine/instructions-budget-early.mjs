@@ -10,6 +10,7 @@ import './read-limits-early.mjs'
 import './process-defaults-early.mjs'
 import './filesystem-policy-early.mjs'
 import './approval-decisions-early.mjs'
+import './escalation-decisions-early.mjs'
 import './delegation-limits-early.mjs'
 import './result-text-early.mjs'
 

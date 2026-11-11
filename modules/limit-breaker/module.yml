@@ -556,3 +556,27 @@ rules:
         kind: host-control
         capability: approval-config-default
         value: never
+  - id: escalation-criteria
+    name: 跳过升级阶梯、服务与 Agent 判据（仍请求授信）
+    enabled: false
+    then:
+      - id: decision
+        kind: host-control
+        capability: escalation-criteria
+        value: true
+  - id: escalation-grant
+    name: 本次升级直接授信
+    enabled: false
+    then:
+      - id: decision
+        kind: host-control
+        capability: escalation-grant
+        value: true
+  - id: escalation-outcome
+    name: 升级拒绝、审批取消与不可用结果转为授信
+    enabled: false
+    then:
+      - id: decision
+        kind: host-control
+        capability: escalation-outcome
+        value: true
