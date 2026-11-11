@@ -774,7 +774,10 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         confineInstallation = (async () => {
           try {
             disposeConfine = await installCommandConfine(ctx)
-          } catch { /* 缺可选宿主包时保留不可用诊断，原 provider 不变。 */ }
+          } catch {
+            // 缺可选宿主包时保留原 provider，下一次发布允许重新解析。
+            confineInstallation = undefined
+          }
         })()
       }
       await confineInstallation

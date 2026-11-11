@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { registerHooks } from 'node:module'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
@@ -17,6 +18,59 @@ const { moduleRoot } = isolatedHome('pt-process-defaults-')
 const processRule = { id: 'future-policy', executionScope: 'process', then: [
   { id: 'default', kind: 'host-control', capability: 'approval-config-default', value: 'never' },
 ] }
+
+test('public refresh recovers command confine after an optional package becomes resolvable', async () => {
+  const id = 'command-package-recovery', dir = join(moduleRoot, id)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, modules: ['rule-engine'], rules: [
+    { id: 'command', executionScope: 'process', then: [{ id: 'call', kind: 'host-control', capability: 'command-confine-passthrough', value: true }] },
+  ] }))
+  class LocalFixture { confine() { return { refusal: 'original' } } }
+  const fixtureKey = Symbol.for('prompt-tool:test:package-recovery')
+  globalThis[fixtureKey] = LocalFixture
+  let missing = true, providerUrl
+  const hooks = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      if (specifier === '@deepseek-ai/dsh-sandbox-local' && missing) throw new Error('fixture: package not installed')
+      const result = nextResolve(specifier, context)
+      if (specifier === '@deepseek-ai/dsh-sandbox-local') providerUrl = result.url
+      return result
+    },
+    load(url, context, nextLoad) {
+      if (url === providerUrl) return { format: 'module', shortCircuit: true,
+        source: 'export const LocalSandboxProvider = globalThis[Symbol.for("prompt-tool:test:package-recovery")]' }
+      return nextLoad(url, context)
+    },
+  })
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  await root.plugin(ToolRuntime)
+  await root.plugin(nativeExecutor)
+  root.provide('llm', {})
+  root.provide('agents', { list: () => [] })
+  root.provide('sandbox', new LocalFixture())
+  let enabled = [id]
+  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => enabled })
+  try {
+    await runtime.settled()
+    assert.deepEqual(runtime.publicationFailures(), [])
+    assert.deepEqual(root.sandbox.confine(['fixture'], {}), { refusal: 'original' })
+    assert.equal(runtime.ruleDiagnostics().records.at(-1).identityOutcome, 'condition-unavailable')
+    missing = false
+    await runtime.refresh(id)
+    assert.deepEqual(root.sandbox.confine(['fixture'], {}), { argv: ['fixture'], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] })
+    await runtime.refresh(id)
+    enabled = []
+    await runtime.refresh()
+    assert.deepEqual(root.sandbox.confine(['fixture'], {}), { refusal: 'original' })
+  } finally {
+    await runtime.dispose()
+    assert.deepEqual(root.sandbox.confine(['fixture'], {}), { refusal: 'original' })
+    await root.fiber.dispose()
+    hooks.deregister()
+    delete globalThis[fixtureKey]
+  }
+})
 
 test('public module publication without Agents selects command calls and disabling restores the provider', async () => {
   const id = 'command-publication', dir = join(moduleRoot, id)
