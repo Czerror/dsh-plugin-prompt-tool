@@ -68,6 +68,7 @@ export function RuleCard(props: {
       if (Array.isArray(target.toolDescriptions) && target.toolDescriptions.length > 0) targets.add('tool:descriptions')
       if (Array.isArray(target.skillDescriptions) && target.skillDescriptions.length > 0) targets.add('skill:descriptions')
     }
+    if (node.kind === 'tool-result' && node.action === 'edit-text' && Array.isArray(node.edits) && node.edits.length > 0) targets.add('tool:results')
     if (node.kind === 'persona' && (node.stripDefaultIdentity === 'preset' || node.stripDefaultIdentity === 'harness')) targets.add(`persona:identity:${node.stripDefaultIdentity}`)
     collectTargets(nodeList(node.then)); collectTargets(nodeList(node.else))
   } }

@@ -10,7 +10,7 @@ export function triggerLabel(t: PromptToolTranslate, name: string): string {
 const FIELD_OPTIONS: Record<string, Record<string, readonly string[]>> = {
   'host-control': { capability: ['file-read-limits'] },
   'tool-gate': { decision: ['allow', 'deny', 'ask'] },
-  'tool-result': { action: ['accept', 'replace', 'block'] },
+  'tool-result': { action: ['accept', 'replace', 'block', 'edit-text'] },
   'stream-output': { mode: ['pass', 'replace'] },
   'inbox-prepend': { target: ['next-turn', 'next-step'] },
   count: { per: ['session', 'turn'], of: ['tool-call', 'tool-result', 'assistant-message', 'assistant-chars', 'user-message', 'turn'] },

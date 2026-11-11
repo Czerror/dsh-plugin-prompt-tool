@@ -45,10 +45,15 @@ export function applyToolDescriptions(view, plans = [], observe, target = 'toolD
   return result
 }
 
-function replaceEntries(list, entries, target, plugin, warnOnce) {
+function replaceEntries(list, entries, target, plugin, warnOnce, evidence = new WeakMap()) {
   if (!Array.isArray(list) || entries === undefined) return list
   let result = list
   for (const entry of entries) {
+    const candidates = entry.match === undefined ? undefined : Array.isArray(entry.match) ? entry.match : [entry.match]
+    const key = JSON.stringify([entry.name, candidates?.toSorted(), entry.text])
+    const targets = result.filter(value => value?.name === entry.name)
+    const previous = targets.length === 1 ? evidence.get(targets[0]) : undefined
+    if (previous?.key === key && previous.text === targets[0].text) continue
     const index = result.findIndex(value => value?.name === entry.name && typeof value.text === 'string' && value.text.trim().length > 0)
     if (entry.match !== undefined && (index < 0 || result.filter(value => value?.name === entry.name).length !== 1)) {
       warnOnce(`${plugin}: assembly.${target}.replace target ${JSON.stringify(entry.name)} missing or ambiguous; skipped`)
@@ -58,16 +63,18 @@ function replaceEntries(list, entries, target, plugin, warnOnce) {
     const current = result[index]
     let text = entry.text
     if (entry.match !== undefined) {
-      const at = current.text.indexOf(entry.match)
-      if (at < 0 || current.text.indexOf(entry.match, at + 1) >= 0) {
+      const hits = candidates.map(match => ({ match, at: current.text.indexOf(match) })).filter(hit => hit.at >= 0)
+      if (hits.length !== 1 || current.text.indexOf(hits[0].match, hits[0].at + 1) >= 0) {
         warnOnce(`${plugin}: assembly.${target}.replace match in ${JSON.stringify(entry.name)} missing or ambiguous; skipped`)
         continue
       }
-      text = current.text.slice(0, at) + entry.text + current.text.slice(at + entry.match.length)
+      const { match, at } = hits[0]
+      text = current.text.slice(0, at) + entry.text + current.text.slice(at + match.length)
     }
     if (current.text === text) continue
     if (result === list) result = [...list]
     result[index] = { ...current, text }
+    evidence.set(result[index], { key, text })
   }
   return result
 }
@@ -75,7 +82,8 @@ function replaceEntries(list, entries, target, plugin, warnOnce) {
 /** 官方刷新仍读取原provider，只重用该步骤已接受的文本配置。 */
 export function applyAcceptedContextReplacements(assembly, step) {
   let contexts = assembly.contexts
-  for (const plan of step?.contextReplacements ?? []) contexts = replaceEntries(contexts, plan.entries, 'contexts', plan.plugin, plan.warnOnce)
+  const evidence = new WeakMap()
+  for (const plan of step?.contextReplacements ?? []) contexts = replaceEntries(contexts, plan.entries, 'contexts', plan.plugin, plan.warnOnce, evidence)
   return contexts === assembly.contexts ? assembly : { ...assembly, contexts }
 }
 
@@ -118,7 +126,12 @@ export function prepareAssembly(action, plugin) {
       if (!record(entry) || Object.keys(entry).some(key => !['name', 'text', 'match'].includes(key))) throw new TypeError(`${plugin}: assembly.${key}.replace entries must be { name, text, match? }`)
       requireString(entry.name, `assembly.${key}.replace[].name`, plugin)
       requireString(entry.text, `assembly.${key}.replace[].text`, plugin)
-      if (entry.match !== undefined && (typeof entry.match !== 'string' || entry.match.length === 0)) throw new TypeError(`${plugin}: assembly.${key}.replace[].match must be a non-empty string`)
+      if (entry.match !== undefined) {
+        const matches = Array.isArray(entry.match) ? entry.match : [entry.match]
+        if (matches.length === 0 || matches.some(value => typeof value !== 'string' || value.length === 0) || new Set(matches).size !== matches.length) {
+          throw new TypeError(`${plugin}: assembly.${key}.replace[].match must be a non-empty string or an array of distinct non-empty strings`)
+        }
+      }
       if (key === 'sections' && (sectionsRemove?.has(entry.name) || sectionsKeep !== undefined && !sectionsKeep.has(entry.name))
         || key === 'contexts' && contextsRemove?.has(entry.name)) throw new TypeError(`${plugin}: assembly.${key}.replace target cannot also be removed`)
     }
@@ -156,16 +169,18 @@ export function prepareAssembly(action, plugin) {
   if (sectionsKeep !== undefined && sectionsRemove !== undefined) {
     throw new TypeError(`${plugin}: assembly.sections cannot combine keep with remove — 一种是白名单、一种是黑名单，同时声明语义不明`)
   }
-  return (_ctx, { warnOnce, on, collect, take }) => collect(on('system-prompt/assemble', async (assembly, context, next) => {
+  return (_ctx, { warnOnce, on, collect, take }) => collect(on('system-prompt/assemble', async (assembly, context, next, _frame, replacementFrame) => {
     const assembled = await next()
     try {
       let result = assembled
       let contextPlan
-      const replacedSections = replaceEntries(result.sections, sectionsReplace, 'sections', plugin, warnOnce)
+      const replacedSections = replaceEntries(result.sections, sectionsReplace, 'sections', plugin, warnOnce, replacementFrame?.sections)
       if (replacedSections !== result.sections) result = { ...result, sections: replacedSections }
       if (contextsReplace?.length > 0) {
-        contextPlan = Object.freeze({ entries: Object.freeze(contextsReplace.map(entry => Object.freeze({ ...entry }))), plugin, warnOnce })
-        const contexts = replaceEntries(result.contexts, contextPlan.entries, 'contexts', plugin, warnOnce)
+        contextPlan = Object.freeze({ entries: Object.freeze(contextsReplace.map(entry => Object.freeze({ ...entry,
+          ...(Array.isArray(entry.match) ? { match: Object.freeze([...entry.match]) } : {}),
+        }))), plugin, warnOnce })
+        const contexts = replaceEntries(result.contexts, contextPlan.entries, 'contexts', plugin, warnOnce, replacementFrame?.contexts)
         if (contexts !== result.contexts) result = { ...result, contexts }
       }
       if (Array.isArray(result.sections) && (sectionsAdd !== undefined || sectionsRemove !== undefined || sectionsKeep !== undefined)) {

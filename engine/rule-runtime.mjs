@@ -19,6 +19,8 @@ import { compileWhen } from './conditions/index.mjs'
 import { bindReadLimitsDependencies, isReadLimitsAction, prepareReadLimits } from './read-limits.mjs'
 import { applyToolDescriptions } from './actions/assembly.mjs'
 import { applyTransportDescriptions, toolDescriptionObservation, settleSkillDescriptions, skillDescriptionObservation } from './tool-metadata.mjs'
+import { resultTextOwners } from './result-text-owners.mjs'
+import { bindResultTextDependencies } from './result-text.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -39,6 +41,7 @@ function pointHandler(ctx, point, snapshot, warnOnce, report, isActive, assembly
     const free = noNext.has(point.channel)
     const payload = free ? args : args.slice(0, -1)
     const next = free ? () => undefined : args.at(-1)
+    const replacements = point.channel === 'system-prompt/assemble' ? { sections: new WeakMap(), contexts: new WeakMap() } : undefined
     if (!isActive()) return next()
     let frame
     try { frame = assemblyFrame !== undefined && point.channel === 'system-prompt/assemble'
@@ -64,13 +67,14 @@ function pointHandler(ctx, point, snapshot, warnOnce, report, isActive, assembly
       for (const entry of handlers) {
         if (!isActive()) continue
         if (!actionMatches(entry, frame)) { entry.miss?.(frame); continue }
-        result = await entry.handler(...payload, () => result, frame)
+        result = await entry.handler(...payload, () => result, frame, replacements)
       }
       return result
     })
     const invoke = index => {
       if (!isActive() || index === handlers.length) return next()
       const entry = handlers[index]
+      if (entry.handler.resultTextPlan !== undefined && resultTextOwners.handled.has(payload[0])) return invoke(index + 1)
       if (!actionMatches(entry, frame)) { entry.miss?.(frame); return invoke(index + 1) }
       return entry.handler(...payload, () => invoke(index + 1), frame)
     }
@@ -151,6 +155,14 @@ function mountSources(ctx, sources, options = {}) {
           const entry = { rule, action, kind: action.kind, handler, toolSurface: action.kind === 'tool-visibility', toolDescription: action.kind === 'assembly' && (action.target?.toolDescriptions?.length > 0 || action.target?.skillDescriptions?.length > 0), contextReplacement: action.kind === 'assembly' && action.target?.contexts?.replace?.length > 0, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
           else handlers.push(entry)
+          if (handler.resultTextPlan !== undefined) {
+            const observe = (exec, reason) => options.onOutcome?.({ moduleId, ruleId: rule.id, actionId: action.id,
+              channel: 'tool:results', definitionRevision: rule.definitionRevision, agentId: exec?.agent?.id ?? options.agent?.id,
+              outcome: reason === undefined ? 'hit' : 'unavailable', identityOutcome: reason === undefined ? 'matched' : 'target-mismatch',
+              ...(reason === undefined ? {} : { reason }) })
+            handler.resultTextPlan.onUnavailable = (reason, exec) => observe(exec, reason)
+            handler.resultTextPlan.onApplied = exec => observe(exec)
+          }
           created.push(entry)
           // handler 由稳定执行点统一分派；来源 disposer 只释放动作自身的副作用。
           return () => {}
@@ -213,6 +225,7 @@ export function createRuleRuntime(ctx, options = {}) {
   let points = new Map()
   const listeners = new Map()
   const ruleOwners = new WeakMap()
+  const resultTextOwner = {}
   const memo = new Map()
   const report = options.onOutcome === undefined ? undefined : (rule, channel, outcome) => options.onOutcome({ moduleId: ruleOwners.get(rule), ruleId: rule.id, channel, outcome })
   const assemblyFrames = new WeakMap()
@@ -256,6 +269,7 @@ export function createRuleRuntime(ctx, options = {}) {
   const mount = source => {
     const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], dispose: undefined }
     for (const rule of source.rules) bindReadLimitsDependencies(rule, source.moduleId, readLimitEntries, options.onOutcome)
+    for (const rule of source.rules) bindResultTextDependencies(rule, source.moduleId, options.onOutcome)
     for (const rule of source.rules) {
       const budgets = rule.actions.filter(action => action.kind === 'request-params' && action.maxTokens !== undefined)
       if (budgets.length === 0) continue
@@ -529,10 +543,10 @@ export function createRuleRuntime(ctx, options = {}) {
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
@@ -561,6 +575,25 @@ export function createRuleRuntime(ctx, options = {}) {
       if (step != null) { step.readLimits = reading.values; step.readLimitsObservations = reading.observations }
       const delegation = prepareSubagentParams(context)
       if (step != null) { step.subagentParams = delegation.values; step.subagentObservations = delegation.observations }
+      if (step != null) {
+        const entries = [...points.values()].flatMap(point => point.handlers.filter(entry => entry.handler.resultTextPlan !== undefined)).sort(compareEntries)
+        const frames = new WeakMap()
+        const plans = entries.map(entry => Object.freeze({
+          ...entry.handler.resultTextPlan, owner: resultTextOwner, entry,
+          edits: Object.freeze(entry.handler.resultTextPlan.edits.map(value => Object.freeze({ ...value }))),
+          matches(exec, result) {
+            let frame = frames.get(exec)
+            if (frame === undefined) {
+              frame = ruleFrame('tools/post-execute', [exec, result], warnOnce, ctx, report)
+              frame.subject = { ...frame.subject, model: step.modelSelection?.model }
+              frames.set(exec, frame)
+            }
+            return actionMatches(entry, frame)
+          },
+        }))
+        step.resultTextPlans = Object.freeze([...(step.resultTextPlans ?? []).filter(plan => plan.owner !== resultTextOwner), ...plans]
+          .sort((a, b) => compareEntries(a.entry, b.entry)))
+      }
       const descriptions = [...points.values()].flatMap(point => point.handlers.filter(entry => entry.toolDescription)).sort(compareEntries)
       if (descriptions.length > 0) {
         const frame = assemblyFrame(context)

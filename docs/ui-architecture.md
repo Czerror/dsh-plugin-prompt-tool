@@ -748,6 +748,8 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 
 默认身份接管复用人设动作的 `stripDefaultIdentity` 字段与规则卡：启用意图来自规则定义，可用性来自既有 `/rule-diagnostics` 的真实装配观测。开启工作台时定时刷新，复用最新优先请求序号，不持久化观测；只接纳当前目标、已保存版本且无正文草稿变化的结果。成功来源发布及释放使旧身份观测失效，启停哈希回环也需重判；按动作和真实 Agent 记录，正常未选分支不抵消有效成功，实际失败保持可见。关闭和未经验证不显示成功，匹配失效不冒充条件缺事实计数；中英文同步。
 
+结果片段沿 `RuleParameterFields` 的 `tool-result/action: edit-text` 编辑，`edits` 使用原JSON字段；装配替句的候选数组沿 `RuleSurfaceFields` 使用JSON字段，保留逗号、换行及空替文，不转成标签列表。切到edit-text清理互斥的顶层text及草稿，初始match/text留空；切回其它模式清理edits及草稿，accept不补造text，replace/block沿原空正文编辑。非法或未完成JSON继续留在同一fields池并阻止保存，不影响读取额度的实际值、继承空值与Tooltip。结果规则的 `tool:results` 诊断复用RuleCard当前目标与已保存definitionRevision过滤；旧版本或未保存草稿不显示为当前成功。界面开关表示启用意图，不保证early或真实结果owner就绪；浏览器与CLI/Web真实验收另行统一执行。
+
 ## 10. 样式所有权
 
 人设卡的官方指令预算通过原FieldContext传给RuleParameterFields；数字原文及错误保留在同一fields Map，非法或未完成输入阻止原规则保存，切回继承清除对应字段。预算启用与运行可用性分开，实际接缝/owner缺失不能因草稿保存成功显示能力成功。
