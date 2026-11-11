@@ -478,6 +478,30 @@ rules:
         kind: host-control
         capability: sandbox-soft-default
         value: danger-full-access
+  - id: sandbox-file-write
+    name: Seatbelt 写入判据（当前不可用）
+    enabled: false
+    then:
+      - id: policy
+        kind: host-control
+        capability: sandbox-file-write
+        value: true
+  - id: filesystem-fence
+    name: 当前 Agent 文件围栏
+    enabled: false
+    then:
+      - id: policy
+        kind: host-control
+        capability: filesystem-fence
+        value: true
+  - id: filesystem-observation
+    name: 取消写入、编辑和删除的观察版本校验（允许无观察覆盖）
+    enabled: false
+    then:
+      - id: policy
+        kind: host-control
+        capability: filesystem-observation
+        value: true
   - id: approval-composition-default
     name: 审批组合软默认（后续实例）
     enabled: false

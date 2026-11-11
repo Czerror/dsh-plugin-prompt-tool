@@ -18,6 +18,7 @@ import { requestBudgetStatus } from './request-budget-bridge.mjs'
 import { compileWhen } from './conditions/index.mjs'
 import { bindReadLimitsDependencies, isReadLimitsAction, prepareReadLimits } from './read-limits.mjs'
 import { bindDelegationLimitsDependencies, isDelegationLimitsAction, prepareDelegationLimits } from './delegation-limits.mjs'
+import { bindFilesystemPolicyDependencies, isFilesystemPolicyAction, prepareFilesystemPolicy } from './filesystem-policy.mjs'
 import { applyToolDescriptions } from './actions/assembly.mjs'
 import { applyTransportDescriptions, toolDescriptionObservation, settleSkillDescriptions, skillDescriptionObservation } from './tool-metadata.mjs'
 import { resultTextOwners } from './result-text-owners.mjs'
@@ -137,8 +138,8 @@ function mountSources(ctx, sources, options = {}) {
         const { action, rule, moduleId } = item
         if (action.kind === 'request-params' && action.maxTokens !== undefined) options.collectRequestBudget({ action, rule, id: action.id, sourceModuleId: moduleId,
           actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
-        if (action.kind === 'persona' || action.kind === 'subagent-params' || isReadLimitsAction(action) || isDelegationLimitsAction(action)) {
-          const collect = action.kind === 'persona' ? options.collectPersona : isReadLimitsAction(action) ? options.collectReadLimits : isDelegationLimitsAction(action) ? options.collectDelegationLimits : options.collectSubagentParams
+        if (action.kind === 'persona' || action.kind === 'subagent-params' || isReadLimitsAction(action) || isDelegationLimitsAction(action) || isFilesystemPolicyAction(action)) {
+          const collect = isFilesystemPolicyAction(action) ? options.collectFilesystemPolicy : action.kind === 'persona' ? options.collectPersona : isReadLimitsAction(action) ? options.collectReadLimits : isDelegationLimitsAction(action) ? options.collectDelegationLimits : options.collectSubagentParams
           collect({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
             ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
           continue
@@ -243,6 +244,7 @@ export function createRuleRuntime(ctx, options = {}) {
   let layers
   const readLimitEntries = () => [...records.values()].flatMap(record => record.readLimits)
   const delegationLimitEntries = () => [...records.values()].flatMap(record => record.delegationLimits)
+  const filesystemEntries = () => [...records.values()].flatMap(record => record.filesystemPolicy)
   let releaseAssembly
   let releaseMemo, releaseFallback
   const register = (coordinator, source) => {
@@ -270,7 +272,8 @@ export function createRuleRuntime(ctx, options = {}) {
     } catch (error) { releaseMemo(); releaseMemo = undefined; throw error }
   }
   const mount = source => {
-    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], dispose: undefined }
+    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], dispose: undefined }
+    for (const rule of source.rules) bindFilesystemPolicyDependencies(rule, source.moduleId, options.onOutcome)
     for (const rule of source.rules) bindDelegationLimitsDependencies(rule, source.moduleId, delegationLimitEntries, options.onOutcome)
     for (const rule of source.rules) bindReadLimitsDependencies(rule, source.moduleId, readLimitEntries, options.onOutcome)
     for (const rule of source.rules) bindResultTextDependencies(rule, source.moduleId, options.onOutcome)
@@ -336,6 +339,7 @@ export function createRuleRuntime(ctx, options = {}) {
       collectRequestBudget(entry) { record.requestBudgets.push(entry) },
       collectReadLimits(entry) { record.readLimits.push(entry) },
       collectDelegationLimits(entry) { record.delegationLimits.push(entry) },
+      collectFilesystemPolicy(entry) { record.filesystemPolicy.push(entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -549,10 +553,10 @@ export function createRuleRuntime(ctx, options = {}) {
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
@@ -577,6 +581,8 @@ export function createRuleRuntime(ctx, options = {}) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
       const step = toolStepFor(context)
+      const filesystem = prepareFilesystemPolicy(filesystemEntries(), assemblyFrame(context ?? { agent: options.agent }))
+      if (step != null) { step.filesystemPolicy = filesystem.values; step.filesystemPolicyObservations = filesystem.observations }
       const reading = prepareReadLimits(readLimitEntries(), assemblyFrame(context ?? { agent: options.agent }))
       if (step != null) { step.readLimits = reading.values; step.readLimitsObservations = reading.observations }
       const limits = prepareDelegationLimits(delegationLimitEntries(), assemblyFrame(context ?? { agent: options.agent }))
@@ -676,6 +682,9 @@ export function createRuleRuntime(ctx, options = {}) {
         try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
       }
       for (const observation of toolStepFor(context)?.delegationLimitsObservations ?? []) {
+        try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
+      }
+      for (const observation of toolStepFor(context)?.filesystemPolicyObservations ?? []) {
         try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
       }
       for (const plan of toolStepFor(context)?.toolDescriptions ?? []) if (plan.owner === ctx) {

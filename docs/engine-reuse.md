@@ -495,6 +495,8 @@ runtime-context 的注册文本必须是同步 provider，不能只在 assemble 
 
 ## 重建与验证
 
+`host-control` 的 `filesystem-fence` 与 `filesystem-observation` 独立采用当前 Agent 已接受工具步骤的快照（`value: true`），关闭规则恢复后续步骤。可选早期入口只在已核验的官方文件策略 owner 上生效；缺失、结构失配、身份缺失、取消或释放保持原判据，依赖正文暂停，独立分支继续。文件围栏只取消 provider 的目标路径围栏，不修改共享 sandbox mode；观察策略取消 write/edit/delete 的观察意图，允许无观察覆盖并取消观察版本 CAS，read 仍正常记录观察。参数检查、编辑匹配、原子提交、文件系统错误及插件管理面授权保留。`sandbox-file-write` 指向 Seatbelt 的独立写入判据，当前 Windows 平台不适用，macOS 的 exec 身份传播尚不支持，均明确不可用。
+
 只在本插件仓库修改源文件；使用 package scripts 重建 lib 与 YAML vendor 快照，不手改产物或宿主源码。根 module.yml 由 rebuild:module-template 生成，示例默认关闭，普通规则变量需手动建立。
 
 交付从隔离 cwd 执行 typecheck、lint、test、build、diff --check；宿主/包接入另核对 verify:host、verify:pack。永久测试只进入注入行为、写盘语义、bridge 载荷、安全拒绝、UI slot / 入口注册五条 seam，期望来自独立规格或字面样例，断言公共行为。退役接口不留仅证明旧名字不存在的测试。

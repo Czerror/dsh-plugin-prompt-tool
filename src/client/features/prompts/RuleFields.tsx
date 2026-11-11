@@ -55,7 +55,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
       const updated = { ...props.value }
       if (next === undefined) delete updated[key]; else updated[key] = next
       if (key === 'capability' && props.value.kind === 'host-control' && next !== props.value.capability) {
-        updated.value = next === 'sandbox-soft-default' ? 'danger-full-access'
+        updated.value = ['sandbox-file-write', 'filesystem-fence', 'filesystem-observation'].includes(String(next)) ? true : next === 'sandbox-soft-default' ? 'danger-full-access'
           : next === 'approval-composition-default' || next === 'approval-config-default' ? 'never'
             : next === 'delegation-limits' ? { maxDepth: 10, askTimeout: 300 } : { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 }
         cleared(props.fields, props.fieldKey + ':value')

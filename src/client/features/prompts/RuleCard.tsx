@@ -63,6 +63,7 @@ export function RuleCard(props: {
     if (node.kind === 'subagent-params') targets.add('subagent:params')
     if (node.kind === 'host-control' && node.capability === 'file-read-limits') targets.add('host:file-read-limits')
     if (node.kind === 'host-control' && node.capability === 'delegation-limits') targets.add('host:delegation-limits')
+    if (node.kind === 'host-control' && ['sandbox-file-write', 'filesystem-fence', 'filesystem-observation'].includes(String(node.capability))) targets.add(`host:${String(node.capability)}`)
     if (node.kind === 'host-control' && ['sandbox-soft-default', 'approval-composition-default', 'approval-config-default'].includes(String(node.capability))) targets.add('host:process-defaults')
     if (node.kind === 'request-params' && node.maxTokens !== undefined) targets.add('request:budget')
     if (node.kind === 'assembly') {

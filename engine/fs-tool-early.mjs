@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolveHostPackage } from './host-package.mjs'
 import { readLimitsState as reads } from './read-limits.mjs'
 import { resultTextOwners as results } from './result-text-owners.mjs'
+import { transformFilesystemTool, filesystemPolicyState } from './filesystem-policy.mjs'
 
 const owner = '@deepseek-ai/dsh-tool-fs'
 const digest = '0e866969b6bf1aa93407ccd9c944b50bc27a1d961b7e4209ed60bd2b73d28805'
@@ -27,6 +28,7 @@ if (target !== undefined) registerHooks({ load(url, context, next) {
   if (createHash('sha256').update(source).digest('hex') !== digest) {
     const reason = 'tool-fs artifact fingerprint mismatch; restart with a supported artifact'
     reads.available = false; reads.reason = reason
+    filesystemPolicyState.status.set('tool', { available: false, reason })
     results.status.set(owner, { available: false, reason })
     return loaded
   }
@@ -36,7 +38,7 @@ if (target !== undefined) registerHooks({ load(url, context, next) {
     ['render: (args, value) => {\n\t\t\t\tconst input = parseReadArgs(args, caps.limit);', 'render: (args, value) => {\nconst caps = snapshots.get(args) ?? originalCaps;\n\t\t\t\tconst input = parseReadArgs(args, caps.limit);'],
     ['async execute(args, exec) {\n\t\t\tconst input = parseReadArgs(args, caps.limit);', 'async execute(args, exec) {\nconst caps = globalThis[Symbol.for("prompt-tool:file-read-limits")]?.read(ctx, exec, originalCaps) ?? originalCaps; snapshots.set(args, caps);\n\t\t\tconst input = parseReadArgs(args, caps.limit);'],
   ]
-  let transformed = source
+  let transformed = transformFilesystemTool(source)
   if (readEdits.every(([from]) => source.split(from).length === 2)) {
     for (const [from, to] of readEdits) transformed = transformed.replace(from, to)
     reads.available = true; reads.reason = ''
