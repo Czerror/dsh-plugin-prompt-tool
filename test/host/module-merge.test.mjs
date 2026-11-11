@@ -1,14 +1,16 @@
 import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import fs, { mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync } from 'node:fs'
+import fs, { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync, symlinkSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
-import { parse } from 'yaml'
+import { parse, parseDocument } from 'yaml'
 import { isolatedHome, fakeReq, fakeRes, makeHostContext, readBridge } from '../fixtures/host-harness.mjs'
 
 const { home, moduleRoot } = isolatedHome('pt-module-merge-')
 const { previewModuleMerge, applyModuleMerge, readModuleMergeSources } = await import('../../src/host/module-merge.ts')
 const { loadModuleDefinition } = await import('../../src/host/module-slices.ts')
+const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
+const { renderComposition } = await import('../../src/host/module-params.ts')
 const rule = (id, text) => ({ id, enabled: true, if: { scope: { audience: 'main' } }, then: [{ id: 'inject', kind: 'inject-text', config: { text } }] })
 function fixture(id, extra = {}) {
   const dir = join(moduleRoot, id)
@@ -23,27 +25,42 @@ function apply(targetId, sourceId, action = 'merge') {
 }
 
 test('显式并入预览只读，确认后完整定义、有效资产及来源关系可读，移除保留目标原有内容', () => {
-  const target = fixture('merge-target', { rules: [rule('original', 'TARGET')], variables: { original: 'KEEP' }, unknown: { keep: true } })
-  const source = fixture('merge-source', { rules: [rule('incoming', 'SOURCE')], variables: { incoming: '' }, configOrder: { incoming: 90 } })
+  const target = fixture('merge-target', { rules: [rule('original', 'TARGET')], configOrder: { original: 0, reserved: 90 }, variables: { original: 'KEEP' }, unknown: { keep: true }, mergeSources: { version: 1, note: 'USER METADATA', sources: {} } })
+  const targetDocument = parseDocument(readFileSync(join(target, 'module.yml'), 'utf8'))
+  const note = targetDocument.getIn(['mergeSources', 'note'], true)
+  note.comment = ' LEDGER NOTE'
+  note.anchor = 'ledger-note'
+  targetDocument.setIn(['mergeSources', 'noteCopy'], targetDocument.createAlias(note))
+  writeFileSync(join(target, 'module.yml'), targetDocument.toString())
+  const source = fixture('merge-source', { rules: [rule('incoming-later', 'LATER'), rule('incoming', 'SOURCE')], variables: { incoming: '' }, configOrder: { incoming: 10, 'incoming-later': 90 } })
   mkdirSync(join(source, 'assets'))
   writeFileSync(join(source, 'assets', 'empty.txt'), '')
   const before = readFileSync(join(target, 'module.yml'), 'utf8')
   const sourceBefore = readFileSync(join(source, 'module.yml'), 'utf8')
   const preview = previewModuleMerge(moduleRoot, 'merge-target', { expectedModuleId: 'merge-target', sourceId: 'merge-source', action: 'merge' })
-  assert.deepEqual(preview.rules, ['incoming'])
+  assert.deepEqual(preview.rules, ['incoming-later', 'incoming'])
   assert.deepEqual(preview.files, ['assets/empty.txt'])
   assert.equal(readFileSync(join(target, 'module.yml'), 'utf8'), before)
   applyModuleMerge(moduleRoot, 'merge-target', { expectedModuleId: 'merge-target', sourceId: 'merge-source', action: 'merge', expectedRevision: preview.revision })
-  assert.deepEqual(loadModuleDefinition(target).rules.map(item => item.id), ['original', 'incoming'])
+  assert.deepEqual(loadModuleDefinition(target).rules.map(item => item.id), ['original', 'incoming', 'incoming-later'])
+  assert.deepEqual(loadModuleDefinition(target).configOrder, { original: 0, incoming: 100, 'incoming-later': 110 })
+  assert.equal(loadModuleDefinition(target).source.configOrder.reserved, 90)
   assert.deepEqual(loadModuleDefinition(target).variables, { original: 'KEEP', incoming: '' })
   assert.equal(readFileSync(join(target, 'assets', 'empty.txt'), 'utf8'), '')
   assert.deepEqual(readModuleMergeSources(moduleRoot, 'merge-target').sources, ['merge-source'])
+  assert.equal(loadModuleDefinition(target).source.mergeSources.note, 'USER METADATA')
+  assert.equal(loadModuleDefinition(target).source.mergeSources.noteCopy, 'USER METADATA')
+  assert.match(readFileSync(join(target, 'module.yml'), 'utf8'), /LEDGER NOTE/)
   assert.equal(apply('merge-target', 'merge-source').changed, false)
   assert.equal(readFileSync(join(source, 'module.yml'), 'utf8'), sourceBefore)
   apply('merge-target', 'merge-source', 'remove')
   assert.deepEqual(loadModuleDefinition(target).rules.map(item => item.id), ['original'])
   assert.deepEqual(loadModuleDefinition(target).variables, { original: 'KEEP' })
   assert.deepEqual(parse(readFileSync(join(target, 'module.yml'), 'utf8')).unknown, { keep: true })
+  assert.deepEqual(loadModuleDefinition(target).source.mergeSources, { version: 1, note: 'USER METADATA', noteCopy: 'USER METADATA', sources: {} })
+  assert.match(readFileSync(join(target, 'module.yml'), 'utf8'), /LEDGER NOTE/)
+  assert.match(readFileSync(join(target, 'module.yml'), 'utf8'), /&ledger-note/)
+  assert.match(readFileSync(join(target, 'module.yml'), 'utf8'), /\*ledger-note/)
   assert.equal(existsSync(join(target, 'assets', 'empty.txt')), false)
   assert.match(readFileSync(join(target, 'module.yml'), 'utf8'), /USER COMMENT/)
   assert.equal(apply('merge-target', 'merge-source', 'remove').changed, false)
@@ -64,6 +81,16 @@ test('预览与确认拒绝身份/版本/引用冲突和非法完整候选，不
   assert.throws(() => previewModuleMerge(moduleRoot, 'guard-target', { ...request, sourceId: 'collision-source' }), /身份冲突/)
   fixture('order-target', { configOrder: { 'new-rule': 70 } })
   assert.throws(() => previewModuleMerge(moduleRoot, 'order-target', { ...request, expectedModuleId: 'order-target' }), /顺序.*冲突/)
+  const lastSequence = fixture('last-sequence-target', { rules: [rule('last', 'LAST')], configOrder: { last: 9007199254740981 } })
+  apply('last-sequence-target', 'guard-source')
+  assert.deepEqual(loadModuleDefinition(lastSequence).configOrder, { last: 9007199254740981, 'new-rule': 9007199254740991 })
+  const limitBefore = readFileSync(join(lastSequence, 'module.yml'))
+  fixture('overflow-source', { rules: [rule('overflow', 'OVERFLOW')] })
+  assert.throws(() => apply('last-sequence-target', 'overflow-source'), /配置卡排序序号超出安全整数范围/)
+  assert.deepEqual(readFileSync(join(lastSequence, 'module.yml')), limitBefore)
+  fixture('no-rules-source')
+  apply('last-sequence-target', 'no-rules-source')
+  assert.deepEqual(loadModuleDefinition(lastSequence).configOrder, { last: 9007199254740981, 'new-rule': 9007199254740991 })
   fixture('invalid-candidate', { customTools: [{ id: 'bad' }] })
   assert.throws(() => previewModuleMerge(moduleRoot, 'guard-target', { ...request, sourceId: 'invalid-candidate' }), /customTools|description/)
   const tool = id => ({ id, name: 'same_name', description: 'TOOL', output: { schema: { type: 'object', additionalProperties: true } }, execute: { kind: 'ask-user', question: 'Continue?' } })
@@ -73,6 +100,30 @@ test('预览与确认拒绝身份/版本/引用冲突和非法完整候选，不
   fixture('variables-target', { variables: { original: 'KEEP' } })
   fixture('variables-source', { variables: { incoming: 'OFF' }, variablesEnabled: false })
   assert.throws(() => previewModuleMerge(moduleRoot, 'variables-target', { expectedModuleId: 'variables-target', sourceId: 'variables-source', action: 'merge' }), /变量.*开关|variablesEnabled/)
+  const composition = '- name: "@deepseek-ai/dsh-system-prompt"\n  config:\n    prefix: "KEEP-COMPOSITION"\n'
+  for (const [index, definitions] of [
+    [{ modules: [] }, { modules: undefined, composition }],
+    [{ modules: undefined, composition }, { modules: [] }],
+  ].entries()) {
+    const targetId = `composition-target-${index}`, sourceId = `composition-source-${index}`
+    const dirs = [fixture(targetId, definitions[0]), fixture(sourceId, definitions[1])]
+    const before = dirs.map(dir => readFileSync(join(dir, 'module.yml')))
+    const rendered = dirs.map(dir => renderComposition(loadModuleSpec(dir), {}, dir))
+    const entries = dirs.map(dir => readdirSync(dir))
+    assert.match(rendered[index === 0 ? 1 : 0], /KEEP-COMPOSITION/)
+    const request = { expectedModuleId: targetId, sourceId, action: 'merge' }
+    for (const execute of [previewModuleMerge, applyModuleMerge]) {
+      assert.throws(() => execute(moduleRoot, targetId, { ...request, expectedRevision: '0'.repeat(64) }), /组合来源/)
+      assert.deepEqual(dirs.map(dir => readFileSync(join(dir, 'module.yml'))), before)
+      assert.deepEqual(dirs.map(dir => readdirSync(dir)), entries)
+      assert.deepEqual(dirs.map(dir => renderComposition(loadModuleSpec(dir), {}, dir)), rendered)
+    }
+  }
+  const aliasTarget = fixture('alias-target')
+  writeFileSync(join(aliasTarget, 'module.yml'), 'id: alias-target\nmodules: []\nrules: []\nmergeSources:\n  version: 1\n  sources: &owned {}\nunknown: *owned\n')
+  const aliasBefore = readFileSync(join(aliasTarget, 'module.yml'))
+  assert.throws(() => apply('alias-target', 'guard-source'), { code: 'shared-alias' })
+  assert.deepEqual(readFileSync(join(aliasTarget, 'module.yml')), aliasBefore)
   const missing = rule('missing', '')
   missing.then[0].config = { templateFile: './assets/missing.txt' }
   fixture('missing-source', { rules: [missing] })

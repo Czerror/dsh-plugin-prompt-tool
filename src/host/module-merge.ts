@@ -8,7 +8,7 @@ import { assertSafeRelativePath } from '../shared/asset-path.ts'
 import { moduleImportPreview, moduleMergeFiles } from './module-package.ts'
 import { assertModuleDirectory, assertModuleId, assertModuleTree } from './module-install.ts'
 import { installModuleDirectory, leftoverStageWarning } from './module-install-transaction.ts'
-import { loadModuleDefinition } from './module-slices.ts'
+import { loadModuleDefinition, nextModuleConfigSequence } from './module-slices.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
 import { ModuleWriteError, record, revisionOf, serializeWithoutSharedAlias, withModuleLock } from './module-write.ts'
 import { directoryVersionOf } from './preview-revision.ts'
@@ -108,6 +108,8 @@ function prepare(root: string, targetId: string, request: ModuleMergeRequest) {
     sourceVersion = directoryVersionOf(sourceDir)
     sourceFiles = moduleMergeFiles(root, request.sourceId)
     const source = loadModuleDefinition(sourceDir)
+    if ((Array.isArray(snapshot.source.modules) || Array.isArray(source.source.modules))
+      && (snapshot.source.composition !== undefined || source.source.composition !== undefined)) rejected('modules 与 composition 组合来源不能同时保真，请先显式处理')
     if (source.variablesEnabled !== snapshot.variablesEnabled) rejected('来源与目标的变量开关不同，无法保持两端变量语义')
     if ((source.source.contextActivationRecursive === true) !== (snapshot.source.contextActivationRecursive === true)) rejected('来源与目标的上下文递归开关不同，无法无歧义并入')
     // 元数据和未知字段的语义不能由并入器猜测；保留目标，非等值来源必须明确处理。
@@ -149,13 +151,11 @@ function prepare(root: string, targetId: string, request: ModuleMergeRequest) {
       }
       merge(definitions, source.source)
       const order = definitions.configOrder = { ...snapshot.configOrder, ...(definitions.configOrder as Record<string, number> | undefined) }
-      let sequence = Math.max(-10, ...Object.values(snapshot.configOrder)) + 10
       for (const rule of source.rules) {
         if (order[rule.id] !== undefined) rejected(`目标已有该规则身份的顺序元数据，拒绝冲突：${rule.id}`)
-        if (!Number.isSafeInteger(sequence)) rejected('并入规则顺序超出安全范围')
+        const sequence = nextModuleConfigSequence(order)
         order[rule.id] = sequence
         incoming.definitions.push({ path: ['configOrder', rule.id], value: sequence, owned: true })
-        sequence += 10
       }
       for (const file of sourceFiles) {
         if (file.path === 'module.yml') continue
@@ -200,7 +200,8 @@ function prepare(root: string, targetId: string, request: ModuleMergeRequest) {
       changed = true
     }
   }
-  if (Object.keys(sources).length > 0) definitions[LEDGER] = { version: 1, sources }
+  const ledger = { ...(record(definitions[LEDGER]) ? definitions[LEDGER] : {}), version: 1, sources }
+  if (Object.keys(sources).length > 0 || Object.keys(ledger).some(key => key !== 'version' && key !== 'sources')) definitions[LEDGER] = ledger
   else delete definitions[LEDGER]
   updateDefinition(doc, snapshot.source, definitions)
   const text = serializeWithoutSharedAlias(doc, definitions, '共享引用连带改变了未授权定义')
