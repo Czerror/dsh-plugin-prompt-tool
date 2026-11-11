@@ -203,7 +203,7 @@ runtime 事实授权按真实 Agent 的有效规则来源校验；persona 动作
 | request-params | agent/request；patch/unset 按官方 LlmCallConfig 校验 |
 | stream-output | llm/stream；pass 透传或 replace 替换为 text，不修改请求 |
 | tool-gate | tools/pre-execute 的裁决：allow / deny / ask |
-| tool-result | tools/post-execute 的结果处理：accept / replace / block |
+| tool-result | tools/post-execute 的 accept / replace / block；edit-text 在真实结果内容出口编辑已验证片段 |
 | append-context | tools/post-execute 后追加上下文；续跑统一用 inject-text 的 turn-stop 层 |
 | pre-step-filter | 前置消息来源/插件过滤 |
 | inbox-prepend | inbox 通知补充上下文 |
@@ -329,6 +329,18 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 部署期公开Config捕获在官方闭包，按Agent热改通过既有 `/early` 出口的最窄内存接缝实现。仅核验 `@deepseek-ai/dsh-tool-fs@0.2.2-rc.1`，完整入口SHA-256为 `0e866969b6bf1aa93407ccd9c944b50bc27a1d961b7e4209ed60bd2b73d28805`；指纹及owner登记、定义标记、执行、渲染四处唯一锚点整组匹配才生效。缺early、已缓存、目标失配或真实owner/依赖不可用时三项一起透传，显式关联正文暂停，无关规则继续。依赖恢复后正常重判恢复，暂停期间关闭不会重开，也不重放读取；需启动期接入时只提示用户正常重启。
 
 模型参数说明只定点更新已验证owner的原生默认行数句，保留其他贡献，再沿通用工具说明投影生成目录。关闭后新步骤恢复原owner配置，在途调用和已接受旧步骤保持原值。官方磁盘文件不变；桌面与其他发行物仍须各自验收。
+
+## 工具结果与Web功能段
+
+普通 `tool-result` 动作的 `action: edit-text` 使用 `edits: [{ region, match, text }]`；`region` 只接受 `web-notice` 或 `sandbox`，`match` 为非空精确字面量，`text` 允许空串。它只编辑已验证官方owner生成的结果说明，不重新执行renderer，不改程序输出、原值、错误身份、isError、meta或准入决定。Web包装须完整匹配其说明段，正文同词不参与替换；沙箱说明从真实结果事实与原渲染回执定位，缺失、歧义或owner引用被替换时保留原内容并报告不可用。
+
+原 `execute` 引用不变，原render/projectContent/finalizeContent保留this、参数和异常。project阶段只记录同一次执行的结果与已接受计划；其它post策略全部结算后，才在final出口求条件、消费次数并编辑。原finalize返回内容，或post接管内容、值、错误、meta、isError时，结果编辑让位。同一执行内条件共用判定帧；模型取已接受步骤冻结的modelSelection，变量与次数仍在最终出口读取和结算。关闭、更新或释放来源不改在途计划，也不重新执行工具；保留模型事实不复活已关闭步骤的调用权限。
+
+`web-notice` 支持已标记的官方Web结果；`sandbox` 支持已标记的bash、pwsh、FS、str_replace_editor及PTC结果。启动期须通过包的 `/early` 出口，在目标工具包首次加载前接入；当前仅支持 `0.2.2-rc.1` 的固定发行产物，完整指纹和唯一结构锚点在 `result-text-early.mjs` 与 `fs-tool-early.mjs` 核验。FS读取额度与结果标记由同一加载owner组合，各组分别校验必要锚点，共同产物指纹失配则都透传。不改官方磁盘文件。普通加载不能补标已缓存工具，同名自定义工具也不当作真实owner；缺early、版本/指纹失配或必要slot被接管时保持原行为。
+
+同规则结构分支中显式关联的装配正文，在实际装配toolSet缺少所需真实结果owner时局部暂停；无关规则继续。结果条件仍在结果出口求值，不在装配期提前消费；条件或受众未命中不误报依赖不可用。依赖恢复后按正常后续装配重判，暂停期间关闭的规则不重开、不重放旧调用。运行观测沿 `tool:results` 报告，保存配置不代表能力已就绪。
+
+内置limit-breaker的Web引用包装、Web身份、Web功能、沙箱结果、交付物引用与PTC沙箱说明六条规则均默认关闭。Web身份与功能使用显式原文字面候选及channelOrder 10/20处理重叠；候选缺失或歧义保持原段，重复应用不重复改写。交付物规则只删除指定禁止句，保留路径引用说明。身份、功能与交付物装配动作不依赖early；Web引用正文与结果包装同分支，受上述结果owner依赖约束。CLI没有目标Web段时保持原文。文案转换不改变实际权限，不注册或调用交付工具。真实CLI/Web与桌面组合验收另行统一执行，不能用确定性回归代替。
 
 ## 工具与参数说明
 

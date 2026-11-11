@@ -187,6 +187,8 @@ module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块i
 
 文件读取额度归普通 `host-control/file-read-limits` 动作的 `value`，不进入部署settings或独立参数表。三个可选正安全整数复用原 `RuleParameterFields` 数字原文、错误草稿、版本保存和完整候选校验；清空只撤销该字段，三项全空仍由编译拒绝，不发布为0。标签保持简短，单位及继承说明使用原hint。实际接入边界见[文件读取上限](engine-reuse.md#文件读取上限)。
 
+结果片段配置归 `module.yml.rules` 的普通 `tool-result/action: edit-text` 动作，`edits` 保存非空数组及每项的 `region/match/text`；空替文为有效删除，空匹配由完整候选校验拒绝。装配替句的 `match` 可为非空字面候选数组，候选仍按明确原文匹配，不转换为正则或逗号拼接。两者沿原规则CAS、YAML Document、切片、导入导出与发布链保存，没有独立结果配置文件或保存端点。limit-breaker新增结果/Web/交付规则全部默认关闭，只补缺失定义，已有用户模块不追加或覆盖；运行支持边界见[工具结果与Web功能段](engine-reuse.md#工具结果与web功能段)。
+
 ## 普通模块并入与来源移除
 
 `host/module-merge.ts` 经公共 `moduleMerge` bridge 处理普通模块的并入与移除。目标由 `x-module-id` 声明，载荷 `expectedModuleId` 只校验身份；来源只接受模块ID。预览不写盘，确认须携带绑定两端目录、有效包内资产与完整候选的 `expectedRevision`；目标只读、来源不可读、非法路径或链接、版本变化和候选冲突均在提交前拒绝。

@@ -55,7 +55,9 @@ function AddedEntries(props: SurfaceProps & { entryKey?: 'add' | 'replace'; tool
         {!props.toolDescription && <div className={css.surfaceSwitchRow}><span>{t('rules.surface.matchEnabled')}</span><Switch label={t('rules.surface.matchEnabled')}
           checked={entry.match !== undefined} disabled={props.disabled}
           onChange={enabled => set((entries as RecordValue[]).map((item, at) => at === index ? patched(item, { match: enabled ? '' : undefined }) : item))} /></div>}
-        {(props.toolDescription || entry.match !== undefined) && <FormField label={t('rules.surface.entryMatch')}><textarea className={ui.configTextarea} aria-label={t('rules.surface.entryMatch')} rows={3} readOnly={props.disabled}
+        {Array.isArray(entry.match) ? <TriggerJsonField {...props} fieldKey={`${props.fieldKey}:${key}:${index}:match`} label={t('rules.surface.entryMatch')} value={entry.match} shape="array"
+          onChange={match => set((entries as RecordValue[]).map((item, at) => at === index ? { ...item, match } : item))} />
+          : (props.toolDescription || entry.match !== undefined) && <FormField label={t('rules.surface.entryMatch')}><textarea className={ui.configTextarea} aria-label={t('rules.surface.entryMatch')} rows={3} readOnly={props.disabled}
           value={String(entry.match ?? '')} onChange={event => set((entries as RecordValue[]).map((item, at) => at === index ? { ...item, match: event.target.value } : item))} /></FormField>}
       </>}
       <FormField label={t('rules.surface.entryText')}><textarea className={ui.configTextarea} aria-label={t('rules.surface.entryText')} rows={3} readOnly={props.disabled}

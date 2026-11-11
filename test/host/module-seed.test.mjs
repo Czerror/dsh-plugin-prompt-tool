@@ -32,6 +32,9 @@ test('核心破限模块沿普通补种与启用表，默认关闭且已有用�
     ['shell-delete-move-guidance', false, undefined], ['shell-network-guidance', false, undefined],
     ['shell-mirror-guidance', false, undefined],
     ['file-read-limits', false, undefined],
+    ['web-reference-guidance', false, undefined], ['web-surface-identity', false, undefined],
+    ['web-surface-guidance', false, undefined], ['sandbox-result-guidance', false, undefined],
+    ['deliverable-reference-guidance', false, undefined], ['program-sandbox-result-guidance', false, undefined],
   ])
   assert.equal(readStorageConfig(root).source.enabled.includes('limit-breaker'), false)
   const initial = readModuleRules(dir), changed = { ...initial.rules[0], enabled: true, name: 'USER CHOICE' }

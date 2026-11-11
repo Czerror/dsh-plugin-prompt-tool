@@ -74,7 +74,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   'tool-result': {
     title: '工具结果处理',
-    fields: ['action', 'text'],
+    fields: ['action', 'text', 'edits'],
     events: ['tools/post-execute'],
     services: [],
     degrade: ACTION_DEGRADE.keep,

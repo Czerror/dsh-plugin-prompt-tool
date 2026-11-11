@@ -62,7 +62,9 @@ test('rule-steps: 工具链动作卡按引擎种子渲染可编辑字段，match
   const labelOf = field => t(fieldLabelKeys[field] ?? `triggers.label.${field}`)
   // 卡片操作（↑↓× 与类型选择）不是字段入口，但同在一个 aria-label 面上，按动作自己的 id 计入。
   const chromeOf = id => [t('rules.moveUp', { id }), t('rules.moveDown', { id }), t('rules.steps.remove', { id }), t('triggers.actionType')]
-  for (const [kind, fields] of Object.entries(expected)) {
+  // edits属于edit-text模式；默认replace种子仍只显示action/text。
+  const declared = { ...expected, 'tool-result': ['action', 'text', 'edits'] }
+  for (const [kind, fields] of Object.entries(declared)) {
     assert.deepEqual(ACTION_KINDS[kind].fields.filter(field => field !== 'match'), fields, `${kind} 可编辑字段集`)
   }
   // 渲染出的控件与期望逐项相等：多一个字段（例如将来被 locale 补上名字的 `match`）即红。

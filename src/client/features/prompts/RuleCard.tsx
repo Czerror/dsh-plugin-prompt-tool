@@ -63,6 +63,7 @@ export function RuleCard(props: {
     if (node.kind === 'subagent-params') targets.add('subagent:params')
     if (node.kind === 'host-control' && node.capability === 'file-read-limits') targets.add('host:file-read-limits')
     if (node.kind === 'request-params' && node.maxTokens !== undefined) targets.add('request:budget')
+    if (node.kind === 'tool-result' && node.action === 'edit-text' && Array.isArray(node.edits) && node.edits.length > 0) targets.add('tool:results')
     if (node.kind === 'persona' && (node.stripDefaultIdentity === 'preset' || node.stripDefaultIdentity === 'harness')) targets.add(`persona:identity:${node.stripDefaultIdentity}`)
     collectTargets(nodeList(node.then)); collectTargets(nodeList(node.else))
   } }

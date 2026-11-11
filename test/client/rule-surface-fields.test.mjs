@@ -105,6 +105,44 @@ test('文本条件：可选长度入口保持缺省，已声明的零边界按�
   assert.deepEqual(withoutLength, { text: { subject: 'userMessage', keys: ['重构'] } }, '显示可选入口不补入示例长度')
 })
 
+test('结果片段与装配候选保留精确JSON，不显示结果模式的示例正文', () => {
+  const action = { id: 'result', kind: 'tool-result', action: 'edit-text', edits: [
+    { region: 'web-notice', match: 'ORIGINAL, WITH COMMA', text: '' },
+  ] }
+  const before = structuredClone(action), html = render(action)
+  assert.ok(labels(html).includes(t('triggers.label.edits')))
+  assert.ok(!labels(html).includes(t('triggers.label.text')), 'edit-text不暴露互斥的顶层text')
+  assert.ok(html.includes('ORIGINAL, WITH COMMA'))
+  assert.deepEqual(action, before)
+  const candidates = ['FIRST, CANDIDATE', 'SECOND\nCANDIDATE']
+  const assembly = { id: 'assembly', kind: 'assembly', target: { sections: { replace: [
+    { name: 'app:web-surface', match: candidates, text: '' },
+  ] } } }
+  const candidateHtml = render(assembly)
+  assert.ok(candidateHtml.includes('FIRST, CANDIDATE'))
+  assert.ok(candidateHtml.includes('SECOND\\nCANDIDATE'), '候选以JSON保留换行而非逗号拼接')
+  assert.deepEqual(assembly.target.sections.replace[0].match, candidates)
+})
+
+test('结果模式切换清理互斥草稿，空片段不伪造匹配文本', async () => {
+  const { RuleParameterFields } = await withSsr([new URL('../../src/client/features/prompts/RuleFields.tsx', import.meta.url).href])
+  const fields = new Map([['result:text:nested', { raw: 'old' }], ['result:edits:0', { raw: 'old' }]])
+  let value = { id: 'result', kind: 'tool-result', action: 'replace', text: 'OLD' }
+  const changeMode = mode => {
+    const rows = RuleParameterFields({ t, value, fields, fieldKey: 'result', onDraft() {}, onChange(next) { value = next } })
+    const field = rows.find(row => row?.props?.label === t('rules.actionField.action'))
+    field.props.children.props.onChange(mode)
+  }
+  changeMode('edit-text')
+  assert.deepEqual(value, { id: 'result', kind: 'tool-result', action: 'edit-text', edits: [{ region: 'web-notice', match: '', text: '' }] })
+  assert.equal(fields.has('result:text:nested'), false)
+  changeMode('accept')
+  assert.deepEqual(value, { id: 'result', kind: 'tool-result', action: 'accept' })
+  assert.equal(fields.has('result:edits:0'), false)
+  changeMode('block')
+  assert.equal(value.text, '')
+})
+
 test('来源过滤：严格白名单和增量白名单按声明渲染，插件屏蔽独立在场', () => {
   for (const mode of ['sources', 'keepKinds']) {
     const action = { id: 'skills', kind: 'pre-step-filter', [mode]: ['user', 'skill-invocation'], blockPlugins: ['example'] }

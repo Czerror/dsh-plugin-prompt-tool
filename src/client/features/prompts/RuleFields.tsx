@@ -46,10 +46,26 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
   const { t } = props
   return Object.entries({ ...props.example, ...props.value }).map(([key, mergedValue]) => {
     if (props.omit?.includes(key)) return null
+    if (props.value.kind === 'tool-result' && props.value.action === 'edit-text' && key === 'text') return null
     const readLimitField = props.readLimits === true && ['maxLineLength', 'maxBytes', 'limit'].includes(key)
     const value = readLimitField ? props.value[key] : mergedValue
     const fieldKey = props.fieldKey + ':' + key, label = readLimitField ? t(key === 'maxLineLength' ? 'triggers.label.readMaxLineLength' : key === 'maxBytes' ? 'triggers.label.readMaxBytes' : 'triggers.label.readLimit') : props.value.kind === 'host-control' && key === 'value' ? t('triggers.label.readLimitsValue') : props.value.kind === 'request-params' && key === 'maxTokens' ? t('triggers.label.requestBudget') : props.value.kind === 'subagent-params' && key === 'tool' ? t('triggers.label.delegationTool') : props.value.kind === 'subagent-params' && key === 'provider' ? t('triggers.label.delegationProvider') : key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
-    const patch = (next: unknown): void => { const value = { ...props.value }; if (next === undefined) delete value[key]; else value[key] = next; props.onChange(value) }
+    const patch = (next: unknown): void => {
+      const updated = { ...props.value }
+      if (next === undefined) delete updated[key]; else updated[key] = next
+      if (key === 'action' && props.value.kind === 'tool-result') {
+        if (next === 'edit-text') {
+          delete updated.text
+          cleared(props.fields, props.fieldKey + ':text')
+          if (!Array.isArray(updated.edits) || updated.edits.length === 0) updated.edits = [{ region: 'web-notice', match: '', text: '' }]
+        } else {
+          delete updated.edits
+          cleared(props.fields, props.fieldKey + ':edits')
+          if ((next === 'replace' || next === 'block') && updated.text === undefined) updated.text = ''
+        }
+      }
+      props.onChange(updated)
+    }
     const requestField = props.requestPatch && props.fieldKey.endsWith(':patch')
     const choices = ruleFieldOptions(t, String(props.value.id === undefined ? props.fieldKey.split(':').at(-1) ?? '' : props.value.kind ?? ''), key)
     if (choices !== undefined && typeof value === 'string') return <FormField key={key} label={label}><MenuSelect compact ariaLabel={label} value={value} disabled={props.disabled}
@@ -72,7 +88,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     if (value !== null && typeof value === 'object' && !Array.isArray(value)) return (props.depth ?? 0) < 2
       ? <div key={key} className={css.parameterGroup}>{key !== 'config' && <h5>{label}</h5>}<div className={css.fields}><RuleParameterFields {...props} readLimits={props.value.kind === 'host-control' && props.value.capability === 'file-read-limits' && key === 'value'} depth={(props.depth ?? 0) + 1} omit={key === 'config' ? props.configOmit : undefined} fieldKey={fieldKey} value={asTriggerRecord(value)} example={asTriggerRecord(props.example?.[key])} onChange={patch} /></div></div>
       : <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="object" fieldKey={fieldKey} label={label} onChange={patch} /></div>
-    if (Array.isArray(value) && !value.every(item => typeof item === 'string')) return <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="array" fieldKey={fieldKey} label={label} onChange={patch} /></div>
+    if (Array.isArray(value) && (key === 'match' || key === 'edits' && props.value.kind === 'tool-result' || !value.every(item => typeof item === 'string'))) return <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="array" fieldKey={fieldKey} label={label} onChange={patch} /></div>
     if (Array.isArray(value)) return <div key={key} className={css.full}><TagInput label={label} value={value} disabled={props.disabled}
       placeholder={t('rules.tokens.placeholder')} removeLabel={tag => t('rules.tokens.remove', { tag })} onChange={patch} /></div>
     if (typeof value === 'boolean') return <div key={key} className={css.toggle}><span>{label}</span><span className={css.switchLine}><Switch label={label} checked={value} disabled={props.disabled} onChange={patch} /></span></div>

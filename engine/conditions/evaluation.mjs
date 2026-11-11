@@ -92,9 +92,19 @@ export function actionMatches(entry, frame) {
   }
   const branched = entry.actionWhen !== undefined || entry.bypassRuleWhen === true
   if (!branched) {
-    const hit = ruleMatches(entry.rule, frame)
-    frame.actionOutcomes.set(entry, decideRule(entry.rule, frame).outcome)
-    frame.reminders.set(entry, hit ? decideRule(entry.rule, frame).reminders ?? [] : [])
+    const cached = frame.decisions.has(entry.rule)
+    const ruled = decideRule(entry.rule, frame)
+    const blocked = ruled.hit && entry.rule?.resultTextAvailable?.(entry, frame) === false
+    const hit = ruled.hit && !blocked
+    const outcome = blocked ? 'unavailable' : ruled.outcome
+    if (blocked) {
+      if (!frame.actionDecisions.has(entry)) {
+        frame.actionDecisions.add(entry)
+        report(frame, entry.rule, outcome)
+      }
+    } else if (entry.rule !== undefined && !cached) report(frame, entry.rule, outcome)
+    frame.actionOutcomes.set(entry, outcome)
+    frame.reminders.set(entry, hit ? ruled.reminders ?? [] : [])
     return hit
   }
   // `else`（bypassRuleWhen）自带 not(if)，不叠加规则级判定；其余带分支的动作自判
@@ -112,6 +122,10 @@ export function actionMatches(entry, frame) {
       outcome = 'error'
       frame.warnOnce(`action ${entry.id} condition failed: ${String(error?.message ?? error)}`)
     }
+  }
+  if (hit && entry.rule?.resultTextAvailable?.(entry, frame) === false) {
+    hit = false
+    outcome = 'unavailable'
   }
   // 只去重上报，不缓存判定结果：同帧内重复求值仍按当次事实判定。
   if (!frame.actionDecisions.has(entry)) {
