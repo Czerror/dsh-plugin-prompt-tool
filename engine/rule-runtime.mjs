@@ -25,6 +25,7 @@ import { applyToolDescriptions } from './actions/assembly.mjs'
 import { applyTransportDescriptions, toolDescriptionObservation, settleSkillDescriptions, skillDescriptionObservation } from './tool-metadata.mjs'
 import { resultTextOwners } from './result-text-owners.mjs'
 import { bindResultTextDependencies } from './result-text.mjs'
+import { bindRepeatCompactionDependencies, filterRepeatReminderDecision, installPrunerGate, isRepeatCompactionAction, repeatReminderStatus } from './repeat-compaction-policy.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -140,6 +141,11 @@ function mountSources(ctx, sources, options = {}) {
         const { action, rule, moduleId } = item
         if (action.kind === 'request-params' && action.maxTokens !== undefined) options.collectRequestBudget({ action, rule, id: action.id, sourceModuleId: moduleId,
           actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
+        if (action.kind === 'host-control' && isRepeatCompactionAction(action)) {
+          options.collectRepeatCompaction?.({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
+            ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
+          continue
+        }
         if (action.kind === 'persona' || action.kind === 'subagent-params' || isReadLimitsAction(action) || isDelegationLimitsAction(action) || isFilesystemPolicyAction(action) || isApprovalDecisionsAction(action) || isEscalationDecisionAction(action)) {
           const collect = isEscalationDecisionAction(action) ? options.collectEscalationDecisions : isApprovalDecisionsAction(action) ? options.collectApprovalDecisions : isFilesystemPolicyAction(action) ? options.collectFilesystemPolicy : action.kind === 'persona' ? options.collectPersona : isReadLimitsAction(action) ? options.collectReadLimits : isDelegationLimitsAction(action) ? options.collectDelegationLimits : options.collectSubagentParams
           collect({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
@@ -227,6 +233,16 @@ export function createRuleRuntime(ctx, options = {}) {
   let registeredCoordinator = initialCoordinator
   let active = true
   let records = new Map()
+  const repeatSessions = new Set(), prunerBlockedSessions = new Set()
+  const repeatRelease = ctx.on('tools/post-execute', async (exec, result, next) => {
+    const enabled = repeatSessions.has(exec?.agent?.session)
+    const decision = await next()
+    if (!active || exec?.signal?.aborted || !enabled) return decision
+    return filterRepeatReminderDecision(decision, true)
+  }, { prepend: true })
+  const prunerRelease = typeof ctx.inject === 'function'
+    ? installPrunerGate(ctx, session => prunerBlockedSessions.has(session) ? false : undefined)
+    : () => {}
   let points = new Map()
   const listeners = new Map()
   const ruleOwners = new WeakMap()
@@ -274,7 +290,7 @@ export function createRuleRuntime(ctx, options = {}) {
     } catch (error) { releaseMemo(); releaseMemo = undefined; throw error }
   }
   const mount = source => {
-    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], dispose: undefined }
+    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], repeatCompaction: [], dispose: undefined }
     record.approvalDecisions = []
     record.escalationDecisions = []
     for (const rule of source.rules) {
@@ -284,6 +300,9 @@ export function createRuleRuntime(ctx, options = {}) {
     }
     for (const rule of source.rules) bindDelegationLimitsDependencies(rule, source.moduleId, delegationLimitEntries, options.onOutcome)
     for (const rule of source.rules) bindReadLimitsDependencies(rule, source.moduleId, readLimitEntries, options.onOutcome)
+    for (const rule of source.rules) bindRepeatCompactionDependencies(rule, source.moduleId, (action, agent) => action.capability === 'compaction-tool-result-pruner'
+      ? { available: prunerRelease.status?.mounted === true && prunerRelease.status?.owner?.pruneSession === prunerRelease.status?.wrapper, reason: 'official toolResultPruner unavailable' }
+      : repeatReminderStatus(agent), options.onOutcome)
     for (const rule of source.rules) bindResultTextDependencies(rule, source.moduleId, options.onOutcome)
     for (const rule of source.rules) {
       const budgets = rule.actions.filter(action => action.kind === 'request-params' && action.maxTokens !== undefined)
@@ -350,6 +369,7 @@ export function createRuleRuntime(ctx, options = {}) {
       collectFilesystemPolicy(entry) { record.filesystemPolicy.push(entry) },
       collectApprovalDecisions(entry) { record.approvalDecisions.push(entry) },
       collectEscalationDecisions(entry) { record.escalationDecisions.push(entry) },
+      collectRepeatCompaction(entry) { record.repeatCompaction.push(entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -553,6 +573,7 @@ export function createRuleRuntime(ctx, options = {}) {
           next.set(source.moduleId, record)
         }
         records = next
+        repeatSessions.clear(); prunerBlockedSessions.clear()
         requestBudgetConflict(ruleFrame('agent/request', [{ agent: options.agent }], warnOnce, ctx), true)
         prepareReadLimits(readLimitEntries(), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx), true)
         prepareDelegationLimits(delegationLimitEntries(), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx), true)
@@ -591,6 +612,19 @@ export function createRuleRuntime(ctx, options = {}) {
     prepareAssembly(context) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
+      const policyFrame = assemblyFrame(context ?? { agent: options.agent })
+      const session = policyFrame.subject?.agent?.session ?? context?.agent?.session ?? options.agent?.session
+      const policies = [...records.values()].flatMap(record => record.repeatCompaction)
+      if (session !== undefined) {
+        repeatSessions.delete(session); prunerBlockedSessions.delete(session)
+        for (const entry of policies) if (entry.rule.enabled !== false && actionMatches(entry, policyFrame)) {
+          if (entry.action.capability === 'repeat-tool-reminder') repeatSessions.add(session)
+          if (entry.action.capability === 'compaction-tool-result-pruner') {
+            if (prunerRelease.status?.mounted === true) prunerBlockedSessions.add(session)
+            else { try { options.onOutcome?.({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, actionId: entry.id, channel: 'host:compaction-tool-result-pruner', outcome: 'unavailable', identityOutcome: 'condition-unavailable', reason: 'official toolResultPruner injection unavailable' }) } catch {} }
+          }
+        }
+      }
       const step = toolStepFor(context)
       if (step != null) step.escalationDecisions = prepareEscalationDecisions([...records.values()].flatMap(record => record.escalationDecisions), assemblyFrame(context ?? { agent: options.agent }), context)
       if (step != null) step.approvalDecisions = prepareApprovalDecisions([...records.values()].flatMap(record => record.approvalDecisions), assemblyFrame(context ?? { agent: options.agent }))
@@ -722,6 +756,9 @@ export function createRuleRuntime(ctx, options = {}) {
       points.clear()
       releaseFallback?.()
       releaseMemo?.()
+      repeatRelease?.()
+      prunerRelease?.()
+      repeatSessions.clear(); prunerBlockedSessions.clear()
       if (ownsPool) pool.dispose()
     },
   }

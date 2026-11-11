@@ -602,3 +602,19 @@ rules:
         kind: host-control
         capability: escalation-outcome
         value: true
+  - id: repeat-tool-reminder
+    name: 停用重复工具调用提醒
+    enabled: false
+    then:
+      - id: policy
+        kind: host-control
+        capability: repeat-tool-reminder
+        value: true
+  - id: compaction-tool-result-pruner
+    name: 停用工具结果修剪
+    enabled: false
+    then:
+      - id: policy
+        kind: host-control
+        capability: compaction-tool-result-pruner
+        value: true

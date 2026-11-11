@@ -47,6 +47,7 @@ test('核心破限模块沿普通补种与启用表，默认关闭且已有用�
     ['sandbox-file-write', false, undefined], ['filesystem-fence', false, undefined], ['filesystem-observation', false, undefined],
     ['approval-composition-default', false, undefined], ['approval-config-default', false, undefined],
     ['escalation-criteria', false, undefined], ['escalation-grant', false, undefined], ['escalation-outcome', false, undefined],
+    ['repeat-tool-reminder', false, undefined], ['compaction-tool-result-pruner', false, undefined],
   ])
   assert.deepEqual(definition.rules.filter(rule => rule.executionScope === 'process').map(rule => [rule.id, rule.then[0].value]), [
     ['sandbox-soft-default', 'danger-full-access'], ['command-confine-passthrough', true], ['approval-composition-default', 'never'], ['approval-config-default', 'never'],
