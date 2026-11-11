@@ -562,6 +562,13 @@ export function createRuleRuntime(ctx, options = {}) {
           const accepted = frame.frozenActionMatches ??= new Map()
           accepted.set(entry, hit)
           const outcome = frame.actionOutcomes.get(entry) ?? 'miss'
+          const ruled = frame.decisions.get(entry.rule)
+          const condition = ruled?.outcome === 'unavailable' ? entry.rule.conditionTrees?.when
+            : entry.bypassRuleWhen || ruled?.hit ? entry.action.conditions : undefined
+          const missingTool = outcome === 'unavailable' && step != null && condition?.tool !== undefined
+            && !step.toolDescriptionSource.has(condition.tool.name) ? condition.tool.name : undefined
+          const conditionReason = missingTool === undefined ? undefined
+            : `tool condition ${JSON.stringify(missingTool)} target missing from resolved tool step; skipped`
           const reasons = []
           const plan = { entries: Object.freeze(hit ? entry.action.target.toolDescriptions.map(value => Object.freeze({ ...value })) : []),
             plugin: `module:${entry.sourceModuleId}/rule:${entry.rule.id}`, warnOnce, owner: ctx }
@@ -573,7 +580,7 @@ export function createRuleRuntime(ctx, options = {}) {
             actionId: entry.id, agentId: context.agent?.id, definitionRevision: entry.rule.definitionRevision,
             outcome: reasons.length > 0 ? 'unavailable' : outcome,
             identityOutcome: reasons.length > 0 ? 'target-mismatch' : hit ? 'matched' : outcome === 'error' ? 'error' : outcome === 'unavailable' ? 'condition-unavailable' : 'condition-miss',
-            ...(reasons.length > 0 ? { reason: reasons.join('; ') } : {}) })
+            ...(reasons.length > 0 ? { reason: reasons.join('; ') } : conditionReason === undefined ? {} : { reason: conditionReason }) })
           if (step == null) { try { options.onOutcome?.(plan.observation) } catch { /* 诊断不改变装配 */ } }
           else {
             const plans = step.toolDescriptions ??= []

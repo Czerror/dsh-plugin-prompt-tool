@@ -27,7 +27,8 @@ test('核心模块工具说明按精确来源变换，bash/pwsh/fs约束、环�
   const agent = { id: 'tool-description-main', session: { id: 'tool-description-main', header: {}, snapshotEvents: () => [] } }
   const scope = createScope(root, agent)
   agent.ctx = scope.ctx
-  const runtime = createRuleRuntime(scope.ctx, { agent })
+  const observations = []
+  const runtime = createRuleRuntime(scope.ctx, { agent, onOutcome: value => observations.push(value) })
   t.after(async () => { runtime.dispose(); await scope.dispose(); await root.fiber.dispose() })
   const enable = selected => runtime.replace([{ moduleId: 'limit-breaker', rules: compileRules(definition.rules.map(rule => ({ ...rule, enabled: selected.includes(rule.id) })), { moduleId: 'limit-breaker' }) }])
   enable(ids)
@@ -82,8 +83,8 @@ test('核心模块工具说明按精确来源变换，bash/pwsh/fs约束、环�
   for (const [name, original] of originals) assert.equal(rendered.definitions.get(name), original, '全部关闭恢复原定义')
   for (const name of ['bash', 'pwsh']) {
     registrations.get(name)()
-    root.tools.register({ name, description: `ENVIRONMENT ${name}\n${name === 'pwsh' ? network : mirror}\nKEEP LINE`,
-      parameters: { type: 'object', properties: {} }, output: { schema: { type: 'string' }, render: () => [] }, execute: () => name })
+    registrations.set(name, root.tools.register({ name, description: `ENVIRONMENT ${name}\n${name === 'pwsh' ? network : mirror}\nKEEP LINE`,
+      parameters: { type: 'object', properties: {} }, output: { schema: { type: 'string' }, render: () => [] }, execute: () => name }))
   }
   enable(['shell-network-guidance'])
   rendered = await render()
@@ -97,4 +98,14 @@ test('核心模块工具说明按精确来源变换，bash/pwsh/fs约束、环�
   rendered = await render()
   assert.equal(rendered.definitions.get('bash').description, `ENVIRONMENT bash\n${mirror}\nKEEP LINE`)
   assert.equal(rendered.definitions.get('pwsh').description, `ENVIRONMENT pwsh\n${network}\nKEEP LINE`)
+  registrations.get('pwsh')()
+  enable(['shell-network-guidance', 'shell-delete-move-guidance'])
+  observations.length = 0
+  rendered = await render()
+  assert.equal(rendered.definitions.has('pwsh'), false, '缺失工具不由说明规则注册')
+  for (const actionId of ['network', 'pwsh-paths']) {
+    const diagnostic = observations.find(value => value.channel === 'tool:descriptions' && value.actionId === actionId)
+    assert.equal(diagnostic?.identityOutcome, 'condition-unavailable')
+    assert.equal(diagnostic?.reason, 'tool condition "pwsh" target missing from resolved tool step; skipped')
+  }
 })

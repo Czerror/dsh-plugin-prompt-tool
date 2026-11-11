@@ -192,6 +192,18 @@ test('工具说明拒绝不明目标和混合正文，诊断失败且下一步�
   const diagnostic = () => h.runtime.ruleDiagnostics().records.find(record => record.channel === 'tool:descriptions')
   assert.equal(diagnostic()?.identityOutcome, 'target-mismatch')
   assert.match(diagnostic().reason, /missing/)
+  for (const condition of [
+    { variable: { scope: 'runtime', key: 'unknown', op: 'eq', value: 'ready' } },
+    { all: [{ tool: { name: 'keep' } }, { variable: { scope: 'runtime', key: 'unknown', op: 'eq', value: 'ready' } }] },
+  ]) {
+    rules[0].if = condition; h.write(); await h.runtime.refresh()
+    const unavailable = await render()
+    assert.equal(unavailable.set.view(h.agent).get('keep').description, 'keep')
+    assert.equal(diagnostic()?.identityOutcome, 'condition-unavailable', '未知事实不误报为目标失配')
+    assert.equal(diagnostic()?.reason, undefined, '工具就绪时不把其它条件不可用报成缺工具')
+    unavailable.set.dispose()
+  }
+  delete rules[0].if; h.write(); await h.runtime.refresh()
   h.root.tools.register({ name: 'missing', description: 'KNOWN SENTENCE', parameters: { type: 'object', properties: {} },
     output: { schema: { type: 'object' }, render: () => [] }, execute: () => ({}) })
   const arrived = await render()
