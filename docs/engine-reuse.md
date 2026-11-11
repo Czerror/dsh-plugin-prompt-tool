@@ -1,5 +1,11 @@
 # 统一规则引擎复用指南
 
+规则 `executionScope` 缺省 `agent`；`process` 每模块在现有发布队列贡献一次，即使没有活动 Agent 也初始化、观察保存并撤回。当前进程规则仅接受无条件的三个构造默认动作：`host-control` 的 `sandbox-soft-default: danger-full-access`、`approval-composition-default: never` 和 `approval-config-default: never`（值写在 `value`）。会话、受众、消息及嵌套 Agent 条件、Agent 注入动作均拒绝；不自动开启其他规则。定义、切片、规则工具与模块导出保留作用域。
+
+这三个动作只影响启用后经官方 Loader 真正重新构造的策略或审批实例，已构造对象与既有会话不追改；关闭恢复后续构造默认。沙箱与审批组合默认只替换官方 base 的省略配置表达式，环境显式覆盖和用户显式配置保留，非法组合仍由官方 permission-presets 拒绝。不能把已启动进程中保存成功或普通重启等同于先前已构造对象生效。需要早期入口、精确 Loader 与策略/审批发行产物验证；缺入口、缓存或失配的原因经既有规则诊断显示，已验证也只标记后续构造可用。
+
+新主会话 full-access 继承由官方 permission-presets 原生提供：部署是 full-access 且用户没有指定其他默认时，新会话采用 full-access；显式默认、后续用户选择和既有日志保持，子代理仍走官方捕获与委派策略事件。插件不添加同义开关，也不覆盖用户钉选。
+
 `host-control/delegation-limits` 的 `value.maxDepth` 为非负安全整数，`value.askTimeout` 为1–2147483秒整数；至少声明一项。内置核心模块分别提供默认关闭的深度10和等待300秒规则。深度仅替代官方spawn工具省略的配置，显式配置与provider-managed保留；等待仅替代调用的timeout=-1，省略和有限值由官方owner处理。两个早期owner分别校验，缺失只暂停显式依赖该目标的分支。参数按当前Agent已接受步骤封存，后续重判才接受更新；关闭不改已创建子代理或在途提问，取消沿原信号。普通入口缺失早期owner时需用户重启DSH并选用early入口。
 
 规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → createRuleRuntime(...).replace` 装配到 Agent scope；一次性调用仍可使用 `mountRuleSources`。这是两段式生命周期：`compileRules` 只编译与校验（产物每条规则携带 `conditionTrees`，选项里的 `ctx` / `standingMountFor` / `variableStore` / `manifestCheck` 会被显式剥掉），条件在来源注册前由 `rebindConditions` 绑定。原因是 `preset` 谓词要挂载 scope 的 ctx（`conditions/preset.mjs` 把服务查询基准绑在构造期），准备期拿不到——那边绑出来的 `preset` 条件是恒 UNAVAILABLE 的静默死条件。需要官方模块导出的兜底时，由调用方通过 options 传 `standingMountFor`；重绑含 `preset`、含 `variable`、含 `manifest`、含 `phase` 且未显式 `subscribe: false`、或含 `anchor.after` 动作引用的树，其余谓词原样保留。规则实例、条件绑定和运行状态按 Agent 私有，不跨 Agent 复用可变的准备产物。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。

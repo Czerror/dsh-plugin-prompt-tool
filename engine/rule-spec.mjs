@@ -14,9 +14,10 @@ import { identityOf, textRegistrationName } from './delivery.mjs'
 import { AUDIENCE_ALL, audienceOf, intersectAudiences } from './audience.mjs'
 import { isFixedRegistration } from './fixed-registration.mjs'
 import { record } from './record.mjs'
+import { isProcessDefaultAction } from './process-defaults.mjs'
 
 /** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
-const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'groupScope', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
+const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'executionScope', 'layer', 'group', 'groupScope', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
 const nonempty = value => typeof value === 'string' && value.trim().length > 0
 const hasSoulCondition = node => node !== null && typeof node === 'object'
   && (Object.hasOwn(node, 'soul') || Object.values(node).some(hasSoulCondition))
@@ -248,6 +249,8 @@ export function compileRules(specs, options = {}) {
     for (const key of ['enabled', 'exclusive']) if (spec[key] !== undefined && typeof spec[key] !== 'boolean') throw new TypeError(`rule ${spec.id}.${key} must be boolean`)
     for (const key of ['name', 'group']) if (spec[key] !== undefined && typeof spec[key] !== 'string') throw new TypeError(`rule ${spec.id}.${key} must be string`)
     if (spec.groupScope !== undefined && !['module', 'cross-module'].includes(spec.groupScope)) throw new TypeError(`rule ${spec.id}.groupScope must be "module" or "cross-module"`)
+    if (spec.executionScope !== undefined && !['agent', 'process'].includes(spec.executionScope)) throw new TypeError(`rule ${spec.id}.executionScope must be agent or process`)
+    if (spec.executionScope === 'process' && spec.if !== undefined) throw new TypeError(`rule ${spec.id}: process defaults do not read Agent conditions`)
     if (spec.layer !== undefined && !KNOWN_LAYERS.has(spec.layer)) throw new TypeError(`rule ${spec.id}: unknown layer ${spec.layer}`)
     // 旧名已按引擎重构退役：显式拒绝并给出新名，比 "unknown fields" 更可直接照做。
     if (spec.when !== undefined) throw new TypeError(`rule ${spec.id}: "when" 已退役，改用 "if"`)
@@ -358,6 +361,10 @@ export function compileRules(specs, options = {}) {
       }
       return Object.assign(action, { execution, channelOrder, waterfallPosition, actionIndex, actionWhen, bypassRuleWhen: bypass, branchPath, conditions: structuredClone(actionConditions) })
     })
+    for (const action of actions) {
+      if ((spec.executionScope === 'process') !== isProcessDefaultAction(action)) throw new TypeError(`rule ${spec.id}: process defaults require executionScope process and only process actions`)
+      if (spec.executionScope === 'process' && action.conditions !== undefined) throw new TypeError(`rule ${spec.id}: process defaults do not read Agent conditions`)
+    }
     const pointOrders = new Map()
     for (const action of actions) {
       const key = `${action.execution.channel}:${action.execution.phase}:${action.waterfallPosition}`
@@ -367,6 +374,7 @@ export function compileRules(specs, options = {}) {
     }
     return {
       id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, groupScope: spec.groupScope ?? 'module', exclusive: spec.exclusive === true, enabled: spec.enabled !== false,
+      executionScope: spec.executionScope ?? 'agent',
       sequence, when, actions, promptConfigOptions: options.promptConfigOptions,
       definitionRevision: options.ruleRevisions?.[spec.id],
       variables: options.variables, variablesEnabled: options.variablesEnabled,

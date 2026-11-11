@@ -24,8 +24,8 @@ export const ACTION_KINDS = Object.freeze({
     events: ['system-prompt/assemble'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
-    timing: '装配时接受当前 Agent 的额度，调用开始后保持该次快照。',
-    note: 'file-read-limits 配置行长、总字节和行数；delegation-limits 配置省略时的子代理深度与无限提问等待替代秒数。未声明字段保留官方 owner 配置。',
+    timing: 'Agent 额度采用本次快照；process 软默认仅作用后续真实 owner 构造。',
+    note: 'file-read-limits 配置读取额度；delegation-limits 配置委派与等待额度。process 作用域的 sandbox-soft-default、approval-composition-default、approval-config-default 分别控制后续真实构造的沙箱/审批组合/审批配置软默认，显式值保持，已构造实例不追改。',
   },
   'subagent-params': {
     title: '委派参数',

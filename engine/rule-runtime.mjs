@@ -105,7 +105,7 @@ function mountSources(ctx, sources, options = {}) {
       try { rebindConditions([source], { ctx, standingMountFor: options.standingMountFor, promotionPool: pool, variableStore: options.variableStore, manifestCheck: options.manifestCheck, soulReminder: options.soulReminder }) }
       catch (error) { throw sourceError(error, source.moduleId) }
     }
-    const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false))
+    const rules = sources.flatMap(source => source.rules.filter(rule => rule.enabled !== false && rule.executionScope !== 'process'))
     const observer = wireTriggerObservers(ctx, [
       ...rules,
       ...rules.flatMap(rule => (rule.actions ?? [])
@@ -114,6 +114,7 @@ function mountSources(ctx, sources, options = {}) {
     ], { plugin: options.plugin ?? 'rule-engine', warnOnce })
     if (observer) releases.push(observer)
     for (const source of sources) for (const [ruleIndex, rule] of source.rules.entries()) {
+      if (rule.executionScope === 'process') continue
       if (rule.enabled === false) continue
       for (const action of rule.actions) {
         const item = { moduleId: source.moduleId, ruleIndex, rule, action }

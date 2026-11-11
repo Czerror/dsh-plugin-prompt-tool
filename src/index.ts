@@ -242,6 +242,7 @@ registerTuiCommand(
         if (assembly === mounted) assembly = undefined
         return mounted.dispose()
       }, 'prompt-tool assembly')
+      return mounted.settled()
     })
     yield () => agentsFiber.dispose()
   }, 'prompt-tool persona and assembly')

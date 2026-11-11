@@ -22,6 +22,8 @@ export interface RuleDefinition {
   id: string
   name?: string
   enabled?: boolean
+  /** 缺省 agent；process 只贡献一次，仅影响后续对象。 */
+  executionScope?: 'agent' | 'process'
   layer?: InjectionPoint
   group?: string
   /** 互斥组作用域；缺省只在本模块内生效。 */

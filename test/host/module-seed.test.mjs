@@ -38,6 +38,11 @@ test('核心破限模块沿普通补种与启用表，默认关闭且已有用�
     ['web-reference-guidance', false, undefined], ['web-surface-identity', false, undefined],
     ['web-surface-guidance', false, undefined], ['sandbox-result-guidance', false, undefined],
     ['deliverable-reference-guidance', false, undefined], ['program-sandbox-result-guidance', false, undefined],
+    ['sandbox-soft-default', false, undefined], ['approval-composition-default', false, undefined],
+    ['approval-config-default', false, undefined],
+  ])
+  assert.deepEqual(definition.rules.filter(rule => rule.executionScope === 'process').map(rule => [rule.id, rule.then[0].value]), [
+    ['sandbox-soft-default', 'danger-full-access'], ['approval-composition-default', 'never'], ['approval-config-default', 'never'],
   ])
   assert.equal(readStorageConfig(root).source.enabled.includes('limit-breaker'), false)
   const initial = readModuleRules(dir), changed = { ...initial.rules[0], enabled: true, name: 'USER CHOICE' }

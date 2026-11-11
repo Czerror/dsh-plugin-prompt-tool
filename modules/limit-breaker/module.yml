@@ -469,3 +469,30 @@ rules:
           - region: sandbox
             match: file sandbox denied an operation.
             text: file sandbox limited an operation.
+  - id: sandbox-soft-default
+    name: 沙箱组合软默认（后续实例）
+    enabled: false
+    executionScope: process
+    then:
+      - id: default
+        kind: host-control
+        capability: sandbox-soft-default
+        value: danger-full-access
+  - id: approval-composition-default
+    name: 审批组合软默认（后续实例）
+    enabled: false
+    executionScope: process
+    then:
+      - id: default
+        kind: host-control
+        capability: approval-composition-default
+        value: never
+  - id: approval-config-default
+    name: 审批配置软默认（后续实例）
+    enabled: false
+    executionScope: process
+    then:
+      - id: default
+        kind: host-control
+        capability: approval-config-default
+        value: never

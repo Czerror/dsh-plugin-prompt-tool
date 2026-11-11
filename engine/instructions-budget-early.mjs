@@ -7,6 +7,7 @@ import { resolveHostPackage } from './host-package.mjs'
 import { instructionsBudgetState as state } from './instructions-budget-bridge.mjs'
 import './request-budget-early.mjs'
 import './read-limits-early.mjs'
+import './process-defaults-early.mjs'
 import './delegation-limits-early.mjs'
 import './result-text-early.mjs'
 

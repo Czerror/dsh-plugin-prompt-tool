@@ -25,6 +25,7 @@ import { MANIFEST_CHECK_SERVICE } from '../../engine/service-names.mjs'
 import { packageEngineDir, resolveModuleDir } from '../host/module-dirs.ts'
 import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { loadModuleSpec, readModulesRevision } from '../host/module-spec.ts'
+import { processDefaultsState } from '../../engine/process-defaults.mjs'
 import type { ModuleSpec } from '../host/module-spec.ts'
 import { modelRequestRules } from '../host/prompt-configs.ts'
 import { pluginKind, pluginOwner } from '../../engine/source-kind.mjs'
@@ -142,7 +143,7 @@ function engineModuleFile(engineDir: string, id: string): string | undefined {
 }
 
 export interface PreparedAssembly {
-  rules: unknown[]
+  rules: ReturnType<typeof compileRules>
   modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>, options?: { agent: Agent; sourceModuleId: string; sourceModuleDir: string; recoveryState: ReturnType<typeof createGenerationRecoveryState>; contextRuntimeOf: typeof contextRuntimeOf }) => unknown; config: Record<string, unknown> }>
   services: Set<string>
   moduleId: string
@@ -348,6 +349,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const manifestCheck = ctx.get(MANIFEST_CHECK_SERVICE)
   const recoveryState = createGenerationRecoveryState(join(dirname(options.moduleRoot), 'generation-recovery'))
   const ruleDiagnostics = createRuleDiagnosticsLedger()
+  const processSources = new Map<string, () => void>()
+  let processStamp: string | undefined
   const initialization = createModuleInitialization(ctx)
   const lastGood = new WeakMap<Agent, Map<string, PreparedAssembly>>()
   const sourceVersions = new WeakMap<PreparedAssembly, string>()
@@ -607,7 +610,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
           const ids = options.enabledModules(), stamp = assemblyStamp(ids)
           if (publishingContent !== undefined && contentSignature(ids) === publishingContent) return
           const agents = new Set([...knownAgents, ...(ctx.get('agents')?.list() ?? [])])
-          let changed = false
+          let changed = processStamp !== stamp
           for (const agent of agents) {
             if (disposed.has(agent)) continue
             const current = mounts.get(agent.id)
@@ -632,6 +635,16 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const candidates = []
     const signatureSnapshot = contentSignature(ids)
     const versions = new Map(ids.map(id => [id, contentSignature([id])]))
+    const processCandidates = new Map<string, PreparedAssembly | null>()
+    for (const id of ids) {
+      try {
+        const spec = loadModuleSpec(assertModuleDirectory(options.moduleRoot, id))
+        processCandidates.set(id, spec.rules?.some(rule => rule.executionScope === 'process')
+          ? await prepareAssembly(options.moduleRoot, id, name => ctx.get(name) !== undefined) : null)
+      } catch (error) {
+        failures.push(new Error(`模块 ${id}（进程）准备失败：${failureReason(error)}`, { cause: error }))
+      }
+    }
     for (const agent of live) {
       const previous = mounts.get(agent.id)
       if (retry === true) rejectedVersions.delete(agent)
@@ -697,6 +710,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     }
     // 跨来源冲突仍在撤旧之前拒绝，不替用户选择赢家。
     for (const { agent, prepared } of candidates) validatePrepared(agent, prepared)
+    validateCrossModuleGroups([...processCandidates.values()].filter((item): item is PreparedAssembly => item !== null))
     const changed: typeof candidates = []
     try {
       for (const candidate of candidates) {
@@ -749,6 +763,24 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       }
       throw error
     }
+    if (!active) return
+    // Agent 批次异常会在上面回滚并抛出；process 只在该批次可发布后提交。
+    for (const [id, item] of processCandidates) {
+      const release = item === null ? undefined : processDefaultsState.replaceRules(id, item.rules)
+      processSources.get(id)?.()
+      if (release === undefined) processSources.delete(id)
+      else processSources.set(id, release)
+      for (const rule of item?.rules ?? []) if (rule.executionScope === 'process' && rule.enabled !== false) {
+        for (const action of rule.actions) {
+          const status = processDefaultsState.status(action.capability)
+          ruleDiagnostics.record({ moduleId: id, ruleId: rule.id, actionId: action.id, channel: 'host:process-defaults',
+            definitionRevision: rule.definitionRevision as string | undefined, outcome: status.available ? 'hit' : 'unavailable',
+            identityOutcome: status.available ? 'matched' : 'condition-unavailable', reason: status.reason })
+        }
+      }
+    }
+    for (const [id, release] of processSources) if (!ids.includes(id)) { release(); processSources.delete(id) }
+    processStamp = assemblyStamp(ids)
     for (const { agent } of candidates) {
       const good = lastGood.get(agent)
       for (const id of good?.keys() ?? []) if (!ids.includes(id)) good?.delete(id)
@@ -840,6 +872,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     for (const [file, listener] of watched) unwatchFile(file, listener)
     watched.clear()
     knownAgents.clear()
+    for (const release of processSources.values()) release()
+    processSources.clear()
     return publication.dispose().then(() => pending).then(async () => {
       for (const id of mounts.keys()) await release(id)
     })
@@ -853,6 +887,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   } catch (error) {
     warn(error)
   }
+  publication.schedule()
   return {
     settled: async () => {
       let previous: Promise<void>
@@ -882,6 +917,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       for (const [file, listener] of watched) unwatchFile(file, listener)
       watched.clear()
       knownAgents.clear()
+      for (const release of processSources.values()) release()
+      processSources.clear()
       await publication.dispose()
       await pending
       for (const id of mounts.keys()) await release(id)

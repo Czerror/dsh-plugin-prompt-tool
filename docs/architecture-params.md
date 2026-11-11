@@ -1,5 +1,7 @@
 # 后端参数框架
 
+规则正文包含可选 `executionScope: agent | process`，省略时为 agent；该字段沿既有完整规则正文、切片与模块复制导出保存，启停仍归原 `_settings.yml`。process 规则仅保存支持的无条件构造软默认，不接受 Agent 私有条件。内置三个软默认卡初始关闭，只补缺失模块，已有用户定义不追加或覆盖；作用时机与原生新会话继承见[引擎指南](engine-reuse.md)。
+
 委派额度归普通 `host-control/delegation-limits` 的 `value`：可选 `maxDepth`（非负安全整数）与 `askTimeout`（1–2147483秒），至少一项。复用规则数字原文、错误草稿与版本保存，清空撤销该字段，空对象与非法数字拒绝发布；内置10/300只是可编辑初值。
 
 本页说明模块定义、持久变量、人设、版本事务与保存边界。规则语义以 `engine/rule-spec.mjs` 为准，共享参数以 `src/shared/engine-params.ts` 为准，bridge 以 `src/shared/bridge-contract.ts` 为准；文档不建立第二份字段校验器。

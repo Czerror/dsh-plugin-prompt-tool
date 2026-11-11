@@ -63,6 +63,7 @@ export function RuleCard(props: {
     if (node.kind === 'subagent-params') targets.add('subagent:params')
     if (node.kind === 'host-control' && node.capability === 'file-read-limits') targets.add('host:file-read-limits')
     if (node.kind === 'host-control' && node.capability === 'delegation-limits') targets.add('host:delegation-limits')
+    if (node.kind === 'host-control' && ['sandbox-soft-default', 'approval-composition-default', 'approval-config-default'].includes(String(node.capability))) targets.add('host:process-defaults')
     if (node.kind === 'request-params' && node.maxTokens !== undefined) targets.add('request:budget')
     if (node.kind === 'assembly') {
       const target = asTriggerRecord(node.target)
@@ -98,11 +99,14 @@ export function RuleCard(props: {
       }} /></AutoSaveSelection.Provider>
       </span></span>}>
     <div className={css.body} data-rule-editor>
-      {targets.size > 0 && <p role="status">{t(rule.enabled === false ? 'rules.identity.disabled' : 'rules.identity.enabled')} · {t(rule.enabled === false || props.disabled ? 'rules.identity.unverified' : availability)}</p>}
+      {targets.size > 0 && <p role="status">{t(rule.enabled === false ? 'rules.identity.disabled' : 'rules.identity.enabled')} · {t(rule.enabled === false || props.disabled ? 'rules.identity.unverified' : rule.executionScope === 'process' && availability === 'rules.identity.matched' ? 'rules.processReady' : availability)}</p>}
       {observed.some(record => record.reason) && <p>{observed.filter(record => record.reason).map(record => record.reason).join(' · ')}</p>}
       <div className={css.fields}>
         <FormField label={t('rules.rename')}><TextInput value={rule.id} spellCheck={false} readOnly={disabled} onChange={event => patch({ id: event.target.value })} /></FormField>
         <FormField label={t('rules.name')}><TextInput value={rule.name ?? ''} readOnly={disabled} onChange={event => patch({ name: event.target.value || undefined })} /></FormField>
+        <FormField label={t('rules.executionScope')} hint={t('rules.processHint')}><MenuSelect compact ariaLabel={t('rules.executionScope')} value={rule.executionScope ?? 'agent'} disabled={disabled}
+          options={[{ value: 'agent', label: t('rules.agentScope') }, { value: 'process', label: t('rules.processScope') }]}
+          onChange={executionScope => patch({ executionScope: executionScope as RuleDefinition['executionScope'] })} /></FormField>
         <FormField label={t('rules.layer')}><MenuSelect compact className={css.control} ariaLabel={t('rules.layer')} value={rule.layer ?? ''} disabled={disabled}
           options={[{ value: '', label: t('rules.module') }, ...props.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]}
           onChange={layer => patch({ layer: layer === '' ? undefined : layer as RuleDefinition['layer'] })} /></FormField>
