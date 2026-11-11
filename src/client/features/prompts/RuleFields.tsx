@@ -44,9 +44,10 @@ export function removeConditionDraft<T>(fields: Map<string, T>, prefix: string, 
 /** 标量就地编辑，对象平铺；未知字段随对象保留，深结构用 JSON。 */
 export function RuleParameterFields(props: FieldContext & { value: Record<string, unknown>; example?: Record<string, unknown>; omit?: string[]; configOmit?: string[]; depth?: number; requestPatch?: boolean; readLimits?: boolean; onChange: (value: Record<string, unknown>) => void }): ReactNode {
   const { t } = props
-  return Object.entries({ ...props.example, ...props.value }).map(([key, value]) => {
+  return Object.entries({ ...props.example, ...props.value }).map(([key, mergedValue]) => {
     if (props.omit?.includes(key)) return null
     const readLimitField = props.readLimits === true && ['maxLineLength', 'maxBytes', 'limit'].includes(key)
+    const value = readLimitField ? props.value[key] : mergedValue
     const fieldKey = props.fieldKey + ':' + key, label = readLimitField ? t(key === 'maxLineLength' ? 'triggers.label.readMaxLineLength' : key === 'maxBytes' ? 'triggers.label.readMaxBytes' : 'triggers.label.readLimit') : props.value.kind === 'host-control' && key === 'value' ? t('triggers.label.readLimitsValue') : props.value.kind === 'request-params' && key === 'maxTokens' ? t('triggers.label.requestBudget') : props.value.kind === 'subagent-params' && key === 'tool' ? t('triggers.label.delegationTool') : props.value.kind === 'subagent-params' && key === 'provider' ? t('triggers.label.delegationProvider') : key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
     const patch = (next: unknown): void => { const value = { ...props.value }; if (next === undefined) delete value[key]; else value[key] = next; props.onChange(value) }
     const requestField = props.requestPatch && props.fieldKey.endsWith(':patch')
