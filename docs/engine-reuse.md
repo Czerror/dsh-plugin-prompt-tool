@@ -63,6 +63,8 @@ Soul 的常驻 `soul-tools` 在 runtime-context 提醒完成跨回合任务、�
 
 ### 执行状态与接入
 
+`repeat-tool-reminder` 与 `compaction-tool-result-pruner` 是默认关闭的 `host-control` 能力，`value: true` 分别停用官方重复工具调用提醒与工具结果修剪。缺少 owner 时仅暂停命中分支，owner 晚到在下一次正常装配恢复；关闭规则影响后续步骤，已接受调用保留快照。重复提醒过滤只移除官方来源，其他 stop、block、追加上下文和普通压缩保持不变。修剪按 Agent/session 隔离，disposer 与 owner 释放撤回后续正常装配贡献；repeat 取消透传已接受的官方结果，不泛化取消服务方法。成功压缩推进 Epoch，失败压缩不推进。
+
 - 普通规则按真实执行点判定。条件/动作资格先于模板求值，禁用或受众不符的 setter 不影响 reader。
 - `template-evaluation.mjs` 返回正文、读取域和单域变更集；`template-frame.mjs` 通过显式变量 adapter 读取、CAS 提交和发布。
 - 执行身份由运行 Agent、取消信号与官方 turn/step durable 边界确定；assembly 与其后的 pre-step 共用同一次执行。账本独立于 mount，提交后重挂或重复出口只重用结果。

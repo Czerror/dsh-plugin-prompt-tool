@@ -55,7 +55,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
       const updated = { ...props.value }
       if (next === undefined) delete updated[key]; else updated[key] = next
       if (key === 'capability' && props.value.kind === 'host-control' && next !== props.value.capability) {
-        updated.value = ['escalation-criteria', 'escalation-grant', 'escalation-outcome', 'command-confine-passthrough', 'sandbox-file-write', 'filesystem-fence', 'filesystem-observation'].includes(String(next)) ? true : next === 'sandbox-soft-default' ? 'danger-full-access'
+        updated.value = ['escalation-criteria', 'escalation-grant', 'escalation-outcome', 'command-confine-passthrough', 'sandbox-file-write', 'filesystem-fence', 'filesystem-observation', 'repeat-tool-reminder', 'compaction-tool-result-pruner'].includes(String(next)) ? true : next === 'sandbox-soft-default' ? 'danger-full-access'
           : next === 'approval-composition-default' || next === 'approval-config-default' ? 'never'
             : next === 'approval-decisions' ? { autoGrant: false, autoReviewPassthrough: false, toolAskAllow: false }
               : next === 'provider-hook-decisions' ? { 'claude-code': true }

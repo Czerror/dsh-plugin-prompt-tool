@@ -98,6 +98,11 @@ export function actionMatches(entry, frame) {
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
     return false
   }
+  if (!frame.ignoreRepeatCompactionDependency && entry.rule?.repeatCompactionAvailable?.(entry, frame) === false) {
+    frame.actionOutcomes.set(entry, 'unavailable')
+    if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
+    return false
+  }
   if (!frame.ignoreInstructionsDependency && entry.rule?.instructionsAvailable?.(entry) === false) {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
