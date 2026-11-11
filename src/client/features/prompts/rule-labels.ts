@@ -8,7 +8,7 @@ export function triggerLabel(t: PromptToolTranslate, name: string): string {
 }
 
 const FIELD_OPTIONS: Record<string, Record<string, readonly string[]>> = {
-  'host-control': { capability: ['file-read-limits'] },
+  'host-control': { capability: ['file-read-limits', 'delegation-limits'] },
   'tool-gate': { decision: ['allow', 'deny', 'ask'] },
   'tool-result': { action: ['accept', 'replace', 'block', 'edit-text'] },
   'stream-output': { mode: ['pass', 'replace'] },

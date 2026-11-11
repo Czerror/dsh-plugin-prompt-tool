@@ -1,5 +1,7 @@
 # 后端参数框架
 
+委派额度归普通 `host-control/delegation-limits` 的 `value`：可选 `maxDepth`（非负安全整数）与 `askTimeout`（1–2147483秒），至少一项。复用规则数字原文、错误草稿与版本保存，清空撤销该字段，空对象与非法数字拒绝发布；内置10/300只是可编辑初值。
+
 本页说明模块定义、持久变量、人设、版本事务与保存边界。规则语义以 `engine/rule-spec.mjs` 为准，共享参数以 `src/shared/engine-params.ts` 为准，bridge 以 `src/shared/bridge-contract.ts` 为准；文档不建立第二份字段校验器。
 
 ## 原生格式与持久状态

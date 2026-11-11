@@ -1,5 +1,7 @@
 # 统一规则引擎复用指南
 
+`host-control/delegation-limits` 的 `value.maxDepth` 为非负安全整数，`value.askTimeout` 为1–2147483秒整数；至少声明一项。内置核心模块分别提供默认关闭的深度10和等待300秒规则。深度仅替代官方spawn工具省略的配置，显式配置与provider-managed保留；等待仅替代调用的timeout=-1，省略和有限值由官方owner处理。两个早期owner分别校验，缺失只暂停显式依赖该目标的分支。参数按当前Agent已接受步骤封存，后续重判才接受更新；关闭不改已创建子代理或在途提问，取消沿原信号。普通入口缺失早期owner时需用户重启DSH并选用early入口。
+
 规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → createRuleRuntime(...).replace` 装配到 Agent scope；一次性调用仍可使用 `mountRuleSources`。这是两段式生命周期：`compileRules` 只编译与校验（产物每条规则携带 `conditionTrees`，选项里的 `ctx` / `standingMountFor` / `variableStore` / `manifestCheck` 会被显式剥掉），条件在来源注册前由 `rebindConditions` 绑定。原因是 `preset` 谓词要挂载 scope 的 ctx（`conditions/preset.mjs` 把服务查询基准绑在构造期），准备期拿不到——那边绑出来的 `preset` 条件是恒 UNAVAILABLE 的静默死条件。需要官方模块导出的兜底时，由调用方通过 options 传 `standingMountFor`；重绑含 `preset`、含 `variable`、含 `manifest`、含 `phase` 且未显式 `subscribe: false`、或含 `anchor.after` 动作引用的树，其余谓词原样保留。规则实例、条件绑定和运行状态按 Agent 私有，不跨 Agent 复用可变的准备产物。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。
 
 编辑保存与运行注入分别负责：客户端只提交合法草稿，普通保存完成写盘与切片验证后立即确认 `persisted`，运行发布由装配通道按 300ms 合并。发送消息不等待自动保存；官方 `systemPrompt.assemble()` 开始、同步 provider 求值之前，插件提前处理已保存规则定义的变化。`refreshOnly` 同样提前发布并等待真实结果；显式发布、文件观察与请求前检查使用同一调度通道，同版本不会重复重挂。变量值仍在模板求值时读取，不因值更新重挂规则。

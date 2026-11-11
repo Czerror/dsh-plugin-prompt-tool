@@ -24,8 +24,8 @@ export const ACTION_KINDS = Object.freeze({
     events: ['system-prompt/assemble'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
-    timing: '装配时接受当前 Agent 的读取额度，调用开始后保持该次快照。',
-    note: 'file-read-limits 的三个可选正整数分别覆盖行长、总字节和行数；未声明字段保留官方 owner 配置。',
+    timing: '装配时接受当前 Agent 的额度，调用开始后保持该次快照。',
+    note: 'file-read-limits 配置行长、总字节和行数；delegation-limits 配置省略时的子代理深度与无限提问等待替代秒数。未声明字段保留官方 owner 配置。',
   },
   'subagent-params': {
     title: '委派参数',

@@ -16,6 +16,7 @@ import { prepareToolVisibility } from './tool-visibility.mjs'
 import { validatePersonaAction } from './persona.mjs'
 import { validateSubagentParams } from '../subagent-params.mjs'
 import { validateReadLimits } from '../read-limits.mjs'
+import { validateDelegationLimits } from '../delegation-limits.mjs'
 export { ACTION_KINDS, ACTION_DEGRADE } from './catalog.mjs'
 export { actionSupportsWhen, actionExecutionPoint } from './registration.mjs'
 const DEFAULT_PLUGIN = 'prompt-actions'
@@ -83,7 +84,8 @@ export function prepareAction(action, options = {}) {
     return () => { throw new TypeError('subagent-params requires createRuleRuntime.prepareAssembly') }
   }
   if (kind === 'host-control') {
-    validateReadLimits(action)
+    if (action.capability === 'delegation-limits') validateDelegationLimits(action)
+    else validateReadLimits(action)
     return () => { throw new TypeError('host-control requires createRuleRuntime.prepareAssembly') }
   }
   const max = action?.maxPerTurn

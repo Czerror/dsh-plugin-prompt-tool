@@ -32,6 +32,7 @@ test('核心破限模块沿普通补种与启用表，默认关闭且已有用�
     ['shell-delete-move-guidance', false, undefined], ['shell-network-guidance', false, undefined],
     ['shell-mirror-guidance', false, undefined],
     ['file-read-limits', false, undefined],
+    ['subagent-default-depth', false, undefined], ['question-wait-cap', false, undefined],
     ['subagent-scope-guidance', false, undefined], ['ptc-escalation-guidance', false, undefined],
     ['skill-badge-guidance', false, undefined],
     ['web-reference-guidance', false, undefined], ['web-surface-identity', false, undefined],

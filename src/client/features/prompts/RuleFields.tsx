@@ -42,17 +42,22 @@ export function removeConditionDraft<T>(fields: Map<string, T>, prefix: string, 
   }
 }
 /** 标量就地编辑，对象平铺；未知字段随对象保留，深结构用 JSON。 */
-export function RuleParameterFields(props: FieldContext & { value: Record<string, unknown>; example?: Record<string, unknown>; omit?: string[]; configOmit?: string[]; depth?: number; requestPatch?: boolean; readLimits?: boolean; onChange: (value: Record<string, unknown>) => void }): ReactNode {
+export function RuleParameterFields(props: FieldContext & { value: Record<string, unknown>; example?: Record<string, unknown>; omit?: string[]; configOmit?: string[]; depth?: number; requestPatch?: boolean; readLimits?: boolean; delegationLimits?: boolean; onChange: (value: Record<string, unknown>) => void }): ReactNode {
   const { t } = props
   return Object.entries({ ...props.example, ...props.value }).map(([key, mergedValue]) => {
     if (props.omit?.includes(key)) return null
     if (props.value.kind === 'tool-result' && props.value.action === 'edit-text' && key === 'text') return null
     const readLimitField = props.readLimits === true && ['maxLineLength', 'maxBytes', 'limit'].includes(key)
-    const value = readLimitField ? props.value[key] : mergedValue
+    const delegationLimitField = props.delegationLimits === true && ['maxDepth', 'askTimeout'].includes(key)
+    const value = readLimitField || delegationLimitField ? props.value[key] : mergedValue
     const fieldKey = props.fieldKey + ':' + key, label = readLimitField ? t(key === 'maxLineLength' ? 'triggers.label.readMaxLineLength' : key === 'maxBytes' ? 'triggers.label.readMaxBytes' : 'triggers.label.readLimit') : props.value.kind === 'host-control' && key === 'value' ? t('triggers.label.readLimitsValue') : props.value.kind === 'request-params' && key === 'maxTokens' ? t('triggers.label.requestBudget') : props.value.kind === 'subagent-params' && key === 'tool' ? t('triggers.label.delegationTool') : props.value.kind === 'subagent-params' && key === 'provider' ? t('triggers.label.delegationProvider') : key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
     const patch = (next: unknown): void => {
       const updated = { ...props.value }
       if (next === undefined) delete updated[key]; else updated[key] = next
+      if (key === 'capability' && props.value.kind === 'host-control' && next !== props.value.capability) {
+        updated.value = next === 'delegation-limits' ? { maxDepth: 10, askTimeout: 300 } : { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 }
+        cleared(props.fields, props.fieldKey + ':value')
+      }
       if (key === 'action' && props.value.kind === 'tool-result') {
         if (next === 'edit-text') {
           delete updated.text
@@ -86,7 +91,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     if (enums !== undefined && typeof value === 'string') return <FormField key={key} label={label}><MenuSelect compact ariaLabel={label} className={css.control} value={value} disabled={props.disabled}
       options={[...new Set([...enums, value])].map(item => ({ value: item, label: translateLabel(t, labels, item) }))} onChange={next => patch(key === 'audience' && next === '' ? undefined : next)} /></FormField>
     if (value !== null && typeof value === 'object' && !Array.isArray(value)) return (props.depth ?? 0) < 2
-      ? <div key={key} className={css.parameterGroup}>{key !== 'config' && <h5>{label}</h5>}<div className={css.fields}><RuleParameterFields {...props} readLimits={props.value.kind === 'host-control' && props.value.capability === 'file-read-limits' && key === 'value'} depth={(props.depth ?? 0) + 1} omit={key === 'config' ? props.configOmit : undefined} fieldKey={fieldKey} value={asTriggerRecord(value)} example={asTriggerRecord(props.example?.[key])} onChange={patch} /></div></div>
+      ? <div key={key} className={css.parameterGroup}>{key !== 'config' && <h5>{props.value.kind === 'host-control' && props.value.capability === 'delegation-limits' && key === 'value' ? t('triggers.option.delegation-limits') : label}</h5>}<div className={css.fields}><RuleParameterFields {...props} readLimits={props.value.kind === 'host-control' && props.value.capability === 'file-read-limits' && key === 'value'} delegationLimits={props.value.kind === 'host-control' && props.value.capability === 'delegation-limits' && key === 'value'} depth={(props.depth ?? 0) + 1} omit={key === 'config' ? props.configOmit : undefined} fieldKey={fieldKey} value={asTriggerRecord(value)} example={props.value.kind === 'host-control' && props.value.capability === 'delegation-limits' && key === 'value' ? { maxDepth: 10, askTimeout: 300 } : asTriggerRecord(props.example?.[key])} onChange={patch} /></div></div>
       : <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="object" fieldKey={fieldKey} label={label} onChange={patch} /></div>
     if (Array.isArray(value) && (key === 'match' || key === 'edits' && props.value.kind === 'tool-result' || !value.every(item => typeof item === 'string'))) return <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="array" fieldKey={fieldKey} label={label} onChange={patch} /></div>
     if (Array.isArray(value)) return <div key={key} className={css.full}><TagInput label={label} value={value} disabled={props.disabled}
@@ -96,12 +101,12 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     const textLength = ['minChars', 'maxChars'].includes(key) && props.fieldKey.endsWith(':text')
     const instructionsBudget = readLimitField || ['instructionsMaxBytes', 'maxPromoteSteps'].includes(key) || key === 'maxTokens' && !requestField
     const delegationDepth = key === 'maxDepth'
-    const optionalNumber = readLimitField || requestField && ['temperature', 'maxTokens'].includes(key)
+    const optionalNumber = readLimitField || delegationLimitField || requestField && ['temperature', 'maxTokens'].includes(key)
     if (typeof value === 'number' || optionalNumber) {
       const retained = props.fields.get(fieldKey)
       const draft = retained && (retained.error || retained.text !== retained.source || retained.text === String(value ?? '') || typeof value === 'number' && Number(retained.text) === value) ? retained : undefined
       return <FormField key={key} label={label} hint={readLimitField ? t(key === 'maxLineLength' ? 'triggers.hint.readMaxLineLength' : key === 'maxBytes' ? 'triggers.hint.readMaxBytes' : 'triggers.hint.readLimit') : undefined} hintMode={readLimitField ? 'tooltip' : undefined} error={draft?.error}><TextInput aria-label={label} inputMode="decimal" readOnly={props.disabled} value={draft?.text ?? String(value ?? '')}
-        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0) && (!textLength || Number.isSafeInteger(Number(text)) && Number(text) >= 0) && (!instructionsBudget || Number.isSafeInteger(Number(text)) && Number(text) > 0) && (!delegationDepth || Number.isSafeInteger(Number(text)) && Number(text) >= 0); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
+        onChange={event => { const text = event.target.value, empty = text.trim() === '', valid = optionalNumber && empty || !empty && Number.isFinite(Number(text)) && (!fallbackNumber || Number.isInteger(Number(text)) && Number(text) > 0) && (!textLength || Number.isSafeInteger(Number(text)) && Number(text) >= 0) && (!instructionsBudget || Number.isSafeInteger(Number(text)) && Number(text) > 0) && (!delegationDepth || Number.isSafeInteger(Number(text)) && Number(text) >= 0) && (!(delegationLimitField && key === 'askTimeout') || Number.isInteger(Number(text)) && Number(text) >= 1 && Number(text) <= 2147483); props.fields.set(fieldKey, { source: valid ? text : String(value ?? ''), text, error: valid ? '' : t('triggers.number') }); if (valid) patch(empty ? undefined : Number(text)); props.onDraft() }} /></FormField>
     }
     const multiline = ['text', 'prompt', 'prefix', 'suffix', 'template', 'description', 'instructionHint'].includes(key)
     const text = String(value ?? '')

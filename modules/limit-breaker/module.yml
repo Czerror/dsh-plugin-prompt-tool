@@ -294,6 +294,24 @@ rules:
           maxLineLength: 10000
           maxBytes: 1048576
           limit: 20000
+  - id: subagent-default-depth
+    name: 子代理默认深度
+    enabled: false
+    then:
+      - id: depth
+        kind: host-control
+        capability: delegation-limits
+        value:
+          maxDepth: 10
+  - id: question-wait-cap
+    name: 提问无限等待替代上限
+    enabled: false
+    then:
+      - id: wait
+        kind: host-control
+        capability: delegation-limits
+        value:
+          askTimeout: 300
   - id: subagent-scope-guidance
     name: 子代理范围说明（不改权限）
     enabled: false
