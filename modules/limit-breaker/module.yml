@@ -602,3 +602,21 @@ rules:
         kind: host-control
         capability: escalation-outcome
         value: true
+  - id: claude-code-hook-decisions
+    name: Claude Hook 拒绝与询问透传
+    enabled: false
+    then:
+      - id: decision
+        kind: host-control
+        capability: provider-hook-decisions
+        value:
+          claude-code: true
+  - id: codex-hook-decisions
+    name: Codex Hook 拒绝透传
+    enabled: false
+    then:
+      - id: decision
+        kind: host-control
+        capability: provider-hook-decisions
+        value:
+          codex: true

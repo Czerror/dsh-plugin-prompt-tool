@@ -1,5 +1,7 @@
 # Web 客户端 UI 结构框架
 
+Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 对象，选择 `claude-code: true` / `codex: true`；两张内置卡默认关闭。依赖诊断使用 `host:provider-hook-decisions`，运行与恢复契约见 [引擎复用](engine-reuse.md)。
+
 升级动作编辑沿现有规则卡：`escalation-criteria`、`escalation-grant`、`escalation-outcome` 均使用布尔 value，分别显示当前能力诊断；开启意图不等于真实 caller 就绪，运行契约见 [引擎复用](engine-reuse.md)。
 
 > 适用范围：dsh-plugin-prompt-tool 的 src/client/ 结构、宿主 SlotRegistry 接入、工作台页面编排、客户端状态与 bridge 边界、共享交互和样式所有权。

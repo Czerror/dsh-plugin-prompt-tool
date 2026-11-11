@@ -1,5 +1,9 @@
 # 统一规则引擎复用指南
 
+`host-control / provider-hook-decisions` 的 `value` 选择 `claude-code: true` 或 `codex: true`（也可同时选择）。普通内置模块两卡默认关闭。它保留官方 Hook 执行、原始审计和 context，仅绕过本 owner 的 UserPromptSubmit、PreToolUse、PostToolUse、Stop 的 deny 出口，以及 Claude 独有 ask 出口；其他 owner 和下游拒绝保持。四事件在接受时冻结当前 Agent 自己的规则计划，只取该事件的 modelSelection，缺模型时模型条件 unavailable，不读取 Agent 下一步模型。关闭、撤回和 owner 释放影响后续调用，不重放历史动作。
+
+两个可选官方包逐一验证实际解析版本、完整发行指纹和四事件 anchor；缺失或失配仅暂停显式依赖该目标的分支，并显示原因。owner 必须成功读取配置，且经官方 scope 路由对当前 Agent 可达；消费结果时仍检查 owner 存活和调用取消。在途热改保持已接受计划，释放或取消不能沿旧计划授权。重新装配 owner 后在下次正常重判恢复，early 入口需用户重启 DSH 后生效。该动作不接受投递次数预算或 outermost 排序。nested 仅指部署中实际解析到的另一份副本，未装配不声称已验证；原生 Stop deny 会 steer、prompt deny 会 reject，不另建空动作或旁路伪用户正文。真实 CLI/Web 组合验收另行执行。
+
 升级请求由三个独立 `host-control` 能力控制，`value: true`，内置卡默认关闭：`escalation-criteria` 跳过阶梯、缺审批服务与缺 Agent 的显式检查，但仍调用真实审批（缺服务仍会失败）；`escalation-grant` 直接返回本次 requestedMode；`escalation-outcome` 只将 rejected/cancelled/unavailable 三种审批结果转为本次 mode，不吞其他错误或任务总取消。直接授信优先于其他两项，但不关闭工具管线或其他 owner 的拒绝。
 
 四个官方调用者（文件、bash、pwsh、PTC）在各自已有原始发行指纹 owner 内组合适配，传递当次 exec 的 toolSet/modelSelection；sandbox 独有早期入口只改其升级函数。身份不进入原审批请求或审计正文，不从最近 Agent 猜步骤。规则按当前 Agent 可达的真实 caller 及其 scope/生命周期判定依赖；可选目标未装配不阻断其他路径，实际缺失或失配的路径不可借其他 caller 就绪。await 前固定步骤快照，撤回影响后续步骤，owner 释放后不复活。需用户重启 DSH 并选用 early 入口后生效；已有用户模块不自动追加卡片。

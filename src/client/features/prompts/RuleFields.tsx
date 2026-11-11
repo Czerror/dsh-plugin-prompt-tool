@@ -58,6 +58,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
         updated.value = ['escalation-criteria', 'escalation-grant', 'escalation-outcome', 'command-confine-passthrough', 'sandbox-file-write', 'filesystem-fence', 'filesystem-observation'].includes(String(next)) ? true : next === 'sandbox-soft-default' ? 'danger-full-access'
           : next === 'approval-composition-default' || next === 'approval-config-default' ? 'never'
             : next === 'approval-decisions' ? { autoGrant: false, autoReviewPassthrough: false, toolAskAllow: false }
+              : next === 'provider-hook-decisions' ? { 'claude-code': true }
               : next === 'delegation-limits' ? { maxDepth: 10, askTimeout: 300 } : { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 }
         cleared(props.fields, props.fieldKey + ':value')
       }
