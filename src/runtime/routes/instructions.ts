@@ -221,7 +221,7 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
           createdRuleId ??= error.createdRuleId
           if (error.persisted) {
             const committed = loadModuleDefinition(dir)
-            tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...published(error.message) } })
+            tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...(error.activationPending === undefined ? {} : { activationPending: error.activationPending }), ...published(error.message) } })
             return
           }
           tx.write(error.status, { ok: false, code: error.code, message: error.message })

@@ -35,7 +35,7 @@
 module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改。rules/ 是物化投影：
 
 - `<ruleId>.yml`：id/name/layer/if/then/else 正文。
-- `_settings.yml`：规则启停、group、exclusive、order、模块变量开关与完整性元数据；人设正文留在对应规则切片。
+- `_settings.yml`：规则启停、group、groupScope、exclusive、order、模块变量开关与完整性元数据；人设正文留在对应规则切片。
 - `variables.yml`：模块变量投影。
 
 读取只认清单内切片，名单外备份、同步副本等由用户拥有，不读、不改、不删。清单内缺失或失配从有效完整定义单向恢复；完整定义非法则报错，不能用切片反向修复。规则文件名拒绝保留名、大小写冲突、设备名和路径字符。
@@ -63,17 +63,19 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 | 操作 | 版本与载荷 |
 |---|---|
 | 编辑正文 | 目标规则 revision；提交完整 rule，保留未改字段 |
-| 修改启停/group/exclusive | `settingsChanged: true` 并校验 settings |
+| 修改启停/group/groupScope/exclusive | `settingsChanged: true` 并校验 settings |
 | 新增/删除/改名 | 同时校验 settings；改名/删除同步 configOrder |
-| 启用互斥卡 | `activateRuleId`，同一次事务关闭组内其他卡 |
+| 启用互斥卡 | `activateRuleId`，同一次事务关闭参与组内其他卡 |
 | 删除整规则 | `rule: null`；工具不会根据删除叶子推断删除父规则 |
 | 仅校验 | `validateOnly: true`，完整候选编译且不写盘 |
 
-同模块同名非空 group 中任一卡 exclusive:true，整组最多一条启用。多启用候选拒绝，不按排序挑赢家。正文保存不覆盖并发状态。非法条件、重复动作身份、越权目录、失效版本都在提交前拒绝。
+同模块同名非空 group 中任一卡 exclusive:true，整组最多一条启用。`groupScope` 缺省为 `module`；显式 `cross-module` 时，规则事务只在已启用模块和本次目标之间联动关闭同组成员，停用模块草稿不参与。多启用候选拒绝，不按排序挑赢家。正文保存不覆盖并发状态。非法条件、重复动作身份、越权目录、失效版本都在提交前拒绝。
 
 确认条件的 `after: { action: seed }` 保存相对动作 id，编译与挂载时补全模块/规则身份；模板复制与规则自动改名不重写内部引用。完整候选在写盘前校验目标存在、独立投递能力、身份唯一和依赖无环。工作台可添加/清除 `after` 与 `fallbackAfter`，清除即删键；示例默认值不因展示而写入，省略兜底表示持续等待。旧专用锚定策略和参数不作兼容或自动迁移。
 
 每次事务使用 YAML Document 保留注释和未知元数据，提交前复核版本与目录。模块锁序列化保存和恢复；正文/变量切片先准备，module.yml 原子替换为提交点，再发布清单。多文件替换不宣称物理同时原子。提交前失败恢复旧投影；提交后切片发布失败返回 `persisted`、新版本、`publicationPending` 和 `publicationError`，保留最后有效运行贡献。切片验证完成后，普通保存登记后台运行发布，不等待 Agent 重挂。
+
+跨模块选择逐模块提交；后续成员写入失败时，已保存的目标不回滚，响应仍返回目标当前规则和版本，以及 `persisted:true`、`publicationPending:true`、`publicationError` 和 `activationPending`（本次选择的规则 id）。此时重试须用返回的新版本再次提交该 `activateRuleId`，不重放已保存的正文；目标已经启用也仍完成成员关闭。客户端保留此选择并优先重试保存，成功后才走正常发布；纯运行发布失败才用 `refreshOnly`。不保存恢复日志或选择栈，不承诺跨文件崩溃原子性。
 
 **共享引用守卫（`shared-alias`）**：YAML 的 anchor/alias 会让一次「只改 A」的编辑连带改掉 B，因此每次写事务都必须自证「只改了自己声明的字段」——声明完整候选的路径（规则编辑、存储配置）走 `module-write.ts#serializeWithoutSharedAlias`（序列化失败与候选不一致同判），改-后-比对的路径走 `assertUnownedUnchanged`，`withModuleDefinition` 的调用方必须用必填的 `{ owns }` 声明本次编辑拥有的顶层键。判定不通过一律 400 `shared-alias` 且零写盘，拒绝文案点名被连带改动的键。
 

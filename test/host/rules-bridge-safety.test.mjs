@@ -61,6 +61,52 @@ function harness({ readonly = false, rebuildFails = false, afterRebuild, onResol
 const rules = [{ id: 'budget', if: { phase: { promoted: false } }, then: [{ id: 'request', kind: 'request-params', patch: { maxTokens: 64 }, modelScope: 'all' }] }]
 const createEdits = items => items.map(rule => ({ previousId: null, rule }))
 
+test('跨模块选择部分写盘：bridge 返回已保存目标版本，客户端重试完成选择后再发布', async () => {
+  const h = harness()
+  const peerId = `partial-peer-${++sequence}`, peerDir = join(moduleRoot, peerId), peerFile = join(peerDir, 'module.yml')
+  mkdirSync(peerDir, { recursive: true })
+  const member = (id, enabled, exclusive) => ({ id, enabled, exclusive, group: 'partial', groupScope: 'cross-module', then: [{ id: 'text', kind: 'inject-text', config: { text: id } }] })
+  writeFileSync(h.file, JSON.stringify({ id: h.id, modules: [], rules: [member('chosen', false, true)] }))
+  writeFileSync(peerFile, JSON.stringify({ id: peerId, modules: [], rules: [member('previous', true, false)] }))
+  const { setModuleEnabled } = await import('../../src/host/config-store.ts')
+  const { readModuleRules } = await import('../../src/host/module-rules.ts')
+  setModuleEnabled(moduleRoot, peerId, true)
+  test.after(() => setModuleEnabled(moduleRoot, peerId, false))
+  const draft = getRulesDraft(createWorkspaceDrafts(), h.id), calls = [], replies = []
+  const editor = createRuleEditor(h.id, draft, { request: async body => {
+    calls.push(body)
+    const result = await h.call(body)
+    replies.push(result)
+    return result
+  }, enqueue: async (_id, task) => task(), isCurrent: () => true, changed: () => {} })
+  await editor.load()
+  const before = draft.revisions.settings
+  editor.patch(draft.entries[0].key, { ...draft.entries[0].value, enabled: true })
+  const rename = fs.renameSync
+  mock.method(fs, 'renameSync', (from, to, ...args) => {
+    if (String(to) === peerFile) throw new Error('PEER_WRITE_FAILED')
+    return rename(from, to, ...args)
+  })
+  syncBuiltinESMExports()
+  try { assert.equal(await editor.submit({ activateRuleId: 'chosen' }), false) }
+  finally { mock.restoreAll(); syncBuiltinESMExports() }
+  const response = replies.at(-1)
+  assert.equal(response.ok, true)
+  assert.equal(response.value.persisted, true)
+  assert.equal(response.value.publicationPending, true)
+  assert.equal(response.value.activationPending, 'chosen')
+  assert.notEqual(draft.revisions.settings, before)
+  assert.deepEqual(draft.revisions, readModuleRules(h.directory).revisions)
+  assert.equal(h.rebuilds, 0)
+  assert.equal(editor.retryKind, 'save')
+  assert.equal(await editor.retry(), true)
+  assert.equal(calls.at(-1).activateRuleId, 'chosen')
+  assert.equal(calls.at(-1).refreshOnly, undefined)
+  assert.equal(readModuleRules(peerDir).rules[0].enabled, false)
+  assert.equal(draft.publicationPending, false)
+  assert.equal(h.rebuilds, 1)
+})
+
 test('声明读取、只校验、写盘、物化和清空往返；注释与未知字段保留', async () => {
   const h = harness()
   const retired = await h.call({}, {}, 'triggers')

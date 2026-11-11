@@ -43,6 +43,7 @@ export interface PromptConfigSpec {
   order?: number
   role?: SpecEnum<'role'>
   group?: string
+  groupScope?: 'module' | 'cross-module'
   exclusive?: boolean
   position?: SpecEnum<'position'>
   dedupe?: SpecEnum<'dedupe'>

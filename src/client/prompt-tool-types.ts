@@ -46,6 +46,7 @@ export interface PromptConfigDraft extends PromptConfigSourceView {
   order?: number
   role?: string
   group?: string
+  groupScope?: 'module' | 'cross-module'
   exclusive?: boolean
   mergeMode?: string
   sourceKind?: string

@@ -6,7 +6,7 @@ import { moduleDirExists, userModulesDir } from '../../host/module-dirs.ts'
 import { appendModuleConfigOrder, readModuleConfigOrder, saveModuleConfigOrder } from '../../host/module-config-order.ts'
 import { ModuleNameError, readModuleName, writeModuleName } from '../../host/module-name.ts'
 import { ModuleWriteError } from '../../host/module-write.ts'
-import { enabledModuleIds, setModuleEnabled } from '../../host/config-store.ts'
+import { enabledModuleIds, setModuleEnabled, validateModuleEnabled } from '../../host/config-store.ts'
 import type { ModuleConfigIdentity } from '../../shared/module-config-order.ts'
 import { BRIDGE_ENDPOINTS, readEditTarget } from '../../shared/bridge-contract.ts'
 import { published, type PublicationFields } from '../../shared/publication.ts'
@@ -179,6 +179,7 @@ export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> 
       const run = runtime.moduleOrderQueue.run(async () => {
         try {
           if (enabled) {
+            validateModuleEnabled(userModulesDir(), id, true)
             appendModuleConfigOrder(userModulesDir(), id)
           }
           setModuleEnabled(userModulesDir(), id, enabled)

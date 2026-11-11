@@ -5,6 +5,7 @@ import type { ModelDetection } from './models.ts'
 import type { PromptSettings } from '../config.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import { readModuleRules, editModuleRules } from '../host/module-rules.ts'
+import { ModuleWriteError } from '../host/module-write.ts'
 import { resolveModuleParams } from '../host/module-params.ts'
 import { loadModuleSpec } from '../host/module-spec.ts'
 import { ENGINE_PARAM_DEFINITIONS, type EngineParamKey } from '../shared/engine-params.ts'
@@ -223,6 +224,7 @@ export function registerTuiCommand(
               ...(next ? { activateRuleId: id } : { edits: [{ previousId: id, rule: { ...current, enabled: false }, settingsChanged: true }] }),
             })
           } catch (error) {
+            if (error instanceof ModuleWriteError && error.persisted) return { kind: 'error', text: error.message }
             return { kind: 'error', text: `保存规则失败：${error instanceof Error ? error.message : String(error)}` }
           }
           try { await refreshModule(declared) } catch (error) {

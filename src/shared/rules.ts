@@ -24,6 +24,8 @@ export interface RuleDefinition {
   enabled?: boolean
   layer?: InjectionPoint
   group?: string
+  /** 互斥组作用域；缺省只在本模块内生效。 */
+  groupScope?: 'module' | 'cross-module'
   exclusive?: boolean
   /** 分支条件；缺省 = 无条件。 */
   if?: RuleCondition
@@ -46,8 +48,8 @@ export interface RuleRevisions {
   settings: string
   variables: string
 }
-export type RuleContent = Omit<RuleDefinition, 'enabled' | 'group' | 'exclusive'>
-export interface RuleSettings { order: number; enabled?: boolean; group?: string; exclusive?: boolean }
+export type RuleContent = Omit<RuleDefinition, 'enabled' | 'group' | 'groupScope' | 'exclusive'>
+export interface RuleSettings { order: number; enabled?: boolean; group?: string; groupScope?: 'module' | 'cross-module'; exclusive?: boolean }
 
 export interface RulesRequest {
   expectedModuleId?: string
@@ -57,7 +59,7 @@ export interface RulesRequest {
   /** 直接创建一条规则；宿主读取目标、分配目标内唯一 id 并提交。 */
   createRule?: RuleDefinition
   edits?: RuleEdit[]
-  /** 显式启用目标；保存端同时停用同模块互斥组的其他卡。 */
+  /** 显式启用目标；保存端同时停用参与互斥组的其他卡。 */
   activateRuleId?: string
   validateOnly?: boolean
   /** 只重新发布已提交定义，不能与规则修改或候选校验混用。 */
@@ -79,6 +81,8 @@ export interface RuleEditorMeta {
 }
 
 export interface RulesSnapshot extends PublicationFields {
+  /** 目标已保存、跨模块选择未完成；用当前版本重试 activateRuleId。 */
+  activationPending?: string
   rules: RuleDefinition[]
   revisions: RuleRevisions
   meta: RuleEditorMeta

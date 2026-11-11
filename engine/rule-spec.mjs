@@ -16,7 +16,7 @@ import { isFixedRegistration } from './fixed-registration.mjs'
 import { record } from './record.mjs'
 
 /** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
-const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
+const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'layer', 'group', 'groupScope', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
 const nonempty = value => typeof value === 'string' && value.trim().length > 0
 const hasSoulCondition = node => node !== null && typeof node === 'object'
   && (Object.hasOwn(node, 'soul') || Object.values(node).some(hasSoulCondition))
@@ -163,7 +163,7 @@ export function injectionConfigSpec(rule, action, options = {}) {
 export function validateRuleGroups(rules) {
   const groups = new Map()
   for (const rule of rules) {
-    if (!nonempty(rule.group)) continue
+    if (!nonempty(rule.group) || rule.groupScope === 'cross-module') continue
     const group = groups.get(rule.group) ?? []; group.push(rule); groups.set(rule.group, group)
   }
   for (const [name, group] of groups) {
@@ -247,6 +247,7 @@ export function compileRules(specs, options = {}) {
     ids.add(spec.id)
     for (const key of ['enabled', 'exclusive']) if (spec[key] !== undefined && typeof spec[key] !== 'boolean') throw new TypeError(`rule ${spec.id}.${key} must be boolean`)
     for (const key of ['name', 'group']) if (spec[key] !== undefined && typeof spec[key] !== 'string') throw new TypeError(`rule ${spec.id}.${key} must be string`)
+    if (spec.groupScope !== undefined && !['module', 'cross-module'].includes(spec.groupScope)) throw new TypeError(`rule ${spec.id}.groupScope must be "module" or "cross-module"`)
     if (spec.layer !== undefined && !KNOWN_LAYERS.has(spec.layer)) throw new TypeError(`rule ${spec.id}: unknown layer ${spec.layer}`)
     // 旧名已按引擎重构退役：显式拒绝并给出新名，比 "unknown fields" 更可直接照做。
     if (spec.when !== undefined) throw new TypeError(`rule ${spec.id}: "when" 已退役，改用 "if"`)
@@ -365,7 +366,7 @@ export function compileRules(specs, options = {}) {
       pointOrders.set(key, action)
     }
     return {
-      id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, exclusive: spec.exclusive === true, enabled: spec.enabled !== false,
+      id: spec.id, name: spec.name, layer: spec.layer, group: spec.group, groupScope: spec.groupScope ?? 'module', exclusive: spec.exclusive === true, enabled: spec.enabled !== false,
       sequence, when, actions, promptConfigOptions: options.promptConfigOptions,
       definitionRevision: options.ruleRevisions?.[spec.id],
       variables: options.variables, variablesEnabled: options.variablesEnabled,

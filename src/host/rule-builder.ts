@@ -5,7 +5,7 @@ import type { PromptConfigSpec } from './prompt-configs.ts'
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 /** 这些是规则级字段，不进入动作 payload；层另写入 payload。 */
-const RULE_LEVEL_KEYS = ['name', 'enabled', 'group', 'exclusive', 'sequence', 'fieldSources', 'origin'] as const
+const RULE_LEVEL_KEYS = ['name', 'enabled', 'group', 'groupScope', 'exclusive', 'sequence', 'fieldSources', 'origin'] as const
 
 /** 退役策略在入口拒绝：引擎侧本就不认它，静默转换只会产出必然被拒的规则。 */
 function assertConvertible(config: PromptConfigSpec): void {
@@ -29,6 +29,7 @@ export function promptConfigToRule(config: PromptConfigSpec): RuleDefinition {
     ...(config.name === undefined ? {} : { name: config.name }),
     ...(config.enabled === undefined ? {} : { enabled: config.enabled }),
     ...(config.group === undefined ? {} : { group: config.group }),
+    ...(config.groupScope === undefined ? {} : { groupScope: config.groupScope }),
     ...(config.exclusive === undefined ? {} : { exclusive: config.exclusive }),
     then: [inject],
   }

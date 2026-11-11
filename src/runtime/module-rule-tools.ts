@@ -19,6 +19,7 @@ const schema = {
     moduleId: { type: 'string', required: true }, rules: { type: 'array', required: true, items: { type: 'json' } },
     revisions: { type: 'object', additionalProperties: true, required: true }, meta: { type: 'object', additionalProperties: true, required: true },
     persisted: { type: 'boolean' }, publicationPending: { type: 'boolean' }, publicationError: { type: 'string' },
+    activationPending: { type: 'string' },
   },
 } as const
 type Result = InferValue<typeof schema>
@@ -44,7 +45,7 @@ export function registerModuleRuleTools(ctx: Context, host: ModuleToolHost): () 
     }))
     const edit = toolsCtx.tools.register(defineTool({
         name: MODULE_TOOL_NAMES.rulesEdit,
-      description: '按 moduleId 声明的模块和读取时的 expectedRevisions 提交完整规则事务。edits 每项含 previousId、完整 rule，可选 settingsChanged；rule=null 明确删除整规则。关闭规则标记 settingsChanged，启用用 activateRuleId。validateOnly 只校验；已保存但发布失败时用 refreshOnly 重试发布，不重放 edits。',
+      description: '按 moduleId 声明的模块和读取时的 expectedRevisions 提交完整规则事务。edits 每项含 previousId、完整 rule，可选 settingsChanged；rule=null 明确删除整规则。关闭规则标记 settingsChanged，启用用 activateRuleId。validateOnly 只校验；返回 activationPending 时用返回版本和该 activateRuleId 重试选择，不重放 edits；仅运行发布失败用 refreshOnly。',
       parameters: {
         moduleId: MODULE_ID_PARAM,
         expectedRevisions: { type: 'object', additionalProperties: true, required: true },
@@ -68,7 +69,7 @@ export function registerModuleRuleTools(ctx: Context, host: ModuleToolHost): () 
         catch (error) {
           if (!(error instanceof ModuleWriteError) || !error.persisted) throw error
           const saved = loadModuleDefinition(target.dir)
-          return result(target.id, { rules: saved.rules, revisions: saved.revisions }, { persisted: true, publicationPending: true, publicationError: error.message })
+          return result(target.id, { rules: saved.rules, revisions: saved.revisions }, { persisted: true, publicationPending: true, publicationError: error.message, ...(error.activationPending === undefined ? {} : { activationPending: error.activationPending }) })
         }
         if (args.validateOnly === true) return result(target.id, state)
         try {

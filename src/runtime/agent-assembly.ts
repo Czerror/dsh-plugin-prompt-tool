@@ -283,6 +283,22 @@ function hasSectionAppend(rules: readonly unknown[], audience: RuleAudience): bo
   })
 }
 
+/** 跨模块互斥组在统一候选上校验；排序与动态命中都不能替作者选择赢家。 */
+function validateCrossModuleGroups(prepared: PreparedAssembly[]): void {
+  const groups = new Map<string, Array<{ moduleId: string; rule: { id?: string; enabled?: boolean; exclusive?: boolean; groupScope?: string } }>>()
+  for (const source of prepared) for (const rule of source.rules as Array<{ id?: string; group?: string; groupScope?: string; enabled?: boolean; exclusive?: boolean }>) {
+    if (typeof rule.group !== 'string' || rule.group.trim().length === 0 || rule.groupScope !== 'cross-module') continue
+    const members = groups.get(rule.group) ?? []
+    members.push({ moduleId: source.moduleId, rule })
+    groups.set(rule.group, members)
+  }
+  for (const [name, members] of groups) {
+    if (!members.some(member => member.rule.exclusive === true)) continue
+    const enabled = members.filter(member => member.rule.enabled !== false)
+    if (enabled.length > 1) throw new Error(`跨模块互斥组 ${JSON.stringify(name)} 有多个生效规则：${enabled.map(member => `${member.moduleId}/${member.rule.id ?? ''}`).join('、')}`)
+  }
+}
+
 function dedupeConfigsOf(prepared: PreparedAssembly[]): Array<{ moduleId: string; config: Record<string, unknown> }> {
   const found: Array<{ moduleId: string; config: Record<string, unknown> }> = []
   for (const item of prepared) {
@@ -665,6 +681,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (!active) return
     await readPersonaKnowledge()
     const validatePrepared = (agent: Agent, prepared: PreparedAssembly[]): void => {
+      validateCrossModuleGroups(prepared)
       const sections = { main: completeSectionsOf(prepared, 'main'), subagent: completeSectionsOf(prepared, 'subagent') }
       for (const [audience, complete] of Object.entries(sections)) {
         if (complete.length > 1) throw new Error(`${audience} 有多个生效 complete 段：${complete.join('、')}`)

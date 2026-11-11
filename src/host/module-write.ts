@@ -21,6 +21,8 @@ export class ModuleWriteError extends Error {
   readonly persisted: boolean
   readonly revisions?: RuleRevisions
   createdRuleId?: string
+  /** 目标已保存，但显式选择尚未完成；调用方用新版本重试此规则，不能只刷新发布。 */
+  activationPending?: string
   constructor(message: string, status: 400 | 403 | 409 | 500 = 400, code = 'rules-invalid', persisted = false, revisions?: RuleRevisions) {
     super(message); this.name = 'ModuleWriteError'; this.status = status; this.code = code
     this.persisted = persisted; this.revisions = revisions

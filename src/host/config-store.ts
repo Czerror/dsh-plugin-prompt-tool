@@ -23,6 +23,9 @@ import { assertModuleId, assertNoModuleLinks, modulePathExists } from './module-
 import { ModuleWriteError, deleteYamlPath, revisionOf, serializeWithoutSharedAlias, withModuleLock } from './module-write.ts'
 import { engineParamPath, readLayerSettings } from './module-layer-settings.ts'
 import { isModuleId } from '../shared/module-ids.ts'
+import type { RuleDefinition } from '../shared/rules.ts'
+import { assertCrossModuleGroups, assertCrossModuleParticipantPaths } from './module-rule-groups.ts'
+import { loadModuleDefinition } from './module-slices.ts'
 
 /** 启用表 schema：3 起 enabled 才拥有普通模块启用语义。 */
 export const ENABLE_TABLE_SCHEMA = 3
@@ -135,9 +138,25 @@ export function resolveRequestedModuleDir(modulesDir: string, subject: string | 
  * 启用或停用一个模块。幂等：已在表里再启用不产生第二条，不在表里再停用不报错。
  * 顺序即装配顺序，新模块追加在末尾（同键参数的覆盖顺序因此可预测）。
  */
-export function setModuleEnabled(moduleRoot: string, id: string, enabled: boolean): void {
+export function validateModuleEnabled(moduleRoot: string, id: string, enabled: boolean): void {
   assertModuleId(id)
   if (typeof enabled !== 'boolean') throw new TypeError('enabled 必须是布尔值')
+  if (enabled && !enabledModuleIds(moduleRoot).includes(id)) {
+    const next = [...enabledModuleIds(moduleRoot), id]
+    assertCrossModuleParticipantPaths(moduleRoot, next)
+    const rules = new Map<string, readonly RuleDefinition[]>()
+    for (const moduleId of next) {
+      const file = join(moduleRoot, moduleId, 'module.yml')
+      if (!modulePathExists(file)) continue
+      try { rules.set(moduleId, loadModuleDefinition(join(moduleRoot, moduleId)).rules) }
+      catch { rules.set(moduleId, []) }
+    }
+    assertCrossModuleGroups(moduleRoot, next, rules)
+  }
+}
+
+export function setModuleEnabled(moduleRoot: string, id: string, enabled: boolean): void {
+  validateModuleEnabled(moduleRoot, id, enabled)
   updateStorageConfig(moduleRoot, undefined, (doc, source) => {
     const current = enabledModuleIds(moduleRoot)
     const next = enabled ? current.includes(id) ? current : [...current, id] : current.filter(existing => existing !== id)

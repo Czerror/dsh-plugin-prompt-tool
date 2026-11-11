@@ -28,6 +28,7 @@ export interface RulesDraft {
   rulesDeclared?: boolean
   publicationPending?: boolean
   publicationError?: string
+  activationPending?: string
   validated: boolean
   latest: number
   nextKey: number
@@ -48,7 +49,7 @@ export function ruleEdits(draft: RulesDraft): RuleEdit[] {
     const previous = entry.previousId === null ? undefined : saved.get(entry.previousId)
     return previous === undefined || !deepEqual(entry.value, previous)
       ? [{ previousId: entry.previousId, rule: structuredClone(entry.value), settingsChanged: previous === undefined
-        || !deepEqual([entry.value.enabled, entry.value.group, entry.value.exclusive], [previous.enabled, previous.group, previous.exclusive]) }] : []
+        || !deepEqual([entry.value.enabled, entry.value.group, entry.value.groupScope, entry.value.exclusive], [previous.enabled, previous.group, previous.groupScope, previous.exclusive]) }] : []
   })
 }
 export const rulesDirty = (draft: RulesDraft): boolean => hasRuleFields(draft) || ruleEdits(draft).length > 0
@@ -74,6 +75,7 @@ interface RuleEditorDependencies {
 export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: RuleEditorDependencies) {
   const changed = (): void => { draft.validated = false; deps.changed() }
   const publication = (snapshot: RulesSnapshot): void => {
+    draft.activationPending = snapshot.activationPending
     const state = readPublication(snapshot)
     draft.publicationPending = state.pending
     draft.publicationError = state.error ?? (state.pending ? 'rules-refresh-pending' : undefined)
@@ -138,6 +140,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     changed()
   }
   const retryPublication = async (): Promise<boolean> => {
+    if (draft.activationPending !== undefined) return submit({ activateRuleId: draft.activationPending })
     if (!deps.isCurrent() || draft.busy !== undefined || !draft.publicationPending) return false
     const sequence = beginLatest(draft)
     draft.busy = 'save'; deps.changed()
@@ -157,6 +160,8 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
   }
   const submit = async (options: { validateOnly?: boolean; activateRuleId?: string } = {}): Promise<boolean> => {
+    if (!options.validateOnly && options.activateRuleId === undefined && draft.activationPending !== undefined
+      && draft.entries.some(entry => !entry.deleted && entry.value.id === draft.activationPending && entry.value.enabled !== false)) options = { ...options, activateRuleId: draft.activationPending }
     if (!deps.isCurrent() || !draft.loaded || draft.busy !== undefined || draft.remote !== undefined || draft.retry === 'read' || !draft.revisions || hasRuleFields(draft)) return false
     const sequence = beginLatest(draft), entries = structuredClone(draft.entries), edits = ruleEdits(draft)
     const expectedRevisions: Partial<RuleRevisions> = { rules: Object.fromEntries(edits.flatMap(edit =>
@@ -219,7 +224,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     draft.fields.clear(); changed()
   }
   const retryKind = (): 'read' | 'save' | 'publish' => draft.retry === 'read' || draft.remote !== undefined ? 'read'
-    : draft.publicationPending ? 'publish' : draft.loaded && rulesDirty(draft) ? 'save' : 'read'
+    : draft.activationPending !== undefined ? 'save' : draft.publicationPending ? 'publish' : draft.loaded && rulesDirty(draft) ? 'save' : 'read'
   const retry = (): Promise<boolean> => retryKind() === 'publish' ? retryPublication() : retryKind() === 'save' ? submit() : load(true)
   return { load, patch, add, remove, create, submit, retryPublication, discard, changed, retry, get retryKind() { return retryKind() } }
 }

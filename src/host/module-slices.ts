@@ -154,7 +154,7 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   const ruleRevisions: Record<string, string> = Object.create(null)
   let tail: number | undefined
   for (const rule of rules) {
-    const { enabled, group, exclusive, ...content } = structuredClone(rule)
+    const { enabled, group, groupScope, exclusive, ...content } = structuredClone(rule)
     contents.push(content)
     let sequence = order[rule.id]
     if (sequence === undefined) {
@@ -164,7 +164,7 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
       tail += 10
     }
     if (!Number.isSafeInteger(sequence)) throw new ModuleWriteError('规则顺序超出安全整数范围')
-    settings[rule.id] = { order: sequence, ...(enabled === undefined ? {} : { enabled }), ...(group === undefined ? {} : { group }), ...(exclusive === undefined ? {} : { exclusive }) }
+    settings[rule.id] = { order: sequence, ...(enabled === undefined ? {} : { enabled }), ...(group === undefined ? {} : { group }), ...(groupScope === undefined ? {} : { groupScope }), ...(exclusive === undefined ? {} : { exclusive }) }
     files[`${rule.id}.yml`] = yaml(content)
     ruleRevisions[rule.id] = digest(content)
   }

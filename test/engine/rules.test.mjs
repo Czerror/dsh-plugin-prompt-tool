@@ -405,6 +405,8 @@ test('统一规则：编译拒绝多启用互斥组、重复身份与动态 regi
   const a = { id: 'a', group: 'mode', exclusive: true, then: [textAction('one', 'A')] }
   const b = { id: 'b', group: 'mode', then: [textAction('two', 'B')] }
   assert.throws(() => compileRules([a, b]), /exclusive|互斥/)
+  assert.doesNotThrow(() => compileRules([{ ...a, groupScope: 'cross-module' }, { ...b, groupScope: 'cross-module' }]))
+  assert.throws(() => compileRules([{ ...a, groupScope: 'invalid' }]), /groupScope/)
   assert.equal(compileRules([a, { ...b, enabled: false }]).length, 2)
   assert.throws(() => compileRules([a, a]), /duplicate/)
   for (const id of ['.', '..', '../outside', 'bad:name', 'bad?name', 'bad' + String.fromCharCode(1)]) {

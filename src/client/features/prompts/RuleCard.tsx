@@ -100,6 +100,9 @@ export function RuleCard(props: {
           onChange={layer => patch({ layer: layer === '' ? undefined : layer as RuleDefinition['layer'] })} /></FormField>
         <div className={css.exclusiveGroup}>
           <FormField label={t('rules.group')} hint={t('rules.scopeHint')} hintMode="tooltip"><TextInput readOnly={disabled} value={rule.group ?? ''} onChange={event => patch({ group: event.target.value || undefined })} /></FormField>
+          <FormField label={t('form.groupScope.label')}><MenuSelect compact ariaLabel={t('form.groupScope.label')} value={rule.groupScope ?? 'module'} disabled={disabled}
+            options={[{ value: 'module', label: t('form.groupScope.module') }, { value: 'cross-module', label: t('form.groupScope.crossModule') }]}
+            onChange={groupScope => patch({ groupScope: groupScope as RuleDefinition['groupScope'] })} /></FormField>
           <div className={css.toggle}><span>{t('rules.exclusive')}</span><span className={css.switchLine}><Switch label={t('rules.exclusive')} checked={rule.exclusive === true} disabled={disabled} onChange={exclusive => patch({ exclusive })} /></span></div>
         </div>
       </div>

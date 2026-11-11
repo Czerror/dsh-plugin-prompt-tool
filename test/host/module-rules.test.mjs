@@ -1,14 +1,15 @@
-import { test } from 'node:test'
+import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { parse } from 'yaml'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-rules-')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
-const { setModuleEnabled } = await import('../../src/host/config-store.ts')
+const { enabledModuleIds, enableTablePath, setModuleEnabled } = await import('../../src/host/config-store.ts')
 const { resolveModuleFacts } = await import('../../src/host/module-params.ts')
 const { loadModuleSpec } = await import('../../src/host/module-spec.ts')
 const { readRulesDir } = await import('../../src/host/module-slices.ts')
@@ -107,6 +108,158 @@ test('规则边界：仅校验与无改动幂等；旧内容按白名单加载',
   writeFileSync(join(dir, 'module.yml'), 'id: check\nmodules: []\nrules: []\nlayerSettings:\n  agent-request:\n    modelTemperature: 0.5\n')
   assert.equal(readModuleRules(dir).rules.length, 0)
   assert.equal(loadModuleSpec(dir).params.modelTemperature, 0.5, '模型参数原样读回')
+})
+
+test('显式跨模块互斥：启用目标关闭已启用模块的同组规则，停用草稿保持', (t) => {
+  const target = fixture('cross-target', [rule('target', { enabled: false, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  const peer = fixture('cross-peer', [rule('peer', { enabled: true, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  const dormant = fixture('cross-dormant', [rule('dormant', { enabled: true, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  setModuleEnabled(moduleRoot, 'cross-peer', true)
+  t.after(() => setModuleEnabled(moduleRoot, 'cross-peer', false))
+  const targetState = readModuleRules(target), dormantBefore = readFileSync(join(dormant, 'module.yml'), 'utf8')
+  const saved = editModuleRules(target, { expectedRevisions: targetState.revisions, activateRuleId: 'target' })
+  assert.equal(saved.rules[0].enabled, true)
+  assert.equal(readModuleRules(peer).rules[0].enabled, false)
+  assert.equal(readFileSync(join(dormant, 'module.yml'), 'utf8'), dormantBefore)
+})
+
+test('跨模块互斥：普通启用编辑无显式选择时持久化前拒绝', (t) => {
+  const target = fixture('cross-ordinary-target', [rule('target', { enabled: false, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  fixture('cross-ordinary-peer', [rule('peer', { enabled: true, group: 'mode', groupScope: 'cross-module', exclusive: false })])
+  setModuleEnabled(moduleRoot, 'cross-ordinary-peer', true)
+  t.after(() => setModuleEnabled(moduleRoot, 'cross-ordinary-peer', false))
+  const before = readFileSync(join(target, 'module.yml'), 'utf8')
+  const state = readModuleRules(target)
+  assert.throws(() => editModuleRules(target, { expectedRevisions: state.revisions, edits: [{ previousId: 'target', rule: { ...state.rules[0], enabled: true }, settingsChanged: true }] }), error => error.status === 409 && error.code === 'rules-conflict')
+  assert.equal(readFileSync(join(target, 'module.yml'), 'utf8'), before)
+})
+
+test('跨模块互斥：目标是唯一 exclusive 时也关闭无 exclusive 的已启用成员', (t) => {
+  const target = fixture('cross-target-exclusive', [rule('target', { enabled: false, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  const peer = fixture('cross-peer-nonexclusive', [rule('peer', { enabled: true, group: 'mode', groupScope: 'cross-module', exclusive: false })])
+  setModuleEnabled(moduleRoot, 'cross-peer-nonexclusive', true)
+  t.after(() => setModuleEnabled(moduleRoot, 'cross-peer-nonexclusive', false))
+  editModuleRules(target, { expectedRevisions: readModuleRules(target).revisions, activateRuleId: 'target' })
+  assert.equal(readModuleRules(peer).rules[0].enabled, false)
+})
+
+test('跨模块互斥：参与组任一成员 exclusive 时关闭所有其他已启用成员', (t) => {
+  const target = fixture('cross-any-target', [rule('target', { enabled: false, group: 'mode', groupScope: 'cross-module', exclusive: false })])
+  fixture('cross-any-peer-a', [rule('peer-a', { enabled: false, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  const peerB = fixture('cross-any-peer-b', [rule('peer-b', { enabled: true, group: 'mode', groupScope: 'cross-module', exclusive: false })])
+  for (const id of ['cross-any-peer-a', 'cross-any-peer-b']) setModuleEnabled(moduleRoot, id, true)
+  t.after(() => { for (const id of ['cross-any-peer-a', 'cross-any-peer-b']) setModuleEnabled(moduleRoot, id, false) })
+  editModuleRules(target, { expectedRevisions: readModuleRules(target).revisions, activateRuleId: 'target' })
+  assert.equal(readModuleRules(peerB).rules[0].enabled, false)
+})
+
+test('跨模块互斥：启用模块候选在写启用表前拒绝冲突', (t) => {
+  fixture('cross-enable-target', [rule('target', { enabled: true, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  fixture('cross-enable-peer', [rule('peer', { enabled: true, group: 'mode', groupScope: 'cross-module', exclusive: false })])
+  setModuleEnabled(moduleRoot, 'cross-enable-peer', true)
+  t.after(() => setModuleEnabled(moduleRoot, 'cross-enable-peer', false))
+  assert.throws(() => setModuleEnabled(moduleRoot, 'cross-enable-target', true), error => error.status === 409 && error.code === 'rules-conflict')
+  assert.equal(enabledModuleIds(moduleRoot).includes('cross-enable-target'), false)
+})
+
+test('跨模块互斥安全边界：恶意启用表 id 在任何候选读取前拒绝', () => {
+  const storageConfig = enableTablePath(moduleRoot)
+  const hadConfig = existsSync(storageConfig), original = hadConfig ? readFileSync(storageConfig, 'utf8') : undefined
+  const outside = join(dirname(moduleRoot), 'outside-cross-module')
+  mkdirSync(outside, { recursive: true })
+  const sentinel = join(outside, 'module.yml')
+  writeFileSync(sentinel, 'id: outside-cross-module\nmodules: []\nrules: []\n')
+  writeFileSync(storageConfig, 'schemaVersion: 3\nenabled:\n  - ../outside-cross-module\n')
+  const originalRead = fs.readFileSync.bind(fs), outsidePath = sentinel.toLowerCase()
+  let touched = false
+  mock.method(fs, 'readFileSync', (path, ...args) => {
+    if (String(path).toLowerCase() === outsidePath) touched = true
+    return originalRead(path, ...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    assert.throws(() => setModuleEnabled(moduleRoot, 'safe-target', true), error => error.status === 403 && error.code === 'module-readonly')
+  } finally {
+    mock.restoreAll()
+    syncBuiltinESMExports()
+    if (hadConfig) writeFileSync(storageConfig, original)
+    else rmSync(storageConfig, { force: true })
+    assert.equal(touched, false)
+    assert.equal(readFileSync(sentinel, 'utf8'), 'id: outside-cross-module\nmodules: []\nrules: []\n')
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+
+test('跨模块写盘失败：第 N 个模块失败时不宣称跨文件原子，已写目标保留', (t) => {
+  const target = fixture('cross-write-target', [rule('target', { enabled: false, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  const peer = fixture('cross-write-peer', [rule('peer', { enabled: true, group: 'mode', groupScope: 'cross-module', exclusive: false })])
+  setModuleEnabled(moduleRoot, 'cross-write-peer', true)
+  t.after(() => setModuleEnabled(moduleRoot, 'cross-write-peer', false))
+  let injected = false
+  const rename = fs.renameSync
+  mock.method(fs, 'renameSync', (from, to, ...args) => {
+    if (!injected && basename(String(to)) === 'module.yml' && basename(dirname(String(to))) === 'cross-write-peer') {
+      injected = true
+      throw new Error('injected second-module write failure')
+    }
+    return rename(from, to, ...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    assert.throws(() => editModuleRules(target, { expectedRevisions: readModuleRules(target).revisions, activateRuleId: 'target' }), error => {
+      assert.equal(error.persisted, true)
+      assert.equal(error.activationPending, 'target')
+      assert.deepEqual(error.revisions, readModuleRules(target).revisions)
+      return true
+    })
+  } finally {
+    mock.restoreAll()
+    syncBuiltinESMExports()
+  }
+  assert.equal(injected, true)
+  assert.equal(readModuleRules(target).rules[0].enabled, true, '第一个目标已持久化')
+  assert.equal(readModuleRules(peer).rules[0].enabled, true, '失败成员保持旧定义')
+  editModuleRules(target, { expectedRevisions: readModuleRules(target).revisions, activateRuleId: 'target' })
+  assert.equal(readModuleRules(peer).rules[0].enabled, false, '目标已启用时重试仍完成剩余选择')
+})
+
+test('跨模块互斥边界：缺省模块范围不联动', (t) => {
+  const target = fixture('cross-boundary-target', [rule('target', { enabled: false, group: 'mode', exclusive: true })])
+  const peer = fixture('cross-boundary-peer', [rule('peer', { enabled: true, group: 'mode', exclusive: true })])
+  setModuleEnabled(moduleRoot, 'cross-boundary-peer', true)
+  t.after(() => setModuleEnabled(moduleRoot, 'cross-boundary-peer', false))
+  const local = editModuleRules(target, { expectedRevisions: readModuleRules(target).revisions, activateRuleId: 'target' })
+  assert.equal(local.rules[0].enabled, true)
+  assert.equal(readModuleRules(peer).rules[0].enabled, true, '缺省 module 组不跨模块')
+})
+
+test('跨模块互斥拒绝：参与模块完整候选无效时目标不写盘', (t) => {
+  const target = fixture('cross-invalid-target', [rule('target', { enabled: false, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  const peer = fixture('cross-invalid-peer', [rule('peer', { enabled: true, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  setModuleEnabled(moduleRoot, 'cross-invalid-peer', true)
+  t.after(() => setModuleEnabled(moduleRoot, 'cross-invalid-peer', false))
+  const before = readFileSync(join(target, 'module.yml'), 'utf8')
+  writeFileSync(join(peer, 'module.yml'), JSON.stringify({ id: 'cross-invalid-peer', modules: [], rules: [{ id: 'peer', group: 'mode', groupScope: 'cross-module', exclusive: true, then: [{ id: 'bad', kind: 'missing' }] }] }))
+  assert.throws(() => editModuleRules(target, { expectedRevisions: readModuleRules(target).revisions, activateRuleId: 'target' }))
+  assert.equal(readFileSync(join(target, 'module.yml'), 'utf8'), before)
+})
+
+test('跨模块互斥：共享别名会连带改写未知字段时在所有提交前拒绝', (t) => {
+  const target = fixture('cross-alias-target', [rule('target', { enabled: false, group: 'mode', groupScope: 'cross-module', exclusive: true })])
+  const peer = fixture('cross-alias-peer', [])
+  const peerText = [
+    'id: cross-alias-peer', 'modules: []', 'rules:', '  - id: peer',
+    '    enabled: &flag true', '    group: mode', '    groupScope: cross-module',
+    '    then:', '      - { id: text, kind: inject-text, config: { text: PEER } }',
+    'unknown: *flag', '',
+  ].join('\n')
+  writeFileSync(join(peer, 'module.yml'), peerText)
+  setModuleEnabled(moduleRoot, 'cross-alias-peer', true)
+  t.after(() => setModuleEnabled(moduleRoot, 'cross-alias-peer', false))
+  const targetText = readFileSync(join(target, 'module.yml'), 'utf8')
+  assert.throws(() => editModuleRules(target, { expectedRevisions: readModuleRules(target).revisions, activateRuleId: 'target' }), error => error.code === 'shared-alias')
+  assert.equal(readFileSync(join(target, 'module.yml'), 'utf8'), targetText)
+  assert.equal(readFileSync(join(peer, 'module.yml'), 'utf8'), peerText)
 })
 
 test('新建规则跨模块避碰：接在其他启用模块最大序号之后', (t) => {

@@ -1,6 +1,7 @@
-import { test } from 'node:test'
+import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import fs, { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { Document, parse } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
@@ -209,4 +210,37 @@ test('规则工具边界：晚到服务挂载，刷新失败报告已保存，�
   await f.wrapper.dispose()
   await tick()
   assert.equal((await f.call('module_rules_edit', { moduleId: before.moduleId, expectedRevisions: pending.revisions, refreshOnly: true })).isError, true)
+})
+
+test('规则工具跨模块部分写盘返回当前目标版本与选择重试身份', async t => {
+  let rebuilt = 0
+  const f = await setup(t, 'partial-tool', { rebuild: async () => { rebuilt++ } })
+  const member = (id, enabled, exclusive) => ({ id, enabled, exclusive, group: 'partial', groupScope: 'cross-module', then: [leaf('text', id)] })
+  writeFileSync(f.file, JSON.stringify({ id: 'partial-tool', modules: [], rules: [member('chosen', false, true)] }))
+  const peerDir = join(moduleRoot, 'partial-tool-peer'), peerFile = join(peerDir, 'module.yml')
+  mkdirSync(peerDir, { recursive: true })
+  writeFileSync(peerFile, JSON.stringify({ id: 'partial-tool-peer', modules: [], rules: [member('previous', true, false)] }))
+  const { setModuleEnabled } = await import('../../src/host/config-store.ts')
+  const { readModuleRules } = await import('../../src/host/module-rules.ts')
+  setModuleEnabled(moduleRoot, 'partial-tool-peer', true)
+  t.after(() => setModuleEnabled(moduleRoot, 'partial-tool-peer', false))
+  const before = await f.success('module_rules_read', { moduleId: 'partial-tool' })
+  const rename = fs.renameSync
+  mock.method(fs, 'renameSync', (from, to, ...args) => {
+    if (String(to) === peerFile) throw new Error('PEER_TOOL_FAILED')
+    return rename(from, to, ...args)
+  })
+  syncBuiltinESMExports()
+  let partial
+  try { partial = await f.success('module_rules_edit', { moduleId: 'partial-tool', expectedRevisions: before.revisions, activateRuleId: 'chosen' }) }
+  finally { mock.restoreAll(); syncBuiltinESMExports() }
+  assert.equal(partial.persisted, true)
+  assert.equal(partial.publicationPending, true)
+  assert.equal(partial.activationPending, 'chosen')
+  assert.deepEqual(partial.revisions, readModuleRules(f.dir).revisions)
+  assert.equal(rebuilt, 0)
+  const saved = await f.success('module_rules_edit', { moduleId: 'partial-tool', expectedRevisions: partial.revisions, activateRuleId: partial.activationPending })
+  assert.equal(saved.publicationPending, false)
+  assert.equal(readModuleRules(peerDir).rules[0].enabled, false)
+  assert.equal(rebuilt, 1)
 })

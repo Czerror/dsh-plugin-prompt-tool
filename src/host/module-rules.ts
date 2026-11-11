@@ -1,13 +1,15 @@
 /** 经验证规则切片的局部事务；正文和状态各有独立 CAS。 */
-import { basename, dirname } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { isMap, isSeq, isScalar, parseDocument } from 'yaml'
 import type { Node, Scalar, YAMLMap, YAMLSeq } from 'yaml'
 import type { RuleDefinition, RuleEdit, RuleRevisions } from '../shared/rules.ts'
-import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, nextModuleConfigSequence, validateModuleDefinitionText } from './module-slices.ts'
+import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, loadModuleDefinition, nextModuleConfigSequence, validateModuleDefinitionText } from './module-slices.ts'
 import type { ModuleDefinitionSnapshot } from './module-slices.ts'
 import { ModuleWriteError, serializeWithoutSharedAlias } from './module-write.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
 import { reservedConfigSequences } from './module-config-order.ts'
+import { enabledModuleIds } from './config-store.ts'
+import { assertCrossModuleGroups, assertCrossModuleParticipantPaths } from './module-rule-groups.ts'
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value)
 export interface ModuleRulesSnapshot { rules: RuleDefinition[]; revisions: RuleRevisions }
@@ -142,8 +144,8 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     const replacement = structuredClone(edit.rule) as unknown as RuleDefinition
     if (index >= 0 && edit.settingsChanged !== true) {
       const current = rules[index]!
-      delete replacement.enabled; delete replacement.group; delete replacement.exclusive
-      for (const key of ['enabled', 'group', 'exclusive'] as const) if (Object.hasOwn(current, key)) Object.assign(replacement, { [key]: current[key] })
+      delete replacement.enabled; delete replacement.group; delete replacement.groupScope; delete replacement.exclusive
+      for (const key of ['enabled', 'group', 'groupScope', 'exclusive'] as const) if (Object.hasOwn(current, key)) Object.assign(replacement, { [key]: current[key] })
     }
     if (rules.some((rule, at) => at !== index && rule.id === replacement.id)) throw new ModuleWriteError(`重复规则标识：${replacement.id}`)
     if (index < 0) { rules.push(replacement); ruleNodes.items.push(snapshot.doc.createNode(replacement)) }
@@ -164,7 +166,7 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     if (target === undefined) throw new ModuleWriteError('要启用的规则不存在')
     target.enabled = true
     if (typeof target.group === 'string' && target.group.trim().length > 0) {
-      const peers = rules.filter(rule => rule.group === target.group)
+      const peers = rules.filter(rule => rule.group === target.group && (rule.groupScope ?? 'module') === (target.groupScope ?? 'module'))
       if (peers.some(rule => rule.exclusive === true)) for (const peer of peers) if (peer !== target) peer.enabled = false
     }
   }
@@ -182,12 +184,56 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     order[rule.id] = tail
     tail += 10
   }
-  if (JSON.stringify(previous) === JSON.stringify(rules) && JSON.stringify(snapshot.source.configOrder ?? {}) === JSON.stringify(order)) return publicSnapshot(snapshot)
+  if (request.activateRuleId === undefined && JSON.stringify(previous) === JSON.stringify(rules) && JSON.stringify(snapshot.source.configOrder ?? {}) === JSON.stringify(order)) return publicSnapshot(snapshot)
   snapshot.doc.set('rules', replaceNode(snapshot.doc, ruleNodes, rules))
   if (Object.keys(order).length > 0) snapshot.doc.set('configOrder', replaceNode(snapshot.doc, orderNodes, order))
   else snapshot.doc.delete('configOrder')
-  const expected = { ...snapshot.source, rules, configOrder: order } as Record<string, unknown>
+  let expected = { ...snapshot.source, rules, configOrder: order } as Record<string, unknown>
   if (Object.keys(order).length === 0) delete expected.configOrder
+  // 跨模块互斥只触及当前参与装配的模块与显式目标；停用模块的草稿不读不写。
+  const crossCandidates: Array<{ snapshot: ModuleDefinitionSnapshot; doc: ReturnType<typeof parseDocument>; rules: RuleDefinition[] }> = []
+  if (request.activateRuleId !== undefined) {
+    const target = rules.find(rule => rule.id === request.activateRuleId)
+    if (target?.group !== undefined && (target.groupScope ?? 'module') === 'cross-module' && target.enabled !== false) {
+      const root = dirname(snapshot.dir)
+      const participants = new Set([...enabledModuleIds(root), basename(snapshot.dir)])
+      assertCrossModuleParticipantPaths(root, [...participants])
+      participants.delete(basename(snapshot.dir))
+      const peerSnapshots = new Map<string, ModuleDefinitionSnapshot>()
+      for (const id of participants) peerSnapshots.set(id, ensureModuleSlices(join(root, id), { writable: false }))
+      const allPeers = [...rules, ...[...peerSnapshots.values()].flatMap(peer => peer.rules)]
+      const groupExclusive = target.exclusive === true || allPeers.some(rule => rule.group === target.group
+        && (rule.groupScope ?? 'module') === 'cross-module' && rule.exclusive === true)
+      if (groupExclusive) {
+        for (const peerRule of rules) if (peerRule !== target && peerRule.group === target.group && (peerRule.groupScope ?? 'module') === 'cross-module') peerRule.enabled = false
+        snapshot.doc.set('rules', replaceNode(snapshot.doc, ruleNodes, rules))
+        expected = { ...expected, rules }
+      }
+      for (const id of participants) {
+        const peer = peerSnapshots.get(id)!
+        const peers = peer.rules.filter(rule => rule.group === target.group && (rule.groupScope ?? 'module') === 'cross-module')
+        if (!groupExclusive || !peers.some(rule => rule.enabled !== false)) continue
+        const nextRules = structuredClone(peer.rules)
+        for (const peerRule of nextRules) if (peerRule.group === target.group && (peerRule.groupScope ?? 'module') === 'cross-module') peerRule.enabled = false
+        const doc = peer.doc
+        doc.set('rules', replaceNode(doc, doc.get('rules', true), nextRules))
+        serializeWithoutSharedAlias(doc, { ...peer.source, rules: nextRules }, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
+        validateModuleDefinitionText(peer.dir, doc.toString())
+        crossCandidates.push({ snapshot: peer, doc, rules: nextRules })
+      }
+    }
+  }
+  // 所有参与者在提交前再次核对完整定义版本；任一成员变化则整次启用拒绝，不先写目标。
+  for (const candidate of crossCandidates) {
+    const current = loadModuleDefinition(candidate.snapshot.dir)
+    if (current.revision !== candidate.snapshot.revision) throw new ModuleWriteError('跨模块互斥成员已变化，请重新读取后保存', 409, 'rules-conflict')
+  }
+  const participants = new Set([...enabledModuleIds(dirname(snapshot.dir)), basename(snapshot.dir)])
+  const overrides = new Map<string, readonly RuleDefinition[]>([[basename(snapshot.dir), rules]])
+  for (const candidate of crossCandidates) {
+    overrides.set(basename(candidate.snapshot.dir), candidate.rules)
+  }
+  assertCrossModuleGroups(dirname(snapshot.dir), [...participants], overrides)
   // 序列化本身也受检（别名锚点失配时 toString 会抛），故不取返回值。
   serializeWithoutSharedAlias(snapshot.doc, expected, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
   // 与保存共用完整候选校验，但验证请求不写切片或完整定义。
@@ -195,7 +241,21 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     validateModuleDefinitionText(snapshot.dir, snapshot.doc.toString())
     return publicSnapshot(snapshot, rules)
   }
-  const saved = commitModuleDefinition(snapshot, snapshot.doc)
-  invalidateModuleSpec(snapshot.dir)
+  let saved: ModuleDefinitionSnapshot | undefined
+  try {
+    saved = commitModuleDefinition(snapshot, snapshot.doc)
+    invalidateModuleSpec(snapshot.dir)
+    for (const candidate of crossCandidates) {
+      commitModuleDefinition(candidate.snapshot, candidate.doc)
+      invalidateModuleSpec(candidate.snapshot.dir)
+    }
+  } catch (error) {
+    if (request.activateRuleId === undefined || crossCandidates.length === 0 || (saved === undefined && !(error instanceof ModuleWriteError && error.persisted))) throw error
+    const committed = loadModuleDefinition(snapshot.dir)
+    invalidateModuleSpec(snapshot.dir)
+    const pending = new ModuleWriteError(`目标规则已保存，但跨模块选择未完成；请用当前版本重试启用 ${request.activateRuleId}：${String((error as Error).message ?? error)}`, 500, 'rules-rebuild-failed', true, structuredClone(committed.revisions))
+    pending.activationPending = request.activateRuleId
+    throw pending
+  }
   return publicSnapshot(saved)
 }
