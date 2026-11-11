@@ -1,8 +1,8 @@
 # 统一规则引擎复用指南
 
-普通规则 `host-control / current-system-snapshot` 使用 `value: true`，内置卡默认关闭。它复用请求前 `prepareAssembly`，首次请求即携带已选完整正文；同一步使用局部 renderedPrompt，热更新只作用后续装配，不重跑在途请求。按真实 Agent 隔离主子受众与并行步骤，取消沿官方信号，规则关闭及 runtime disposer 撤回后续贡献。
+普通规则 `host-control / current-system-snapshot` 使用 `value: true`，内置卡默认关闭。它复用请求前 `prepareAssembly`，把资格与兼容状态固定在原工具步骤；请求按已接受 assembly 对象身份读取同一个 sealed 步骤和局部 renderedPrompt，热更新、裸装配及同 Agent 并发装配不改变在途步骤与重试。按真实 Agent 隔离主子受众，取消沿官方信号；规则关闭影响后续步骤，owner 释放、步骤关闭或当前接缝失配立即停止本来源投影，旧资格不借新 owner 复活。
 
-当前正文只整理 `system-prompt` 来源：通过官方 Session.append 追加 surface replacement，使当前首条 system 与同一步 durable 日志正文一致；不改写任何既有 durable 事件。空白、仅头、仅尾、截断或不同换行的旧来源补为本步精确完整正文，不全局 trim，其他来源消息的内容与顺序保留。后续同来源节点只清空一次，请求投影移除这些空节点；相同正文的重复步骤不制造新事件。关闭后回官方后续路径，已提交的新正文仍是历史事实，不恢复旧历史头。
+当前正文只整理 `system-prompt` 来源：通过官方 Session.append 追加 surface replacement，使当前首条 system 与同一步 durable 日志正文一致；不改写任何既有 durable 事件。空白、仅头、仅尾、截断或不同换行的旧来源补为本步精确完整正文，不全局 trim；请求投影将本步正文放在首条，其他来源即使先有 system 消息也保留原内容与相对顺序。可见事件复用 currentEvents 及其降级契约。后续同来源节点只清空一次，请求投影移除这些空节点；相同正文的重复步骤不制造新事件。关闭后回官方后续路径，已提交的新正文仍是历史事实，不恢复旧历史头。
 
 早入口验证官方 agent-loop 实际版本、发行指纹及 snapshot 独立锚点，只有实际 constructor marker 与本 Agent 存活 owner 同时存在才就绪。缺失只暂停包含该动作的显式依赖分支，无关规则继续；owner 恢复后在下一次正常装配重判，不轮询补发。需用户重启 DSH 并选用 early 入口后生效；CLI/Web 综合验收另行执行。
 

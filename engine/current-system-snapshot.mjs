@@ -1,4 +1,6 @@
 import { actionMatches } from './conditions/evaluation.mjs'
+import { currentEvents } from './history.mjs'
+import { toolAssemblyContext, toolStepFor } from './tool-scope.mjs'
 
 const owners = new WeakMap()
 
@@ -30,22 +32,33 @@ export function registerCurrentSystemSnapshot(agent) {
   if (agent === null || (typeof agent !== 'object' && typeof agent !== 'function')) throw new TypeError('agent is required')
   const owner = { enabled: false }
   owners.set(agent, owner)
-  return { setEnabled(enabled) { if (owners.get(agent) === owner) owner.enabled = enabled === true }, dispose() { if (owners.get(agent) === owner) owners.delete(agent) } }
+  return { setEnabled(enabled, context) {
+    if (owners.get(agent) !== owner) return
+    owner.enabled = enabled === true
+    const step = toolStepFor(context, agent)
+    if (step?.status === 'pending') step.currentSystemSnapshot = Object.freeze({ owner,
+      enabled: owner.enabled && currentSystemSnapshotStatus(agent).available })
+  }, dispose() { if (owners.get(agent) === owner) owners.delete(agent) } }
 }
 
-export function projectCurrentSystemMessages(agent, messages, renderedPrompt, position, signal) {
-  const owner = owners.get(agent)
-  if (owner?.enabled !== true || !currentSystemSnapshotStatus(agent).available) return messages
+function acceptedSnapshot(agent, assembly) {
+  if (!currentSystemSnapshotStatus(agent).available || assembly == null) return false
+  const context = toolAssemblyContext(assembly, { agent })
+  const step = context === undefined ? undefined : toolStepFor(context)
+  return step?.status === 'sealed' && step.currentSystemSnapshot?.owner === owners.get(agent) && step.currentSystemSnapshot.enabled === true
+}
+
+export function projectCurrentSystemMessages(agent, messages, renderedPrompt, position, signal, assembly) {
+  if (!acceptedSnapshot(agent, assembly)) return messages
   signal?.throwIfAborted()
   if (typeof renderedPrompt !== 'string') return messages
   const first = messages.findIndex(message => message.role === 'system' && message.source?.kind === 'system-prompt')
   if (first < 0) return messages
   const replacement = { ...structuredClone(messages[first]), content: [{ type: 'text', text: renderedPrompt }] }
-  const result = []
+  const result = [replacement]
   for (let index = 0; index < messages.length; index++) {
     const message = messages[index]
     if (message.role === 'system' && message.source?.kind === 'system-prompt') {
-      if (index === first) result.push(replacement)
       continue
     }
     result.push(message)
@@ -59,10 +72,9 @@ export function currentSystemSnapshotStatus(agent) {
     : { available: false, reason: 'current-system early owner unavailable' }
 }
 
-function currentSystemPromptCommits(agent, renderedPrompt, input, createSystemMessage) {
-  if (owners.get(agent)?.enabled !== true || !currentSystemSnapshotStatus(agent).available) return agent.systemPrompt.project(renderedPrompt, input)
-  const events = agent.session.snapshotEvents()
-  const nodes = agent.session.surface.nodes.map(seq => events[seq]).filter(event => event?.type === 'system/message' && event.data.message.source?.kind === 'system-prompt')
+function currentSystemPromptCommits(agent, renderedPrompt, input, createSystemMessage, assembly) {
+  if (!acceptedSnapshot(agent, assembly)) return agent.systemPrompt.project(renderedPrompt, input)
+  const nodes = currentEvents(agent.session).filter(event => event.type === 'system/message' && event.data.message.source?.kind === 'system-prompt')
   const message = createSystemMessage
   if (nodes.length === 0) return [{ message: message(renderedPrompt), intent: { surfaceOp: 'append' } }]
   const updates = nodes.flatMap((event, index) => {

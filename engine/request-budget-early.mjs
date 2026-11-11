@@ -30,12 +30,12 @@ if (target !== undefined) registerHooks({ load(url, context, next) {
   ]
   const snapshotEdits = [
     ['const commits = this.systemPrompt.project(renderedPrompt, {',
-      'const commits = (input => (globalThis[Symbol.for("prompt-tool:current-system-snapshot:commits")] ?? ((agent, rendered, input) => agent.systemPrompt.project(rendered, input)))(this, renderedPrompt, input, createSystemMessage))({'],
+      'const commits = (input => (globalThis[Symbol.for("prompt-tool:current-system-snapshot:commits")] ?? ((agent, rendered, input) => agent.systemPrompt.project(rendered, input)))(this, renderedPrompt, input, createSystemMessage, assembly))({'],
     ['buildRequest(config, preparedCall, tools, position, startsRequestSeries, signal) {',
-      'buildRequest(config, preparedCall, tools, position, startsRequestSeries, signal, renderedPrompt) {'],
-    ['startsRequestSeries, signal);', 'startsRequestSeries, signal, renderedPrompt);'],
+      'buildRequest(config, preparedCall, tools, position, startsRequestSeries, signal, renderedPrompt, assembly) {'],
+    ['startsRequestSeries, signal);', 'startsRequestSeries, signal, renderedPrompt, assembly);'],
     ['const boundaryMessages = session.deriveMessages();',
-      'const derivedMessages = session.deriveMessages();\n\t\tconst boundaryMessages = globalThis[Symbol.for("prompt-tool:current-system-snapshot:project")]?.(this, derivedMessages, renderedPrompt, position, signal) ?? derivedMessages;'],
+      'const derivedMessages = session.deriveMessages();\n\t\tconst boundaryMessages = globalThis[Symbol.for("prompt-tool:current-system-snapshot:project")]?.(this, derivedMessages, renderedPrompt, position, signal, assembly) ?? derivedMessages;'],
   ]
   if (createHash('sha256').update(source).digest('hex') !== digest) {
     state.available = false; state.reason = 'agent-loop artifact fingerprint or structure mismatch'; return result

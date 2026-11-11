@@ -634,7 +634,7 @@ export function createRuleRuntime(ctx, options = {}) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
       const policyFrame = assemblyFrame(context ?? { agent: options.agent })
-      currentSystemSnapshot?.setEnabled([...records.values()].flatMap(record => record.currentSystemSnapshot).some(entry => actionMatches(entry, policyFrame)))
+      currentSystemSnapshot?.setEnabled([...records.values()].flatMap(record => record.currentSystemSnapshot).some(entry => actionMatches(entry, policyFrame)), context)
       const session = policyFrame.subject?.agent?.session ?? context?.agent?.session ?? options.agent?.session
       const policies = [...records.values()].flatMap(record => record.repeatCompaction)
       if (session !== undefined) {

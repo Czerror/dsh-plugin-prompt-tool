@@ -24,6 +24,7 @@ class Capture extends LlmAdapter {
   requests = []
   waiters = []
   hold
+  failOnce
   armHold(sessionId) {
     const entered = Promise.withResolvers(), release = Promise.withResolvers()
     this.hold = { entered, release, sessionId }
@@ -34,6 +35,11 @@ class Capture extends LlmAdapter {
     this.requests.push(request)
     this.waiters.splice(0).filter(waiter => waiter.sessionId === request.sessionId).forEach(waiter => waiter.resolve(request))
     if (this.hold?.sessionId === request.sessionId) { this.hold.entered.resolve(request); await this.hold.release.promise }
+    if (this.failOnce === request.sessionId) {
+      this.failOnce = undefined
+      yield { type: 'finish', reason: { kind: 'error', failure: { message: 'retry frozen step', code: 'SERVER' } } }
+      return
+    }
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: 'OK' } }
     yield { type: 'finish', reason: { kind: 'stop' } }
@@ -82,10 +88,14 @@ test('每步当前系统正文：真实 Agent request 与 JSONL 日志采用热�
   for (const model of ['probe', 'head']) {
     const fresh = await root.agents.create({ sessionId: `pt22-fresh-${model}`, agentOptions: { provider: 'local', model }, meta: { cwd: home } })
     t.after(() => fresh.dispose())
+    const earlierSystem = { ...createSystemMessage('EARLIER OTHER OWNER'), source: { kind: 'another-owner' } }
+    const earlierEvent = fresh.agent.session.append('system/message', { turn: 1, step: 1, message: earlierSystem }, { surfaceOp: 'append' })
     const firstRequest = await send(fresh.agent, 'first-enabled')
     const full = contentText(firstRequest.messages.find(message => message.role === 'system')?.content)
     assert.match(full, /A\r?\n完整正文\r?\n尾部/)
     assert.match(full, /QUALIFIED/)
+    assert.deepEqual(firstRequest.messages.filter(message => message.source?.kind === 'another-owner'), [earlierSystem])
+    assert.deepEqual(fresh.agent.session.snapshotEvents()[earlierEvent.seq].data.message, earlierSystem)
     assert.equal(firstRequest.messages.filter(message => message.role === 'system' && message.source.kind === 'system-prompt').length, 1)
     const others = [
       { ...createSystemMessage('OTHER SYSTEM \r\n '), source: { kind: 'another-owner' } },
@@ -103,7 +113,7 @@ test('每步当前系统正文：真实 Agent request 与 JSONL 日志采用热�
       assert.equal(request.messages.filter(message => message.role === 'system' && message.source.kind === 'system-prompt').length, 1, `${model}/${name}: no duplicate`)
       assert.equal(contentText(fresh.agent.session.snapshotEvents().find(event => event.seq === seeded.seq).data.message.content), text, 'historical event remains exact')
       const retained = request.messages.filter(message => message.source?.kind === 'another-owner' || contentText(message.content) === 'OTHER USER')
-      assert.deepEqual(retained, others, `${model}/${name}: other contributions and order preserved`)
+      assert.deepEqual(retained, [earlierSystem, ...others], `${model}/${name}: other contributions and order preserved`)
       const latest = fresh.agent.session.snapshotEvents().findLast(event => event.type === 'system/message' && event.data.message.source.kind === 'system-prompt' && contentText(event.data.message.content) !== '')
       assert.equal(contentText(latest.data.message.content), full, `${model}/${name}: durable body matches request`)
     }
@@ -143,7 +153,30 @@ test('每步当前系统正文：真实 Agent request 与 JSONL 日志采用热�
   hold.release()
   await deadline(firstIdle, 'held request did not settle')
   const secondStart = handle.agent.session.snapshotEvents().at(-1).seq
+  const secondRequestStart = capture.requests.length
+  capture.failOnce = handle.agent.id
+  const stopRetry = root.on('agent/request-error', async () => ({ kind: 'retry' }))
+  const stopRequestRefresh = root.on('agent/request', async (payload, next) => {
+    await writeModule('B\n新正文\n尾部', false)
+    await runtime.refresh()
+    await handle.agent.loopCtx.systemPrompt.assemble({ agent: handle.agent, signal: payload.signal })
+    await Promise.all([0, 1].map(async () => {
+      const context = { agent: handle.agent, signal: payload.signal, modelSelection: { ...handle.agent.model.current() } }
+      const toolSet = await handle.agent.loopCtx.tools.resolve(context)
+      try { await handle.agent.loopCtx.systemPrompt.assemble({ ...context, toolSet }) }
+      finally { toolSet.dispose() }
+    }))
+    return next()
+  })
   const second = await send(handle.agent, 'second')
+  stopRequestRefresh()
+  stopRetry()
+  const retryRequests = capture.requests.slice(secondRequestStart).filter(request => request.sessionId === handle.agent.id)
+  assert.equal(retryRequests.length, 2, 'real loop retries the accepted step once')
+  assert.deepEqual(retryRequests.map(request => contentText(request.messages[0].content)), [
+    'You are an AI agent powered by DeepSeek Harness.\n\nQUALIFIED\n\nB\n新正文\n尾部',
+    'You are an AI agent powered by DeepSeek Harness.\n\nQUALIFIED\n\nB\n新正文\n尾部',
+  ], 'hot disable, bare assembly and concurrent same-Agent assemblies do not replace the accepted step')
   const otherSecond = await send(other.agent, 'other-after-update')
   const firstSystem = contentText(first.messages.find(message => message.role === 'system')?.content)
   const secondSystem = contentText(second.messages.find(message => message.role === 'system')?.content)
