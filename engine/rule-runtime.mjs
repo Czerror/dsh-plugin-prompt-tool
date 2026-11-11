@@ -25,6 +25,7 @@ import { applyToolDescriptions } from './actions/assembly.mjs'
 import { applyTransportDescriptions, toolDescriptionObservation, settleSkillDescriptions, skillDescriptionObservation } from './tool-metadata.mjs'
 import { resultTextOwners } from './result-text-owners.mjs'
 import { bindResultTextDependencies } from './result-text.mjs'
+import { providerHookDecisionsState, isProviderHookDecisionsAction, prepareProviderHookDecisions, bindProviderHookDependencies } from './provider-hook-decisions.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -140,8 +141,8 @@ function mountSources(ctx, sources, options = {}) {
         const { action, rule, moduleId } = item
         if (action.kind === 'request-params' && action.maxTokens !== undefined) options.collectRequestBudget({ action, rule, id: action.id, sourceModuleId: moduleId,
           actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
-        if (action.kind === 'persona' || action.kind === 'subagent-params' || isReadLimitsAction(action) || isDelegationLimitsAction(action) || isFilesystemPolicyAction(action) || isApprovalDecisionsAction(action) || isEscalationDecisionAction(action)) {
-          const collect = isEscalationDecisionAction(action) ? options.collectEscalationDecisions : isApprovalDecisionsAction(action) ? options.collectApprovalDecisions : isFilesystemPolicyAction(action) ? options.collectFilesystemPolicy : action.kind === 'persona' ? options.collectPersona : isReadLimitsAction(action) ? options.collectReadLimits : isDelegationLimitsAction(action) ? options.collectDelegationLimits : options.collectSubagentParams
+        if (action.kind === 'persona' || action.kind === 'subagent-params' || isReadLimitsAction(action) || isDelegationLimitsAction(action) || isFilesystemPolicyAction(action) || isApprovalDecisionsAction(action) || isEscalationDecisionAction(action) || isProviderHookDecisionsAction(action)) {
+          const collect = isProviderHookDecisionsAction(action) ? options.collectProviderHookDecisions : isEscalationDecisionAction(action) ? options.collectEscalationDecisions : isApprovalDecisionsAction(action) ? options.collectApprovalDecisions : isFilesystemPolicyAction(action) ? options.collectFilesystemPolicy : action.kind === 'persona' ? options.collectPersona : isReadLimitsAction(action) ? options.collectReadLimits : isDelegationLimitsAction(action) ? options.collectDelegationLimits : options.collectSubagentParams
           collect({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
             ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
           continue
@@ -231,6 +232,7 @@ export function createRuleRuntime(ctx, options = {}) {
   const listeners = new Map()
   const ruleOwners = new WeakMap()
   const resultTextOwner = {}
+  let releaseProviderHook
   const memo = new Map()
   const report = options.onOutcome === undefined ? undefined : (rule, channel, outcome) => options.onOutcome({ moduleId: ruleOwners.get(rule), ruleId: rule.id, channel, outcome })
   const assemblyFrames = new WeakMap()
@@ -274,13 +276,14 @@ export function createRuleRuntime(ctx, options = {}) {
     } catch (error) { releaseMemo(); releaseMemo = undefined; throw error }
   }
   const mount = source => {
-    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], dispose: undefined }
+    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], providerHookDecisions: [], dispose: undefined }
     record.approvalDecisions = []
     record.escalationDecisions = []
     for (const rule of source.rules) {
       bindFilesystemPolicyDependencies(rule, source.moduleId, options.onOutcome)
       bindApprovalDecisionsDependencies(rule, source.moduleId, options.onOutcome)
       bindEscalationDecisionDependencies(rule, source.moduleId, options.onOutcome)
+      bindProviderHookDependencies(rule, source.moduleId, options.onOutcome)
     }
     for (const rule of source.rules) bindDelegationLimitsDependencies(rule, source.moduleId, delegationLimitEntries, options.onOutcome)
     for (const rule of source.rules) bindReadLimitsDependencies(rule, source.moduleId, readLimitEntries, options.onOutcome)
@@ -350,6 +353,7 @@ export function createRuleRuntime(ctx, options = {}) {
       collectFilesystemPolicy(entry) { record.filesystemPolicy.push(entry) },
       collectApprovalDecisions(entry) { record.approvalDecisions.push(entry) },
       collectEscalationDecisions(entry) { record.escalationDecisions.push(entry) },
+      collectProviderHookDecisions(entry) { record.providerHookDecisions.push(entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -528,6 +532,14 @@ export function createRuleRuntime(ctx, options = {}) {
     frame.requestBudgetReason = reason
     return frame.requestBudgetConflict
   }
+  releaseProviderHook = providerHookDecisionsState.register(ctx, (input, channel, result) => {
+    const entries = [...records.values()].flatMap(record => record.providerHookDecisions)
+    if (entries.length === 0 || input?.agent !== options.agent) return undefined
+    const frame = ruleFrame(channel, [{ ...input, modelSelection: input.modelSelection ?? {} }, result].filter(value => value !== undefined), warnOnce, ctx, report)
+    // Hook model conditions may use only this event's explicit selection; never read Agent current model.
+    frame.subject = { ...frame.subject, model: input.modelSelection?.model }
+    return { status: 'sealed', providerHookDecisions: prepareProviderHookDecisions(entries, frame) }
+  })
   const runtime = {
     replace(sources) {
       if (!active) throw new Error('rule runtime disposed')
@@ -558,6 +570,7 @@ export function createRuleRuntime(ctx, options = {}) {
         prepareDelegationLimits(delegationLimitEntries(), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx), true)
         prepareApprovalDecisions([...records.values()].flatMap(record => record.approvalDecisions), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx))
         prepareSubagentParams({}, true)
+        prepareProviderHookDecisions([...records.values()].flatMap(record => record.providerHookDecisions), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx))
         const personaPlan = preparePersona({}, true)
         const text = [...records.values()].flatMap(record => record.text)
         if (text.length > 0) layers ??= createLayerRuntime(ctx, warnOnce, { agent: options.agent, turnStopBudgets: new Map(), sourceError })
@@ -722,6 +735,7 @@ export function createRuleRuntime(ctx, options = {}) {
       points.clear()
       releaseFallback?.()
       releaseMemo?.()
+      releaseProviderHook?.()
       if (ownsPool) pool.dispose()
     },
   }
