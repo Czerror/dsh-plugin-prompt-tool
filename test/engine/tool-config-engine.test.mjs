@@ -278,11 +278,19 @@ test('HTTP执行器在真实请求中保留caller取消，不等待工具超时'
 })
 
 test('shell执行器转发caller取消并结束本次子进程', async t => {
-  const controller = new AbortController(), marker = new Error('cancel shell')
-  const { tool } = registerTool(toolOf({ kind: 'shell', command: nodeEval('setTimeout(()=>{},10000)') }, 15000))
-  const pending = tool.execute({}, { agent: { session: { header: { cwd: tempRoot(t) } } }, signal: controller.signal })
-  const timer = setTimeout(() => controller.abort(marker), 50)
-  try { await assert.rejects(pending, error => error === marker) } finally { clearTimeout(timer) }
+  const cwd = tempRoot(t), marker = new Error('cancel shell')
+  const startedPath = join(cwd, 'started'), markerPath = join(cwd, 'late-marker')
+  const command = nodeEval("require('fs').writeFileSync(process.env.STARTED,'yes'); setTimeout(()=>require('fs').writeFileSync(process.env.MARKER,'late'),1000)")
+  const { tool } = registerTool(toolOf({ kind: 'shell', command, env: { STARTED: startedPath, MARKER: markerPath } }, 15000))
+  const controller = new AbortController()
+  const pending = tool.execute({}, { agent: { session: { header: { cwd } } }, signal: controller.signal })
+  const deadline = Date.now() + 2000
+  while (!existsSync(startedPath) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(existsSync(startedPath), true, '取消前必须确认子进程已启动')
+  controller.abort(marker)
+  await assert.rejects(pending, error => error === marker)
+  await new Promise(resolve => setTimeout(resolve, 1200))
+  assert.equal(existsSync(markerPath), false, '取消必须结束shell启动的子进程')
   let sideEffects = 0
   const server = createServer((_req, res) => { sideEffects++; res.end('OK') })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -294,6 +302,36 @@ test('shell执行器转发caller取消并结束本次子进程', async t => {
   { requireApproval: ['shell'], tools: [toolOf({ kind: 'shell', command: nodeEval(`fetch('http://127.0.0.1:${server.address().port}').then(r=>r.text())`) }, 2000)] })
   await assert.rejects(approvedTool.execute({}, { name: 'probe', callId: 'approval-cancel', agent: { session: { header: { cwd: tempRoot(t) } } }, signal: cancelled.signal }), error => error === stopped)
   assert.equal(sideEffects, 0, '审批返回前取消后不得启动shell本地HTTP副作用')
+})
+
+test('shell执行器：调用前已取消时不启动子进程', async t => {
+  const cwd = tempRoot(t), startedPath = join(cwd, 'started')
+  const controller = new AbortController(), marker = new Error('already cancelled')
+  controller.abort(marker)
+  const { tool } = registerTool(toolOf({
+    kind: 'shell',
+    command: nodeEval("require('fs').writeFileSync(process.env.STARTED,'yes')"),
+    env: { STARTED: startedPath },
+  }, 15000))
+  await assert.rejects(tool.execute({}, { agent: { session: { header: { cwd } } }, signal: controller.signal }), error => error === marker)
+  assert.equal(existsSync(startedPath), false)
+})
+
+test('shell执行器：父shell启动期间取消时不启动延迟子命令', async t => {
+  const cwd = tempRoot(t), spawnedPath = join(cwd, 'spawned'), markerPath = join(cwd, 'late-marker')
+  const controller = new AbortController(), marker = new Error('cancel while spawning')
+  const command = process.platform === 'win32'
+    ? `Set-Content -Path $env:SPAWNED -Value yes; Start-Sleep -Milliseconds 500; ${nodeEval("require('fs').writeFileSync(process.env.MARKER,'late')")}`
+    : `printf x > "$SPAWNED"; sleep 0.5; ${nodeEval("require('fs').writeFileSync(process.env.MARKER,'late')")}`
+  const { tool } = registerTool(toolOf({ kind: 'shell', command, env: { SPAWNED: spawnedPath, MARKER: markerPath } }, 15000))
+  const pending = tool.execute({}, { agent: { session: { header: { cwd } } }, signal: controller.signal })
+  const deadline = Date.now() + 2000
+  while (!existsSync(spawnedPath) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(existsSync(spawnedPath), true, '取消前必须确认父shell已启动')
+  controller.abort(marker)
+  await assert.rejects(pending, error => error === marker)
+  await new Promise(resolve => setTimeout(resolve, 700))
+  assert.equal(existsSync(markerPath), false)
 })
 
 test('ask-user 执行器：批准结果经真实工具管线透传', async (t) => {

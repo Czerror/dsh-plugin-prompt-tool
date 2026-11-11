@@ -5,10 +5,12 @@ import { createRuleRuntime } from '../../engine/rule-runtime.mjs'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, readFile, rm, mkdir, copyFile, symlink, realpath } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import { parseDocument } from 'yaml'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { compileRules } from '../../engine/rule-spec.mjs'
 
 test('Hook 决定规则拒绝不会消费的投递预算与外层排序', () => {
@@ -26,7 +28,7 @@ for (const kind of ['claude-code', 'codex']) test(`${kind} 官方四事件保留
   const events = [{ type: 'turn/start', data: { turn: 1 } }]
   const session = { id: kind, header: {}, snapshotEvents: () => events,
     append(type, data) { events.push({ type, data, seq: events.length }); return events.at(-1) } }
-  let steers = 0, calls = 0, gate, ask = false
+  let steers = 0, calls = 0, gate, ask = false, releases = []
   root.provide('agents', { get: () => undefined, turnBoundaryOf: () => ({ lastTurn: 1 }) })
   root.provide('workingDirectory', { ensure: async () => dir, get: () => dir })
   root.provide('shell', { resolve: request => request, execute: async request => {
@@ -59,6 +61,49 @@ for (const kind of ['claude-code', 'codex']) test(`${kind} 官方四事件保留
   assert.equal(steers, 1)
   replace(true)
   assert.equal((await pre()).kind, 'enter')
+  const originalPath = await realpath(createRequire(import.meta.url).resolve(`@deepseek-ai/dsh-hooks-${kind}`))
+  const copy = join(dir, 'second')
+  await mkdir(join(copy, 'lib'), { recursive: true })
+  await copyFile(join(dirname(originalPath), '../package.json'), join(copy, 'package.json'))
+  await copyFile(originalPath, join(copy, 'lib/index.js'))
+  await mkdir(join(copy, 'node_modules/@deepseek-ai'), { recursive: true })
+  const manifest = JSON.parse(await readFile(join(copy, 'package.json'), 'utf8'))
+  for (const name of Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies })) {
+    await symlink(await realpath(join(dirname(originalPath), '../../..', name)), join(copy, 'node_modules', name), 'junction')
+  }
+  const secondName = pathToFileURL(join(copy, 'lib/index.js')).href
+  const second = await root.plugin(await import(secondName), { configPath: path })
+  assert.equal((await pre()).kind, 'enter', '每一份实际挂载的官方同版本副本都应验证并接入')
+  const broken = join(dir, 'broken')
+  await mkdir(join(broken, 'lib'), { recursive: true })
+  const brokenSource = (await readFile(originalPath, 'utf8')).replace('const detached', 'const  detached')
+  await writeFile(join(broken, 'package.json'), await readFile(join(copy, 'package.json')))
+  await writeFile(join(broken, 'lib/index.js'), brokenSource)
+  await mkdir(join(broken, 'node_modules/@deepseek-ai'), { recursive: true })
+  for (const name of Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies })) await symlink(await realpath(join(dirname(originalPath), '../../..', name)), join(broken, 'node_modules', name), 'junction')
+  const brokenName = pathToFileURL(join(broken, 'lib/index.js')).href
+  const brokenModule = await import(brokenName)
+  const sibling = { id: `${kind}-sibling`, session, steer() {}, model: agent.model }
+  const siblingScope = createScope(root, sibling)
+  sibling.ctx = siblingScope.ctx
+  const siblingOutcomes = []
+  const siblingRuntime = createRuleRuntime(sibling.ctx, { agent: sibling, onOutcome: outcome => siblingOutcomes.push(outcome) })
+  siblingRuntime.replace([{ moduleId: 'hook', rules: compileRules([{ ...card, enabled: true }]) }])
+  const siblingBroken = await sibling.ctx.plugin(brokenModule, { configPath: path })
+  assert.equal((await pre()).kind, 'enter', '同 root 不可达副本不能暂停其他 Agent')
+  assert.equal((await pre({ ...input, agent: sibling })).kind, 'reject')
+  assert.ok(siblingOutcomes.some(outcome => outcome.outcome === 'unavailable' && /artifact mismatch/.test(outcome.reason)))
+  await siblingBroken.dispose()
+  assert.equal((await pre({ ...input, agent: sibling })).kind, 'enter')
+  siblingRuntime.dispose()
+  await siblingScope.dispose()
+  const brokenOwner = await root.plugin(brokenModule, { configPath: path })
+  outcomes.length = 0
+  assert.equal((await pre()).kind, 'reject', '实际失配副本暂停该 Agent 对应能力')
+  assert.ok(outcomes.some(outcome => outcome.outcome === 'unavailable'), JSON.stringify(outcomes))
+  await brokenOwner.dispose()
+  assert.equal((await pre()).kind, 'enter', '移除失配副本后下一次重判恢复')
+  await second.dispose()
   const cancelled = new AbortController()
   cancelled.abort()
   assert.equal((await pre({ ...input, signal: cancelled.signal })).kind, 'reject')
@@ -78,7 +123,10 @@ for (const kind of ['claude-code', 'codex']) test(`${kind} 官方四事件保留
   let started
   const accepted = new Promise(resolve => { started = resolve })
   let release
-  gate = () => { started(); return new Promise(resolve => { release = resolve }) }
+  let gateResolve
+  const gatePromise = new Promise(resolve => { gateResolve = resolve })
+  gate = () => { started(); return gatePromise }
+  release = gateResolve
   const pending = pre()
   await accepted
   replace(false)
@@ -89,7 +137,7 @@ for (const kind of ['claude-code', 'codex']) test(`${kind} 官方四事件保留
   replace(true)
   const during = new AbortController()
   const cancellationStarted = new Promise(resolve => { started = resolve })
-  gate = () => { started(); return new Promise(resolve => { release = resolve }) }
+  gate = () => { started(); return new Promise(resolve => { releases.push(resolve); release = () => { for (const resolve of releases.splice(0)) resolve() } }) }
   const cancelling = pre({ ...input, signal: during.signal })
   await cancellationStarted
   during.abort()
@@ -130,7 +178,7 @@ for (const kind of ['claude-code', 'codex']) test(`${kind} 官方四事件保留
   otherRuntime.dispose()
   await isolated.fiber.dispose()
   const disposalStarted = new Promise(resolve => { started = resolve })
-  gate = () => { started(); return new Promise(resolve => { release = resolve }) }
+  gate = () => { started(); return new Promise(resolve => { releases.push(resolve); release = () => { for (const resolve of releases.splice(0)) resolve() } }) }
   const disposing = pre()
   await disposalStarted
   await hook.dispose()

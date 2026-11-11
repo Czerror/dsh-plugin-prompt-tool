@@ -274,6 +274,8 @@ function createExecute(ctx, def, requireApproval) {
         })
         const cancel = () => killShellTree(child)
         run.signal?.addEventListener('abort', cancel, { once: true })
+        // execFile can finish spawning before the abort listener is attached.
+        if (run.signal?.aborted) cancel()
         const timeout = def.timeoutMs
         if (timeout !== undefined && Number.isSafeInteger(timeout) && timeout > 0) {
           killTimer = setTimeout(() => { timedOut = true; killShellTree(child) }, timeout)

@@ -26,7 +26,18 @@ const reachable = (owner, agent) => agent?.ctx?.root === owner.ctx.root
 function status(action, agent) {
   for (const kind of Object.keys(action.value)) {
     if (!providerHookDecisionsState[kind].available) return providerHookDecisionsState[kind]
-    if (![...owners].some(owner => owner.kind === kind && owner.active && reachable(owner, agent))) return { available: false, reason: `current Agent official ${kind} hook owner not mounted` }
+    const matching = [...owners].filter(owner => owner.kind === kind && owner.active && reachable(owner, agent))
+    if (matching.length === 0) return { available: false, reason: `current Agent official ${kind} hook owner not mounted` }
+    const known = new Set(matching.flatMap(owner => [owner.fiber, owner.ctx]))
+    for (const owner of matching) {
+      const entries = [...(owner.ctx.root?.registry?.entries?.() ?? owner.ctx.registry?.entries?.() ?? [])]
+      for (const [, runtime] of entries) {
+        if (runtime.name !== `hooks-${kind}`) continue
+        for (const fiber of runtime.fibers ?? []) {
+          if (reachable({ ctx: fiber.ctx }, agent) && !known.has(fiber) && !known.has(fiber.ctx)) return { available: false, reason: `current Agent official ${kind} hook owner artifact mismatch` }
+        }
+      }
+    }
   }
   return { available: true }
 }
@@ -62,7 +73,7 @@ providerHookDecisionsState.accept = (input, channel, result) => {
 }
 
 providerHookDecisionsState.owner = (kind, ctx) => {
-  const owner = { kind, ctx, active: true }
+  const owner = { kind, ctx, fiber: ctx.fiber, active: true }
   owners.add(owner)
   ctx.effect(() => () => { owner.active = false; owners.delete(owner) })
   return owner

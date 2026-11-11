@@ -45,9 +45,14 @@ for (const kind of Object.keys(digests)) {
 }
 if (targets.size > 0) registerHooks({ load(url, context, next) {
   const result = next(url, context)
-  const kind = targets.get(url)
-  if (kind === undefined) return result
+  if (result.source == null) return result
   const source = typeof result.source === 'string' ? result.source : Buffer.from(result.source).toString()
+  const kind = targets.get(url) ?? Object.entries(digests).find(([, digest]) => createHash('sha256').update(source).digest('hex') === digest)?.[0]
+  if (kind === undefined) return result
+  try {
+    const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(url)), '../package.json'), 'utf8'))
+    if (pkg.name !== `@deepseek-ai/dsh-hooks-${kind}` || pkg.version !== '0.2.2-rc.1') return result
+  } catch { return result }
   const transformed = transformProviderHooks(kind, source)
   state[kind].available = transformed !== undefined
   state[kind].reason = transformed === undefined ? 'official hook artifact fingerprint or owner structure mismatch; restart with supported artifact' : ''

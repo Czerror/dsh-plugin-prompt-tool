@@ -24,6 +24,8 @@ process 规则另支持 `command-confine-passthrough: true`：每模块发布一
 | 外部来源事实 | 注入动作 params.source | 导入报告与导出元数据 |
 | 模块显示名称 | module.yml.name | 模块卡与编辑目标选择；不改变模块 ID 或目录 |
 
+核心破限模块的 `customTools` 当前包含一个 `http_fetch` 行，默认 `enabled: false`。模块总开关关闭时整组贡献撤回；模块开启后仍须把该工具行显式设为 `true` 才注册，关闭工具行会撤回注册并保留定义。它固定发起 GET，返回状态、成功标志和原始响应正文；这不是官方 `web_fetch` 的网页提取、来源引用或 provider 能力，不能按两者语义等价使用。`unrestricted` 的来源定义仍保持 `fetch: false`，核心模块不会隐式修改或打开它。
+
 当前格式的决策见 [ADR-0013](adr/0013-native-context-module-state.md)。模块不注册为官方会话预设、不保存会话绑定，不通过 settings 携带规则正文或大文本。
 
 `/module-name` 通过显式 `x-module-id` 读取 `{ name, revision }`；保存仅接受 `name`、`expectedModuleId`、`expectedRevision`，名称修剪后为 1–128 个字符。写入先校验用户可写目录、身份和完整定义版本，再用 YAML Document 与既有原子提交只修改 `name`，保留注释、未知字段与规则。过期版本返回 409；普通保存只确认 `persisted` 并登记后台发布，切片发布失败仍返回 `publicationPending` 与 `publicationError`，不伪报未写盘。模块显示名称不代表默认主语，空白创建名为“默认模块”也不会建立隐式写入目标。
