@@ -5,6 +5,7 @@
 
 import { getService, parseToolNames } from './shared.mjs'
 import { toolScopeSnapshot, toolCatalogNames } from './tool-scope.mjs'
+import { readSkillCatalog } from './tool-metadata.mjs'
 import { machinePaths } from './machine-paths.mjs'
 import { SAFE_ENV_KEYS } from './env-safety.mjs'
 import { createInstructionHintResolver } from './instruction-hint.mjs'
@@ -131,19 +132,19 @@ function createSkillCatalogResolver(config) {
     }
   }
 
-  return async ({ ctx, agent, session }) => {
+  return async (context) => {
+    const { ctx, agent, session } = context
     try {
       const skills = getService(ctx, 'skills')
       if (skills === undefined || typeof skills.list !== 'function') {
         warnOnceLocal(ctx, `${name}: skills service unavailable — skill-catalog config ${config.id} skipped`)
         return null
       }
-      const all = await skills.list({
+      const visible = await readSkillCatalog(skills, {
         scope: agent ?? ctx,
         ...(session?.header?.cwd !== undefined ? { cwd: session.header.cwd } : {}),
         ...(agent?.signal !== undefined ? { signal: agent.signal } : {}),
-      })
-      const visible = Array.isArray(all) ? all : []
+      }, context)
       const scoped = providers.length === 0
         ? visible
         : visible.filter((skill) => providers.includes(skill?.provider))

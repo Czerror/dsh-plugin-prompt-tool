@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { applySubagentDepthContexts } from './subagent-params.mjs'
 import { applyAcceptedContextReplacements, applyToolDescriptions } from './actions/assembly.mjs'
 import { readLimitsDefinition } from './read-limits.mjs'
+import { installSkillDescriptionProjection, settleSkillDescriptions } from './tool-metadata.mjs'
 
 const installations = new WeakMap()
 const guardedRoots = new WeakSet()
@@ -38,6 +39,7 @@ export function installToolStepAssembly(ctx, options) {
 }
 
 function createInstallation(ctx) {
+  const releaseSkillDescriptions = installSkillDescriptionProjection(ctx)
   const owners = new Set()
   const wrappers = new WeakMap()
   const snapshots = new WeakMap()
@@ -141,8 +143,13 @@ function createInstallation(ctx) {
             if (step === undefined) for (const owner of current) await owner.ensureFresh(agent)
             const captured = { ...context, ...(step === undefined ? {} : { toolSet: wrapped, modelSelection: step.modelSelection }) }
             beginToolCatalog(captured)
-            const invoke = index => index === current.length
-              ? Reflect.apply(value, target, [captured]) : current[index].assemble(captured, () => invoke(index + 1))
+            const invoke = async index => {
+              if (index !== current.length) return current[index].assemble(captured, () => invoke(index + 1))
+              await settleSkillDescriptions(ctx, captured)
+              captured.signal?.throwIfAborted()
+              if (!active || step?.status === 'closed') throw unavailable()
+              return Reflect.apply(value, target, [captured])
+            }
             let final = await invoke(0)
             for (const owner of current) {
               captured.signal?.throwIfAborted()
@@ -157,6 +164,7 @@ function createInstallation(ctx) {
               step.allowed ??= new Set(wrapped.view(agent).keys())
               if (step.contextReplacements !== undefined) Object.freeze(step.contextReplacements)
               if (step.toolDescriptions !== undefined) Object.freeze(step.toolDescriptions)
+              if (step.skillDescriptions !== undefined) Object.freeze(step.skillDescriptions)
               step.status = 'sealed'
               snapshots.set(step, final)
               associateToolAssembly(final, agent, step)
@@ -170,5 +178,5 @@ function createInstallation(ctx) {
       }
     } })
   }, { global: true })
-  return { owners, dispose() { active = false; off(); offExecute(); for (const close of closes) close() } }
+  return { owners, dispose() { active = false; off(); offExecute(); releaseSkillDescriptions(); for (const close of closes) close() } }
 }

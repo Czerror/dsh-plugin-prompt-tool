@@ -63,6 +63,11 @@ export function RuleCard(props: {
     if (node.kind === 'subagent-params') targets.add('subagent:params')
     if (node.kind === 'host-control' && node.capability === 'file-read-limits') targets.add('host:file-read-limits')
     if (node.kind === 'request-params' && node.maxTokens !== undefined) targets.add('request:budget')
+    if (node.kind === 'assembly') {
+      const target = asTriggerRecord(node.target)
+      if (Array.isArray(target.toolDescriptions) && target.toolDescriptions.length > 0) targets.add('tool:descriptions')
+      if (Array.isArray(target.skillDescriptions) && target.skillDescriptions.length > 0) targets.add('skill:descriptions')
+    }
     if (node.kind === 'persona' && (node.stripDefaultIdentity === 'preset' || node.stripDefaultIdentity === 'harness')) targets.add(`persona:identity:${node.stripDefaultIdentity}`)
     collectTargets(nodeList(node.then)); collectTargets(nodeList(node.else))
   } }

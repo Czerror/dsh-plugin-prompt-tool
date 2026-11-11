@@ -2,10 +2,15 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { withSsr, renderElement, makeTranslate } from './support/ssr-render.mjs'
 import { getRuleEditorMeta } from '../../engine/rule-spec.mjs'
+import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
+import { getRulesDraft } from '../../src/client/data/rule-drafts.ts'
 
 const t = makeTranslate()
 const meta = getRuleEditorMeta()
-const { RuleStepsPanel } = await withSsr([new URL('../../src/client/features/prompts/RuleSteps.tsx', import.meta.url).href])
+const { RuleStepsPanel, RuleCard } = await withSsr([
+  new URL('../../src/client/features/prompts/RuleSteps.tsx', import.meta.url).href,
+  new URL('../../src/client/features/prompts/RuleCard.tsx', import.meta.url).href,
+])
 const render = action => renderElement(RuleStepsPanel, {
   t, meta, rule: { id: 'surface', then: [action] }, engineMeta: { layerFieldPolicies: {}, layers: [] },
   fields: new Map(), expanded: new Map([['surface:rule:then:0', true]]), prefix: 'surface', fieldKey: 'rule',
@@ -64,6 +69,52 @@ test('工具说明配置沿普通装配卡显示工具、可选参数与必填�
   for (const key of ['entryName', 'parameter', 'entryMatch', 'entryText']) assert.ok(controls.includes(t(`rules.surface.${key}`)), key)
   for (const text of ['pwsh', 'sandbox_permissions', 'KNOWN TOOL NOTICE']) assert.ok(html.includes(text), text)
   assert.deepEqual(action, before, '原规则草稿保留空替文，不补造工具或参数')
+})
+
+test('技能说明配置沿真实规则卡显示精确匹配与空替文，不能编辑正文或参数路径', () => {
+  const action = { id: 'skill-description', kind: 'assembly', target: { skillDescriptions: [
+    { name: 'dsh-badge', match: 'KNOWN SKILL DESCRIPTION', text: '' },
+  ] } }
+  const before = structuredClone(action), html = render(action), controls = labels(html)
+  const skillLabel = t('rules.surface.editTarget', { target: t('rules.surface.skillDescriptions') })
+  assert.ok(controls.includes(skillLabel))
+  for (const key of ['entryName', 'entryMatch', 'entryText']) assert.ok(controls.includes(t(`rules.surface.${key}`)), key)
+  assert.equal(controls.includes(t('rules.surface.parameter')), false)
+  assert.equal(controls.includes(t('rules.surface.matchEnabled')), false, '匹配原文必填，没有关闭匹配的伪入口')
+  assert.ok(html.includes('dsh-badge'))
+  assert.ok(html.includes('KNOWN SKILL DESCRIPTION'))
+  assert.deepEqual(action, before, '展示不改技能身份、空替文或保存草稿')
+  const seed = { id: 'empty', kind: 'assembly', target: {} }
+  assert.ok(labels(render(seed)).includes(skillLabel), '新建装配也提供技能说明入口')
+  assert.deepEqual(seed.target, {})
+})
+
+test('说明规则卡显示当前保存版本的工具与技能缺目标原因，旧观测不显示假成功', () => {
+  for (const [field, channel, name] of [['toolDescriptions', 'tool:descriptions', 'run_code'], ['skillDescriptions', 'skill:descriptions', 'dsh-badge']]) {
+    const rule = { id: 'metadata', enabled: true, then: [{ id: 'description', kind: 'assembly', target: {
+      [field]: [{ name, match: 'KNOWN ORIGINAL', text: 'EDITED DESCRIPTION' }],
+    } }] }
+    const before = structuredClone(rule)
+    const draft = getRulesDraft(createWorkspaceDrafts(), 'metadata-module')
+    Object.assign(draft, { loaded: true, saved: [structuredClone(rule)], revisions: { rules: { metadata: 'R1' }, settings: 'S1', variables: 'V1' } })
+    const entry = { key: 'metadata', previousId: 'metadata', value: rule }
+    const renderCard = diagnostics => renderElement(RuleCard, { t, entry, draft, editor: {}, meta: { layers: [] }, expanded: true,
+      onToggle() {}, onDuplicate() {}, expandedRows: new Map(), moduleId: 'metadata-module', diagnostics })
+    const reason = `assembly.${field} ${name} target missing; skipped`
+    const observation = { moduleId: 'metadata-module', ruleId: 'metadata', actionId: 'description', agentId: 'agent-a', channel,
+      hit: 0, miss: 0, unavailable: 1, error: 0, identityOutcome: 'target-mismatch', definitionRevision: 'R1:S1', reason }
+    const unavailable = renderCard([observation])
+    assert.ok(unavailable.includes(t('rules.identity.unavailable')), `${field}卡片显示实际不可用`)
+    assert.ok(unavailable.includes(reason), `${field}卡片显示缺目标原因`)
+    const staleReason = 'STALE OBSERVATION REASON'
+    const stale = renderCard([{ ...observation, definitionRevision: 'OLD', identityOutcome: 'matched', reason: staleReason }])
+    assert.ok(stale.includes(t('rules.identity.unverified')))
+    assert.equal(stale.includes(t('rules.identity.matched')), false, '旧版本成功不冒充当前状态')
+    assert.equal(stale.includes(staleReason), false, '旧版本原因也不串入当前定义')
+    const matched = renderCard([{ ...observation, identityOutcome: 'matched', reason: undefined }])
+    assert.ok(matched.includes(t('rules.identity.matched')))
+    assert.deepEqual(entry.value, before, '只读状态投影不修改规则草稿')
+  }
 })
 
 test('模型流动作：模式与正文沿普通动作编辑面渲染，不修改作者声明', () => {
