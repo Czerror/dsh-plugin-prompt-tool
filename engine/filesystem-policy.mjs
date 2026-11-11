@@ -1,5 +1,6 @@
 import { toolStepFor } from './tool-scope.mjs'
 import { actionMatches } from './conditions/evaluation.mjs'
+import { symbols } from '@deepseek-ai/cordis'
 
 export const filesystemCapabilities = Object.freeze(['sandbox-file-write', 'filesystem-fence', 'filesystem-observation'])
 const key = Symbol.for('prompt-tool:filesystem-policy')
@@ -8,7 +9,8 @@ const policies = new WeakMap()
 const owners = new WeakMap()
 const providers = new WeakMap()
 const observations = new Set()
-filesystemPolicyState.provider = (ctx, provider) => providers.set(provider, filesystemPolicyState.owner(ctx))
+const original = service => service?.[symbols.original] ?? service
+filesystemPolicyState.provider = (ctx, provider) => providers.set(original(provider), filesystemPolicyState.owner(ctx))
 filesystemPolicyState.observer = ctx => {
   const owner = filesystemPolicyState.owner(ctx)
   observations.add(ctx)
@@ -40,7 +42,7 @@ export function filesystemPolicyStatus(capability, agent) {
     if (status?.available !== true) return { available: false, reason: status?.reason ?? `filesystem ${owner} early entry missing; restart DSH with early entry` }
   }
   try {
-    const fs = agent?.ctx?.get('fs')
+    const fs = original(agent?.ctx?.get('fs'))
     if (fs === undefined) return { available: false, reason: 'current Agent filesystem owner unavailable' }
     if (capability === 'filesystem-fence' && providers.get(fs)?.active !== true) return { available: false, reason: 'current Agent verified filesystem fence owner unavailable' }
     if (capability === 'filesystem-observation' && ![...observations].some(ctx => ownersFor(ctx, fs))) return { available: false, reason: 'current Agent verified observation owner unavailable' }
@@ -49,7 +51,7 @@ export function filesystemPolicyStatus(capability, agent) {
 }
 
 function ownersFor(ctx, fs) {
-  try { return fs !== undefined && owners.get(ctx)?.active === true && ctx.get('fs') === fs } catch { return false }
+  try { return fs !== undefined && owners.get(ctx)?.active === true && original(ctx.get('fs')) === original(fs) } catch { return false }
 }
 
 export const isFilesystemPolicyAction = action => action.kind === 'host-control' && filesystemCapabilities.includes(action.capability)
