@@ -27,6 +27,28 @@ version: 1.0.0
 engineCompat: '>=0.4.2'
 description: 按需接管默认身份与审批、沙箱、计划、终端、文件、子代理、PTC及技能说明，并配置文件读取上限；规则独立启停，实际执行权限、模式与网络仍归原所有者。
 modules: [ rule-engine ]
+customTools:
+  - id: http-fetch
+    name: http_fetch
+    enabled: false
+    description: 发起 HTTP GET 请求并返回状态与原始正文；不提供官方 web_fetch 的网页提取、来源引用或 provider 能力。
+    parameters:
+      url:
+        type: string
+        required: true
+        description: 请求 URL
+    output:
+      schema:
+        type: object
+        additionalProperties: true
+        properties:
+          status: { type: integer }
+          ok: { type: boolean }
+          body: { type: string }
+    execute:
+      kind: http
+      url: '{{args.url}}'
+      method: GET
 rules:
   - id: official-instruction-budget
     name: 官方指令预算

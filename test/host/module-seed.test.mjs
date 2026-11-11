@@ -22,6 +22,9 @@ test('核心破限模块沿普通补种与启用表，默认关闭且已有用�
   const dir = join(root, 'limit-breaker')
   const definition = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
   assert.equal(definition.name, '核心破限模块')
+  assert.deepEqual(definition.customTools.map(tool => [tool.id, tool.name, tool.enabled, tool.execute.method]), [
+    ['http-fetch', 'http_fetch', false, 'GET'],
+  ])
   assert.deepEqual(definition.rules.map(rule => [rule.id, rule.enabled, rule.then[0].stripDefaultIdentity]), [
     ['official-instruction-budget', false, undefined],
     ['default-preset-identity', false, 'preset'], ['default-harness-identity', false, 'harness'],
