@@ -87,6 +87,7 @@ export function planDelegationLimits(entries, frame, preview = false) {
 
 export function prepareDelegationLimits(entries, frame, preview = false) {
   const plan = planDelegationLimits(entries, frame, preview)
+  if (plan.conflicts.size > 0) throw new TypeError(`delegation-limits ${[...plan.conflicts].join(', ')} conflict`)
   if (preview) return plan
   const context = frame.args[1]
   const agent = frame.subject?.agent

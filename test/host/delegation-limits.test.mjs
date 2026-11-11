@@ -72,7 +72,8 @@ test('真实工具出口保留已接受额度，热改和关闭仅作用后续�
   delegationLimitsState.maxDepth.available = delegationLimitsState.askTimeout.available = true
   const agent = { id: 'delegation-execute', session: { id: 'delegation-execute', header: {}, snapshotEvents: () => [] } }
   agent.ctx = createScope(root, agent).ctx
-  const runtime = createRuleRuntime(agent.ctx, { agent })
+  let hot = 'no'
+  const runtime = createRuleRuntime(agent.ctx, { agent, variableStore: { read: () => ({ effective: { hot } }) } })
   t.after(async () => {
     runtime.dispose(); await root.fiber.dispose()
     Object.assign(delegationLimitsState.maxDepth, previous.maxDepth)
@@ -80,7 +81,15 @@ test('真实工具出口保留已接受额度，热改和关闭仅作用后续�
   })
   let tools, prompt
   let questionMode = 'inspect', waiting, answer
-  runtime.replace([source('a', { maxDepth: 10, askTimeout: 300 })])
+  runtime.replace([source('a', { maxDepth: 10 }), {
+    moduleId: 'question', rules: compileRules([{ id: 'legal-question',
+      if: { variable: { key: 'hot', value: 'no' } }, then: [control({ askTimeout: 300 })],
+    }], { moduleId: 'question' }),
+  }, {
+    moduleId: 'dynamic', rules: compileRules([{ id: 'dynamic-conflict',
+      if: { variable: { key: 'hot', value: 'yes' } }, then: [control({ maxDepth: 11, askTimeout: 80 })],
+    }], { moduleId: 'dynamic' }),
+  }])
   await agent.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) {
     tools = ctx.tools; prompt = ctx.systemPrompt
     for (const [kind, name] of [['maxDepth', 'subagent'], ['askTimeout', 'ask_user_question']]) {
@@ -112,6 +121,20 @@ test('真实工具出口保留已接受额度，热改和关闭仅作用后续�
   assert.match(first.toolSet.view(agent).get('ask_user_question').description, /300/)
   assert.equal((await call(first, 'subagent', {})).value, 10)
   assert.equal((await call(first, 'ask_user_question', { timeout: -1 })).value, 300)
+  hot = 'yes'
+  assert.throws(() => runtime.prepareAssembly({}), /delegation-limits.*maxDepth.*conflict/)
+  const rejected = { agent, scope: scopeOf(agent.ctx), signal: new AbortController().signal }
+  rejected.toolSet = await tools.resolve(rejected)
+  try {
+    await assert.rejects(() => prompt.assemble(rejected), /delegation-limits.*conflict/)
+  } finally { rejected.toolSet.dispose() }
+  assert.equal((await call(first, 'subagent', {})).value, 10)
+  assert.equal((await call(first, 'ask_user_question', { timeout: -1 })).value, 300)
+  hot = 'no'
+  const recovered = await prepare()
+  assert.equal((await call(recovered, 'subagent', {})).value, 10)
+  assert.equal((await call(recovered, 'ask_user_question', { timeout: -1 })).value, 300)
+  recovered.toolSet.dispose()
   runtime.replace([source('a', { maxDepth: 7, askTimeout: 80 })])
   const second = await prepare()
   assert.equal((await call(second, 'subagent', {})).value, 7)
