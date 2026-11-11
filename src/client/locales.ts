@@ -19,6 +19,20 @@ import { PROMPT_TOOL_NS } from '../shared/namespace.ts'
 export { PROMPT_TOOL_NS }
 
 const ZH_CORE = {
+  'moduleMerge.title': '并入与移除来源',
+  'moduleMerge.close': '关闭并入与移除来源',
+  'moduleMerge.target': '目标模块',
+  'moduleMerge.source': '来源模块',
+  'moduleMerge.choose': '请选择模块',
+  'moduleMerge.merge': '并入来源',
+  'moduleMerge.remove': '移除来源',
+  'moduleMerge.preview': '预览更改',
+  'moduleMerge.confirm': '确认更改',
+  'moduleMerge.boundary': '仅处理已保存定义；并入不启用模块或规则，移除前会核对来源贡献。',
+  'moduleMerge.rules': '规则：{ids}',
+  'moduleMerge.files': '资产：{ids}',
+  'moduleMerge.saved': '更改已保存。',
+  'moduleMerge.empty': '没有需要更改的贡献。',
   'app.title': '提示词工具',
   'app.backToChat': '返回对话',
   'app.loading': '读取中',
@@ -170,6 +184,20 @@ export type PromptToolLocaleKey =
   | keyof typeof RULES_ZH
 
 const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
+  'moduleMerge.title': 'Merge and remove sources',
+  'moduleMerge.close': 'Close merge and remove sources',
+  'moduleMerge.target': 'Target module',
+  'moduleMerge.source': 'Source module',
+  'moduleMerge.choose': 'Choose a module',
+  'moduleMerge.merge': 'Merge source',
+  'moduleMerge.remove': 'Remove source',
+  'moduleMerge.preview': 'Preview changes',
+  'moduleMerge.confirm': 'Confirm changes',
+  'moduleMerge.boundary': 'Uses saved definitions only. Merging does not enable modules or rules; removal verifies source contributions.',
+  'moduleMerge.rules': 'Rules: {ids}',
+  'moduleMerge.files': 'Assets: {ids}',
+  'moduleMerge.saved': 'Changes saved.',
+  'moduleMerge.empty': 'No contributions need changing.',
   'app.title': 'Prompt Tool',
   'app.backToChat': 'Back to chat',
   'app.loading': 'Loading',

@@ -351,6 +351,17 @@ function sharingSnapshot(dir: string, id: string, root: string, choices: Record<
   return { files, effectiveFiles, definition, spec, projection, missing: [...missing], revision }
 }
 
+export function moduleMergeFiles(root: string, id: string): Array<{ path: string; bytes: Buffer }> {
+  assertTransferId(id)
+  const resolved = resolveModuleDir(id, root)
+  const dir = assertModuleDirectory(dirname(resolved), id)
+  const snapshot = sharingSnapshot(dir, id, root, {})
+  const errors = [...snapshot.missing, ...dependencyErrors(snapshot.effectiveFiles, snapshot.spec)]
+  if (snapshot.projection.memoryConflicts.length > 0) errors.push('来源含归属不明的记忆，请先显式处理')
+  if (errors.length > 0) throw new Error(errors.join('\n'))
+  return snapshot.effectiveFiles.map(file => ({ path: file.path, bytes: Buffer.from(file.bytes) }))
+}
+
 export async function exportModulePackage(root: string, request: ModuleExportRequest): Promise<ModuleExportResult> {
   assertTransferId(request.id)
   const resolved = resolveModuleDir(request.id, root)
