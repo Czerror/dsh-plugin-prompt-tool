@@ -57,7 +57,8 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
       if (key === 'capability' && props.value.kind === 'host-control' && next !== props.value.capability) {
         updated.value = ['command-confine-passthrough', 'sandbox-file-write', 'filesystem-fence', 'filesystem-observation'].includes(String(next)) ? true : next === 'sandbox-soft-default' ? 'danger-full-access'
           : next === 'approval-composition-default' || next === 'approval-config-default' ? 'never'
-            : next === 'delegation-limits' ? { maxDepth: 10, askTimeout: 300 } : { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 }
+            : next === 'approval-decisions' ? { autoGrant: false, autoReviewPassthrough: false, toolAskAllow: false }
+              : next === 'delegation-limits' ? { maxDepth: 10, askTimeout: 300 } : { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 }
         cleared(props.fields, props.fieldKey + ':value')
       }
       if (key === 'action' && props.value.kind === 'tool-result') {

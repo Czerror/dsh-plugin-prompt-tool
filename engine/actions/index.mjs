@@ -18,6 +18,7 @@ import { validateSubagentParams } from '../subagent-params.mjs'
 import { validateReadLimits } from '../read-limits.mjs'
 import { validateDelegationLimits } from '../delegation-limits.mjs'
 import { isFilesystemPolicyAction, validateFilesystemPolicy } from '../filesystem-policy.mjs'
+import { isApprovalDecisionsAction, validateApprovalDecisions } from '../approval-decisions.mjs'
 import { isProcessDefaultAction, validateProcessDefault } from '../process-defaults.mjs'
 import { isCommandConfineAction, validateCommandConfine } from '../command-confine.mjs'
 export { ACTION_KINDS, ACTION_DEGRADE } from './catalog.mjs'
@@ -87,7 +88,8 @@ export function prepareAction(action, options = {}) {
     return () => { throw new TypeError('subagent-params requires createRuleRuntime.prepareAssembly') }
   }
   if (kind === 'host-control') {
-    if (isFilesystemPolicyAction(action)) validateFilesystemPolicy(action)
+    if (isApprovalDecisionsAction(action)) validateApprovalDecisions(action)
+    else if (isFilesystemPolicyAction(action)) validateFilesystemPolicy(action)
     else if (isProcessDefaultAction(action)) validateProcessDefault(action)
     else if (isCommandConfineAction(action)) validateCommandConfine(action)
     else if (action.capability === 'delegation-limits') validateDelegationLimits(action)

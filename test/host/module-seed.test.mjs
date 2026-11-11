@@ -40,6 +40,7 @@ test('核心破限模块沿普通补种与启用表，默认关闭且已有用�
     ['deliverable-reference-guidance', false, undefined], ['program-sandbox-result-guidance', false, undefined],
     ['sandbox-soft-default', false, undefined],
     ['command-confine-passthrough', false, undefined],
+    ['approval-auto-grant', false, undefined], ['auto-review-passthrough', false, undefined], ['tool-ask-allow', false, undefined],
     ['sandbox-file-write', false, undefined], ['filesystem-fence', false, undefined], ['filesystem-observation', false, undefined],
     ['approval-composition-default', false, undefined], ['approval-config-default', false, undefined],
   ])

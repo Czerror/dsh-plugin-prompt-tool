@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolveHostPackage } from './host-package.mjs'
 import { processDefaultsState as state } from './process-defaults.mjs'
+import { transformApprovalService, approvalDecisionsState } from './approval-decisions.mjs'
 
 for (const [name, owner, digest] of [
   ['@deepseek-ai/dsh-sandbox-policy', 'SandboxPolicyService', '8eb1674f9c3c2e336efae7ecc734d5197dc8b80bc29f1f1d61bfe0b5a1472188'],
@@ -15,15 +16,24 @@ for (const [name, owner, digest] of [
     target = pathToFileURL(resolveHostPackage(name)).href
     const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(target)), '../package.json'), 'utf8'))
     if (pkg.name !== name || pkg.version !== '0.2.2-rc.1') throw new Error('unsupported process default owner package/version')
-  } catch (error) { state.ownerUnavailable(name, String(error.message)); continue }
+  } catch (error) {
+    state.ownerUnavailable(name, String(error.message))
+    if (owner === 'ApprovalService') { approvalDecisionsState.autoGrant.available = false; approvalDecisionsState.autoGrant.reason = String(error.message) }
+    continue
+  }
   registerHooks({ load(url, context, next) {
     const result = next(url, context)
     if (url !== target) return result
     const source = typeof result.source === 'string' ? result.source : Buffer.from(result.source).toString()
     if (createHash('sha256').update(source).digest('hex') !== digest) {
+      if (owner === 'ApprovalService') {
+        approvalDecisionsState.autoGrant.available = false
+        approvalDecisionsState.autoGrant.reason = `${name} constructor artifact fingerprint mismatch`
+      }
       state.ownerUnavailable(name, `${name} constructor artifact fingerprint mismatch`); return result
     }
-    return { ...result, source: source + `\nglobalThis[Symbol.for("prompt-tool:process-defaults")]?.markOwner(${JSON.stringify(name)}, ${owner});\n` }
+    const transformed = owner === 'ApprovalService' ? transformApprovalService(source) : source
+    return { ...result, source: transformed + `\nglobalThis[Symbol.for("prompt-tool:process-defaults")]?.markOwner(${JSON.stringify(name)}, ${owner});\n` }
   } })
 }
 

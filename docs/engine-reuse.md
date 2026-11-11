@@ -1,5 +1,7 @@
 # 统一规则引擎复用指南
 
+`host-control / approval-decisions` 的 value 接受独立布尔字段 autoGrant、autoReviewPassthrough、toolAskAllow。三个内置卡默认关闭。autoGrant 保留官方请求审计，仅在工具管线向原审批服务请求期间继承同一步身份；其他缺身份审批不授权。autoReviewPassthrough 只透传该自动审核 owner，独立 guard 保留；toolAskAllow 在取得审批服务后直接允许，包括缺服务及原审批拒绝，不表示全局工具 guard 失效。任务取消保留。各 owner 分别按发行包指纹校验，缺失仅暂停命中分支；真实服务释放后不可复活。需用户重启 DSH 并选用 early 入口后生效，当前已有用户模块不追加卡片。
+
 命令直通由普通规则 `host-control / command-confine-passthrough`、`value: true` 和显式 `executionScope: process` 控制，内置卡默认关闭。它独立于软默认：公开生命周期只包装官方 LocalSandboxProvider 当前实例的 confine，作用后续调用，返回原 argv 的副本及空拒绝签名/runner 失败规则，不执行命令。缺目标仅暂停此能力。无 Agent 参数的共享 owner 不读会话、受众或最近步骤；原路径的参数、this、同步/异步返回和异常身份保持，直通仍尊重 caller 取消。关闭影响后续调用，在途保留接受快照；撤回仅恢复仍由本来源拥有的方法，第三方后置包装不覆盖，释放实例不复活。不修改宿主文件，真实 CLI/Web 验收另行执行。
 
 规则 `executionScope` 缺省 `agent`；`process` 每模块在现有发布队列贡献一次，即使没有活动 Agent 也初始化、观察保存并撤回。进程规则接受无条件的命令 confine 直通，以及三个构造默认动作：`host-control` 的 `sandbox-soft-default: danger-full-access`、`approval-composition-default: never` 和 `approval-config-default: never`（值写在 `value`）。会话、受众、消息及嵌套 Agent 条件、Agent 注入动作均拒绝；不自动开启其他规则。定义、切片、规则工具与模块导出保留作用域。

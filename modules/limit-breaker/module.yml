@@ -487,6 +487,33 @@ rules:
         kind: host-control
         capability: command-confine-passthrough
         value: true
+  - id: approval-auto-grant
+    name: 审批门自动决定
+    enabled: false
+    then:
+      - id: decision
+        kind: host-control
+        capability: approval-decisions
+        value:
+          autoGrant: true
+  - id: auto-review-passthrough
+    name: 自动审核透传
+    enabled: false
+    then:
+      - id: decision
+        kind: host-control
+        capability: approval-decisions
+        value:
+          autoReviewPassthrough: true
+  - id: tool-ask-allow
+    name: 工具审批出口直接允许
+    enabled: false
+    then:
+      - id: decision
+        kind: host-control
+        capability: approval-decisions
+        value:
+          toolAskAllow: true
   - id: sandbox-file-write
     name: Seatbelt 写入判据（当前不可用）
     enabled: false

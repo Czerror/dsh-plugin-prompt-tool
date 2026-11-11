@@ -19,6 +19,7 @@ import { compileWhen } from './conditions/index.mjs'
 import { bindReadLimitsDependencies, isReadLimitsAction, prepareReadLimits } from './read-limits.mjs'
 import { bindDelegationLimitsDependencies, isDelegationLimitsAction, prepareDelegationLimits } from './delegation-limits.mjs'
 import { bindFilesystemPolicyDependencies, isFilesystemPolicyAction, prepareFilesystemPolicy } from './filesystem-policy.mjs'
+import { bindApprovalDecisionsDependencies, isApprovalDecisionsAction, prepareApprovalDecisions } from './approval-decisions.mjs'
 import { applyToolDescriptions } from './actions/assembly.mjs'
 import { applyTransportDescriptions, toolDescriptionObservation, settleSkillDescriptions, skillDescriptionObservation } from './tool-metadata.mjs'
 import { resultTextOwners } from './result-text-owners.mjs'
@@ -138,8 +139,8 @@ function mountSources(ctx, sources, options = {}) {
         const { action, rule, moduleId } = item
         if (action.kind === 'request-params' && action.maxTokens !== undefined) options.collectRequestBudget({ action, rule, id: action.id, sourceModuleId: moduleId,
           actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
-        if (action.kind === 'persona' || action.kind === 'subagent-params' || isReadLimitsAction(action) || isDelegationLimitsAction(action) || isFilesystemPolicyAction(action)) {
-          const collect = isFilesystemPolicyAction(action) ? options.collectFilesystemPolicy : action.kind === 'persona' ? options.collectPersona : isReadLimitsAction(action) ? options.collectReadLimits : isDelegationLimitsAction(action) ? options.collectDelegationLimits : options.collectSubagentParams
+        if (action.kind === 'persona' || action.kind === 'subagent-params' || isReadLimitsAction(action) || isDelegationLimitsAction(action) || isFilesystemPolicyAction(action) || isApprovalDecisionsAction(action)) {
+          const collect = isApprovalDecisionsAction(action) ? options.collectApprovalDecisions : isFilesystemPolicyAction(action) ? options.collectFilesystemPolicy : action.kind === 'persona' ? options.collectPersona : isReadLimitsAction(action) ? options.collectReadLimits : isDelegationLimitsAction(action) ? options.collectDelegationLimits : options.collectSubagentParams
           collect({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
             ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
           continue
@@ -273,7 +274,11 @@ export function createRuleRuntime(ctx, options = {}) {
   }
   const mount = source => {
     const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], dispose: undefined }
-    for (const rule of source.rules) bindFilesystemPolicyDependencies(rule, source.moduleId, options.onOutcome)
+    record.approvalDecisions = []
+    for (const rule of source.rules) {
+      bindFilesystemPolicyDependencies(rule, source.moduleId, options.onOutcome)
+      bindApprovalDecisionsDependencies(rule, source.moduleId, options.onOutcome)
+    }
     for (const rule of source.rules) bindDelegationLimitsDependencies(rule, source.moduleId, delegationLimitEntries, options.onOutcome)
     for (const rule of source.rules) bindReadLimitsDependencies(rule, source.moduleId, readLimitEntries, options.onOutcome)
     for (const rule of source.rules) bindResultTextDependencies(rule, source.moduleId, options.onOutcome)
@@ -340,6 +345,7 @@ export function createRuleRuntime(ctx, options = {}) {
       collectReadLimits(entry) { record.readLimits.push(entry) },
       collectDelegationLimits(entry) { record.delegationLimits.push(entry) },
       collectFilesystemPolicy(entry) { record.filesystemPolicy.push(entry) },
+      collectApprovalDecisions(entry) { record.approvalDecisions.push(entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -546,6 +552,7 @@ export function createRuleRuntime(ctx, options = {}) {
         requestBudgetConflict(ruleFrame('agent/request', [{ agent: options.agent }], warnOnce, ctx), true)
         prepareReadLimits(readLimitEntries(), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx), true)
         prepareDelegationLimits(delegationLimitEntries(), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx), true)
+        prepareApprovalDecisions([...records.values()].flatMap(record => record.approvalDecisions), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx))
         prepareSubagentParams({}, true)
         const personaPlan = preparePersona({}, true)
         const text = [...records.values()].flatMap(record => record.text)
@@ -553,10 +560,10 @@ export function createRuleRuntime(ctx, options = {}) {
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
@@ -581,6 +588,7 @@ export function createRuleRuntime(ctx, options = {}) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
       const step = toolStepFor(context)
+      if (step != null) step.approvalDecisions = prepareApprovalDecisions([...records.values()].flatMap(record => record.approvalDecisions), assemblyFrame(context ?? { agent: options.agent }))
       const filesystem = prepareFilesystemPolicy(filesystemEntries(), assemblyFrame(context ?? { agent: options.agent }))
       if (step != null) { step.filesystemPolicy = filesystem.values; step.filesystemPolicyObservations = filesystem.observations }
       const reading = prepareReadLimits(readLimitEntries(), assemblyFrame(context ?? { agent: options.agent }))
