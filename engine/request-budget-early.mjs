@@ -45,6 +45,10 @@ if (target !== undefined) registerHooks({ load(url, context, next) {
     ['const text = event.data.message.content.length === 0 ? "" : textOf(event.data.message);', 'const content = globalThis[Symbol.for("prompt-tool:message-shape-guards")]?.content(event.data.message, this.session) ?? event.data.message.content;\n\t\t\tconst text = content.length === 0 ? "" : textOf(event.data.message, this.session);'],
     ['const renderedPrompt = renderPrompt(assembly);', 'return (globalThis[Symbol.for("prompt-tool:message-shape-guards")]?.run ?? ((agent, assembly, signal, invoke) => invoke()))(this, assembly, signal, async () => this.shapeGuardedStep(decision));\n\t}\n\tasync shapeGuardedStep(decision) {\n\t\tconst { turn, step, abort: { signal } } = this.phase;\n\t\tconst { assembly } = decision;\n\t\tconst renderedPrompt = renderPrompt(assembly);'],
   ]
+  const providerEdits = [
+    ['preparedCall = await this.loopCtx.llm.prepareCall(proposedConfig, signal);',
+      'preparedCall = await (globalThis[Symbol.for("prompt-tool:provider-system-roles")]?.prepare ?? ((agent, selection, invoke) => invoke()))(this, selection, () => this.loopCtx.llm.prepareCall(proposedConfig, signal));'],
+  ]
   if (createHash('sha256').update(source).digest('hex') !== digest) {
     state.available = false; state.reason = 'agent-loop artifact fingerprint or structure mismatch'; return result
   }
@@ -53,6 +57,10 @@ if (target !== undefined) registerHooks({ load(url, context, next) {
   const snapshotReady = snapshotEdits.every(([from]) => source.split(from).length === 2)
     && source.split('this.model = new AgentModel(projections.modelSelection, session, options);').length === 2
   const shapeReady = shapeEdits.every(([from]) => source.split(from).length === 2)
+  const providerReady = providerEdits.every(([from]) => source.split(from).length === 2)
+    && source.split('this.model = new AgentModel(projections.modelSelection, session, options);').length === 2
+  if (providerReady) for (const [from, to] of providerEdits) transformed = transformed.replace(from, to)
+  if (providerReady) transformed = transformed.replace('this.model = new AgentModel(projections.modelSelection, session, options);', 'this.model = new AgentModel(projections.modelSelection, session, options); this[Symbol.for("prompt-tool:provider-system-roles-loop-owner")] = true;')
   if (shapeReady) for (const [from, to] of shapeEdits) transformed = transformed.replace(from, to)
   if (shapeReady) transformed = transformed.replace('this.model = new AgentModel(projections.modelSelection, session, options);', 'this.model = new AgentModel(projections.modelSelection, session, options); this[Symbol.for("prompt-tool:message-shape-guards-owner")] = true;')
   if (budgetReady) for (const [from, to] of coreEdits) transformed = transformed.replace(from, to)

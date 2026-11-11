@@ -18,6 +18,19 @@ const render = action => renderElement(RuleStepsPanel, {
 })
 const labels = html => [...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
 
+test('请求身份与系统角色两张能力卡独立展示保存版本诊断', () => {
+  for (const capability of ['oauth-identity-prefix', 'provider-system-role']) {
+    const rule = { id: 'provider', enabled: true, then: [{ id: 'control', kind: 'host-control', capability, value: true }] }
+    assert.ok(render(rule.then[0]).includes(t('triggers.option.' + capability)))
+    const draft = getRulesDraft(createWorkspaceDrafts(), 'provider-module')
+    Object.assign(draft, { loaded: true, saved: [structuredClone(rule)], revisions: { rules: { provider: 'R1' }, settings: 'S1', variables: 'V1' } })
+    const reason = capability + ' provider owner unavailable'
+    const card = renderElement(RuleCard, { t, entry: { key: 'provider', previousId: 'provider', value: rule }, draft, editor: {}, meta: { layers: [] }, expanded: true,
+      onToggle() {}, onDuplicate() {}, expandedRows: new Map(), moduleId: 'provider-module', diagnostics: [{ moduleId: 'provider-module', ruleId: 'provider', actionId: 'control', agentId: 'agent-a', channel: 'host:' + capability, hit: 0, miss: 0, unavailable: 1, error: 0, identityOutcome: 'condition-unavailable', definitionRevision: 'R1:S1', reason }] })
+    assert.ok(card.includes(reason))
+  }
+})
+
 test('当前系统正文能力沿普通规则卡展示布尔值及保存版本的依赖诊断', () => {
   const rule = { id: 'snapshot', enabled: true, then: [{ id: 'current', kind: 'host-control', capability: 'current-system-snapshot', value: true }] }
   const before = structuredClone(rule)

@@ -652,3 +652,19 @@ rules:
         kind: host-control
         capability: message-shape-guards
         value: true
+  - id: oauth-identity-prefix
+    name: 移除 OAuth 自动身份首段
+    enabled: false
+    then:
+      - id: policy
+        kind: host-control
+        capability: oauth-identity-prefix
+        value: true
+  - id: provider-system-role
+    name: 按服务端域名选择系统角色
+    enabled: false
+    then:
+      - id: policy
+        kind: host-control
+        capability: provider-system-role
+        value: true

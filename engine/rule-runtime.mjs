@@ -29,6 +29,7 @@ import { providerHookDecisionsState, isProviderHookDecisionsAction, prepareProvi
 import { bindRepeatCompactionDependencies, filterRepeatReminderDecision, installPrunerGate, isRepeatCompactionAction, repeatReminderStatus } from './repeat-compaction-policy.mjs'
 import { bindCurrentSystemSnapshotDependencies, isCurrentSystemSnapshotAction, registerCurrentSystemSnapshot } from './current-system-snapshot.mjs'
 import { bindMessageShapeGuardsDependencies, isMessageShapeGuardsAction, registerMessageShapeGuards } from './message-shape-guards.mjs'
+import { bindProviderSystemRolesDependencies, isProviderSystemRolesAction, registerProviderSystemRoles } from './provider-system-roles.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -144,6 +145,10 @@ function mountSources(ctx, sources, options = {}) {
         const { action, rule, moduleId } = item
         if (action.kind === 'request-params' && action.maxTokens !== undefined) options.collectRequestBudget({ action, rule, id: action.id, sourceModuleId: moduleId,
           actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
+        if (isProviderSystemRolesAction(action)) {
+          options.collectProviderSystemRoles({ action, rule, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
+          continue
+        }
         if (isMessageShapeGuardsAction(action)) {
           options.collectMessageShapeGuards({ action, rule, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
           continue
@@ -246,6 +251,7 @@ export function createRuleRuntime(ctx, options = {}) {
   let records = new Map()
   const currentSystemSnapshot = options.agent === undefined ? undefined : registerCurrentSystemSnapshot(options.agent)
   const messageShapeGuards = options.agent === undefined ? undefined : registerMessageShapeGuards(options.agent)
+  const providerSystemRoles = options.agent === undefined ? undefined : registerProviderSystemRoles(options.agent)
   const repeatSessions = new Set(), prunerBlockedSessions = new Set()
   const repeatRelease = ctx.on('tools/post-execute', async (exec, result, next) => {
     const enabled = repeatSessions.has(exec?.agent?.session)
@@ -306,6 +312,7 @@ export function createRuleRuntime(ctx, options = {}) {
   const mount = source => {
     const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], providerHookDecisions: [], repeatCompaction: [], currentSystemSnapshot: [], messageShapeGuards: [], dispose: undefined }
     record.approvalDecisions = []
+    record.providerSystemRoles = []
     record.escalationDecisions = []
     for (const rule of source.rules) {
       bindFilesystemPolicyDependencies(rule, source.moduleId, options.onOutcome)
@@ -314,6 +321,7 @@ export function createRuleRuntime(ctx, options = {}) {
       bindProviderHookDependencies(rule, source.moduleId, options.onOutcome)
       bindCurrentSystemSnapshotDependencies(rule, source.moduleId, options.onOutcome)
       bindMessageShapeGuardsDependencies(rule, source.moduleId, options.onOutcome)
+      bindProviderSystemRolesDependencies(rule, source.moduleId, options.onOutcome)
     }
     for (const rule of source.rules) bindDelegationLimitsDependencies(rule, source.moduleId, delegationLimitEntries, options.onOutcome)
     for (const rule of source.rules) bindReadLimitsDependencies(rule, source.moduleId, readLimitEntries, options.onOutcome)
@@ -390,6 +398,7 @@ export function createRuleRuntime(ctx, options = {}) {
       collectRepeatCompaction(entry) { record.repeatCompaction.push(entry) },
       collectCurrentSystemSnapshot(entry) { record.currentSystemSnapshot.push(entry) },
       collectMessageShapeGuards(entry) { record.messageShapeGuards.push(entry) },
+      collectProviderSystemRoles(entry) { record.providerSystemRoles.push(entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -614,10 +623,10 @@ export function createRuleRuntime(ctx, options = {}) {
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.messageShapeGuards.length > 0 || record.currentSystemSnapshot.length > 0 || record.escalationDecisions.length > 0 || record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.providerSystemRoles.length > 0 || record.messageShapeGuards.length > 0 || record.currentSystemSnapshot.length > 0 || record.escalationDecisions.length > 0 || record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.messageShapeGuards.length > 0 || record.currentSystemSnapshot.length > 0 || record.escalationDecisions.length > 0 || record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.providerSystemRoles.length > 0 || record.messageShapeGuards.length > 0 || record.currentSystemSnapshot.length > 0 || record.escalationDecisions.length > 0 || record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
@@ -644,6 +653,7 @@ export function createRuleRuntime(ctx, options = {}) {
       const policyFrame = assemblyFrame(context ?? { agent: options.agent })
       currentSystemSnapshot?.setEnabled([...records.values()].flatMap(record => record.currentSystemSnapshot).some(entry => actionMatches(entry, policyFrame)), context)
       messageShapeGuards?.setEnabled([...records.values()].flatMap(record => record.messageShapeGuards).some(entry => actionMatches(entry, policyFrame)), context)
+      providerSystemRoles?.prepare([...records.values()].flatMap(record => record.providerSystemRoles), policyFrame, context)
       const session = policyFrame.subject?.agent?.session ?? context?.agent?.session ?? options.agent?.session
       const policies = [...records.values()].flatMap(record => record.repeatCompaction)
       if (session !== undefined) {
@@ -793,6 +803,7 @@ export function createRuleRuntime(ctx, options = {}) {
       repeatSessions.clear(); prunerBlockedSessions.clear()
       currentSystemSnapshot?.dispose()
       messageShapeGuards?.dispose()
+      providerSystemRoles?.dispose()
       if (ownsPool) pool.dispose()
     },
   }

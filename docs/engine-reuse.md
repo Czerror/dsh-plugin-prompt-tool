@@ -1,5 +1,13 @@
 # 统一规则引擎复用指南
 
+Responses 同段包含系统正文和工具删除时，仅在角色映射生效且两者角色不同的请求中按原顺序拆分：系统正文使用映射角色，删除通知保留官方原角色；关闭时保留官方合并形式。
+
+请求身份首段与系统角色由两个独立 `host-control` 动作控制：`oauth-identity-prefix` 和 `provider-system-role`，均只接受 `value: true`，内置卡默认关闭。前者只跳过 Anthropic OAuth builder 自动添加的 Claude Code 身份首块，用户正文中的相同句子保留；认证、headers、工具名、缓存与其他正文保持官方路径。后者只调整 completions 与 responses 的系统正文角色判据：原推理与 compat 条件允许 developer 时，仅 `URL.hostname` 精确为 `api.openai.com` 或真正的 `.azure.com` 子域保留 developer，其余使用 system。工具增删通知的既有 developer 语义不改；相似后缀、userinfo 和 query 不授权原生角色。
+
+当前适配只支持正式测试依赖图中的 `@deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.1` 与其实际解析的 `@earendil-works/pi-ai@1.5.2`，不保留旧 PI 版本兼容分支。三条协议分别校验完整指纹与唯一锚点，未验证的版本或文件不投影。PI 1.5.2 的 completions 缓存键选项和工具历史兼容项沿官方行为；Anthropic message threads 也沿官方路径，身份开关改变 system 时由官方指纹启动新线程，正文不变时可继续线程；不手工保留或回填 continuation 省略的 system/tools。该 rc.1 支持是后续整体迁移前的开发中间态，不代表 rc.2 验收完成。
+
+资格在实际 Agent 的工具步骤准备时冻结，loop 只在本次 `llm.prepareCall` 期间携带身份，实际 adapter 将它绑定到原 prepared stream。请求专属模型副本携带该身份，不按 sessionId、最近 Agent 或全局 fetch 关联。热更只影响后续步骤；取消、步骤关闭、规则 owner 撤回或 adapter 注册释放后停止本来源效果，重挂不能复活旧资格。发行适配分别校验 loop、LLM 路由、DSH PI adapter 与 PI provider 的版本、完整指纹和唯一锚点；两个 OpenAI 目标均成功加载才就绪，缺失仅暂停该能力及显式依赖分支，OAuth 能力独立。需要 early 入口与用户重启 DSH 后生效；本地最终载荷不承诺远端服务接受，CLI/Web 综合验收另行执行。
+
 普通规则 host-control/message-shape-guards 使用 value: true，内置卡默认关闭。资格在当前工具步骤准备时固定，最终公开 assemble 与 refreshContext 只将缺失或非字符串的 section/context 正文归空，合法字符串、空白和顺序保持；complete 最终还原也经过该出口。未知变量、非法表达式、provider/getter 异常仍由官方抛出。
 
 缺省或非数组 messages 仅在 enter 决定归为空数组；模型切换的前置消费者和最终 turn 消费均使用同一 Agent、modelSelection 所关联的 sealed 步骤。未知 kind、reject、取消和独立异常不变。真实 step 内，Session 的 system/developer/assistant 派生仅过滤缺消息、非数组或空 content，官方投影仍优先，合法消息保原身份；user/tool 不参与该过滤。loop 的 systemNodes/textOf 沿同一步处理空 content，首尝试 runtime-context 原分流与一次投递保持，历史事件不改写。脱离该 Agent 步骤的公开派生调用仍透传。
