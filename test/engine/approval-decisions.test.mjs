@@ -168,10 +168,29 @@ test('真实审批审计与自动审核owner独立接受快照，取消、隔离
   await call(await prepare())
   assert.equal(reviewEntries, 1, 'closing P59 restores the actual review callback')
   await activeReview.dispose()
+  // P62独立对照：真实never服务先拒绝，仅放行ask，关闭后恢复拒绝。
+  ask = true
+  replace({ toolAskAllow: false })
+  const refused = await call(await prepare())
+  assert.equal(refused.results[0].result.error.message, 'the user rejected tool "owner_memory_fixture"')
+  assert.equal(bodies, 2)
+  replace({ toolAskAllow: true })
+  const askAllowed = await prepare()
+  assert.equal((await call(askAllowed)).results[0].result.value, 'owner executed')
+  assert.equal(bodies, 3, 'P62 executes once despite the real never approval service')
+  deny = true
+  const guarded = await call(askAllowed)
+  assert.equal(guarded.results[0].result.error.message, 'independent guard')
+  assert.equal(bodies, 3)
+  deny = false
+  replace({ toolAskAllow: false })
+  const restored = await call(await prepare())
+  assert.equal(restored.results[0].result.error.message, 'the user rejected tool "owner_memory_fixture"')
+  assert.equal(bodies, 3, 'closing P62 restores the real approval refusal')
   await approvalFiber.dispose()
   replace({ autoGrant: true })
   ask = true
   await call(await prepare())
-  assert.equal(bodies, 2, 'disposed approval owner cannot be revived')
+  assert.equal(bodies, 3, 'disposed approval owner cannot be revived')
   assert.equal(modelCalls, 0)
 })

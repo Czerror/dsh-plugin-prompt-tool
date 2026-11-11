@@ -2,7 +2,7 @@
  * prompt-tool 自建 tsdown 构建配置
  */
 import { readFile } from 'node:fs/promises'
-import { dirname, resolve as resolvePath } from 'node:path'
+import { dirname, relative, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
@@ -35,6 +35,17 @@ const lib: UserConfig = {
   target: 'es2024',
   dts: true,
   clean: true,
+  plugins: [{
+    name: 'prompt-tool-shared-engine',
+    resolveId(source, importer) {
+      if (!importer || !source.startsWith('.')) return null
+      const engineRoot = fileURLToPath(new URL('./engine/', import.meta.url))
+      const target = resolvePath(dirname(importer), source)
+      if (!target.startsWith(engineRoot)) return null
+      // early 入口与服务端必须加载同一份随包引擎，不能复制模块级 owner 状态。
+      return { id: '../engine/' + relative(engineRoot, target).split(sep).join('/'), external: true }
+    },
+  }],
   deps: {
     neverBundle: ['@deepseek-ai/cordis'],
     onlyBundle: [],

@@ -23,11 +23,31 @@ const REQUIRED_FILES = ['cordis.patch.yml', 'package.json', 'README.md', 'LICENS
 
 /** 在临时项目里跑：主入口可用 + 包内引擎真编译一条规则 + 模块库与技能随包。 */
 const SMOKE = `import { existsSync, readdirSync } from 'node:fs'
+import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const pluginRoot = 'node_modules/dsh-plugin-prompt-tool'
+const { processDefaultsState } = await import(pathToFileURL(join(pluginRoot, 'engine/process-defaults.mjs')).href)
+// 在产物导入前发布贡献与 owner；后续导入不得重置模块私有 owner 身份。
+const owner = () => {}
+const ownerName = '@deepseek-ai/dsh-user-approval'
+const fiber = { entry: { options: { name: ownerName } }, runtime: { callback: owner } }
+const configAvailable = processDefaultsState.configAvailable
+processDefaultsState.configAvailable = true
+processDefaultsState.markOwner(ownerName, owner)
+const releaseDefault = processDefaultsState.replace('verify-pack', [{ capability: 'approval-config-default', value: 'never' }])
+assert.deepEqual(processDefaultsState.rawConfig(fiber, {}), { policy: 'never' })
 const plugin = await import('dsh-plugin-prompt-tool')
+try {
+  assert.deepEqual(processDefaultsState.rawConfig(fiber, {}), { policy: 'never' }, '服务端导入必须保留 early 引擎 owner 与贡献')
+  assert.deepEqual(processDefaultsState.rawConfig(fiber, { policy: 'ask' }), { policy: 'ask' })
+  releaseDefault()
+  assert.deepEqual(processDefaultsState.rawConfig(fiber, {}), {}, '撤回贡献恢复省略配置')
+} finally {
+  releaseDefault()
+  processDefaultsState.configAvailable = configAvailable
+}
 if (plugin.name !== 'prompt-tool' || typeof plugin.apply !== 'function') throw new Error('主入口导出不完整')
 if (typeof plugin.Config !== 'function') throw new Error('主入口缺少 Config（Cordis 配置 schema）')
 // 数组 inject 声明的是**必需**服务；webServer 这类可选服务只能动态等待，不能写进静态表。
@@ -48,7 +68,7 @@ for (const name of ['rule-engine', 'module-import-tools', 'module-rule-tools', '
   if (!modules.includes(name + '.yml')) throw new Error('组合模块库缺少 ' + name)
 }
 if (!existsSync(join(pluginRoot, 'skills/dsh-module/SKILL.md'))) throw new Error('随包技能缺失')
-console.log('smoke: 主入口 + 原生规则编译 + 组合模块库 + 随包技能 均通过')
+console.log('smoke: 主入口 + early/server 引擎身份 + 原生规则编译 + 组合模块库 + 随包技能 均通过')
 `
 
 const failures = []
