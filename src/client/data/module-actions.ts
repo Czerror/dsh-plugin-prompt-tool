@@ -1,7 +1,6 @@
 import { bridgeCall, errorMessage, type BridgeResult } from './bridge-client.ts'
 import { BLANK_MODULE_TEMPLATE } from './module-subject.ts'
 import { readPublication, type PublicationFields } from '../../shared/publication.ts'
-import type { ModuleMergeRequest } from '../../shared/bridge-contract.ts'
 
 /** 能力变更后的发布重试请求：只重建，不重复 create/remove。 */
 export const capabilityRefreshBody = (moduleId: string): { refreshOnly: true; expectedModuleId: string } => ({ refreshOnly: true, expectedModuleId: moduleId })
@@ -37,10 +36,6 @@ export function createModuleActions(deps: {
     readName: (id: string) => bridgeCall('moduleName', {}, id),
     rename: (id: string, name: string, expectedRevision: string) => write(() => bridgeCall('moduleName', { name, expectedRevision, expectedModuleId: id }, id)),
     open: (id: string) => bridgeCall('moduleOpen', { id }),
-    readMergeSources: (id: string) => bridgeCall('moduleMerge', {}, id),
-    previewMerge: (id: string, sourceId: string, action: 'merge' | 'remove') => bridgeCall('moduleMerge', { expectedModuleId: id, sourceId, action, preview: true }, id),
-    merge: (id: string, request: ModuleMergeRequest) => write(() => bridgeCall('moduleMerge', { ...request, expectedModuleId: id }, id)),
-    retryMerge: (id: string) => write(() => bridgeCall('moduleMerge', { expectedModuleId: id, refreshOnly: true }, id)),
     /** 下列 refreshOnly 只重建运行实例，不重跑创建/改名/启用/删除。 */
     retryName: (id: string) => write(() => bridgeCall('moduleName', { refreshOnly: true }, id)),
     retryEnable: () => write(() => bridgeCall('moduleEnable', { refreshOnly: true })),

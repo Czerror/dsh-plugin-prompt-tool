@@ -50,7 +50,6 @@ export const BRIDGE_ENDPOINTS = {
   moduleDelete: '/module-delete',
   moduleClone: '/module-clone',
   moduleDuplicate: '/module-duplicate',
-  moduleMerge: '/module-merge',
   moduleOpen: '/module-open',
   moduleName: '/module-name',
   moduleEnable: '/module-enable',
@@ -116,7 +115,6 @@ export const BRIDGE_SUBJECT_POLICY = {
   moduleDelete: 'optional',
   moduleClone: 'none',
   moduleDuplicate: 'none',
-  moduleMerge: 'required',
   moduleOpen: 'none',
   moduleName: 'required',
   moduleEnable: 'none',
@@ -171,26 +169,6 @@ export interface ModuleSummary {
   /** 该模块 `module.yml` 的顶层键名（＝它声明了哪些节）；只下发键名不下发内容。
    *  定义不可解析（损坏）时与 `facts` 同口径缺席——客户端据此保守放行，不把「读不到」当「没声明」。 */
   declares?: string[]
-}
-
-export interface ModuleMergeRequest {
-  expectedModuleId?: string
-  action?: 'merge' | 'remove'
-  sourceId?: string
-  preview?: boolean
-  expectedRevision?: string
-  refreshOnly?: boolean
-}
-
-export interface ModuleMergeSnapshot extends PublicationFields {
-  targetId: string
-  sources: string[]
-  sourceId?: string
-  action?: 'merge' | 'remove'
-  revision?: string
-  rules: string[]
-  files: string[]
-  changed?: boolean
 }
 
 /**
@@ -249,7 +227,6 @@ export interface BridgeRequestMap {
   moduleDelete: { id: string; refreshOnly?: boolean }
   moduleClone: { id: string; autoSuffix?: boolean; refreshOnly?: boolean }
   moduleDuplicate: { id: string; refreshOnly?: boolean }
-  moduleMerge: ModuleMergeRequest
   moduleOpen: { id: string }
   moduleName: { name?: string; expectedRevision?: string; expectedModuleId?: string; refreshOnly?: boolean }
   moduleEnable: { id: string; enabled: boolean; refreshOnly?: false } | { refreshOnly: true; id?: never; enabled?: never }
@@ -554,7 +531,6 @@ export interface BridgeValueMap {
   moduleDelete: { id: string; backupPath?: string } & PublicationFields
   moduleClone: { id: string } & PublicationFields
   moduleDuplicate: { id: string } & PublicationFields
-  moduleMerge: ModuleMergeSnapshot
   moduleOpen: { path: string }
   moduleName: { name: string; revision: string } & PublicationFields
   moduleEnable: { enabled: string[] } & PublicationFields
