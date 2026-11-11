@@ -3,6 +3,7 @@ import { toolDependenciesReady } from './tool-definition.mjs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { applySubagentDepthContexts } from './subagent-params.mjs'
 import { applyAcceptedContextReplacements, applyToolDescriptions } from './actions/assembly.mjs'
+import { readLimitsDefinition } from './read-limits.mjs'
 
 const installations = new WeakMap()
 const guardedRoots = new WeakSet()
@@ -56,7 +57,8 @@ function createInstallation(ctx) {
       ? undefined : Object.freeze({ ...context.modelSelection }) }
     const wrapped = Object.freeze({
       view(scope) {
-        const admitted = new Map([...original.view(scope)].filter(([, definition]) => toolDependenciesReady(tools, definition, context.agent, original)))
+        const admitted = new Map([...original.view(scope)].filter(([, definition]) => toolDependenciesReady(tools, definition, context.agent, original))
+          .map(([name, definition]) => [name, name === 'read' ? readLimitsDefinition(definition, step) : definition]))
         if (step.status === 'closed') return new Map()
         const described = applyToolDescriptions(admitted, step.toolDescriptions)
         return step.allowed === undefined ? described : new Map([...described].filter(([name]) => step.allowed.has(name)))

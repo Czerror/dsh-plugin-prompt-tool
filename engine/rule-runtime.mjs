@@ -16,6 +16,7 @@ import { installToolStepAssembly } from './tool-step-assembly.mjs'
 import { subagentParamsStatus } from './subagent-params.mjs'
 import { requestBudgetStatus } from './request-budget-bridge.mjs'
 import { compileWhen } from './conditions/index.mjs'
+import { bindReadLimitsDependencies, isReadLimitsAction, prepareReadLimits } from './read-limits.mjs'
 import { applyToolDescriptions } from './actions/assembly.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
@@ -129,8 +130,8 @@ function mountSources(ctx, sources, options = {}) {
         const { action, rule, moduleId } = item
         if (action.kind === 'request-params' && action.maxTokens !== undefined) options.collectRequestBudget({ action, rule, id: action.id, sourceModuleId: moduleId,
           actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
-        if (action.kind === 'persona' || action.kind === 'subagent-params') {
-          const collect = action.kind === 'persona' ? options.collectPersona : options.collectSubagentParams
+        if (action.kind === 'persona' || action.kind === 'subagent-params' || isReadLimitsAction(action)) {
+          const collect = action.kind === 'persona' ? options.collectPersona : isReadLimitsAction(action) ? options.collectReadLimits : options.collectSubagentParams
           collect({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
             ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
           continue
@@ -224,6 +225,7 @@ export function createRuleRuntime(ctx, options = {}) {
     return frame
   }
   let layers
+  const readLimitEntries = () => [...records.values()].flatMap(record => record.readLimits)
   let releaseAssembly
   let releaseMemo, releaseFallback
   const register = (coordinator, source) => {
@@ -251,7 +253,8 @@ export function createRuleRuntime(ctx, options = {}) {
     } catch (error) { releaseMemo(); releaseMemo = undefined; throw error }
   }
   const mount = source => {
-    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], dispose: undefined }
+    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], dispose: undefined }
+    for (const rule of source.rules) bindReadLimitsDependencies(rule, source.moduleId, readLimitEntries, options.onOutcome)
     for (const rule of source.rules) {
       const budgets = rule.actions.filter(action => action.kind === 'request-params' && action.maxTokens !== undefined)
       if (budgets.length === 0) continue
@@ -312,6 +315,7 @@ export function createRuleRuntime(ctx, options = {}) {
       collectPersona(entry) { record.personas.push(entry) },
       collectSubagentParams(entry) { record.subagentParams.push(entry) },
       collectRequestBudget(entry) { record.requestBudgets.push(entry) },
+      collectReadLimits(entry) { record.readLimits.push(entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -516,6 +520,7 @@ export function createRuleRuntime(ctx, options = {}) {
         }
         records = next
         requestBudgetConflict(ruleFrame('agent/request', [{ agent: options.agent }], warnOnce, ctx), true)
+        prepareReadLimits(readLimitEntries(), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx), true)
         prepareSubagentParams({}, true)
         const personaPlan = preparePersona({}, true)
         const text = [...records.values()].flatMap(record => record.text)
@@ -523,10 +528,10 @@ export function createRuleRuntime(ctx, options = {}) {
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
@@ -551,6 +556,8 @@ export function createRuleRuntime(ctx, options = {}) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
       const step = toolStepFor(context)
+      const reading = prepareReadLimits(readLimitEntries(), assemblyFrame(context ?? { agent: options.agent }))
+      if (step != null) { step.readLimits = reading.values; step.readLimitsObservations = reading.observations }
       const delegation = prepareSubagentParams(context)
       if (step != null) { step.subagentParams = delegation.values; step.subagentObservations = delegation.observations }
       const descriptions = [...points.values()].flatMap(point => point.handlers.filter(entry => entry.toolDescription)).sort(compareEntries)
@@ -619,6 +626,9 @@ export function createRuleRuntime(ctx, options = {}) {
         try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
       }
       for (const observation of toolStepFor(context)?.subagentObservations ?? []) {
+        try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
+      }
+      for (const observation of toolStepFor(context)?.readLimitsObservations ?? []) {
         try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
       }
       for (const plan of toolStepFor(context)?.toolDescriptions ?? []) if (plan.owner === ctx) {

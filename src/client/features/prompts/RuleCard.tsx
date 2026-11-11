@@ -61,6 +61,7 @@ export function RuleCard(props: {
     const node = value as Record<string, unknown>
     if (node.kind === 'persona' && node.instructionsMaxBytes !== undefined) targets.add('persona:instructions')
     if (node.kind === 'subagent-params') targets.add('subagent:params')
+    if (node.kind === 'host-control' && node.capability === 'file-read-limits') targets.add('host:file-read-limits')
     if (node.kind === 'request-params' && node.maxTokens !== undefined) targets.add('request:budget')
     if (node.kind === 'persona' && (node.stripDefaultIdentity === 'preset' || node.stripDefaultIdentity === 'harness')) targets.add(`persona:identity:${node.stripDefaultIdentity}`)
     collectTargets(nodeList(node.then)); collectTargets(nodeList(node.else))

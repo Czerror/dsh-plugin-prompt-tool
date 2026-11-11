@@ -185,6 +185,8 @@ module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块i
 
 空键行属于 UI 草稿，保存载荷不发空键；保存或后台读取不因空行清理用户输入。UI 只在对应草稿版本仍一致时刷新。客户端使用共享 request/value map，服务端仍完整复检类型、大小、目标与版本。
 
+文件读取额度归普通 `host-control/file-read-limits` 动作的 `value`，不进入部署settings或独立参数表。三个可选正安全整数复用原 `RuleParameterFields` 数字原文、错误草稿、版本保存和完整候选校验；清空只撤销该字段，三项全空仍由编译拒绝，不发布为0。标签保持简短，单位及继承说明使用原hint。实际接入边界见[文件读取上限](engine-reuse.md#文件读取上限)。
+
 ## 自定义模型工具
 
 customTools 独立于规则/变量。`compileCustomTool` 使用官方 DSL 转换再交 `tool-definition.mjs` 校验；身份、Schema、执行器和输出都在保存/装配前检查。保存保留作者 DSL，运行内联编译工具，不另写工具产物目录。

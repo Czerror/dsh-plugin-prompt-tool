@@ -15,6 +15,7 @@ import { prepareInstructionPolicy } from './instruction-policy.mjs'
 import { prepareToolVisibility } from './tool-visibility.mjs'
 import { validatePersonaAction } from './persona.mjs'
 import { validateSubagentParams } from '../subagent-params.mjs'
+import { validateReadLimits } from '../read-limits.mjs'
 export { ACTION_KINDS, ACTION_DEGRADE } from './catalog.mjs'
 export { actionSupportsWhen, actionExecutionPoint } from './registration.mjs'
 const DEFAULT_PLUGIN = 'prompt-actions'
@@ -80,6 +81,10 @@ export function prepareAction(action, options = {}) {
   if (kind === 'subagent-params') {
     validateSubagentParams(action)
     return () => { throw new TypeError('subagent-params requires createRuleRuntime.prepareAssembly') }
+  }
+  if (kind === 'host-control') {
+    validateReadLimits(action)
+    return () => { throw new TypeError('host-control requires createRuleRuntime.prepareAssembly') }
   }
   const max = action?.maxPerTurn
   const bind = PREPARERS[kind](action, plugin, options.promptConfigOptions)

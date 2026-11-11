@@ -25,7 +25,7 @@ id: limit-breaker
 name: 核心破限模块
 version: 1.0.0
 engineCompat: '>=0.4.2'
-description: 按需接管默认身份与审批、沙箱、计划、终端和文件说明；规则独立启停，实际执行权限、模式与网络仍归原所有者。
+description: 按需接管默认身份与审批、沙箱、计划、终端和文件说明，并配置文件读取上限；规则独立启停，实际执行权限、模式与网络仍归原所有者。
 modules: [ rule-engine ]
 rules:
   - id: official-instruction-budget
@@ -283,3 +283,14 @@ rules:
 
                 * Network access depends on the task environment. Prefer configured mirrors/proxies when they are available."
               text: ""
+  - id: file-read-limits
+    name: 真实文件读取上限
+    enabled: false
+    then:
+      - id: limits
+        kind: host-control
+        capability: file-read-limits
+        value:
+          maxLineLength: 10000
+          maxBytes: 1048576
+          limit: 20000
