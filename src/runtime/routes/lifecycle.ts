@@ -6,9 +6,10 @@ import { moduleDirExists, userModulesDir } from '../../host/module-dirs.ts'
 import { appendModuleConfigOrder, readModuleConfigOrder, saveModuleConfigOrder } from '../../host/module-config-order.ts'
 import { ModuleNameError, readModuleName, writeModuleName } from '../../host/module-name.ts'
 import { ModuleWriteError } from '../../host/module-write.ts'
+import { applyModuleMerge, previewModuleMerge, readModuleMergeSources } from '../../host/module-merge.ts'
 import { enabledModuleIds, setModuleEnabled, validateModuleEnabled } from '../../host/config-store.ts'
 import type { ModuleConfigIdentity } from '../../shared/module-config-order.ts'
-import { BRIDGE_ENDPOINTS, readEditTarget } from '../../shared/bridge-contract.ts'
+import { BRIDGE_ENDPOINTS, readEditTarget, type ModuleMergeRequest } from '../../shared/bridge-contract.ts'
 import { published, type PublicationFields } from '../../shared/publication.ts'
 import { isRecord, SHA256_HEX_RE, type BridgeRuntime } from '../bridge-runtime.ts'
 
@@ -18,6 +19,38 @@ type LifecycleRuntime = Pick<BridgeRuntime,
 
 export function registerLifecycle(runtime: LifecycleRuntime): Array<() => void> {
   return [
+    runtime.register(BRIDGE_ENDPOINTS.moduleMerge, { handle: async (tx) => {
+      const request = tx.record
+      const dir = runtime.gate(tx, 'moduleMerge').inspect(request.action !== undefined || request.refreshOnly === true)
+      if (dir === undefined) return
+      const id = basename(dir)
+      try {
+        if (request.refreshOnly === true) {
+          if (Object.keys(request).some(key => key !== 'refreshOnly' && key !== 'expectedModuleId') || request.expectedModuleId !== id) throw new ModuleWriteError('refreshOnly 只接受目标模块身份')
+          if (runtime.gate(tx, 'moduleMerge').authorize() === undefined) return
+          const publication = await runtime.runOverridesChange(id)
+          tx.write(200, { ok: true, value: { ...readModuleMergeSources(userModulesDir(), id), ...publication } })
+          return
+        }
+        if (request.action === undefined) {
+          if (Object.keys(request).length !== 0) throw new ModuleWriteError('读取来源列表不接受写入字段')
+          tx.write(200, { ok: true, value: readModuleMergeSources(userModulesDir(), id) })
+          return
+        }
+        if (runtime.gate(tx, 'moduleMerge').authorize() === undefined) return
+        const body = request as ModuleMergeRequest
+        if (request.preview === true) {
+          tx.write(200, { ok: true, value: previewModuleMerge(userModulesDir(), id, body) })
+          return
+        }
+        const result = applyModuleMerge(userModulesDir(), id, body, runtime.deps.warn)
+        const publication = await runtime.schedulePublication(id)
+        tx.write(200, { ok: true, value: { ...result, ...publication } })
+      } catch (error) {
+        const typed = error instanceof ModuleWriteError ? error : undefined
+        tx.write(typed?.status ?? 400, { ok: false, code: typed?.code ?? 'module-merge-rejected', message: error instanceof Error ? error.message : String(error) })
+      }
+    } }),
     runtime.register(BRIDGE_ENDPOINTS.moduleDelete, { handle: async (tx) => {
       const record = tx.record
       const id = typeof record.id === 'string' ? record.id.trim() : ''

@@ -44,6 +44,7 @@ export const BRIDGE_REQUEST_FIELDS = {
   moduleDelete: { fields: ['id', 'refreshOnly'] },
   moduleClone: { fields: ['id', 'autoSuffix', 'refreshOnly'] },
   moduleDuplicate: { fields: ['id', 'refreshOnly'] },
+  moduleMerge: { fields: ['expectedModuleId', 'action', 'sourceId', 'preview', 'expectedRevision', 'refreshOnly'] },
   moduleOpen: { fields: ['id'] },
   moduleName: { fields: ['name', 'expectedRevision', 'expectedModuleId', 'refreshOnly'] },
   moduleEnable: { fields: ['id', 'enabled', 'refreshOnly'] },
