@@ -18,6 +18,15 @@ export const ACTION_DEGRADE = Object.freeze({
  * 的动作写分支键会被编译期点名拒绝（`expandActions` 只认无 `kind` 的分支节点）。
  */
 export const ACTION_KINDS = Object.freeze({
+  'host-control': {
+    title: '宿主能力控制',
+    fields: ['capability', 'value'],
+    events: ['system-prompt/assemble'],
+    services: [],
+    degrade: ACTION_DEGRADE.keep,
+    timing: '装配时接受当前 Agent 的读取额度，调用开始后保持该次快照。',
+    note: 'file-read-limits 的三个可选正整数分别覆盖行长、总字节和行数；未声明字段保留官方 owner 配置。',
+  },
   'subagent-params': {
     title: '委派参数',
     fields: ['provider', 'tool', 'maxDepth'],

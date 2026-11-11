@@ -1,4 +1,5 @@
 export const ACTION_EXAMPLES = {
+  'host-control': { capability: 'file-read-limits', value: { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 } },
   'subagent-params': { provider: 'spawn', tool: 'subagent', maxDepth: 1 },
   persona: { prefix: '' },
   'inject-text': { config: { id: 'notice', layer: 'pre-step', text: '' } },

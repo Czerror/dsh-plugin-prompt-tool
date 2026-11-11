@@ -70,6 +70,11 @@ export function ruleMatches(rule, frame) {
  */
 export function actionMatches(entry, frame) {
   if (frame.frozenActionMatches?.has(entry)) return frame.frozenActionMatches.get(entry)
+  if (!frame.ignoreReadLimitsDependency && entry.rule?.readLimitsAvailable?.(entry, frame) === false) {
+    frame.actionOutcomes.set(entry, 'unavailable')
+    if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
+    return false
+  }
   if (!frame.ignoreRequestBudgetDependency && entry.rule?.requestBudgetAvailable?.(entry, frame) === false) {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }

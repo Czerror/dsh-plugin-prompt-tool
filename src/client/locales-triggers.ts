@@ -1,5 +1,15 @@
 /** 判断与执行声明编辑文案；已知字段名称本地化，配置值保留协议原文。 */
 export const TRIGGERS_ZH = {
+  'triggers.label.host-control': '宿主能力控制',
+  'triggers.label.capability': '宿主能力',
+  'triggers.label.readLimitsValue': '读取上限',
+  'triggers.label.readMaxLineLength': '每行长度',
+  'triggers.label.readMaxBytes': '输出字节',
+  'triggers.label.readLimit': '读取行数',
+  'triggers.hint.readMaxLineLength': '按 UTF-16 代码单元计数。填写正安全整数，留空继承宿主配置。',
+  'triggers.hint.readMaxBytes': '按所选行的 UTF-8 字节计数，包含行间换行和截断后缀。填写正安全整数，留空继承宿主配置。',
+  'triggers.hint.readLimit': '默认及最大读取行数。填写正安全整数，留空继承宿主配置。',
+  'triggers.option.file-read-limits': '真实文件读取上限',
   'triggers.label.toolReady': '工具执行就绪',
   'triggers.label.compacted': '已经压缩', 'triggers.label.promoteOn': '晋升触发事件',
   'triggers.label.promoteEvents': '晋升事件名单',
@@ -198,6 +208,16 @@ export const TRIGGERS_ZH = {
 } as const
 
 export const TRIGGERS_EN: Record<keyof typeof TRIGGERS_ZH, string> = {
+  'triggers.label.host-control': 'Host capability control',
+  'triggers.label.capability': 'Host capability',
+  'triggers.label.readLimitsValue': 'Read limits',
+  'triggers.label.readMaxLineLength': 'Line length',
+  'triggers.label.readMaxBytes': 'Output bytes',
+  'triggers.label.readLimit': 'Read lines',
+  'triggers.hint.readMaxLineLength': 'Measured in UTF-16 code units. Enter a positive safe integer; blank inherits host configuration.',
+  'triggers.hint.readMaxBytes': 'UTF-8 bytes of selected lines, including line separators and truncation suffixes. Enter a positive safe integer; blank inherits host configuration.',
+  'triggers.hint.readLimit': 'Default and maximum returned lines. Enter a positive safe integer; blank inherits host configuration.',
+  'triggers.option.file-read-limits': 'File read limits',
   'triggers.label.toolReady': 'Tool execution ready',
   'triggers.label.compacted': 'Compacted', 'triggers.label.promoteOn': 'Promotion trigger',
   'triggers.label.promoteEvents': 'Promotion event names',
