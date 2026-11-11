@@ -37,6 +37,14 @@ if (target !== undefined) registerHooks({ load(url, context, next) {
     ['const boundaryMessages = session.deriveMessages();',
       'const derivedMessages = session.deriveMessages();\n\t\tconst boundaryMessages = globalThis[Symbol.for("prompt-tool:current-system-snapshot:project")]?.(this, derivedMessages, renderedPrompt, position, signal, assembly) ?? derivedMessages;'],
   ]
+  const shapeEdits = [
+    ['const decision = await this.dispatch.waterfall("agent/pre-step", {', 'let decision = await this.dispatch.waterfall("agent/pre-step", {'],
+    ['\t\t\tsignal.throwIfAborted();\n\t\t\tif (decision.kind === "reject") {', '\t\t\tdecision = globalThis[Symbol.for("prompt-tool:message-shape-guards")]?.decision(this, selection, decision) ?? decision;\n\t\t\tsignal.throwIfAborted();\n\t\t\tif (decision.kind === "reject") {'],
+    ['const [block] = message.content;\n\treturn message.content.length === 1', 'const content = globalThis[Symbol.for("prompt-tool:message-shape-guards")]?.content(message, shapeSession) ?? message.content;\n\tconst [block] = content;\n\treturn content.length === 1'],
+    ['function textOf(message) {', 'function textOf(message, shapeSession) {'],
+    ['const text = event.data.message.content.length === 0 ? "" : textOf(event.data.message);', 'const content = globalThis[Symbol.for("prompt-tool:message-shape-guards")]?.content(event.data.message, this.session) ?? event.data.message.content;\n\t\t\tconst text = content.length === 0 ? "" : textOf(event.data.message, this.session);'],
+    ['const renderedPrompt = renderPrompt(assembly);', 'return (globalThis[Symbol.for("prompt-tool:message-shape-guards")]?.run ?? ((agent, assembly, signal, invoke) => invoke()))(this, assembly, signal, async () => this.shapeGuardedStep(decision));\n\t}\n\tasync shapeGuardedStep(decision) {\n\t\tconst { turn, step, abort: { signal } } = this.phase;\n\t\tconst { assembly } = decision;\n\t\tconst renderedPrompt = renderPrompt(assembly);'],
+  ]
   if (createHash('sha256').update(source).digest('hex') !== digest) {
     state.available = false; state.reason = 'agent-loop artifact fingerprint or structure mismatch'; return result
   }
@@ -44,6 +52,9 @@ if (target !== undefined) registerHooks({ load(url, context, next) {
   const budgetReady = coreEdits.every(([from]) => source.split(from).length === 2)
   const snapshotReady = snapshotEdits.every(([from]) => source.split(from).length === 2)
     && source.split('this.model = new AgentModel(projections.modelSelection, session, options);').length === 2
+  const shapeReady = shapeEdits.every(([from]) => source.split(from).length === 2)
+  if (shapeReady) for (const [from, to] of shapeEdits) transformed = transformed.replace(from, to)
+  if (shapeReady) transformed = transformed.replace('this.model = new AgentModel(projections.modelSelection, session, options);', 'this.model = new AgentModel(projections.modelSelection, session, options); this[Symbol.for("prompt-tool:message-shape-guards-owner")] = true;')
   if (budgetReady) for (const [from, to] of coreEdits) transformed = transformed.replace(from, to)
   if (snapshotReady) for (const [from, to] of snapshotEdits) transformed = transformed.replace(from, to)
   if (snapshotReady) transformed = transformed.replace(

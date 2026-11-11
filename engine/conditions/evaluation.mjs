@@ -70,6 +70,7 @@ export function ruleMatches(rule, frame) {
  */
 export function actionMatches(entry, frame) {
   if (frame.frozenActionMatches?.has(entry)) return frame.frozenActionMatches.get(entry)
+  if (!frame.ignoreMessageShapeGuardsDependency && entry.rule?.messageShapeGuardsAvailable?.(entry, frame) === false) return false
   if (!frame.ignoreCurrentSystemSnapshotDependency && entry.rule?.currentSystemSnapshotAvailable?.(entry, frame) === false) {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }

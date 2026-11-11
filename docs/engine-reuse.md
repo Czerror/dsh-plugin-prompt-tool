@@ -1,5 +1,11 @@
 # 统一规则引擎复用指南
 
+普通规则 host-control/message-shape-guards 使用 value: true，内置卡默认关闭。资格在当前工具步骤准备时固定，最终公开 assemble 与 refreshContext 只将缺失或非字符串的 section/context 正文归空，合法字符串、空白和顺序保持；complete 最终还原也经过该出口。未知变量、非法表达式、provider/getter 异常仍由官方抛出。
+
+缺省或非数组 messages 仅在 enter 决定归为空数组；模型切换的前置消费者和最终 turn 消费均使用同一 Agent、modelSelection 所关联的 sealed 步骤。未知 kind、reject、取消和独立异常不变。真实 step 内，Session 的 system/developer/assistant 派生仅过滤缺消息、非数组或空 content，官方投影仍优先，合法消息保原身份；user/tool 不参与该过滤。loop 的 systemNodes/textOf 沿同一步处理空 content，首尝试 runtime-context 原分流与一次投递保持，历史事件不改写。脱离该 Agent 步骤的公开派生调用仍透传。
+
+agent、session、loop 的实际发行物分别验证版本、指纹和唯一结构，并由实际 Agent.model、Session.surface 和 loop 实例联合握手。任一必要 owner 缺失仅暂停本能力和显式依赖分支，预算与当前系统快照能力独立。热更新只影响后续步骤，关闭、释放、取消或旧步骤结束后不能借新 owner 复活。rc.1 JSONL v4 仍拒绝缺 message 或非数组 system content，容错不绕过持久格式校验；空 content 数组可正常持久化。需 early 入口和用户重启 DSH 后生效；真实 CLI/Web 综合验收另行执行。
+
 普通规则 `host-control / current-system-snapshot` 使用 `value: true`，内置卡默认关闭。它复用请求前 `prepareAssembly`，把资格与兼容状态固定在原工具步骤；请求按已接受 assembly 对象身份读取同一个 sealed 步骤和局部 renderedPrompt，热更新、裸装配及同 Agent 并发装配不改变在途步骤与重试。按真实 Agent 隔离主子受众，取消沿官方信号；规则关闭影响后续步骤，owner 释放、步骤关闭或当前接缝失配立即停止本来源投影，旧资格不借新 owner 复活。
 
 当前正文只整理 `system-prompt` 来源：通过官方 Session.append 追加 surface replacement，使当前首条 system 与同一步 durable 日志正文一致；不改写任何既有 durable 事件。空白、仅头、仅尾、截断或不同换行的旧来源补为本步精确完整正文，不全局 trim；请求投影将本步正文放在首条，其他来源即使先有 system 消息也保留原内容与相对顺序。可见事件复用 currentEvents 及其降级契约。后续同来源节点只清空一次，请求投影移除这些空节点；相同正文的重复步骤不制造新事件。关闭后回官方后续路径，已提交的新正文仍是历史事实，不恢复旧历史头。

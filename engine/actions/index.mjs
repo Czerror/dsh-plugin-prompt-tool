@@ -25,6 +25,7 @@ import { isCommandConfineAction, validateCommandConfine } from '../command-confi
 import { isProviderHookDecisionsAction, validateProviderHookDecisions } from '../provider-hook-decisions.mjs'
 import { isRepeatCompactionAction, validateRepeatCompactionAction } from '../repeat-compaction-policy.mjs'
 import { isCurrentSystemSnapshotAction, validateCurrentSystemSnapshotAction } from '../current-system-snapshot.mjs'
+import { isMessageShapeGuardsAction, validateMessageShapeGuardsAction } from '../message-shape-guards.mjs'
 export { ACTION_KINDS, ACTION_DEGRADE } from './catalog.mjs'
 export { actionSupportsWhen, actionExecutionPoint } from './registration.mjs'
 const DEFAULT_PLUGIN = 'prompt-actions'
@@ -100,6 +101,7 @@ export function prepareAction(action, options = {}) {
     else if (isProviderHookDecisionsAction(action)) validateProviderHookDecisions(action)
     else if (isRepeatCompactionAction(action)) validateRepeatCompactionAction(action)
     else if (isCurrentSystemSnapshotAction(action)) validateCurrentSystemSnapshotAction(action)
+    else if (isMessageShapeGuardsAction(action)) validateMessageShapeGuardsAction(action)
     else if (action.capability === 'delegation-limits') validateDelegationLimits(action)
     else validateReadLimits(action)
     return () => { throw new TypeError('host-control requires createRuleRuntime.prepareAssembly') }

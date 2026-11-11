@@ -1,5 +1,7 @@
 # 后端参数框架
 
+系统段与消息形状容错归普通 host-control/message-shape-guards 动作，唯一参数为 value: true，默认关闭。它不接受次数预算或 outermost 排序；启停、受众、嵌套分支、规则版本、复制导出和显式依赖诊断沿原规则事务。已有用户模块不追加或覆盖内置卡，作用范围见[引擎指南](engine-reuse.md)。
+
 每步当前系统正文归普通 `host-control/current-system-snapshot` 动作，唯一参数为 `value: true`，默认关闭，不接受投递次数预算或 outermost 排序。正文仍归既有 inject-text / persona 声明，动作不复制或持久化第二份正文；启停、受众、分支、保存版本沿普通规则路径。已有用户模块不追加或覆盖内置卡。
 
 process 规则另支持 `command-confine-passthrough: true`：每模块发布一次，仅影响后续命令 confine 调用，与构造软默认独立；不接受 Agent 私有条件。内置卡默认关闭，已有用户模块不追加或覆盖。

@@ -6,6 +6,7 @@ import { applyAcceptedContextReplacements, applyToolDescriptions } from './actio
 import { readLimitsDefinition } from './read-limits.mjs'
 import { delegationLimitsDefinition } from './delegation-limits.mjs'
 import { installSkillDescriptionProjection, settleSkillDescriptions } from './tool-metadata.mjs'
+import { normalizeMessageShapeAssembly } from './message-shape-guards.mjs'
 
 const installations = new WeakMap()
 const guardedRoots = new WeakSet()
@@ -121,7 +122,7 @@ function createInstallation(ctx) {
         const captured = toolAssemblyContext(assembly, context)
         if (captured === undefined) throw unavailable()
         const step = toolStepOf(captured.toolSet, captured.agent)
-        const refreshed = applyAcceptedContextReplacements(applySubagentDepthContexts(Reflect.apply(value, target, [assembly, captured]), captured, step), step)
+        const refreshed = normalizeMessageShapeAssembly(applyAcceptedContextReplacements(applySubagentDepthContexts(Reflect.apply(value, target, [assembly, captured]), captured, step), step), captured, step)
         if (step !== undefined) associateToolAssembly(refreshed, captured.agent, step)
         return refreshed
       }
@@ -157,6 +158,7 @@ function createInstallation(ctx) {
               final = await owner.settle(final, captured)
             }
             final = applySubagentDepthContexts(final, captured, step)
+            final = normalizeMessageShapeAssembly(final, captured, step)
             captured.signal?.throwIfAborted()
             await settleToolCatalog(final, captured)
             captured.signal?.throwIfAborted()

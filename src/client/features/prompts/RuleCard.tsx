@@ -70,6 +70,7 @@ export function RuleCard(props: {
     if (node.kind === 'host-control' && ['sandbox-soft-default', 'approval-composition-default', 'approval-config-default'].includes(String(node.capability))) targets.add('host:process-defaults')
     if (node.kind === 'host-control' && node.capability === 'command-confine-passthrough') targets.add('host:command-confine')
     if (node.kind === 'host-control' && node.capability === 'current-system-snapshot') targets.add('host:current-system-snapshot')
+    if (node.kind === 'host-control' && node.capability === 'message-shape-guards') targets.add('host:message-shape-guards')
     if (node.kind === 'host-control' && ['repeat-tool-reminder', 'compaction-tool-result-pruner'].includes(String(node.capability))) targets.add(`host:${String(node.capability)}`)
     if (node.kind === 'request-params' && node.maxTokens !== undefined) targets.add('request:budget')
     if (node.kind === 'assembly') {

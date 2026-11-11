@@ -33,6 +33,18 @@ test('当前系统正文能力沿普通规则卡展示布尔值及保存版本�
   assert.ok(card.includes(t('rules.identity.unavailable')))
 })
 
+test('消息形状容错能力沿普通规则展示布尔值与必要 owner 的依赖诊断', () => {
+  const rule = { id: 'shape', enabled: true, then: [{ id: 'guards', kind: 'host-control', capability: 'message-shape-guards', value: true }] }
+  assert.ok(render(rule.then[0]).includes(t('triggers.option.message-shape-guards')))
+  const draft = getRulesDraft(createWorkspaceDrafts(), 'shape-module')
+  Object.assign(draft, { loaded: true, saved: [structuredClone(rule)], revisions: { rules: { shape: 'R1' }, settings: 'S1', variables: 'V1' } })
+  const reason = 'message-shape agent/session/loop owner unavailable'
+  const card = renderElement(RuleCard, { t, entry: { key: 'shape', previousId: 'shape', value: rule }, draft, editor: {}, meta: { layers: [] }, expanded: true,
+    onToggle() {}, onDuplicate() {}, expandedRows: new Map(), moduleId: 'shape-module', diagnostics: [{ moduleId: 'shape-module', ruleId: 'shape', actionId: 'guards', agentId: 'agent-a', channel: 'host:message-shape-guards', hit: 0, miss: 0, unavailable: 1, error: 0, identityOutcome: 'condition-unavailable', definitionRevision: 'R1:S1', reason }] })
+  assert.ok(card.includes(reason))
+  assert.ok(card.includes(t('rules.identity.unavailable')))
+})
+
 test('人设动作：普通规则卡接入受控人设字段，保留空串与 false', () => {
   const action = { id: 'persona', kind: 'persona', prefix: '', complete: false }
   const before = structuredClone(action), html = render(action)

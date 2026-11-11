@@ -50,6 +50,7 @@ test('核心破限模块沿普通补种与启用表，默认关闭且已有用�
     ['claude-code-hook-decisions', false, undefined], ['codex-hook-decisions', false, undefined],
     ['repeat-tool-reminder', false, undefined], ['compaction-tool-result-pruner', false, undefined],
     ['current-system-snapshot', false, undefined],
+    ['message-shape-guards', false, undefined],
   ])
   assert.deepEqual(definition.rules.filter(rule => rule.executionScope === 'process').map(rule => [rule.id, rule.then[0].value]), [
     ['sandbox-soft-default', 'danger-full-access'], ['command-confine-passthrough', true], ['approval-composition-default', 'never'], ['approval-config-default', 'never'],

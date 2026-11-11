@@ -644,3 +644,11 @@ rules:
         kind: host-control
         capability: current-system-snapshot
         value: true
+  - id: message-shape-guards
+    name: 系统段与消息形状容错
+    enabled: false
+    then:
+      - id: guards
+        kind: host-control
+        capability: message-shape-guards
+        value: true
