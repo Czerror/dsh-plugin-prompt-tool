@@ -15,6 +15,7 @@ import { AUDIENCE_ALL, audienceOf, intersectAudiences } from './audience.mjs'
 import { isFixedRegistration } from './fixed-registration.mjs'
 import { record } from './record.mjs'
 import { isProcessDefaultAction } from './process-defaults.mjs'
+import { isCommandConfineAction } from './command-confine.mjs'
 
 /** 规则字段：只有 `if`/`then`/`else`；旧名 `when`/`do` 留在名单里，只为把 unknown fields 换成一句「已退役，改用 X」。 */
 const RULE_FIELDS = new Set(['id', 'name', 'enabled', 'executionScope', 'layer', 'group', 'groupScope', 'exclusive', 'if', 'then', 'else', 'when', 'do'])
@@ -362,7 +363,7 @@ export function compileRules(specs, options = {}) {
       return Object.assign(action, { execution, channelOrder, waterfallPosition, actionIndex, actionWhen, bypassRuleWhen: bypass, branchPath, conditions: structuredClone(actionConditions) })
     })
     for (const action of actions) {
-      if ((spec.executionScope === 'process') !== isProcessDefaultAction(action)) throw new TypeError(`rule ${spec.id}: process defaults require executionScope process and only process actions`)
+      if ((spec.executionScope === 'process') !== (isProcessDefaultAction(action) || isCommandConfineAction(action))) throw new TypeError(`rule ${spec.id}: process actions require executionScope process and only process actions`)
       if (spec.executionScope === 'process' && action.conditions !== undefined) throw new TypeError(`rule ${spec.id}: process defaults do not read Agent conditions`)
     }
     const pointOrders = new Map()

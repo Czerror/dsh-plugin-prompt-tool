@@ -24,7 +24,7 @@ export const ACTION_KINDS = Object.freeze({
     events: ['system-prompt/assemble'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
-    timing: 'Agent 额度和文件策略采用本次快照；process 软默认仅作用后续真实 owner 构造。',
+    timing: 'Agent 额度和文件策略采用本次快照；process 软默认仅作用后续真实 owner 构造；command-confine-passthrough 作用后续 confine 调用。',
     note: 'file-read-limits 配置读取额度；delegation-limits 配置委派与等待额度。process 作用域的 sandbox-soft-default、approval-composition-default、approval-config-default 分别控制后续真实构造的沙箱/审批组合/审批配置软默认，显式值保持，已构造实例不追改。',
   },
   'subagent-params': {

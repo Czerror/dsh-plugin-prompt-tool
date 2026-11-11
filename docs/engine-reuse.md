@@ -1,6 +1,8 @@
 # 统一规则引擎复用指南
 
-规则 `executionScope` 缺省 `agent`；`process` 每模块在现有发布队列贡献一次，即使没有活动 Agent 也初始化、观察保存并撤回。当前进程规则仅接受无条件的三个构造默认动作：`host-control` 的 `sandbox-soft-default: danger-full-access`、`approval-composition-default: never` 和 `approval-config-default: never`（值写在 `value`）。会话、受众、消息及嵌套 Agent 条件、Agent 注入动作均拒绝；不自动开启其他规则。定义、切片、规则工具与模块导出保留作用域。
+命令直通由普通规则 `host-control / command-confine-passthrough`、`value: true` 和显式 `executionScope: process` 控制，内置卡默认关闭。它独立于软默认：公开生命周期只包装官方 LocalSandboxProvider 当前实例的 confine，作用后续调用，返回原 argv 的副本及空拒绝签名/runner 失败规则，不执行命令。缺目标仅暂停此能力。无 Agent 参数的共享 owner 不读会话、受众或最近步骤；原路径的参数、this、同步/异步返回和异常身份保持，直通仍尊重 caller 取消。关闭影响后续调用，在途保留接受快照；撤回仅恢复仍由本来源拥有的方法，第三方后置包装不覆盖，释放实例不复活。不修改宿主文件，真实 CLI/Web 验收另行执行。
+
+规则 `executionScope` 缺省 `agent`；`process` 每模块在现有发布队列贡献一次，即使没有活动 Agent 也初始化、观察保存并撤回。进程规则接受无条件的命令 confine 直通，以及三个构造默认动作：`host-control` 的 `sandbox-soft-default: danger-full-access`、`approval-composition-default: never` 和 `approval-config-default: never`（值写在 `value`）。会话、受众、消息及嵌套 Agent 条件、Agent 注入动作均拒绝；不自动开启其他规则。定义、切片、规则工具与模块导出保留作用域。
 
 这三个动作只影响启用后经官方 Loader 真正重新构造的策略或审批实例，已构造对象与既有会话不追改；关闭恢复后续构造默认。沙箱与审批组合默认只替换官方 base 的省略配置表达式，环境显式覆盖和用户显式配置保留，非法组合仍由官方 permission-presets 拒绝。不能把已启动进程中保存成功或普通重启等同于先前已构造对象生效。需要早期入口、精确 Loader 与策略/审批发行产物验证；缺入口、缓存或失配的原因经既有规则诊断显示，已验证也只标记后续构造可用。
 

@@ -105,7 +105,7 @@ try {
   const project = join(work, 'project')
   mkdirSync(project)
   writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'verify-pack', private: true, type: 'module' }))
-  run(`pnpm add ${quote(join(packDir, tarball))}`, { cwd: project })
+  run(`pnpm add --allow-build=koffi ${quote(join(packDir, tarball))}`, { cwd: project })
   writeFileSync(join(project, 'smoke.mjs'), SMOKE)
   process.stdout.write(run(`${quote(process.execPath)} smoke.mjs`, { cwd: project, encoding: 'utf8' }))
 } catch (error) {

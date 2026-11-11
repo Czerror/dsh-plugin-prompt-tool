@@ -26,6 +26,7 @@ import { packageEngineDir, resolveModuleDir } from '../host/module-dirs.ts'
 import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { loadModuleSpec, readModulesRevision } from '../host/module-spec.ts'
 import { processDefaultsState } from '../../engine/process-defaults.mjs'
+import { commandConfineState, isCommandConfineAction, installCommandConfine } from '../../engine/command-confine.mjs'
 import type { ModuleSpec } from '../host/module-spec.ts'
 import { modelRequestRules } from '../host/prompt-configs.ts'
 import { pluginKind, pluginOwner } from '../../engine/source-kind.mjs'
@@ -350,6 +351,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const recoveryState = createGenerationRecoveryState(join(dirname(options.moduleRoot), 'generation-recovery'))
   const ruleDiagnostics = createRuleDiagnosticsLedger()
   const processSources = new Map<string, () => void>()
+  let confineInstallation: Promise<void> | undefined
+  let disposeConfine: (() => Promise<void>) | undefined
   let processStamp: string | undefined
   const initialization = createModuleInitialization(ctx)
   const lastGood = new WeakMap<Agent, Map<string, PreparedAssembly>>()
@@ -766,14 +769,26 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (!active) return
     // Agent 批次异常会在上面回滚并抛出；process 只在该批次可发布后提交。
     for (const [id, item] of processCandidates) {
-      const release = item === null ? undefined : processDefaultsState.replaceRules(id, item.rules)
+      const actions = item?.rules.filter(rule => rule.executionScope === 'process' && rule.enabled !== false).flatMap(rule => rule.actions) ?? []
+      if (actions.some(isCommandConfineAction) && !confineInstallation) {
+        confineInstallation = (async () => {
+          try {
+            disposeConfine = await installCommandConfine(ctx)
+          } catch { /* 缺可选宿主包时保留不可用诊断，原 provider 不变。 */ }
+        })()
+      }
+      await confineInstallation
+      if (!active) return
+      const defaults = item === null ? undefined : processDefaultsState.replace(id, actions.filter(action => !isCommandConfineAction(action)).map(({ capability, value }) => ({ capability, value })))
+      const command = item === null ? undefined : commandConfineState.replace(id, actions.filter(isCommandConfineAction).map(({ capability, value }) => ({ capability, value })))
+      const release = item === null ? undefined : () => { defaults?.(); command?.() }
       processSources.get(id)?.()
       if (release === undefined) processSources.delete(id)
       else processSources.set(id, release)
       for (const rule of item?.rules ?? []) if (rule.executionScope === 'process' && rule.enabled !== false) {
         for (const action of rule.actions) {
-          const status = processDefaultsState.status(action.capability)
-          ruleDiagnostics.record({ moduleId: id, ruleId: rule.id, actionId: action.id, channel: 'host:process-defaults',
+          const status = isCommandConfineAction(action) ? commandConfineState.status() : processDefaultsState.status(action.capability)
+          ruleDiagnostics.record({ moduleId: id, ruleId: rule.id, actionId: action.id, channel: isCommandConfineAction(action) ? 'host:command-confine' : 'host:process-defaults',
             definitionRevision: rule.definitionRevision as string | undefined, outcome: status.available ? 'hit' : 'unavailable',
             identityOutcome: status.available ? 'matched' : 'condition-unavailable', reason: status.reason })
         }
@@ -875,6 +890,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     for (const release of processSources.values()) release()
     processSources.clear()
     return publication.dispose().then(() => pending).then(async () => {
+      await disposeConfine?.()
       for (const id of mounts.keys()) await release(id)
     })
   }, 'prompt-tool assembly runtime')
@@ -921,6 +937,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       processSources.clear()
       await publication.dispose()
       await pending
+      await disposeConfine?.()
       for (const id of mounts.keys()) await release(id)
     },
   }

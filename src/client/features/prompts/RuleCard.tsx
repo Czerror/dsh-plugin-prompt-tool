@@ -65,6 +65,7 @@ export function RuleCard(props: {
     if (node.kind === 'host-control' && node.capability === 'delegation-limits') targets.add('host:delegation-limits')
     if (node.kind === 'host-control' && ['sandbox-file-write', 'filesystem-fence', 'filesystem-observation'].includes(String(node.capability))) targets.add(`host:${String(node.capability)}`)
     if (node.kind === 'host-control' && ['sandbox-soft-default', 'approval-composition-default', 'approval-config-default'].includes(String(node.capability))) targets.add('host:process-defaults')
+    if (node.kind === 'host-control' && node.capability === 'command-confine-passthrough') targets.add('host:command-confine')
     if (node.kind === 'request-params' && node.maxTokens !== undefined) targets.add('request:budget')
     if (node.kind === 'assembly') {
       const target = asTriggerRecord(node.target)
@@ -100,7 +101,7 @@ export function RuleCard(props: {
       }} /></AutoSaveSelection.Provider>
       </span></span>}>
     <div className={css.body} data-rule-editor>
-      {targets.size > 0 && <p role="status">{t(rule.enabled === false ? 'rules.identity.disabled' : 'rules.identity.enabled')} · {t(rule.enabled === false || props.disabled ? 'rules.identity.unverified' : rule.executionScope === 'process' && availability === 'rules.identity.matched' ? 'rules.processReady' : availability)}</p>}
+      {targets.size > 0 && <p role="status">{t(rule.enabled === false ? 'rules.identity.disabled' : 'rules.identity.enabled')} · {t(rule.enabled === false || props.disabled ? 'rules.identity.unverified' : rule.executionScope === 'process' && availability === 'rules.identity.matched' ? targets.has('host:command-confine') ? 'rules.commandReady' : 'rules.processReady' : availability)}</p>}
       {observed.some(record => record.reason) && <p>{observed.filter(record => record.reason).map(record => record.reason).join(' · ')}</p>}
       <div className={css.fields}>
         <FormField label={t('rules.rename')}><TextInput value={rule.id} spellCheck={false} readOnly={disabled} onChange={event => patch({ id: event.target.value })} /></FormField>

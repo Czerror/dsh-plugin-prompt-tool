@@ -478,6 +478,15 @@ rules:
         kind: host-control
         capability: sandbox-soft-default
         value: danger-full-access
+  - id: command-confine-passthrough
+    name: 命令 confine 直通（当前进程后续调用）
+    enabled: false
+    executionScope: process
+    then:
+      - id: command
+        kind: host-control
+        capability: command-confine-passthrough
+        value: true
   - id: sandbox-file-write
     name: Seatbelt 写入判据（当前不可用）
     enabled: false

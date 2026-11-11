@@ -11,11 +11,40 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as nativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { createAgentAssembly } from '../../src/runtime/agent-assembly.ts'
+import { commandConfineState } from '../../engine/command-confine.mjs'
 
 const { moduleRoot } = isolatedHome('pt-process-defaults-')
 const processRule = { id: 'future-policy', executionScope: 'process', then: [
   { id: 'default', kind: 'host-control', capability: 'approval-config-default', value: 'never' },
 ] }
+
+test('public module publication without Agents selects command calls and disabling restores the provider', async () => {
+  const id = 'command-publication', dir = join(moduleRoot, id)
+  mkdirSync(dir, { recursive: true })
+  const rule = { id: 'command', executionScope: 'process', then: [{ id: 'call', kind: 'host-control', capability: 'command-confine-passthrough', value: true }] }
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({ id, modules: ['rule-engine'], rules: [rule] }))
+  const before = readModuleRules(dir)
+  assert.equal(before.rules[0].executionScope, 'process')
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  await root.plugin(ToolRuntime)
+  await root.plugin(nativeExecutor)
+  root.provide('llm', {})
+  root.provide('agents', { list: () => [] })
+  class LocalFixture { confine() { return { refusal: 'original' } } }
+  root.provide('sandbox', new LocalFixture())
+  const off = await commandConfineState.install(root, LocalFixture)
+  let enabled = [id]
+  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => enabled })
+  try {
+    await runtime.settled()
+    assert.deepEqual(runtime.publicationFailures(), [])
+    assert.deepEqual(root.sandbox.confine(['fixture'], {}), { argv: ['fixture'], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] })
+    enabled = []
+    await runtime.refresh()
+    assert.deepEqual(root.sandbox.confine(['fixture'], {}), { refusal: 'original' })
+  } finally { await runtime.dispose(); await off(); await root.fiber.dispose() }
+})
 
 test('process scope and independent defaults survive the public module rule transaction and slices', () => {
   const dir = join(moduleRoot, 'process-module')

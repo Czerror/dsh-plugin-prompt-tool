@@ -1,3 +1,5 @@
+allowBuilds:
+  koffi: true
 # 本仓库只依赖已发布的官方包；不要在这里添加指向 ../deepseek-harness 的
 # `overrides: link:` 默认配置。源码联调请使用不入库的显式本地配置，
 # 否则发布验证会退回开发机同级源码，掩盖真实的依赖与版本问题。

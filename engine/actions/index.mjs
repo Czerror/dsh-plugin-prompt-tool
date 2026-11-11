@@ -19,6 +19,7 @@ import { validateReadLimits } from '../read-limits.mjs'
 import { validateDelegationLimits } from '../delegation-limits.mjs'
 import { isFilesystemPolicyAction, validateFilesystemPolicy } from '../filesystem-policy.mjs'
 import { isProcessDefaultAction, validateProcessDefault } from '../process-defaults.mjs'
+import { isCommandConfineAction, validateCommandConfine } from '../command-confine.mjs'
 export { ACTION_KINDS, ACTION_DEGRADE } from './catalog.mjs'
 export { actionSupportsWhen, actionExecutionPoint } from './registration.mjs'
 const DEFAULT_PLUGIN = 'prompt-actions'
@@ -88,6 +89,7 @@ export function prepareAction(action, options = {}) {
   if (kind === 'host-control') {
     if (isFilesystemPolicyAction(action)) validateFilesystemPolicy(action)
     else if (isProcessDefaultAction(action)) validateProcessDefault(action)
+    else if (isCommandConfineAction(action)) validateCommandConfine(action)
     else if (action.capability === 'delegation-limits') validateDelegationLimits(action)
     else validateReadLimits(action)
     return () => { throw new TypeError('host-control requires createRuleRuntime.prepareAssembly') }
