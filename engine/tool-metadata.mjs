@@ -68,6 +68,19 @@ export function skillDescriptionObservation(plan, step) {
   return { ...plan.observation, outcome: 'unavailable', identityOutcome: 'target-mismatch', reason: reasons.join('; ') }
 }
 
+/** 装配目录首次渲染只消费本步骤已验证的说明，不开放 pending 服务读取。 */
+export async function readSkillCatalog(skills, lookup, context) {
+  validationLookups.add(lookup)
+  const result = await skills.list(lookup)
+  if (!Array.isArray(result)) return []
+  const step = toolStepFor(context)
+  if (!step?.skillDescriptionsSettled || step.status === 'closed' || context.signal?.aborted) return result
+  const plans = step.skillDescriptions.filter(plan => !step.skillDescriptionReasons?.has(plan))
+  const view = new Map(result.map(skill => [skill.name, skill]))
+  const described = applyToolDescriptions(view, plans, undefined, 'skillDescriptions')
+  return described === view ? result : result.map(skill => described.get(skill.name))
+}
+
 /** 只在模型步骤或工具调用中读取精确 Agent 的已封存配置；管理界面不改写。 */
 export function installSkillDescriptionProjection(ctx) {
   const calls = new AsyncLocalStorage()

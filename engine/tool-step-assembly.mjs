@@ -3,7 +3,7 @@ import { toolDependenciesReady } from './tool-definition.mjs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { applySubagentDepthContexts } from './subagent-params.mjs'
 import { applyAcceptedContextReplacements, applyToolDescriptions } from './actions/assembly.mjs'
-import { installSkillDescriptionProjection } from './tool-metadata.mjs'
+import { installSkillDescriptionProjection, settleSkillDescriptions } from './tool-metadata.mjs'
 
 const installations = new WeakMap()
 const guardedRoots = new WeakSet()
@@ -141,8 +141,13 @@ function createInstallation(ctx) {
             if (step === undefined) for (const owner of current) await owner.ensureFresh(agent)
             const captured = { ...context, ...(step === undefined ? {} : { toolSet: wrapped, modelSelection: step.modelSelection }) }
             beginToolCatalog(captured)
-            const invoke = index => index === current.length
-              ? Reflect.apply(value, target, [captured]) : current[index].assemble(captured, () => invoke(index + 1))
+            const invoke = async index => {
+              if (index !== current.length) return current[index].assemble(captured, () => invoke(index + 1))
+              await settleSkillDescriptions(ctx, captured)
+              captured.signal?.throwIfAborted()
+              if (!active || step?.status === 'closed') throw unavailable()
+              return Reflect.apply(value, target, [captured])
+            }
             let final = await invoke(0)
             for (const owner of current) {
               captured.signal?.throwIfAborted()

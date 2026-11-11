@@ -117,8 +117,15 @@ test('技能说明从真实步骤投影到搜索与读取，身份、正文、�
       } })
   } })
   const original = await h.root.skills.get('dsh-badge', { scope: h.agent })
-  await h.setRules([skillRule])
+  const catalogRule = { ...skillRule, then: [...skillRule.then, { id: 'catalog', kind: 'inject-text', config: {
+    layer: 'runtime-context', strategy: 'placeholder', fill: 'skill-catalog', text: '{{SKILLS_TEXT}}',
+    params: { fields: 'name,description', contextName: 'metadata:skills' },
+  } }] }
+  await h.setRules([catalogRule])
   const accepted = await h.render()
+  const catalog = step => step.assembly.contexts.find(value => value.name === 'metadata:skills')?.text
+  assert.equal(catalog(accepted), `- dsh-badge: ${plainBadgeDescription}\n- unrelated-badge: ${badgeDescription}`)
+  assert.equal(h.outcomes.find(value => value.channel === 'skill:descriptions')?.identityOutcome, 'matched')
   const execute = async (step, name) => (await h.services.tools.execute({ agent: h.agent, signal: h.signal, toolSet: step.set,
     calls: [{ type: 'tool-call', id: name, name, arguments: '{}' }] })).results[0].result
   const search = await execute(accepted, 'skill_search')
@@ -129,14 +136,16 @@ test('技能说明从真实步骤投影到搜索与读取，身份、正文、�
   assert.deepEqual(loaded.value, { ...original, description: plainBadgeDescription, catalogDescription: plainBadgeDescription })
   assert.deepEqual(await h.root.skills.get('dsh-badge', { scope: h.agent }), original, '模型步骤外读取不改原registry')
   assert.equal((await h.root.skills.snapshot({ scope: h.agent })).skills.find(value => value.name === 'dsh-badge').description, badgeDescription)
-  await h.setRules([{ ...skillRule, enabled: false }])
+  await h.setRules([{ ...catalogRule, enabled: false }])
   const disabled = await h.render()
   assert.equal((await execute(disabled, 'inspect_skill')).value.description, badgeDescription)
   assert.equal((await execute(accepted, 'inspect_skill')).value.description, plainBadgeDescription, '关闭不改变旧步骤')
-  await h.setRules([{ ...skillRule, if: { scope: { audience: 'subagent' } } }])
-  assert.equal((await execute(await h.render(), 'inspect_skill')).value.description, badgeDescription)
+  await h.setRules([{ ...catalogRule, if: { scope: { audience: 'subagent' } } }])
+  const missed = await h.render()
+  assert.equal((await execute(missed, 'inspect_skill')).value.description, badgeDescription)
+  assert.equal(catalog(accepted), `- dsh-badge: ${plainBadgeDescription}\n- unrelated-badge: ${badgeDescription}`, '热更新不回写已接受目录')
   offBadge()
-  await h.setRules([skillRule])
+  await h.setRules([catalogRule])
   h.outcomes.length = 0
   const missingStep = await h.render()
   assert.equal((await h.root.skills.snapshot({ scope: h.agent })).skills.some(value => value.name === 'dsh-badge'), false)
@@ -173,6 +182,42 @@ test('缺失PTC传输和重复技能目标均保留原面并报告确切说明�
     calls: [{ type: 'tool-call', id: 'ambiguous', name: 'skill_search', arguments: '{}' }] })).results[0].result
   assert.equal(search.isError, false)
   assert.ok(search.value.text.includes(`- dsh-badge: ${badgeLead} ${badgeLead}`))
+})
+
+test('技能目录仅消费当前Agent的已验证步骤，未知身份、失败取消与释放保持边界', async t => {
+  for (const child of [false, true]) {
+    const h = await harness(t, { child })
+    await h.root.plugin(Skills)
+    h.root.skills.register({ name: 'dsh-badge', description: badgeDescription, content: 'ORIGINAL BODY', source: 'custom' })
+    const catalogText = assembly => assembly.contexts.find(value => value.name === 'metadata:catalog')?.text
+    await h.setRules([{ ...skillRule, if: { scope: { audience: 'subagent' } } }, { id: 'catalog', then: [{ id: 'catalog', kind: 'inject-text', config: {
+      layer: 'runtime-context', strategy: 'placeholder', fill: 'skill-catalog', text: '{{SKILLS_TEXT}}',
+      params: { fields: 'name,description', contextName: 'metadata:catalog' },
+    } }] }])
+    const expected = `- dsh-badge: ${child ? plainBadgeDescription : badgeDescription}`
+    const original = `- dsh-badge: ${badgeDescription}`
+    const accepted = await h.render()
+    assert.equal(catalogText(accepted.assembly), expected)
+    assert.equal(catalogText(await h.services.prompt.assemble({ scope: h.agent, signal: h.signal })), original, '无Agent身份不借用最近步骤')
+    assert.equal(catalogText(await h.services.prompt.assemble({ agent: h.agent, scope: h.agent, signal: h.signal })), original, '无resolved步骤不投影')
+    const foreign = { id: 'foreign', session: { header: {} } }
+    assert.equal(catalogText(await h.services.prompt.assemble({ agent: foreign, scope: h.agent, signal: h.signal, toolSet: accepted.set })), original, '其他Agent不借用目标步骤')
+    const context = { agent: h.agent, scope: h.agent, signal: h.signal, modelSelection: {} }
+    const failed = await h.services.tools.resolve(context)
+    const failure = new Error('ORIGINAL ASSEMBLY FAILURE')
+    const off = h.root.on('system-prompt/assemble', () => { throw failure })
+    await assert.rejects(h.services.prompt.assemble({ ...context, toolSet: failed }), error => error === failure)
+    off()
+    assert.equal(failed.view(h.agent).size, 0, '失败步骤关闭')
+    const cancelled = await h.services.tools.resolve({ ...context, modelSelection: {} })
+    const controller = new AbortController()
+    controller.abort(failure)
+    await assert.rejects(h.services.prompt.assemble({ ...context, signal: controller.signal, toolSet: cancelled }), error => error === failure)
+    assert.equal(cancelled.view(h.agent).size, 0, '取消步骤关闭')
+    h.runtime.dispose()
+    assert.equal(accepted.set.view(h.agent).size, 0, '释放关闭原步骤')
+    assert.equal((await h.root.skills.get('dsh-badge', { scope: h.agent })).description, badgeDescription)
+  }
 })
 
 const delegation = 'You are a delegated subagent: your permission scope was fixed when you were started and cannot be widened from inside this session — operations that require approval are rejected automatically. When the task needs access beyond that scope, do not retry the denied operation; state the limitation in your reply so the delegating agent can handle it.'

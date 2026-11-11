@@ -76,7 +76,7 @@ test('技能说明配置沿真实规则卡显示精确匹配与空替文，不�
     { name: 'dsh-badge', match: 'KNOWN SKILL DESCRIPTION', text: '' },
   ] } }
   const before = structuredClone(action), html = render(action), controls = labels(html)
-  const skillLabel = t('rules.surface.editTarget', { target: '模型可见技能说明' })
+  const skillLabel = t('rules.surface.editTarget', { target: t('rules.surface.skillDescriptions') })
   assert.ok(controls.includes(skillLabel))
   for (const key of ['entryName', 'entryMatch', 'entryText']) assert.ok(controls.includes(t(`rules.surface.${key}`)), key)
   assert.equal(controls.includes(t('rules.surface.parameter')), false)
