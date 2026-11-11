@@ -94,3 +94,10 @@ test('投影：策略覆盖 enabled 与 name；非文件卡原样返回', () => 
   const other = { id: 'plain', text: 'keep' }
   assert.equal(projectInstructionCards([other], pool([]), policy())[0], other, '非文件卡不参与投影')
 })
+
+test('投影：当前 Agent 局部关闭控制只读显示，不改共享策略值', () => {
+  const shellWithControl = { ...shell('a'), agentControl: { enabled: false, controlRules: ['close-current-agent'] } }
+  const card = projectInstructionCards([shellWithControl], pool([draft('a', 'x', 'x')]), policy())[0]
+  assert.deepEqual(card.agentControl, { enabled: false, controlRules: ['close-current-agent'] })
+  assert.equal(card.enabled, true, '局部控制不改共享策略投影；组件单独禁用交互')
+})

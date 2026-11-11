@@ -432,6 +432,8 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 
 指令文件的池、策略、卡片壳与三条写路径（保存文件、保存策略、重新读取）由 `data/instruction-editor.ts` 持有；会话切换在 `load` 的请求之前调用 `switchSession`，快照回填走 `ingestSnapshot`，`InstructionFilesPort` 的成员只是转发。纯逻辑仍在 `instruction-drafts` / `instruction-policy` / `instruction-cards`。
 
+指令卡的当前 Agent 局部关闭状态是只读投影：命中 `instruction-policy` 规则时显示控制规则并禁用共享开关，不写回 `instructions.yml`；没有真实 Agent 上下文时不显示局部状态。
+
 - **版本捕获**：读时整份存快照，写时从快照取期望版本——rules（含人设动作）逐条 `rules[id]` ＋ `settings`、variables 按 `scope` ＋ `settings`、instructions 逐文件 `revision`、config-order 整表一个。**没有**统一的「版本对象」类型：各家请求形状不同，硬并会造出假共享。
 - **最新优先**：草稿/状态上的 `latest` 序号（`beginLatest` 开请求、`isLatest` 判落地）。**晚到应答既不写草稿也不清 `busy`/`loading`**——清理权归最新那次请求，否则界面会停在忙碌态。这也是为什么「迟到时不回滚」是对的，不是漏了清理。
 - **发布态**：所有已写盘端点统一读 `shared/publication.ts#readPublication`。普通模块保存只返回 `persisted:true`，确认提交快照后即可继续编辑，不显示待发布提示，也不据此宣称 Agent 已生效；后台发布按同模块 300ms 合并。切片失败或同步 `refreshOnly` 失败返回的显式 `publicationPending`／`publicationError` 仍由 `PublicationNotice` 提示并保留重试。rules（含人设动作）／variables／params／customTools／capability／name／install／clone×2／enable／config-order／delete 使用它；instructions 不触发运行发布，仍走重读与重写。后台失败仅写日志与 `meta.publicationFailures`，工作台不渲染该字段，也不把它并入模块页会显示的 `moduleWarnings`。

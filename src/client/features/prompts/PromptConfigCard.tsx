@@ -68,6 +68,7 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
   const enabled = config.enabled !== false
   const name = config.name || config.id
   const instructionFileId = instructionFileIdOf(config)
+  const agentControlled = instructionFileId !== undefined && config.agentControl?.enabled === false
   const fileNotWritable = config.contentStatus !== undefined && config.contentStatus !== 'ready'
   const focusAction = (): void => { actionRef.current?.querySelector('button')?.focus() }
   const policy = fieldPolicyFor(meta, config.layer)
@@ -153,10 +154,10 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
       </button>}
       {status && <StatusBadge tone={config.contentConflict ? 'warning' : fileNotWritable ? 'danger' : 'neutral'} label={status} />}
       <span className={styles.configHeaderActions}>
-        {props.summaryOnly ? !enabled && <span className={styles.configMeta}>{t('moduleOrder.disabled')}</span> : <Switch className={styles.configEnable} checked={enabled} label={t('card.enableAria', { name })} disabled={props.disabled || (instructionFileId !== undefined && (config.contentSaving === true || props.onPatchInstructionPolicy === undefined))}
+        {props.summaryOnly ? !enabled && <span className={styles.configMeta}>{t('moduleOrder.disabled')}</span> : <Switch className={styles.configEnable} checked={enabled && !agentControlled} label={t('card.enableAria', { name })} disabled={props.disabled || agentControlled || (instructionFileId !== undefined && (config.contentSaving === true || props.onPatchInstructionPolicy === undefined))}
           onChange={(next) => {
             if (props.disabled) return
-            if (instructionFileId !== undefined) props.onPatchInstructionPolicy?.(instructionFileId, { enabled: next })
+            if (instructionFileId !== undefined && !agentControlled) props.onPatchInstructionPolicy?.(instructionFileId, { enabled: next })
             else props.onToggleEnabled(config.id, next)
           }} />}
         {instructionFileId === undefined && <span ref={actionRef} tabIndex={-1}>
@@ -173,11 +174,12 @@ export const PromptConfigCard = memo(function PromptConfigCard(props: {
         </span>}
       </span>
     </header>
-    {(config.contentConflict || fileNotWritable || config.contentMessage || props.readOnlyReason) && <div className={styles.configStatus}>
+    {(config.contentConflict || fileNotWritable || config.contentMessage || props.readOnlyReason || agentControlled) && <div className={styles.configStatus}>
       {config.contentConflict && <p>{t('card.fileConflictDetail')}</p>}
       {config.contentDirty && (config.contentConflict || fileNotWritable) && <p>{t('card.chip.fileDirty')}</p>}
       {config.contentMessage && <p>{t('card.fileStatusDetail', { message: config.contentMessage })}</p>}
       {props.readOnlyReason && <p>{props.readOnlyReason}</p>}
+      {agentControlled && <p>{t('card.agentControl', { rules: config.agentControl?.controlRules.length ? `: ${config.agentControl.controlRules.join(', ')}` : '' })}</p>}
       {instructionFileId !== undefined && (config.contentConflict || fileNotWritable) && <span ref={reloadRef} tabIndex={-1}>
         <Button size="sm" variant="outline" disabled={config.contentSaving} onClick={reload}>{t('card.reloadFile')}</Button>
       </span>}

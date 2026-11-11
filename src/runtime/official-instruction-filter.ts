@@ -85,3 +85,45 @@ export function filterOfficialInstructionMessages(
   })
   return { messages: changed ? filtered : messages, diagnostics }
 }
+
+/** 只替换官方包装首行导语；正文、角色、source 与 change 元数据均保持。 */
+export function adaptOfficialInstructionIntros(
+  messages: unknown[],
+  introOf: (source: Record<string, unknown>) => string | undefined,
+  diagnostics: string[] = [],
+): unknown[] {
+  let changed = false
+  const result = messages.map(message => {
+    if (!isRecord(message) || !isRecord(message.source) || message.source.kind !== 'agent-instructions') return message
+    const intro = introOf(message.source)
+    if (intro === undefined) return message
+    const validation = filterOfficialInstructionMessages([message], () => true)
+    const changes: unknown[] = Array.isArray(message.source.changes) ? message.source.changes : []
+    const paths = new Set(changes.flatMap(change => isRecord(change) && typeof change.path === 'string' ? [change.path] : []))
+    const prefix = '<system-reminder>\n'
+    const parsed = (Array.isArray(message.content) ? message.content : []).map(block => {
+      if (!isRecord(block) || block.type !== 'text' || typeof block.text !== 'string') return undefined
+      const headings = instructionBlocks(block.text)
+      const first = headings[0]
+      if (first === undefined || headings.some(heading => !paths.has(heading.path))
+        || block.text.indexOf('<system-reminder>', prefix.length) >= 0) return undefined
+      const introEnd = block.text.slice(0, first.index).indexOf('\n\n', prefix.length)
+      return introEnd < 0 ? undefined : { block, introEnd }
+    })
+    if (validation.diagnostics.length > 0 || paths.size === 0 || parsed.length === 0 || parsed.some(block => block === undefined)) {
+      diagnostics.push(`官方指令消息 ${String(message.id ?? '')} 包装或分段不明确，导语保持原样`)
+      return message
+    }
+    let messageChanged = false
+    const content = parsed.map(item => {
+      const { block, introEnd } = item!
+      const next = `${prefix}${intro.trim()}\n\n${block.text.slice(introEnd + 2)}`
+      if (next === block.text) return block
+      changed = true
+      messageChanged = true
+      return { ...block, text: next }
+    })
+    return messageChanged ? { ...message, content } : message
+  })
+  return changed ? result : messages
+}

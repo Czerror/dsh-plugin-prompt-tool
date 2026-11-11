@@ -11,6 +11,7 @@ import { prepareRequestParams } from './request-params.mjs'
 import { prepareStreamOutput } from './stream-output.mjs'
 import { prepareInboxPrepend } from './inbox-prepend.mjs'
 import { preparePreStepFilter } from './pre-step-filter.mjs'
+import { prepareInstructionPolicy } from './instruction-policy.mjs'
 import { prepareToolVisibility } from './tool-visibility.mjs'
 import { validatePersonaAction } from './persona.mjs'
 import { validateSubagentParams } from '../subagent-params.mjs'
@@ -28,6 +29,7 @@ const PREPARERS = {
   'stream-output': prepareStreamOutput,
   'inbox-prepend': prepareInboxPrepend,
   'pre-step-filter': preparePreStepFilter,
+  'instruction-policy': prepareInstructionPolicy,
   'tool-visibility': prepareToolVisibility,
 }
 

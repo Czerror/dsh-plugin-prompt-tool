@@ -31,6 +31,11 @@ export interface InstructionFileSnapshot {
   revision: string | null
   /** 读取失败/超限的诊断信息；ready 时不带。 */
   message?: string
+  /** 当前真实 Agent 的局部关闭贡献；缺少 Agent 上下文时省略。 */
+  agentControl?: {
+    enabled: boolean
+    controlRules: string[]
+  }
 }
 
 /**

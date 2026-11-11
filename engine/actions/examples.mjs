@@ -14,4 +14,5 @@ export const ACTION_EXAMPLES = {
   'request-params': { patch: {} },
   'inbox-prepend': { target: 'next-turn', text: '' },
   'pre-step-filter': { blockPlugins: [] },
+  'instruction-policy': { fileIds: ['AGENTS.md'], intro: 'Instructions from the workspace.' },
 }

@@ -15,7 +15,7 @@ export function channelBinder(ctx, kind, plugin, prepend) {
   }
 }
 
-const ON_REGISTERED_KINDS = new Set(['assembly', 'tool-gate', 'tool-result', 'append-context', 'request-params', 'stream-output', 'inbox-prepend', 'pre-step-filter', 'tool-visibility'])
+const ON_REGISTERED_KINDS = new Set(['assembly', 'tool-gate', 'tool-result', 'append-context', 'request-params', 'stream-output', 'inbox-prepend', 'pre-step-filter', 'instruction-policy', 'tool-visibility'])
 
 /** 编辑目录与注册校验共用支持面；不另给客户端维护一份名单。 */
 export const actionSupportsWhen = (kind) => ON_REGISTERED_KINDS.has(kind)
@@ -50,6 +50,7 @@ export function actionExecutionPoint(action) {
     }
     return point
   }
+  if (action.kind === 'instruction-policy') return { channel: 'agent/pre-step', phase: 'after-next' }
   const channel = ACTION_KINDS[action.kind].events[0]
   return { channel, phase: NEXT_FREE_CHANNELS.has(channel) ? 'before-next' : 'after-next' }
 }

@@ -145,7 +145,7 @@ function mountSources(ctx, sources, options = {}) {
         const created = []
         const on = (channel, handler) => {
           if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
-          const entry = { rule, handler, toolSurface: action.kind === 'tool-visibility', contextReplacement: action.kind === 'assembly' && action.target?.contexts?.replace?.length > 0, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
+          const entry = { rule, action, kind: action.kind, handler, toolSurface: action.kind === 'tool-visibility', contextReplacement: action.kind === 'assembly' && action.target?.contexts?.replace?.length > 0, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
           else handlers.push(entry)
           created.push(entry)

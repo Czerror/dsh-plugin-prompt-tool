@@ -43,6 +43,7 @@ import {
   type AgentsFileCard,
 } from '../host/agents-cards.ts'
 import type { InstructionContextView, InstructionFileSnapshot, InstructionsOwnerView } from '../shared/instructions.ts'
+import { PRE_STEP_COORDINATOR_SERVICE } from '../../engine/service-names.mjs'
 import type { ModuleVariablesSnapshot } from '../shared/module-variables.ts'
 import {
   bridgeTransaction,
@@ -217,6 +218,7 @@ function withSnapshot(
 ): Record<string, unknown> {
   return {
     ...card,
+    ...(file.agentControl === undefined ? {} : { agentControl: file.agentControl }),
     params: {
       ...card.params,
       scope: file.scope,
@@ -276,10 +278,35 @@ export async function resolveInstructionScope(ctx: Context, sessionId: string | 
     .update([cwd, ...cards.map((card) => card.fileId)].join('\n'))
     .digest('hex')
     .slice(0, 16)
+  let agent: { ctx?: Context; session?: { deriveMessages?: () => unknown } } | undefined
+  try {
+    agent = sessionId === undefined ? undefined : (ctx.get?.('agents') as { get?: (id: string) => unknown } | undefined)?.get?.(sessionId) as typeof agent
+  } catch { /* 已卸载的 Agent 上下文按未知处理。 */ }
+  let coordinator: { instructionPolicyOf?: (target: unknown, messages?: unknown[]) => Record<string, string[]> | undefined } | undefined
+  try { coordinator = agent?.ctx?.get?.(PRE_STEP_COORDINATOR_SERVICE) as typeof coordinator } catch { /* unknown */ }
+  let localPolicy: Record<string, string[]> | undefined
+  let visibleMessages: unknown[] | undefined
+  try {
+    if (typeof agent?.session?.deriveMessages === 'function') {
+      const derived = agent.session.deriveMessages()
+      if (Array.isArray(derived)) visibleMessages = derived
+    }
+  } catch { /* 当前 Agent 可见面不可读时不伪造局部控制状态。 */ }
+  try {
+    if (visibleMessages !== undefined) localPolicy = coordinator?.instructionPolicyOf?.(agent, visibleMessages)
+  } catch { /* 不投影未知的局部状态。 */ }
+  const controlledFiles = new Set(Object.keys(localPolicy ?? {}))
+  const scopedFiles = cards.map(readAgentsFileSnapshot).map(file => {
+    if (localPolicy === undefined) return file
+    const controlRules = localPolicy[file.fileId] ?? []
+    return controlledFiles.has(file.fileId)
+      ? { ...file, agentControl: { enabled: false, controlRules } }
+      : { ...file, agentControl: { enabled: true, controlRules: [] } }
+  })
   return {
     context: { contextId, cwd, source: sessionCwd === undefined ? 'deploy-cwd' : 'session' },
     cards,
-    files: cards.map(readAgentsFileSnapshot),
+    files: scopedFiles,
   }
 }
 

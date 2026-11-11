@@ -51,3 +51,11 @@ test('拒绝：包装不合法时原样放行并诊断', () => {
   assert.equal(result.diagnostics.length, 1)
   assert.match(result.diagnostics[0], /无法可靠分段/u)
 })
+
+test('局部关闭与共享策略叠加：只移除关闭文件，解除后不重放历史', () => {
+  const input = message(changes, 'Instructions from: AGENTS.md\n\nA\n\nInstructions from: CLAUDE.md\n\nB')
+  const closed = filterOfficialInstructionMessages([input], path => path === 'AGENTS.md')
+  assert.equal(closed.messages[0].content[0].text, reminder('Instructions from: CLAUDE.md\n\nB'))
+  const reopened = filterOfficialInstructionMessages(closed.messages, () => false)
+  assert.deepEqual(reopened.messages, closed.messages, '解除只影响后续消息，不补发已过滤消息')
+})

@@ -69,6 +69,7 @@ export function ruleMatches(rule, frame) {
  * `hit` 再记 `miss`。没有分支的动作最终判定就是规则级判定，沿用规则级上报。
  */
 export function actionMatches(entry, frame) {
+  if (frame.frozenActionMatches?.has(entry)) return frame.frozenActionMatches.get(entry)
   if (!frame.ignoreRequestBudgetDependency && entry.rule?.requestBudgetAvailable?.(entry, frame) === false) {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }

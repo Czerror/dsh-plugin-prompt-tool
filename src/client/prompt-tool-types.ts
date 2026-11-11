@@ -60,6 +60,8 @@ export interface PromptConfigDraft extends PromptConfigSourceView {
   identity?: { field: string; value: string }
   /** 视图元数据：来源归属；不写进 module.yml，也不参与模块序列化。 */
   origin?: CardOrigin
+  /** 当前真实 Agent 的规则局部关闭投影；不写回共享指令策略。 */
+  agentControl?: { enabled: boolean; controlRules: string[] }
   /** 视图元数据：指令文件读取状态（ready 之外不可编辑、不可保存）。 */
   contentStatus?: 'ready' | 'missing' | 'unreadable' | 'too-large'
   /** 视图元数据：读取失败或保存失败的诊断信息。 */

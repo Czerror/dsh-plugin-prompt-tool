@@ -6,7 +6,7 @@ export const ACTION_DEGRADE = Object.freeze({
 })
 
 /**
- * 十类动作的声明：**合法事件通道** + **降级语义** + 触发时机 + **声明字段**。
+ * 动作的声明：**合法事件通道** + **降级语义** + 触发时机 + **声明字段**。
  * `events` 是动作允许注册的官方事件：经 `on(...)` 注册的动作（`channelBinder`）注册到声明外的
  * 事件在挂载期 fail loud；`inject-text` 不经 `channelBinder`，它的真实通道由
  * `actionExecutionPoint`（派生自 `schema.mjs` 每层的 `channel`）决定——下面那行 `events`
@@ -139,9 +139,18 @@ export const ACTION_KINDS = Object.freeze({
       + 'instructionHint为显式文件提示模板，仅转换可靠识别的官方指令消息；原始正文与其它来源不扫描猜依赖。'
       + '**永不吞上下文**：异常一律返回未过滤的 decision（`expose-all`）。',
   },
+  'instruction-policy': {
+    title: '当前 Agent 指令卡控制',
+    fields: ['fileIds', 'intro'],
+    events: ['agent/pre-step'],
+    services: [],
+    degrade: ACTION_DEGRADE.exposeAll,
+    timing: '仅在当前真实 Agent 的官方指令消息中关闭声明的既有 fileId；持久策略与原文件不变。',
+    note: '只叠加关闭贡献或转换准确导语，不提供强制开启或正文复制；身份与分段无法确认时原样放行。',
+  },
 })
 
-/** 十类动作共用键：身份、同点定位与每轮预算。 */
+/** 所有动作共用键：身份、同点定位与每轮预算。 */
 const COMMON_ACTION_FIELDS = ['id', 'kind', 'channelOrder', 'waterfallPosition', 'maxPerTurn']
 
 /** 每类动作的允许键集合（通用键 + `ACTION_KINDS[kind].fields`）。 */

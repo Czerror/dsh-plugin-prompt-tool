@@ -242,26 +242,30 @@ export function apply(ctx, config) {
   const warnOnce = createWarnOnce(ctx, name)
   ctx.on('session/event', (session, event) => promotion.observe(session, event))
 
-  ctx.on('agent/pre-step', async ({ agent }, next) => {
-    // Downstream errors propagate untouched; only this filter's own logic is guarded.
-    const decision = await next()
-    if (decision.kind === 'reject') return decision
-    try {
-      if (!promotion.status(agent).promoted) return decision
-      if (!Array.isArray(decision.messages)) return decision
-      if (agent?.session === undefined) return decision
-      const coordinator = getService(ctx, PRE_STEP_COORDINATOR_SERVICE)
-      const messages = typeof coordinator?.filterInstructions === 'function'
-        ? coordinator.filterInstructions(agent, decision.messages)
-        : decision.messages
-      // 1 换 1 的转换不能按长度判断（长度相同仍可能已转换），
-      // instructionHintMessages 本身保留非目标消息，直接采用结果。
-      const hintState = { instructionHinted: hasVisibleInstructionHint(agent.session) }
-      return { ...decision, messages: instructionHintMessages(messages, hintState, name, source) }
-    } catch (error) {
-      // 转换失败不阻断会话：保留原消息。
-      warnOnce(`${name}: instruction hint conversion failed, keeping messages: ${String((error && error.message) || error)}`)
-      return decision
+  ctx.on('agent/pre-step', (payload, next) => {
+    const { agent } = payload
+    const coordinator = getService(ctx, PRE_STEP_COORDINATOR_SERVICE)
+    const run = async () => {
+      // Downstream errors propagate untouched; only this filter's own logic is guarded.
+      const decision = await next()
+      if (decision.kind === 'reject') return decision
+      try {
+        if (!promotion.status(agent).promoted) return decision
+        if (!Array.isArray(decision.messages)) return decision
+        if (agent?.session === undefined) return decision
+        const messages = typeof coordinator?.filterInstructions === 'function'
+          ? coordinator.filterInstructions(agent, decision.messages, payload)
+          : decision.messages
+        // 1 换 1 的转换不能按长度判断（长度相同仍可能已转换），
+        // instructionHintMessages 本身保留非目标消息，直接采用结果。
+        const hintState = { instructionHinted: hasVisibleInstructionHint(agent.session) }
+        return { ...decision, messages: instructionHintMessages(messages, hintState, name, source) }
+      } catch (error) {
+        // 转换失败不阻断会话：保留原消息。
+        warnOnce(`${name}: instruction hint conversion failed, keeping messages: ${String((error && error.message) || error)}`)
+        return decision
+      }
     }
+    return typeof coordinator?.withPreStep === 'function' ? coordinator.withPreStep(payload, run) : run()
   }, { prepend: true })
 }

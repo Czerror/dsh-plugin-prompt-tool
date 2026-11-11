@@ -11,6 +11,8 @@ const home = mkdtempSync(join(tmpdir(), 'pt-guard-home-'))
 process.env.DSH_HOME = home
 const { BRIDGE_ENDPOINTS, SETTINGS_BRIDGE_PREFIX } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
+const { resolveInstructionScope } = await import('../../src/runtime/bridge-runtime.ts')
+const { detectAgentsFiles } = await import('../../src/host/agents-cards.ts')
 
 const rootA = mkdtempSync(join(tmpdir(), 'pt-guard-a-'))
 const rootB = mkdtempSync(join(tmpdir(), 'pt-guard-b-'))
@@ -183,6 +185,32 @@ test('存活与冷态本地会话各自解析工作区：文件集不串，旧�
   const failed = makeHarness({}, async () => { throw new Error('session metadata unreadable') })
   const rejected = await failed.call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 'session-b' })
   assert.equal(rejected.status, 500, '元数据读取失败应拒绝，不能把部署目录冒充该会话工作区')
+})
+
+test('局部 Agent 控制只在真实 coordinator 可用时投影', async () => {
+  const probe = { session: { header: { cwd: rootA }, deriveMessages: () => [] } }
+  const project = detectAgentsFiles({ cwd: rootA }).find(file => file.scope === 'project')
+  assert.ok(project)
+  const calls = []
+  const coordinator = { instructionPolicyOf: (agent, messages) => {
+    calls.push({ agent, messages })
+    return { [project.fileId]: ['close-project'] }
+  } }
+  probe.ctx = { get: name => name === 'promptToolPreStep' ? coordinator : undefined }
+  const ctx = { get: name => name === 'agents' ? { get: id => id === 'session-probe' ? probe : undefined } : undefined }
+  const scoped = await resolveInstructionScope(ctx, 'session-probe')
+  assert.deepEqual(scoped.files.find(file => file.fileId === project.fileId).agentControl, {
+    enabled: false, controlRules: ['close-project'],
+  })
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].agent, probe)
+  assert.deepEqual(calls[0].messages, [])
+  const unknown = { session: probe.session, ctx: { get: () => undefined } }
+  const withoutCoordinator = await resolveInstructionScope({ get: name => name === 'agents' ? { get: () => unknown } : undefined }, 'session-probe')
+  assert.equal(withoutCoordinator.files.some(file => Object.hasOwn(file, 'agentControl')), false)
+  const unreadable = { session: { header: { cwd: rootA }, deriveMessages: () => { throw new Error('unreadable') } }, ctx: probe.ctx }
+  const unreadableScope = await resolveInstructionScope({ get: name => name === 'agents' ? { get: () => unreadable } : undefined }, 'session-probe')
+  assert.equal(unreadableScope.files.some(file => Object.hasOwn(file, 'agentControl')), false)
 })
 
 test('写暂存期间目标被外部改写：rename 前复核拒绝，外部内容不被覆盖（T10）', async (t) => {

@@ -308,13 +308,15 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 ## pre-step 协调器与官方指令过滤
 
-宿主 `src/runtime/pre-step-coordinator.ts` 汇总模块规则与直接来源，在**一个** `prepend` 监听器里显式先过滤官方待注入指令、再执行规则批；顺序是代码事实，不依赖监听器注册先后。来源白名单过滤器使用真实已领取 payload，不将下游增量当原始消息。官方监听器（如 `dsh-tool-skill` 的技能目录）在 `await next()` 之后才 append messages，协调器拿到完整 decision 后先删再跑批；batch 的规则帧使用过滤后的 messages，batch 异常时仍返回已过滤的 decision。协调器自身仍是 `prepend` 监听器，只有这样才能看到官方监听器在 `await next()` 之后追加的消息；「不依赖注册先后」只指 filter 与 batch 的相对顺序。
+宿主 `src/runtime/pre-step-coordinator.ts` 汇总模块规则与直接来源，在**一个** `prepend` 监听器里显式先过滤官方待注入指令、再执行规则批；顺序是代码事实，不依赖监听器注册先后。来源白名单过滤器使用真实已领取 payload，不将下游增量当原始消息。官方监听器（如 `dsh-tool-skill` 的技能目录）在 `await next()` 之后才 append messages，协调器拿到完整 decision 后先删再跑批；同一 pre-step 中 `instruction-policy` 的动作判定在过滤前固定，并把命中结果带入批执行，避免过滤、导语与批处理跨快照漂移；batch 异常时仍返回已过滤的 decision。协调器自身仍是 `prepend` 监听器，只有这样才能看到官方监听器在 `await next()` 之后追加的消息；「不依赖注册先后」只指 filter 与 batch 的相对顺序。
 
 无协调器的 standalone 路径（`applyPromptConfigSources` 单独执行批）是例外：`prepend` 只由 `options.prepend` 与配置的 `prepend` 决定，纯 `ruleAction` 的 `pre-step-filter` 拿不到最外层，`skill-surface` 在那种部署里可能删不掉官方目录。出现第二个无协调器消费者时，把「需要最外层」上收到动作语义再统一，而不是给判据加更多特例。
 
 协调器服务 v2 持有唯一的 promotion pool/pair，并把它暴露给来源生产者；`registerPreset(sourceId, source)` 消费 source 自带的 ctx/onOutcome/promotion，不再改写 `config.resolve`，也不再从 config 反推模块。批执行由 `runPreStepBatch({ sources })` 合并来源，判定上报使用对象形状；pre-step 来源的 `source.ctx` 绑定 `resolve`，条件帧使用批级 ctx。
 
 逐文件关闭只过滤能够可靠识别的未来官方正文和 change 元数据；无法识别或无法分段时保留并报告。不撤回历史、不补回官方预算裁掉的内容，不以文件卡开关阻止官方磁盘读取。重新开启也不强制重放。
+
+普通规则可声明 `instruction-policy` 动作并给出现有 `fileIds`，只为当前真实 Agent 增加局部关闭贡献。该动作不写共享 `instructions.yml`、不复制正文；多个规则按文件叠加，撤回一条仍保留其它关闭贡献，全部撤回后按最新共享值放行。无可靠 Agent、身份或分段时沿放行诊断，不把规则状态扩成全局开关。
 
 `instructionHint` 默认关闭，只有显式有效 messageTemplate 才将过滤后的正文转成提示；空模板保持原文。正文编辑和文件授权属于独立 owner，见 [指令文件契约](architecture-params.md#指令文件与逐文件过滤策略)。
 

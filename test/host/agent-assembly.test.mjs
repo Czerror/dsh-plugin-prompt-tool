@@ -23,8 +23,9 @@ import { isolatedHome, fixtureRule } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-assembly-')
 const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { installPreStepCoordinator, PRE_STEP_COORDINATOR_SERVICE } = await import('../../src/runtime/pre-step-coordinator.ts')
-const { instructionFileIdentityOf, readInstructionPolicy, writeInstructionPolicy } = await import('../../src/host/instructions-policy.ts')
+const { instructionFileIdentityOf, readInstructionPolicy, resolveInstructionPolicy, writeInstructionPolicy } = await import('../../src/host/instructions-policy.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
+const { apply: applyInstructionHint } = await import('../../engine/instruction-hint.mjs')
 const { installPersonaCapture } = await import('../../src/runtime/persona-registration.ts')
 const { readModuleFacts, rowDisabled } = await import('../../src/host/module-params.ts')
 const { mountPreStepConfigs: mountConfigs, applyPromptConfigSources } = await import('../fixtures/pre-step.mjs')
@@ -1923,6 +1924,197 @@ test('协调器管线：规则批抛错仍返回已过滤的 decision', async (t
   const decision = await h.inject(agent)
   assert.ok(boomCount > 0, '规则批至少执行一次')
   assert.ok(!decision.messages.some(message => message.source?.kind === 'agent-instructions'), 'batch 抛错后仍返回已过滤 decision')
+})
+
+test('instruction-policy 只为当前 Agent 叠加关闭贡献，撤回按共享最新值放行', async (t) => {
+  const identity = instructionFileIdentityOf('~/.dsh/AGENTS.md')
+  assert.ok(identity.fileId)
+  writeRawRuleModule('local-instruction-policy', [{
+    id: 'close-current-agent',
+    then: [{ id: 'close', kind: 'instruction-policy', fileIds: [identity.fileId] }],
+  }])
+  const h = await liveAssembly(t, () => ['local-instruction-policy'], {
+    beforeCoordinator: (root) => {
+      root.on('agent/pre-step', async (_payload, next) => {
+        const decision = await next()
+        return { ...decision, messages: [...decision.messages, {
+          id: 'official-local-policy', role: 'user',
+          source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/AGENTS.md', action: 'set' }] },
+          content: [{ type: 'text', text: '<system-reminder>\nInstructions from: ~/.dsh/AGENTS.md\nLOCAL\n</system-reminder>' }],
+        }] }
+      })
+    },
+  })
+  const agent = await h.makeAgent('local-policy-agent')
+  const sharedBefore = resolveInstructionPolicy(readInstructionPolicy().policy, identity.fileId).enabled
+  const first = await h.inject(agent)
+  assert.deepEqual(first.messages.map(message => message.source?.kind), ['user'], '局部规则只过滤当前 Agent 的后续官方投递')
+  assert.equal(resolveInstructionPolicy(readInstructionPolicy().policy, identity.fileId).enabled, sharedBefore, '共享策略保持原值')
+  writeRawRuleModule('local-instruction-policy', [])
+  await h.runtime.refresh()
+  const reopened = await h.inject(agent)
+  assert.deepEqual(reopened.messages.map(message => message.source?.kind), sharedBefore ? ['user', 'agent-instructions'] : ['user'], '撤回后按最新共享值放行且不补发历史')
+})
+
+test('instruction-policy：过滤与批执行复用同一步 actionWhen 快照', async (t) => {
+  const identity = instructionFileIdentityOf('~/.dsh/AGENTS.md')
+  assert.ok(identity.fileId)
+  const h = await liveAssembly(t, () => [], {
+    beforeCoordinator: (root) => {
+      root.on('agent/pre-step', async (_payload, next) => {
+        const decision = await next()
+        return { ...decision, messages: [...decision.messages, {
+          id: 'official-dynamic', role: 'user',
+          source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/AGENTS.md', action: 'set' }] },
+          content: [{ type: 'text', text: '<system-reminder>\nInstructions from: ~/.dsh/AGENTS.md\nDYNAMIC\n</system-reminder>' }],
+        }] }
+      })
+    },
+  })
+  const agent = await h.makeAgent('dynamic-policy-agent')
+  const coordinator = h.root.get(PRE_STEP_COORDINATOR_SERVICE)
+  let evaluations = 0
+  let runs = 0
+  coordinator.registerPreset('dynamic-policy', {
+    sourceId: 'dynamic-policy', ctx: agent.ctx, configs: [], ruleActions: [{
+      id: 'dynamic-policy-action', kind: 'instruction-policy',
+      rule: { id: 'dynamic-policy-rule', enabled: true },
+      action: { fileIds: [identity.fileId] },
+      actionWhen: () => ++evaluations === 1,
+      handler: async (_payload, next) => { runs += 1; return next() },
+    }],
+  })
+  const result = await h.inject(agent)
+  assert.equal(evaluations, 1, '过滤与批执行只求值一次')
+  assert.equal(runs, 1, '冻结的命中结果仍执行批动作')
+  assert.equal(result.messages.some(message => message.source?.kind === 'agent-instructions'), false)
+})
+
+test('instruction-policy：hint 两种注册顺序在转换消息后仍使用本次判定', async (t) => {
+  const identity = instructionFileIdentityOf('~/.dsh/AGENTS.md')
+  const hints = { enabled: true, messageTemplate: 'Reference {{FILES}}', suffixTemplate: '', projectTemplate: '', globalTemplate: '' }
+  for (const hintFirst of [true, false]) {
+    const h = await liveAssembly(t, () => [], {
+      beforeCoordinator: (root) => {
+        root.on('agent/pre-step', async (_payload, next) => {
+          const decision = await next()
+          return { ...decision, messages: [...decision.messages, {
+            id: 'hint-policy', role: 'user', source: { kind: 'agent-instructions', changes: [
+              { path: '~/.dsh/AGENTS.md', action: 'set' }, { path: '~/.dsh/CLAUDE.md', action: 'set' },
+            ] }, content: [{ type: 'text', text: '<system-reminder>\nOLD INTRO\n\nInstructions from: ~/.dsh/AGENTS.md\nA\n\nInstructions from: ~/.dsh/CLAUDE.md\nB\n</system-reminder>' }],
+          }] }
+        })
+        if (hintFirst) applyInstructionHint(root, hints)
+      },
+    })
+    if (!hintFirst) applyInstructionHint(h.root, hints)
+    const agent = await h.makeAgent(`hint-policy-${hintFirst}`)
+    agent.session.snapshotEvents().push({ seq: 1, type: 'assistant/message', data: {} })
+    const coordinator = h.root.get(PRE_STEP_COORDINATOR_SERVICE)
+    let evaluations = 0
+    let runs = 0
+    coordinator.registerPreset('hint-policy', {
+      sourceId: 'hint-policy', ctx: agent.ctx, configs: [], ruleActions: [{
+        id: 'hint-policy-action', kind: 'instruction-policy', rule: { id: 'hint-policy-rule' },
+        action: { fileIds: [identity.fileId], intro: 'CURRENT INTRO' },
+        actionWhen: () => ++evaluations === 1,
+        handler: async (_payload, next) => { runs += 1; await Promise.resolve(); return next() },
+      }],
+    })
+    const decision = await h.inject(agent)
+    assert.equal(evaluations, 1, `hintFirst=${hintFirst}：只判一次`)
+    assert.equal(runs, 1)
+    const hint = decision.messages.find(message => message.source?.kind === 'instruction-hint')
+    assert.ok(hint, `hintFirst=${hintFirst}：真实 hint 已转换`)
+    assert.match(hint.content[0].text, /CLAUDE\.md/)
+    assert.doesNotMatch(hint.content[0].text, /AGENTS\.md/)
+  }
+})
+
+test('instruction-policy：复用消息和载荷不复用上一步或另一 Agent 的判定', async (t) => {
+  const identity = instructionFileIdentityOf('~/.dsh/AGENTS.md')
+  assert.ok(identity.fileId)
+  const before = resolveInstructionPolicy(readInstructionPolicy().policy, identity.fileId).enabled
+  writeInstructionPolicy({ expectedRevision: readInstructionPolicy().revision, patch: { files: { [identity.fileId]: { enabled: true } } } })
+  t.after(() => writeInstructionPolicy({ expectedRevision: readInstructionPolicy().revision, patch: { files: { [identity.fileId]: { enabled: before } } } }))
+  const h = await liveAssembly(t, () => [])
+  const first = await h.makeAgent('reuse-policy-first')
+  const other = await h.makeAgent('reuse-policy-other')
+  const messages = [{ role: 'user', source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/AGENTS.md', action: 'set' }] },
+    content: [{ type: 'text', text: '<system-reminder>\nInstructions from: ~/.dsh/AGENTS.md\nBODY\n</system-reminder>' }] }]
+  let evaluations = 0
+  const coordinator = h.root.get(PRE_STEP_COORDINATOR_SERVICE)
+  const source = {
+    sourceId: 'reuse-policy', configs: [], ruleActions: [{
+      id: 'reuse-action', kind: 'instruction-policy', rule: { id: 'reuse-rule' }, action: { fileIds: [identity.fileId] },
+      actionWhen: () => ++evaluations === 1, handler: async (_payload, next) => next(),
+    }],
+  }
+  coordinator.registerPreset('reuse-policy', { ...source, ctx: first.ctx })
+  coordinator.registerPreset('reuse-policy', { ...source, ctx: other.ctx })
+  const payload = { agent: first, messages, signal: new AbortController().signal }
+  const run = () => h.root.waterfall(scopeTarget(payload.agent, payload.agent), 'agent/pre-step', payload, async () => ({ kind: 'continue', messages }))
+  assert.equal((await run()).messages.length, 0)
+  assert.equal((await run()).messages.length, 1, '同 Agent 下一次调用重新判定')
+  payload.agent = other
+  assert.equal((await run()).messages.length, 1, '另一 Agent 不使用同数组的旧判定')
+  assert.equal(evaluations, 3)
+})
+
+test('instruction-policy：依赖失败时保留官方消息并上报 error', async (t) => {
+  const h = await liveAssembly(t, () => [])
+  const agent = await h.makeAgent('failed-policy')
+  const reports = []
+  let evaluations = 0
+  const disabledRule = { id: 'disabled-policy', enabled: false }
+  const coordinator = h.root.get(PRE_STEP_COORDINATOR_SERVICE)
+  coordinator.registerPreset('failed-policy', {
+    sourceId: 'failed-policy', ctx: agent.ctx, configs: [], onOutcome: report => reports.push(report), ruleActions: [{
+      id: 'failed-action', kind: 'instruction-policy',
+      rule: { id: 'failed-rule', requestBudgetAvailable: () => { evaluations += 1; throw new Error('dependency-unreadable') } },
+      action: { fileIds: [], intro: 'SHOULD NOT APPEAR' }, handler: async () => { throw new Error('must not run') },
+    }, ...['first', 'second'].map(id => ({
+      id, kind: 'instruction-policy', rule: disabledRule, action: { intro: 'DISABLED' }, handler: async () => { throw new Error('must not run') },
+    })), {
+      id: 'unavailable', kind: 'instruction-policy', rule: { id: 'unavailable-policy', requestBudgetAvailable: () => false },
+      action: { intro: 'UNAVAILABLE' }, handler: async () => { throw new Error('must not run') },
+    }],
+  })
+  const messages = [{ role: 'user', source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/CLAUDE.md', action: 'set' }] },
+    content: [{ type: 'text', text: '<system-reminder>\nOLD INTRO\n\nInstructions from: ~/.dsh/CLAUDE.md\nBODY\n</system-reminder>' }] }]
+  const decision = await h.root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent }, async () => ({ kind: 'continue', messages }))
+  assert.deepEqual(decision.messages, messages)
+  assert.equal(evaluations, 1)
+  assert.deepEqual(reports.map(report => report.outcome), ['error', 'disabled', 'unavailable'], '同规则两个无分支动作只报告一次')
+  const payload = { agent }
+  await assert.rejects(h.root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', payload, async () => { throw new Error('downstream-failed') }), /downstream-failed/)
+  await h.root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', payload, async () => ({ kind: 'continue', messages }))
+  assert.equal(evaluations, 2, '异常请求释放调用范围，下一次重新判定')
+})
+
+test('instruction-policy 的 P1 导语适配只改官方包装首段', async (t) => {
+  writeRawRuleModule('instruction-intro', [{
+    id: 'adapt-intro',
+    then: [{ id: 'intro', kind: 'instruction-policy', intro: 'SOURCE INTRO' }],
+  }])
+  const h = await liveAssembly(t, () => ['instruction-intro'], {
+    beforeCoordinator: (root) => {
+      root.on('agent/pre-step', async (_payload, next) => {
+        const decision = await next()
+        return { ...decision, messages: [...decision.messages, {
+          id: 'official-intro', role: 'user',
+          source: { kind: 'agent-instructions', changes: [{ path: '~/.dsh/CLAUDE.md', action: 'set' }], marker: 'keep' },
+          content: [{ type: 'text', text: '<system-reminder>\nOLD INTRO\n\nInstructions from: ~/.dsh/CLAUDE.md\n\nBODY\n</system-reminder>' }],
+        }] }
+      })
+    },
+  })
+  const agent = await h.makeAgent('instruction-intro-agent')
+  const result = await h.inject(agent)
+  const official = result.messages.find(message => message.source?.kind === 'agent-instructions')
+  assert.equal(official.role, 'user')
+  assert.equal(official.source.marker, 'keep')
+  assert.equal(official.content[0].text, '<system-reminder>\nSOURCE INTRO\n\nInstructions from: ~/.dsh/CLAUDE.md\n\nBODY\n</system-reminder>')
 })
 
 test('协调器批执行在最外层：先注册的监听器在 next() 之后追加的消息仍会被过滤', async (t) => {
