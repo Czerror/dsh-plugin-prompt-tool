@@ -636,3 +636,11 @@ rules:
         kind: host-control
         capability: compaction-tool-result-pruner
         value: true
+  - id: current-system-snapshot
+    name: 每步当前系统正文
+    enabled: false
+    then:
+      - id: snapshot
+        kind: host-control
+        capability: current-system-snapshot
+        value: true

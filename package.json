@@ -65,6 +65,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "4.1.0",
     "@deepseek-ai/dsh-agent": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-agent-loop": "0.2.2-rc.1",
     "@deepseek-ai/dsh-agent-preset-registry": "0.2.2-rc.1",
     "@deepseek-ai/dsh-api-remotes": "0.2.2-rc.1",
     "@deepseek-ai/dsh-api-session-controller": "0.2.2-rc.1",
@@ -88,6 +89,7 @@
     "@deepseek-ai/dsh-repeat-tool-reminder": "0.2.2-rc.1",
     "@deepseek-ai/dsh-sandbox-local": "0.2.2-rc.1",
     "@deepseek-ai/dsh-scope": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.2.2-rc.1",
     "@deepseek-ai/dsh-settings": "0.2.2-rc.1",
     "@deepseek-ai/dsh-skill": "0.2.2-rc.1",
     "@deepseek-ai/dsh-storage": "0.2.2-rc.1",

@@ -1,5 +1,7 @@
 # Web 客户端 UI 结构框架
 
+宿主能力卡提供“每步当前系统正文与完整性”（Current system body and integrity per step），选择 `current-system-snapshot` 时使用布尔 `value: true`。卡片依赖诊断沿 `host:current-system-snapshot` 展示当前保存版本的缺失 early owner 原因；正文、受众和启停仍由普通规则编辑，不新增独立正文入口。默认关闭与运行契约见 [引擎复用](engine-reuse.md)。
+
 Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 对象，选择 `claude-code: true` / `codex: true`；两张内置卡默认关闭。依赖诊断使用 `host:provider-hook-decisions`，运行与恢复契约见 [引擎复用](engine-reuse.md)。
 
 升级动作编辑沿现有规则卡：`escalation-criteria`、`escalation-grant`、`escalation-outcome` 均使用布尔 value，分别显示当前能力诊断；开启意图不等于真实 caller 就绪，运行契约见 [引擎复用](engine-reuse.md)。

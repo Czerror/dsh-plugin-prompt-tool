@@ -1,5 +1,11 @@
 # 统一规则引擎复用指南
 
+普通规则 `host-control / current-system-snapshot` 使用 `value: true`，内置卡默认关闭。它复用请求前 `prepareAssembly`，首次请求即携带已选完整正文；同一步使用局部 renderedPrompt，热更新只作用后续装配，不重跑在途请求。按真实 Agent 隔离主子受众与并行步骤，取消沿官方信号，规则关闭及 runtime disposer 撤回后续贡献。
+
+当前正文只整理 `system-prompt` 来源：通过官方 Session.append 追加 surface replacement，使当前首条 system 与同一步 durable 日志正文一致；不改写任何既有 durable 事件。空白、仅头、仅尾、截断或不同换行的旧来源补为本步精确完整正文，不全局 trim，其他来源消息的内容与顺序保留。后续同来源节点只清空一次，请求投影移除这些空节点；相同正文的重复步骤不制造新事件。关闭后回官方后续路径，已提交的新正文仍是历史事实，不恢复旧历史头。
+
+早入口验证官方 agent-loop 实际版本、发行指纹及 snapshot 独立锚点，只有实际 constructor marker 与本 Agent 存活 owner 同时存在才就绪。缺失只暂停包含该动作的显式依赖分支，无关规则继续；owner 恢复后在下一次正常装配重判，不轮询补发。需用户重启 DSH 并选用 early 入口后生效；CLI/Web 综合验收另行执行。
+
 `host-control / provider-hook-decisions` 的 `value` 选择 `claude-code: true` 或 `codex: true`（也可同时选择）。普通内置模块两卡默认关闭。它保留官方 Hook 执行、原始审计和 context，仅绕过本 owner 的 UserPromptSubmit、PreToolUse、PostToolUse、Stop 的 deny 出口，以及 Claude 独有 ask 出口；其他 owner 和下游拒绝保持。四事件在接受时冻结当前 Agent 自己的规则计划，只取该事件的 modelSelection，缺模型时模型条件 unavailable，不读取 Agent 下一步模型。关闭、撤回和 owner 释放影响后续调用，不重放历史动作。
 
 两个可选官方包逐一验证实际解析版本、完整发行指纹和四事件 anchor；缺失或失配仅暂停显式依赖该目标的分支，并显示原因。owner 必须成功读取配置，且经官方 scope 路由对当前 Agent 可达；消费结果时仍检查 owner 存活和调用取消。在途热改保持已接受计划，释放或取消不能沿旧计划授权。重新装配 owner 后在下次正常重判恢复，early 入口需用户重启 DSH 后生效。该动作不接受投递次数预算或 outermost 排序。nested 仅指部署中实际解析到的另一份副本，未装配不声称已验证；原生 Stop deny 会 steer、prompt deny 会 reject，不另建空动作或旁路伪用户正文。真实 CLI/Web 组合验收另行执行。

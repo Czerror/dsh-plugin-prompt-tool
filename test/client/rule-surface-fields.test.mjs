@@ -18,6 +18,21 @@ const render = action => renderElement(RuleStepsPanel, {
 })
 const labels = html => [...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
 
+test('当前系统正文能力沿普通规则卡展示布尔值及保存版本的依赖诊断', () => {
+  const rule = { id: 'snapshot', enabled: true, then: [{ id: 'current', kind: 'host-control', capability: 'current-system-snapshot', value: true }] }
+  const before = structuredClone(rule)
+  const html = render(rule.then[0])
+  assert.ok(html.includes(t('triggers.option.current-system-snapshot')))
+  assert.deepEqual(rule, before)
+  const draft = getRulesDraft(createWorkspaceDrafts(), 'snapshot-module')
+  Object.assign(draft, { loaded: true, saved: [structuredClone(rule)], revisions: { rules: { snapshot: 'R1' }, settings: 'S1', variables: 'V1' } })
+  const reason = 'current-system early owner unavailable'
+  const card = renderElement(RuleCard, { t, entry: { key: 'snapshot', previousId: 'snapshot', value: rule }, draft, editor: {}, meta: { layers: [] }, expanded: true,
+    onToggle() {}, onDuplicate() {}, expandedRows: new Map(), moduleId: 'snapshot-module', diagnostics: [{ moduleId: 'snapshot-module', ruleId: 'snapshot', actionId: 'current', agentId: 'agent-a', channel: 'host:current-system-snapshot', hit: 0, miss: 0, unavailable: 1, error: 0, identityOutcome: 'condition-unavailable', definitionRevision: 'R1:S1', reason }] })
+  assert.ok(card.includes(reason))
+  assert.ok(card.includes(t('rules.identity.unavailable')))
+})
+
 test('人设动作：普通规则卡接入受控人设字段，保留空串与 false', () => {
   const action = { id: 'persona', kind: 'persona', prefix: '', complete: false }
   const before = structuredClone(action), html = render(action)

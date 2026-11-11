@@ -19,7 +19,7 @@ if (target !== undefined) registerHooks({ load(url, context, next) {
   if (url !== target) return result
   const source = typeof result.source === 'string' ? result.source : Buffer.from(result.source).toString()
   const acceptedFrom = '\t\tsignal.throwIfAborted();\n\t\treturn {\n\t\t\tconfig,\n\t\t\t...preparedCall === void 0 ? {} : { preparedCall }\n\t\t};'
-  const edits = [
+  const coreEdits = [
     ['this.model = new AgentModel(projections.modelSelection, session, options);',
       'this.model = new AgentModel(projections.modelSelection, session, options); this[Symbol.for("prompt-tool:request-budget-owner")] = true;'],
     ['const seedConfig = deepFreeze(structuredClone({',
@@ -28,11 +28,27 @@ if (target !== undefined) registerHooks({ load(url, context, next) {
       + 'const seedConfig = deepFreeze(structuredClone({'],
     [acceptedFrom, acceptedFrom.replace('\t\treturn {', '\t\tglobalThis[Symbol.for("prompt-tool:request-budget")]?.accepted(this, proposedConfig, config);\n\t\treturn {')],
   ]
-  if (createHash('sha256').update(source).digest('hex') !== digest || edits.some(([from]) => source.split(from).length !== 2)) {
+  const snapshotEdits = [
+    ['const commits = this.systemPrompt.project(renderedPrompt, {',
+      'const commits = (input => (globalThis[Symbol.for("prompt-tool:current-system-snapshot:commits")] ?? ((agent, rendered, input) => agent.systemPrompt.project(rendered, input)))(this, renderedPrompt, input, createSystemMessage))({'],
+    ['buildRequest(config, preparedCall, tools, position, startsRequestSeries, signal) {',
+      'buildRequest(config, preparedCall, tools, position, startsRequestSeries, signal, renderedPrompt) {'],
+    ['startsRequestSeries, signal);', 'startsRequestSeries, signal, renderedPrompt);'],
+    ['const boundaryMessages = session.deriveMessages();',
+      'const derivedMessages = session.deriveMessages();\n\t\tconst boundaryMessages = globalThis[Symbol.for("prompt-tool:current-system-snapshot:project")]?.(this, derivedMessages, renderedPrompt, position, signal) ?? derivedMessages;'],
+  ]
+  if (createHash('sha256').update(source).digest('hex') !== digest) {
     state.available = false; state.reason = 'agent-loop artifact fingerprint or structure mismatch'; return result
   }
   let transformed = source
-  for (const [from, to] of edits) transformed = transformed.replace(from, to)
-  state.available = true; state.reason = ''
+  const budgetReady = coreEdits.every(([from]) => source.split(from).length === 2)
+  const snapshotReady = snapshotEdits.every(([from]) => source.split(from).length === 2)
+    && source.split('this.model = new AgentModel(projections.modelSelection, session, options);').length === 2
+  if (budgetReady) for (const [from, to] of coreEdits) transformed = transformed.replace(from, to)
+  if (snapshotReady) for (const [from, to] of snapshotEdits) transformed = transformed.replace(from, to)
+  if (snapshotReady) transformed = transformed.replace(
+    'this.model = new AgentModel(projections.modelSelection, session, options);',
+    'this.model = new AgentModel(projections.modelSelection, session, options); this[Symbol.for("prompt-tool:current-system-snapshot-owner")] = true;')
+  state.available = budgetReady; state.reason = budgetReady ? '' : 'agent-loop request budget structure mismatch'
   return { ...result, source: transformed }
 } })

@@ -27,6 +27,7 @@ import { resultTextOwners } from './result-text-owners.mjs'
 import { bindResultTextDependencies } from './result-text.mjs'
 import { providerHookDecisionsState, isProviderHookDecisionsAction, prepareProviderHookDecisions, bindProviderHookDependencies } from './provider-hook-decisions.mjs'
 import { bindRepeatCompactionDependencies, filterRepeatReminderDecision, installPrunerGate, isRepeatCompactionAction, repeatReminderStatus } from './repeat-compaction-policy.mjs'
+import { bindCurrentSystemSnapshotDependencies, isCurrentSystemSnapshotAction, registerCurrentSystemSnapshot } from './current-system-snapshot.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -142,6 +143,10 @@ function mountSources(ctx, sources, options = {}) {
         const { action, rule, moduleId } = item
         if (action.kind === 'request-params' && action.maxTokens !== undefined) options.collectRequestBudget({ action, rule, id: action.id, sourceModuleId: moduleId,
           actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
+        if (isCurrentSystemSnapshotAction(action)) {
+          options.collectCurrentSystemSnapshot({ action, rule, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
+          continue
+        }
         if (action.kind === 'host-control' && isRepeatCompactionAction(action)) {
           options.collectRepeatCompaction?.({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
             ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
@@ -234,6 +239,7 @@ export function createRuleRuntime(ctx, options = {}) {
   let registeredCoordinator = initialCoordinator
   let active = true
   let records = new Map()
+  const currentSystemSnapshot = options.agent === undefined ? undefined : registerCurrentSystemSnapshot(options.agent)
   const repeatSessions = new Set(), prunerBlockedSessions = new Set()
   const repeatRelease = ctx.on('tools/post-execute', async (exec, result, next) => {
     const enabled = repeatSessions.has(exec?.agent?.session)
@@ -292,7 +298,7 @@ export function createRuleRuntime(ctx, options = {}) {
     } catch (error) { releaseMemo(); releaseMemo = undefined; throw error }
   }
   const mount = source => {
-    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], providerHookDecisions: [], repeatCompaction: [], dispose: undefined }
+    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], providerHookDecisions: [], repeatCompaction: [], currentSystemSnapshot: [], dispose: undefined }
     record.approvalDecisions = []
     record.escalationDecisions = []
     for (const rule of source.rules) {
@@ -300,6 +306,7 @@ export function createRuleRuntime(ctx, options = {}) {
       bindApprovalDecisionsDependencies(rule, source.moduleId, options.onOutcome)
       bindEscalationDecisionDependencies(rule, source.moduleId, options.onOutcome)
       bindProviderHookDependencies(rule, source.moduleId, options.onOutcome)
+      bindCurrentSystemSnapshotDependencies(rule, source.moduleId, options.onOutcome)
     }
     for (const rule of source.rules) bindDelegationLimitsDependencies(rule, source.moduleId, delegationLimitEntries, options.onOutcome)
     for (const rule of source.rules) bindReadLimitsDependencies(rule, source.moduleId, readLimitEntries, options.onOutcome)
@@ -374,6 +381,7 @@ export function createRuleRuntime(ctx, options = {}) {
       collectEscalationDecisions(entry) { record.escalationDecisions.push(entry) },
       collectProviderHookDecisions(entry) { record.providerHookDecisions.push(entry) },
       collectRepeatCompaction(entry) { record.repeatCompaction.push(entry) },
+      collectCurrentSystemSnapshot(entry) { record.currentSystemSnapshot.push(entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -598,10 +606,10 @@ export function createRuleRuntime(ctx, options = {}) {
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.escalationDecisions.length > 0 || record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.currentSystemSnapshot.length > 0 || record.escalationDecisions.length > 0 || record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.escalationDecisions.length > 0 || record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.currentSystemSnapshot.length > 0 || record.escalationDecisions.length > 0 || record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
@@ -626,6 +634,7 @@ export function createRuleRuntime(ctx, options = {}) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
       const policyFrame = assemblyFrame(context ?? { agent: options.agent })
+      currentSystemSnapshot?.setEnabled([...records.values()].flatMap(record => record.currentSystemSnapshot).some(entry => actionMatches(entry, policyFrame)))
       const session = policyFrame.subject?.agent?.session ?? context?.agent?.session ?? options.agent?.session
       const policies = [...records.values()].flatMap(record => record.repeatCompaction)
       if (session !== undefined) {
@@ -773,6 +782,7 @@ export function createRuleRuntime(ctx, options = {}) {
       repeatRelease?.()
       prunerRelease?.()
       repeatSessions.clear(); prunerBlockedSessions.clear()
+      currentSystemSnapshot?.dispose()
       if (ownsPool) pool.dispose()
     },
   }
