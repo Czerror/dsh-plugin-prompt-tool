@@ -55,6 +55,17 @@ test('装配替句沿普通规则编辑面展示原文、替文与局部开关',
   }
 })
 
+test('工具说明配置沿普通装配卡显示工具、可选参数与必填匹配原文', () => {
+  const action = { id: 'description', kind: 'assembly', target: { toolDescriptions: [
+    { name: 'pwsh', parameter: 'sandbox_permissions', match: 'KNOWN TOOL NOTICE', text: '' },
+  ] } }
+  const before = structuredClone(action), html = render(action), controls = labels(html)
+  assert.ok(controls.includes(t('rules.surface.editTarget', { target: t('rules.surface.toolDescriptions') })))
+  for (const key of ['entryName', 'parameter', 'entryMatch', 'entryText']) assert.ok(controls.includes(t(`rules.surface.${key}`)), key)
+  for (const text of ['pwsh', 'sandbox_permissions', 'KNOWN TOOL NOTICE']) assert.ok(html.includes(text), text)
+  assert.deepEqual(action, before, '原规则草稿保留空替文，不补造工具或参数')
+})
+
 test('模型流动作：模式与正文沿普通动作编辑面渲染，不修改作者声明', () => {
   const action = { id: 'output', kind: 'stream-output', mode: 'replace', text: '替代输出' }
   const before = structuredClone(action)

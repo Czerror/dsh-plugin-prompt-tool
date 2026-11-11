@@ -191,6 +191,8 @@ customTools 独立于规则/变量。`compileCustomTool` 使用官方 DSL 转换
 
 支持 shell/http/delegate/fs/ask-user；delegate 通过官方工具调度保留批准与拒绝。customToolRequireApproval 只接受实际执行器名称。大文本、秘密与 token 不放 settings；shell 环境沿白名单处理，超时与输出上限有可诊断原因；fs 执行器按 realpath containment 限定 cwd，symlink/junction 不得越界。工具卡的参数行编辑不得丢嵌套 properties/items/oneOf/enum。
 
+已存在工具的说明不通过同名delegate或复制完整schema接管；普通规则的 `assembly.target.toolDescriptions` 只保存实际工具名、可选顶层参数名、精确匹配与替文。它沿原规则编辑、CAS、YAML Document、切片、导入导出和运行发布链保存，非法类型/空匹配在写盘前拒绝，空替文仍是有效删除意图；无独立工具说明文件或版本owner。工作台沿原装配卡编辑这些字段，工具执行与约束仍由原定义拥有。
+
 ## 指令文件与逐文件过滤策略
 
 AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；显示名和后续注入开关属于独立 `$DSH_HOME/.prompt-tool/instructions.yml`。两者不写入 module.yml、settings、生成目录或模板变量。

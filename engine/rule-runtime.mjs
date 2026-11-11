@@ -16,6 +16,7 @@ import { installToolStepAssembly } from './tool-step-assembly.mjs'
 import { subagentParamsStatus } from './subagent-params.mjs'
 import { requestBudgetStatus } from './request-budget-bridge.mjs'
 import { compileWhen } from './conditions/index.mjs'
+import { applyToolDescriptions } from './actions/assembly.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -145,7 +146,7 @@ function mountSources(ctx, sources, options = {}) {
         const created = []
         const on = (channel, handler) => {
           if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
-          const entry = { rule, action, kind: action.kind, handler, toolSurface: action.kind === 'tool-visibility', contextReplacement: action.kind === 'assembly' && action.target?.contexts?.replace?.length > 0, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
+          const entry = { rule, action, kind: action.kind, handler, toolSurface: action.kind === 'tool-visibility', toolDescription: action.kind === 'assembly' && action.target?.toolDescriptions?.length > 0, contextReplacement: action.kind === 'assembly' && action.target?.contexts?.replace?.length > 0, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
           else handlers.push(entry)
           created.push(entry)
@@ -522,10 +523,10 @@ export function createRuleRuntime(ctx, options = {}) {
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
@@ -552,6 +553,34 @@ export function createRuleRuntime(ctx, options = {}) {
       const step = toolStepFor(context)
       const delegation = prepareSubagentParams(context)
       if (step != null) { step.subagentParams = delegation.values; step.subagentObservations = delegation.observations }
+      const descriptions = [...points.values()].flatMap(point => point.handlers.filter(entry => entry.toolDescription)).sort(compareEntries)
+      if (descriptions.length > 0) {
+        const frame = assemblyFrame(context)
+        if (step != null) step.toolDescriptionSource ??= step.toolSet.view(context.agent)
+        for (const entry of descriptions) {
+          const hit = actionMatches(entry, frame)
+          const accepted = frame.frozenActionMatches ??= new Map()
+          accepted.set(entry, hit)
+          const outcome = frame.actionOutcomes.get(entry) ?? 'miss'
+          const reasons = []
+          const plan = { entries: Object.freeze(hit ? entry.action.target.toolDescriptions.map(value => Object.freeze({ ...value })) : []),
+            plugin: `module:${entry.sourceModuleId}/rule:${entry.rule.id}`, warnOnce, owner: ctx }
+          if (hit) {
+            if (step == null) reasons.push('assembly.toolDescriptions requires a resolved tool step; skipped')
+            else applyToolDescriptions(step.toolDescriptionSource, [...(step.toolDescriptions ?? []), plan], (source, reason) => { if (source === plan) reasons.push(reason) })
+          }
+          plan.observation = Object.freeze({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, channel: 'tool:descriptions',
+            actionId: entry.id, agentId: context.agent?.id, definitionRevision: entry.rule.definitionRevision,
+            outcome: reasons.length > 0 ? 'unavailable' : outcome,
+            identityOutcome: reasons.length > 0 ? 'target-mismatch' : hit ? 'matched' : outcome === 'error' ? 'error' : outcome === 'unavailable' ? 'condition-unavailable' : 'condition-miss',
+            ...(reasons.length > 0 ? { reason: reasons.join('; ') } : {}) })
+          if (step == null) { try { options.onOutcome?.(plan.observation) } catch { /* 诊断不改变装配 */ } }
+          else {
+            const plans = step.toolDescriptions ??= []
+            plans.push(Object.freeze(plan))
+          }
+        }
+      }
       let plan
       try { plan = preparePersona(context) } catch (error) {
         const step = toolStepFor(context)
@@ -584,6 +613,9 @@ export function createRuleRuntime(ctx, options = {}) {
       }
       for (const observation of toolStepFor(context)?.subagentObservations ?? []) {
         try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
+      }
+      for (const plan of toolStepFor(context)?.toolDescriptions ?? []) if (plan.owner === ctx) {
+        try { options.onOutcome?.(plan.observation) } catch { /* 只读诊断不改变已接受装配 */ }
       }
       return stripPersonaIdentity(result, assemblyPersonaPlans.get(context), options.onOutcome, context.agent?.id)
     },

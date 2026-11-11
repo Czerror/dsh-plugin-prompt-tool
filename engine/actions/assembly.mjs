@@ -1,5 +1,5 @@
 /**
- * assembly —— 只改装配结果的 sections / contexts。
+ * assembly —— 改装配结果的 sections / contexts；工具说明由原步骤视图投影。
  *
  * 工具可见面（目录、SDK 正文、执行闸）已收进 `tool-visibility`：同一个意图不再分散到
  * 多个动作。`target.tools` 在这里显式拒绝，避免旧声明「编译通过但静默不生效」。
@@ -13,6 +13,37 @@ import { interpolateVariables } from '../interpolate.mjs'
 import { toolStepFor } from '../tool-scope.mjs'
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+
+/** 仅投影说明；原registry、执行器和schema约束仍由官方集合拥有。 */
+export function applyToolDescriptions(view, plans = [], observe) {
+  let result = view
+  const applied = new Set()
+  for (const plan of plans) for (const entry of plan.entries) {
+    const { plugin, warnOnce } = plan
+    const key = JSON.stringify([entry.name, entry.parameter, entry.match, entry.text])
+    if (applied.has(key)) continue
+    const definition = result.get(entry.name)
+    const node = entry.parameter === undefined ? definition : definition?.parameters?.properties?.[entry.parameter]
+    const label = `${entry.name}${entry.parameter === undefined ? '' : `.${entry.parameter}`}`
+    const text = node?.description
+    const at = typeof text === 'string' ? text.indexOf(entry.match) : -1
+    if (at < 0 || text.indexOf(entry.match, at + 1) >= 0) {
+      const reason = `${plugin}: assembly.toolDescriptions ${JSON.stringify(label)} target or match missing or ambiguous; skipped`
+      warnOnce(reason)
+      observe?.(plan, reason)
+      continue
+    }
+    applied.add(key)
+    const description = text.slice(0, at) + entry.text + text.slice(at + entry.match.length)
+    if (description === text) continue
+    const next = entry.parameter === undefined ? { ...definition, description } : { ...definition,
+      parameters: { ...definition.parameters, properties: { ...definition.parameters.properties,
+        [entry.parameter]: { ...node, description } } } }
+    if (result === view) result = new Map(view)
+    result.set(entry.name, next)
+  }
+  return result
+}
 
 function replaceEntries(list, entries, target, plugin, warnOnce) {
   if (!Array.isArray(list) || entries === undefined) return list
@@ -51,10 +82,19 @@ export function applyAcceptedContextReplacements(assembly, step) {
 export function prepareAssembly(action, plugin) {
   const target = action.target
   if (!record(target)) {
-    throw new TypeError(`${plugin}: assembly requires a target object — { sections } / { contexts }`)
+    throw new TypeError(`${plugin}: assembly requires a target object — { sections } / { contexts } / { toolDescriptions }`)
   }
   if (target.tools !== undefined) {
     throw new TypeError(`${plugin}: assembly.target.tools 已移除 — 工具可见面改用 tool-visibility 动作（allow/deny/discovery）`)
+  }
+  if (target.toolDescriptions !== undefined) {
+    if (!Array.isArray(target.toolDescriptions)) throw new TypeError(`${plugin}: assembly.toolDescriptions must be an array`)
+    for (const entry of target.toolDescriptions) {
+      if (!record(entry) || Object.keys(entry).some(key => !['name', 'parameter', 'match', 'text'].includes(key))) throw new TypeError(`${plugin}: assembly.toolDescriptions entries must be { name, parameter?, match, text }`)
+      for (const key of ['name', 'match']) if (typeof entry[key] !== 'string' || entry[key].trim().length === 0) throw new TypeError(`${plugin}: assembly.toolDescriptions[].${key} must be a non-empty string`)
+      if (entry.parameter !== undefined && (typeof entry.parameter !== 'string' || entry.parameter.trim().length === 0)) throw new TypeError(`${plugin}: assembly.toolDescriptions[].parameter must be a non-empty string`)
+      if (typeof entry.text !== 'string') throw new TypeError(`${plugin}: assembly.toolDescriptions[].text must be a string`)
+    }
   }
   const sectionsAdd = target.sections?.add
   const sectionsRemove = NAME_LIST.parse(target.sections?.remove, plugin, 'assembly.sections.remove')

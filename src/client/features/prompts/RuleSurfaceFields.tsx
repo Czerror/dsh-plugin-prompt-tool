@@ -36,7 +36,7 @@ function Mode(props: { t: SurfaceProps['t']; label: string; value: string; optio
 }
 
 
-function AddedEntries(props: SurfaceProps & { entryKey?: 'add' | 'replace' }): ReactNode {
+function AddedEntries(props: SurfaceProps & { entryKey?: 'add' | 'replace'; toolDescription?: boolean }): ReactNode {
   const { t, value } = props
   const key = props.entryKey ?? 'add', label = t(key === 'replace' ? 'rules.surface.replaceEntries' : 'rules.surface.addEntries')
   const entries = value[key]
@@ -49,17 +49,19 @@ function AddedEntries(props: SurfaceProps & { entryKey?: 'add' | 'replace' }): R
         value={String(entry.name ?? '')} onChange={event => set((entries as RecordValue[]).map((item, at) => at === index ? { ...item, name: event.target.value } : item))} /></FormField>
         <CloseButton label={t('rules.surface.removeEntry', { index: index + 1 })} disabled={props.disabled}
           onClick={() => set((entries as RecordValue[]).filter((_, at) => at !== index))} /></div>
+      {props.toolDescription && <FormField label={t('rules.surface.parameter')} hint={t('rules.surface.parameterHint')} hintMode="tooltip"><TextInput aria-label={t('rules.surface.parameter')} readOnly={props.disabled}
+        value={String(entry.parameter ?? '')} onChange={event => set((entries as RecordValue[]).map((item, at) => at === index ? patched(item, { parameter: event.target.value === '' ? undefined : event.target.value }) : item))} /></FormField>}
       {key === 'replace' && <>
-        <div className={css.surfaceSwitchRow}><span>{t('rules.surface.matchEnabled')}</span><Switch label={t('rules.surface.matchEnabled')}
+        {!props.toolDescription && <div className={css.surfaceSwitchRow}><span>{t('rules.surface.matchEnabled')}</span><Switch label={t('rules.surface.matchEnabled')}
           checked={entry.match !== undefined} disabled={props.disabled}
-          onChange={enabled => set((entries as RecordValue[]).map((item, at) => at === index ? patched(item, { match: enabled ? '' : undefined }) : item))} /></div>
-        {entry.match !== undefined && <FormField label={t('rules.surface.entryMatch')}><textarea className={ui.configTextarea} aria-label={t('rules.surface.entryMatch')} rows={3} readOnly={props.disabled}
-          value={String(entry.match)} onChange={event => set((entries as RecordValue[]).map((item, at) => at === index ? { ...item, match: event.target.value } : item))} /></FormField>}
+          onChange={enabled => set((entries as RecordValue[]).map((item, at) => at === index ? patched(item, { match: enabled ? '' : undefined }) : item))} /></div>}
+        {(props.toolDescription || entry.match !== undefined) && <FormField label={t('rules.surface.entryMatch')}><textarea className={ui.configTextarea} aria-label={t('rules.surface.entryMatch')} rows={3} readOnly={props.disabled}
+          value={String(entry.match ?? '')} onChange={event => set((entries as RecordValue[]).map((item, at) => at === index ? { ...item, match: event.target.value } : item))} /></FormField>}
       </>}
       <FormField label={t('rules.surface.entryText')}><textarea className={ui.configTextarea} aria-label={t('rules.surface.entryText')} rows={3} readOnly={props.disabled}
         value={String(entry.text ?? '')} onChange={event => set((entries as RecordValue[]).map((item, at) => at === index ? { ...item, text: event.target.value } : item))} /></FormField>
     </div>)}
-    <div><Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => set([...(entries as RecordValue[] | undefined ?? []), { name: '', text: '' }])}>{label}</Button></div>
+    <div><Button variant="outline" shape="pill" disabled={props.disabled} onClick={() => set([...(entries as RecordValue[] | undefined ?? []), { name: '', text: '', ...(props.toolDescription ? { match: '' } : {}) }])}>{label}</Button></div>
   </div>
 }
 
@@ -125,7 +127,13 @@ export function AssemblyFields(props: SurfaceProps): ReactNode {
           : <TriggerJsonField {...props} label={label} value={target[key]} shape="object" fieldKey={fieldKey} onChange={next => set(key, next)} />)}
       </section>
     })}
-    <RuleParameterFields {...props} fieldKey={`${props.fieldKey}:target`} value={target} omit={['sections', 'contexts']} onChange={next => props.onChange({ ...value, target: next })} />
+    <section className={css.surfaceSection} aria-label={t('rules.surface.toolDescriptions')}>
+      <div className={css.surfaceSwitchRow}><span>{t('rules.surface.toolDescriptions')}</span><Switch label={t('rules.surface.editTarget', { target: t('rules.surface.toolDescriptions') })}
+        checked={target.toolDescriptions !== undefined} disabled={props.disabled} onChange={enabled => { cleared(props.fields, `${props.fieldKey}:target:toolDescriptions`); set('toolDescriptions', enabled ? [] : undefined) }} /></div>
+      {target.toolDescriptions !== undefined && <AddedEntries {...props} value={{ replace: target.toolDescriptions }} entryKey="replace" toolDescription
+        fieldKey={`${props.fieldKey}:target:toolDescriptions`} onChange={next => set('toolDescriptions', next.replace)} />}
+    </section>
+    <RuleParameterFields {...props} fieldKey={`${props.fieldKey}:target`} value={target} omit={['sections', 'contexts', 'toolDescriptions']} onChange={next => props.onChange({ ...value, target: next })} />
     <RuleParameterFields {...props} omit={['id', 'kind', 'target']} />
   </div>
 }

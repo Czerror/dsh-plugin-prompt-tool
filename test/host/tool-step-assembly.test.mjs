@@ -118,6 +118,118 @@ test('运行上下文替句保留官方refresh和已接受步骤，热更新及�
   for (const entry of [first, second, disabled]) entry.set.dispose()
 })
 
+test('工具说明只投影原步骤的描述，native与PTC目录、参数及原调用保持一致', async t => {
+  const rules = [{ id: 'descriptions', then: [{ id: 'description', kind: 'assembly', target: { toolDescriptions: [
+    { name: 'described', match: 'ORIGINAL NOTICE', text: 'EDITED NOTICE' },
+    { name: 'described', parameter: 'sandbox_permissions', match: 'USER APPROVAL', text: 'OPTIONAL ACCESS' },
+  ] } }] }]
+  const h = await harness(t, rules)
+  const parameters = { type: 'object', required: ['command'], additionalProperties: false, properties: {
+    command: { type: 'string', description: 'Command unchanged' },
+    sandbox_permissions: { type: 'string', enum: ['workspace-write', 'danger-full-access'], description: 'USER APPROVAL' },
+  } }
+  const definition = { name: 'described', description: 'BEFORE ORIGINAL NOTICE AFTER', parameters,
+    output: { schema: { type: 'string' }, render: () => [] }, execute: args => args.command }
+  h.root.tools.register(definition)
+  const original = h.root.tools.get('described', h.agent)
+  const render = async () => {
+    const set = await h.services.tools.resolve(h.context)
+    return { set, assembly: await h.services.prompt.assemble({ ...h.context, toolSet: set }) }
+  }
+  const first = await render()
+  const actual = first.assembly.tools.find(tool => tool.name === 'described')
+  assert.equal(actual.description, 'BEFORE EDITED NOTICE AFTER')
+  assert.deepEqual(actual.parameters, { ...parameters, properties: { ...parameters.properties,
+    sandbox_permissions: { ...parameters.properties.sandbox_permissions, description: 'OPTIONAL ACCESS' } } })
+  assert.equal(first.set.view(h.agent).get('described').execute, original.execute)
+  assert.equal(h.root.tools.get('described', h.agent).description, 'BEFORE ORIGINAL NOTICE AFTER', '原registry与其它Agent不被修改')
+  const execute = async set => (await h.services.tools.execute({ ...h.context, toolSet: set,
+    calls: [{ type: 'tool-call', id: 'description', name: 'described', arguments: '{"command":"LOCAL RESULT"}' }],
+  })).results[0].result
+  assert.equal((await execute(first.set)).value, 'LOCAL RESULT')
+  h.root.provide('workingDirectory', { ensure: async () => process.cwd() })
+  h.root.provide('ptcRuntime', { language: 'typescript', resolve: spec => spec, release() {},
+    run: async spec => ({ logs: [], value: await spec.bindings[0].functions.described({ command: 'LOCAL RESULT' }) }) })
+  await h.agent.ctx.plugin(ptc)
+  const program = await render()
+  const sdk = program.assembly.sections.find(section => section.name === 'tools:sdk').text
+  assert.match(sdk, /BEFORE EDITED NOTICE AFTER/)
+  assert.match(sdk, /OPTIONAL ACCESS/)
+  assert.doesNotMatch(sdk, /ORIGINAL NOTICE|USER APPROVAL/)
+  assert.equal(program.set.view(h.agent).get('described').execute, original.execute)
+  rules[0].then[0].target.toolDescriptions[0].text = 'SECOND NOTICE'; h.write(); await h.runtime.refresh()
+  const updated = await render()
+  assert.equal(updated.set.view(h.agent).get('described').description, 'BEFORE SECOND NOTICE AFTER')
+  assert.equal(program.set.view(h.agent).get('described').description, 'BEFORE EDITED NOTICE AFTER', '热更不混入已接受步骤')
+  rules[0].enabled = false; h.write(); await h.runtime.refresh()
+  const disabled = await render()
+  assert.equal(disabled.set.view(h.agent).get('described').description, 'BEFORE ORIGINAL NOTICE AFTER')
+  assert.equal(first.set.view(h.agent).get('described').description, 'BEFORE EDITED NOTICE AFTER', '关闭只影响后续步骤')
+  const nested = (await h.services.tools.execute({ ...h.context, toolSet: program.set,
+    calls: [{ type: 'tool-call', id: 'program', name: 'run_code', arguments: '{"code":"described","description":"Controlled original tool call"}' }],
+  })).results[0].result
+  assert.deepEqual(nested.value, { logs: [], result: 'LOCAL RESULT' })
+  for (const entry of [first, program, updated, disabled]) entry.set.dispose()
+})
+
+test('工具说明拒绝不明目标和混合正文，诊断失败且下一步骤正常恢复', async t => {
+  const entries = [
+    { name: 'missing', match: 'KNOWN SENTENCE', text: 'READY' },
+    { name: 'keep', parameter: 'missing', match: 'KNOWN SENTENCE', text: 'EDITED' },
+    { name: 'hidden', match: '\n* KNOWN SENTENCE', text: '' },
+  ]
+  const rules = [{ id: 'descriptions', then: [{ id: 'description', kind: 'assembly', target: { toolDescriptions: entries } }] }]
+  const h = await harness(t, rules)
+  h.registrations.get('hidden')()
+  h.root.tools.register({ name: 'hidden', description: 'User mentions KNOWN SENTENCE inside mixed prose.',
+    parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] }, execute: () => ({}),
+  })
+  const render = async () => { const set = await h.services.tools.resolve(h.context); return { set, assembly: await h.services.prompt.assemble({ ...h.context, toolSet: set }) } }
+  const missing = await render()
+  assert.equal(missing.assembly.tools.find(tool => tool.name === 'hidden').description, 'User mentions KNOWN SENTENCE inside mixed prose.')
+  assert.equal(missing.set.view(h.agent).has('missing'), false, '说明不自动注册缺失工具')
+  assert.equal(Object.hasOwn(missing.set.view(h.agent).get('keep').parameters.properties, 'missing'), false, '说明不补造参数')
+  const diagnostic = () => h.runtime.ruleDiagnostics().records.find(record => record.channel === 'tool:descriptions')
+  assert.equal(diagnostic()?.identityOutcome, 'target-mismatch')
+  assert.match(diagnostic().reason, /missing/)
+  h.root.tools.register({ name: 'missing', description: 'KNOWN SENTENCE', parameters: { type: 'object', properties: {} },
+    output: { schema: { type: 'object' }, render: () => [] }, execute: () => ({}) })
+  const arrived = await render()
+  assert.equal(arrived.set.view(h.agent).get('missing').description, 'READY', '缺目标恢复只在下一个正常步骤应用')
+  assert.equal(missing.set.view(h.agent).has('missing'), false, '晚到注册不进入原冻结集合')
+  entries.splice(0, entries.length, { name: 'hidden', match: 'User mentions KNOWN SENTENCE inside mixed prose.', text: 'EXPLICIT WHOLE DESCRIPTION' })
+  h.write(); await h.runtime.refresh()
+  const recovered = await render()
+  assert.equal(recovered.assembly.tools.find(tool => tool.name === 'hidden').description, 'EXPLICIT WHOLE DESCRIPTION')
+  assert.equal(diagnostic()?.identityOutcome, 'matched')
+  rules[0].if = { scope: { audience: 'subagent' } }; h.write(); await h.runtime.refresh()
+  const miss = await render()
+  assert.equal(miss.set.view(h.agent).get('hidden').description, 'User mentions KNOWN SENTENCE inside mixed prose.')
+  for (const entry of [missing, arrived, recovered, miss]) entry.set.dispose()
+  for (const entry of [null, { name: 'keep', match: '', text: '' }, { name: 'keep', parameter: '', match: 'keep', text: '' },
+    { name: 'keep', match: 'keep', text: null }, { name: 'keep', match: 'keep', text: '', type: 'number' }]) {
+    assert.throws(() => compileRules([{ id: 'invalid', then: [{ id: 'description', kind: 'assembly', target: { toolDescriptions: [entry] } }] }]), /toolDescriptions/)
+  }
+})
+
+test('相同工具说明贡献幂等，晚到目标与原集合释放不复活旧定义', async t => {
+  const action = { id: 'description', kind: 'assembly', target: { toolDescriptions: [{ name: 'keep', match: 'keep', text: 'EDITED' }] } }
+  const h = await harness(t, [{ id: 'first', then: [action] }, { id: 'second', then: [structuredClone(action)] }])
+  const set = await h.services.tools.resolve(h.context)
+  const assembly = await h.services.prompt.assemble({ ...h.context, toolSet: set })
+  assert.equal(assembly.tools.find(tool => tool.name === 'keep').description, 'EDITED')
+  const records = h.runtime.ruleDiagnostics().records.filter(record => record.channel === 'tool:descriptions')
+  assert.equal(records.length, 2)
+  assert.ok(records.every(record => record.identityOutcome === 'matched'), JSON.stringify(records))
+  h.registrations.get('keep')()
+  assert.equal(set.view(h.agent).has('keep'), false, '说明不复活原集合已移除的工具')
+  await h.runtime.dispose()
+  assert.equal(set.view(h.agent).size, 0, 'owner释放关闭该步骤')
+  assert.equal((await h.rawTools.execute({ ...h.context, toolSet: set,
+    calls: [{ type: 'tool-call', id: 'closed-description', name: 'keep', arguments: '{}' }],
+  })).results[0].result.isError, true)
+})
+
 test('普通委派参数使用已接受步骤快照，数值冲突拒绝且关闭恢复原owner', async t => {
   const rules = [{ id: 'depth', then: [{ id: 'depth', kind: 'subagent-params', provider: 'spawn', tool: 'subagent', maxDepth: 1 }] }]
   const h = await harness(t, rules)

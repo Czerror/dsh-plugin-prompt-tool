@@ -2,7 +2,7 @@ import { associateToolStep, associateToolSelection, associateToolAssembly, begin
 import { toolDependenciesReady } from './tool-definition.mjs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { applySubagentDepthContexts } from './subagent-params.mjs'
-import { applyAcceptedContextReplacements } from './actions/assembly.mjs'
+import { applyAcceptedContextReplacements, applyToolDescriptions } from './actions/assembly.mjs'
 
 const installations = new WeakMap()
 const guardedRoots = new WeakSet()
@@ -58,7 +58,8 @@ function createInstallation(ctx) {
       view(scope) {
         const admitted = new Map([...original.view(scope)].filter(([, definition]) => toolDependenciesReady(tools, definition, context.agent, original)))
         if (step.status === 'closed') return new Map()
-        return step.allowed === undefined ? admitted : new Map([...admitted].filter(([name]) => step.allowed.has(name)))
+        const described = applyToolDescriptions(admitted, step.toolDescriptions)
+        return step.allowed === undefined ? described : new Map([...described].filter(([name]) => step.allowed.has(name)))
       },
       dispose() {
         if (step.status === 'closed') return
@@ -153,6 +154,7 @@ function createInstallation(ctx) {
               if (step.status === 'closed') throw unavailable()
               step.allowed ??= new Set(wrapped.view(agent).keys())
               if (step.contextReplacements !== undefined) Object.freeze(step.contextReplacements)
+              if (step.toolDescriptions !== undefined) Object.freeze(step.toolDescriptions)
               step.status = 'sealed'
               snapshots.set(step, final)
               associateToolAssembly(final, agent, step)

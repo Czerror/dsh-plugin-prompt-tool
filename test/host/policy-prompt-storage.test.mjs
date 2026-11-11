@@ -35,3 +35,25 @@ test('替句原文沿普通规则版本写盘，非法原文拒写且审批文�
     ['approval-never-guidance', false], ['approval-never-bypass-guidance', true],
   ])
 })
+
+test('工具说明沿原规则CAS保存空替文与参数名，非法匹配拒写保留原定义', () => {
+  const dir = join(moduleRoot, 'tool-descriptions')
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, 'module.yml')
+  writeFileSync(file, '# USER TOOL COMMENT\nid: tool-descriptions\nname: tools\nmodules: [rule-engine]\nrules: []\n')
+  const initial = readModuleRules(dir)
+  const rule = { id: 'description', enabled: false, then: [{ id: 'description', kind: 'assembly', target: { toolDescriptions: [
+    { name: 'pwsh', parameter: 'sandbox_permissions', match: 'KNOWN ORIGINAL', text: '' },
+  ] } }] }
+  const saved = editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: null, rule }] })
+  assert.deepEqual(readModuleRules(dir).rules.find(entry => entry.id === rule.id), rule)
+  const bytes = readFileSync(file, 'utf8')
+  assert.match(bytes, /# USER TOOL COMMENT/)
+  for (const match of ['', null, 2]) {
+    const invalid = structuredClone(rule)
+    invalid.then[0].target.toolDescriptions[0].match = match
+    assert.throws(() => editModuleRules(dir, { expectedRevisions: saved.revisions, edits: [{ previousId: rule.id, rule: invalid }] }), /toolDescriptions.*match/)
+    assert.equal(readFileSync(file, 'utf8'), bytes)
+  }
+  assert.throws(() => editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: rule.id, rule }] }), error => error.code === 'rules-conflict')
+})

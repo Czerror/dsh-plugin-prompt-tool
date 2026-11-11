@@ -320,6 +320,14 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 `instructionHint` 默认关闭，只有显式有效 messageTemplate 才将过滤后的正文转成提示；空模板保持原文。正文编辑和文件授权属于独立 owner，见 [指令文件契约](architecture-params.md#指令文件与逐文件过滤策略)。
 
+## 工具与参数说明
+
+普通 `assembly` 动作可声明 `target.toolDescriptions: [{ name, parameter?, match, text }]`。`name` 为实际工具名称；省略 `parameter` 只修改工具说明，填写时只修改该顶层参数的 `description`。`match` 必须为非空精确字面量，`text` 为字符串且允许空串删除目标句。不接受正则、执行代码、任意schema路径或约束字段；同一说明内原文必须恰好出现一次，缺目标、缺参数、缺句子或重复匹配保持原文并沿规则诊断报告具体原因。已知网络/镜像条目带完整行前缀，未知混合正文不按关键词清空。
+
+该说明投影复用原真实Agent的 `resolve → prepareAssembly → assemble` 步骤，先固定条件和说明配置，再由官方native/PTC生成目录及SDK。它不重注册工具、不替换执行函数，不改变schema类型、必填、值域、输出或实际审批/沙箱/网络权限；发现候选和原registry保持。热更新、关闭与条件失配只作用后续步骤；旧步骤保留已接受说明，原集合移除/释放仍为上限。裸装配缺少真实步骤时只诊断并透传，不伪造工具集合。
+
+核心模块中的终端拒绝、文件升级、删除移动、网络和镜像五类说明分别默认关闭，通过普通工具条件和精确说明配置应用于任何提供对应工具的预设。当前字面量对齐官方0.2.2-rc.1的bash/pwsh/fs实际目录；来源旧升级长句已演进为 `sandboxPermissionsDescription`，只适配当前实测句式，未知变体保留并诊断。文案中的自动放行不改变真实准入；真实操作拒绝与原错误仍由官方owner处理。
+
 ## 工具面收窄与按需解锁
 
 `tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源。受众统一写在规则或分支的 scope 条件。宿主与独立规则入口共用 root 上的一份公开服务适配器：先等待来源准备，再调用原 `tools.resolve`；原 `systemPrompt.assemble` 完整返回后依次结算所有来源的工具面动作，最后封存步骤。allow 与 deny 都不注册额外 `restrict`，避免继承工具与本层工具口径不同，也不破坏发现候选。
