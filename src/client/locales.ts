@@ -20,6 +20,7 @@ export { PROMPT_TOOL_NS }
 
 const ZH_CORE = {
   'moduleMerge.title': '并入与移除来源',
+  'moduleMerge.close': '关闭并入与移除来源',
   'moduleMerge.target': '目标模块',
   'moduleMerge.source': '来源模块',
   'moduleMerge.choose': '请选择模块',
@@ -184,6 +185,7 @@ export type PromptToolLocaleKey =
 
 const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'moduleMerge.title': 'Merge and remove sources',
+  'moduleMerge.close': 'Close merge and remove sources',
   'moduleMerge.target': 'Target module',
   'moduleMerge.source': 'Source module',
   'moduleMerge.choose': 'Choose a module',

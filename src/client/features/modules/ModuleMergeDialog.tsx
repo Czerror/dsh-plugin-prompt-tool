@@ -67,7 +67,7 @@ export function ModuleMergeDialog(props: { store: ModuleActionsPort & ModuleFact
   const chooseAction = (value: 'merge' | 'remove'): void => { invalidate(); setAction(value); setSourceId('') }
   const options = (action === 'merge' ? modules.filter(module => module.id !== targetId && module.renderable !== false).map(module => ({ value: module.id, label: `${module.name} · ${module.id}` }))
     : sources.map(id => ({ value: id, label: modules.find(module => module.id === id)?.name ? `${modules.find(module => module.id === id)!.name} · ${id}` : id })))
-  return <DialogSurface title={t('moduleMerge.title')} closeLabel={t('assetImport.close')} description={t('moduleMerge.boundary')}
+  return <DialogSurface title={t('moduleMerge.title')} closeLabel={t('moduleMerge.close')} description={t('moduleMerge.boundary')}
     onClose={() => { if (!pending.current) props.onClose() }} footer={<>
       <Button shape="pill" variant="outline" size="md" disabled={busy} onClick={props.onClose}>{t(done ? 'assetImport.done' : 'assetImport.cancel')}</Button>
       {!done && <Button shape="pill" variant="primary" size="md" disabled={busy || !targetId || !sourceId} onClick={() => void run(preview !== undefined)}>{t(preview ? 'moduleMerge.confirm' : 'moduleMerge.preview')}</Button>}
