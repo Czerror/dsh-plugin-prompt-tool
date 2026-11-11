@@ -17,6 +17,7 @@ import { subagentParamsStatus } from './subagent-params.mjs'
 import { requestBudgetStatus } from './request-budget-bridge.mjs'
 import { compileWhen } from './conditions/index.mjs'
 import { applyToolDescriptions } from './actions/assembly.mjs'
+import { applyTransportDescriptions, toolDescriptionObservation, settleSkillDescriptions, skillDescriptionObservation } from './tool-metadata.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -146,7 +147,7 @@ function mountSources(ctx, sources, options = {}) {
         const created = []
         const on = (channel, handler) => {
           if (channel !== point.channel) throw new TypeError(`rule action registered outside ${point.channel}: ${channel}`)
-          const entry = { rule, action, kind: action.kind, handler, toolSurface: action.kind === 'tool-visibility', toolDescription: action.kind === 'assembly' && action.target?.toolDescriptions?.length > 0, contextReplacement: action.kind === 'assembly' && action.target?.contexts?.replace?.length > 0, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
+          const entry = { rule, action, kind: action.kind, handler, toolSurface: action.kind === 'tool-visibility', toolDescription: action.kind === 'assembly' && (action.target?.toolDescriptions?.length > 0 || action.target?.skillDescriptions?.length > 0), contextReplacement: action.kind === 'assembly' && action.target?.contexts?.replace?.length > 0, sequence: action.channelOrder, sourceModuleId: moduleId, ruleId: rule.id, ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }
           if (channel === 'agent/pre-step' && point.waterfallPosition === 'default') injections.get(moduleId).ruleActions.push(entry)
           else handlers.push(entry)
           created.push(entry)
@@ -557,7 +558,8 @@ export function createRuleRuntime(ctx, options = {}) {
       if (descriptions.length > 0) {
         const frame = assemblyFrame(context)
         if (step != null) step.toolDescriptionSource ??= step.toolSet.view(context.agent)
-        for (const entry of descriptions) {
+        for (const entry of descriptions) for (const field of ['toolDescriptions', 'skillDescriptions']) {
+          if (!entry.action.target[field]?.length) continue
           const hit = actionMatches(entry, frame)
           const accepted = frame.frozenActionMatches ??= new Map()
           accepted.set(entry, hit)
@@ -570,20 +572,20 @@ export function createRuleRuntime(ctx, options = {}) {
           const conditionReason = missingTool === undefined ? undefined
             : `tool condition ${JSON.stringify(missingTool)} target missing from resolved tool step; skipped`
           const reasons = []
-          const plan = { entries: Object.freeze(hit ? entry.action.target.toolDescriptions.map(value => Object.freeze({ ...value })) : []),
+          const plan = { entries: Object.freeze(hit ? entry.action.target[field].map(value => Object.freeze({ ...value })) : []),
             plugin: `module:${entry.sourceModuleId}/rule:${entry.rule.id}`, warnOnce, owner: ctx }
           if (hit) {
-            if (step == null) reasons.push('assembly.toolDescriptions requires a resolved tool step; skipped')
-            else applyToolDescriptions(step.toolDescriptionSource, [...(step.toolDescriptions ?? []), plan], (source, reason) => { if (source === plan) reasons.push(reason) })
+            if (step == null) reasons.push(`assembly.${field} requires a resolved tool step; skipped`)
+            else if (field === 'toolDescriptions') applyToolDescriptions(step.toolDescriptionSource, [...(step.toolDescriptions ?? []), plan].map(source => ({ ...source, entries: source.entries.filter(value => value.name !== 'run_code'), source })), (value, reason) => { if (value.source === plan) reasons.push(reason) })
           }
-          plan.observation = Object.freeze({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, channel: 'tool:descriptions',
+          plan.observation = Object.freeze({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, channel: field === 'toolDescriptions' ? 'tool:descriptions' : 'skill:descriptions',
             actionId: entry.id, agentId: context.agent?.id, definitionRevision: entry.rule.definitionRevision,
             outcome: reasons.length > 0 ? 'unavailable' : outcome,
             identityOutcome: reasons.length > 0 ? 'target-mismatch' : hit ? 'matched' : outcome === 'error' ? 'error' : outcome === 'unavailable' ? 'condition-unavailable' : 'condition-miss',
             ...(reasons.length > 0 ? { reason: reasons.join('; ') } : conditionReason === undefined ? {} : { reason: conditionReason }) })
           if (step == null) { try { options.onOutcome?.(plan.observation) } catch { /* 诊断不改变装配 */ } }
           else {
-            const plans = step.toolDescriptions ??= []
+            const plans = step[field] ??= []
             plans.push(Object.freeze(plan))
           }
         }
@@ -608,7 +610,8 @@ export function createRuleRuntime(ctx, options = {}) {
     },
     async settleToolSurface(assembly, context) {
       const frame = assemblyFrame(context, assembly)
-      let result = assembly
+      let result = applyTransportDescriptions(assembly, toolStepFor(context))
+      await settleSkillDescriptions(ctx, context)
       const handlers = [...points.values()].flatMap(point => point.handlers.filter(entry => entry.toolSurface)).sort(compareEntries)
       for (const entry of handlers) {
         if (!active) break
@@ -622,7 +625,10 @@ export function createRuleRuntime(ctx, options = {}) {
         try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
       }
       for (const plan of toolStepFor(context)?.toolDescriptions ?? []) if (plan.owner === ctx) {
-        try { options.onOutcome?.(plan.observation) } catch { /* 只读诊断不改变已接受装配 */ }
+        try { options.onOutcome?.(toolDescriptionObservation(plan, toolStepFor(context))) } catch { /* 只读诊断不改变已接受装配 */ }
+      }
+      for (const plan of toolStepFor(context)?.skillDescriptions ?? []) if (plan.owner === ctx) {
+        try { options.onOutcome?.(skillDescriptionObservation(plan, toolStepFor(context))) } catch { /* 只读诊断不改变已接受装配 */ }
       }
       return stripPersonaIdentity(result, assemblyPersonaPlans.get(context), options.onOutcome, context.agent?.id)
     },

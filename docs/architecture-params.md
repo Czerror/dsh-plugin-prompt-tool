@@ -193,6 +193,8 @@ customTools 独立于规则/变量。`compileCustomTool` 使用官方 DSL 转换
 
 已存在工具的说明不通过同名delegate或复制完整schema接管；普通规则的 `assembly.target.toolDescriptions` 只保存实际工具名、可选顶层参数名、精确匹配与替文。它沿原规则编辑、CAS、YAML Document、切片、导入导出和运行发布链保存，非法类型/空匹配在写盘前拒绝，空替文仍是有效删除意图；无独立工具说明文件或版本owner。工作台沿原装配卡编辑这些字段，工具执行与约束仍由原定义拥有。
 
+技能摘要配置同样归普通规则的 `assembly.target.skillDescriptions`，只保存技能名、精确原文与替文；不复制技能正文、不改身份或调用定义，也没有独立保存/版本owner。工作台沿原装配卡、原文和正文编辑链保存，匹配必填、替文可空，不提供工具参数字段。规则诊断只读取当前保存版本的观测，旧版本或编辑中的草稿不显示成功。
+
 ## 指令文件与逐文件过滤策略
 
 AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；显示名和后续注入开关属于独立 `$DSH_HOME/.prompt-tool/instructions.yml`。两者不写入 module.yml、settings、生成目录或模板变量。

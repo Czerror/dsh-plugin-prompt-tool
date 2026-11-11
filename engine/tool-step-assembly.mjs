@@ -3,6 +3,7 @@ import { toolDependenciesReady } from './tool-definition.mjs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { applySubagentDepthContexts } from './subagent-params.mjs'
 import { applyAcceptedContextReplacements, applyToolDescriptions } from './actions/assembly.mjs'
+import { installSkillDescriptionProjection } from './tool-metadata.mjs'
 
 const installations = new WeakMap()
 const guardedRoots = new WeakSet()
@@ -37,6 +38,7 @@ export function installToolStepAssembly(ctx, options) {
 }
 
 function createInstallation(ctx) {
+  const releaseSkillDescriptions = installSkillDescriptionProjection(ctx)
   const owners = new Set()
   const wrappers = new WeakMap()
   const snapshots = new WeakMap()
@@ -155,6 +157,7 @@ function createInstallation(ctx) {
               step.allowed ??= new Set(wrapped.view(agent).keys())
               if (step.contextReplacements !== undefined) Object.freeze(step.contextReplacements)
               if (step.toolDescriptions !== undefined) Object.freeze(step.toolDescriptions)
+              if (step.skillDescriptions !== undefined) Object.freeze(step.skillDescriptions)
               step.status = 'sealed'
               snapshots.set(step, final)
               associateToolAssembly(final, agent, step)
@@ -168,5 +171,5 @@ function createInstallation(ctx) {
       }
     } })
   }, { global: true })
-  return { owners, dispose() { active = false; off(); offExecute(); for (const close of closes) close() } }
+  return { owners, dispose() { active = false; off(); offExecute(); releaseSkillDescriptions(); for (const close of closes) close() } }
 }

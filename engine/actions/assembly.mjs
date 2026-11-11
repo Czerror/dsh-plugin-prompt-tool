@@ -15,7 +15,7 @@ import { toolStepFor } from '../tool-scope.mjs'
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
 /** 仅投影说明；原registry、执行器和schema约束仍由官方集合拥有。 */
-export function applyToolDescriptions(view, plans = [], observe) {
+export function applyToolDescriptions(view, plans = [], observe, target = 'toolDescriptions') {
   let result = view
   const applied = new Set()
   for (const plan of plans) for (const entry of plan.entries) {
@@ -28,7 +28,7 @@ export function applyToolDescriptions(view, plans = [], observe) {
     const text = node?.description
     const at = typeof text === 'string' ? text.indexOf(entry.match) : -1
     if (at < 0 || text.indexOf(entry.match, at + 1) >= 0) {
-      const reason = `${plugin}: assembly.toolDescriptions ${JSON.stringify(label)} target or match missing or ambiguous; skipped`
+      const reason = `${plugin}: assembly.${target} ${JSON.stringify(label)} target or match missing or ambiguous; skipped`
       warnOnce(reason)
       observe?.(plan, reason)
       continue
@@ -94,6 +94,14 @@ export function prepareAssembly(action, plugin) {
       for (const key of ['name', 'match']) if (typeof entry[key] !== 'string' || entry[key].trim().length === 0) throw new TypeError(`${plugin}: assembly.toolDescriptions[].${key} must be a non-empty string`)
       if (entry.parameter !== undefined && (typeof entry.parameter !== 'string' || entry.parameter.trim().length === 0)) throw new TypeError(`${plugin}: assembly.toolDescriptions[].parameter must be a non-empty string`)
       if (typeof entry.text !== 'string') throw new TypeError(`${plugin}: assembly.toolDescriptions[].text must be a string`)
+    }
+  }
+  if (target.skillDescriptions !== undefined) {
+    if (!Array.isArray(target.skillDescriptions)) throw new TypeError(`${plugin}: assembly.skillDescriptions must be an array`)
+    for (const entry of target.skillDescriptions) {
+      if (!record(entry) || Object.keys(entry).some(key => !['name', 'match', 'text'].includes(key))) throw new TypeError(`${plugin}: assembly.skillDescriptions entries must be { name, match, text }`)
+      for (const key of ['name', 'match']) if (typeof entry[key] !== 'string' || entry[key].trim().length === 0) throw new TypeError(`${plugin}: assembly.skillDescriptions[].${key} must be a non-empty string`)
+      if (typeof entry.text !== 'string') throw new TypeError(`${plugin}: assembly.skillDescriptions[].text must be a string`)
     }
   }
   const sectionsAdd = target.sections?.add
