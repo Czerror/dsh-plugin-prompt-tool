@@ -592,7 +592,7 @@ export function createRuleRuntime(ctx, options = {}) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
       const step = toolStepFor(context)
-      if (step != null) step.escalationDecisions = prepareEscalationDecisions([...records.values()].flatMap(record => record.escalationDecisions), assemblyFrame(context ?? { agent: options.agent }))
+      if (step != null) step.escalationDecisions = prepareEscalationDecisions([...records.values()].flatMap(record => record.escalationDecisions), assemblyFrame(context ?? { agent: options.agent }), context)
       if (step != null) step.approvalDecisions = prepareApprovalDecisions([...records.values()].flatMap(record => record.approvalDecisions), assemblyFrame(context ?? { agent: options.agent }))
       const filesystem = prepareFilesystemPolicy(filesystemEntries(), assemblyFrame(context ?? { agent: options.agent }))
       if (step != null) { step.filesystemPolicy = filesystem.values; step.filesystemPolicyObservations = filesystem.observations }

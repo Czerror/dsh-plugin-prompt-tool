@@ -8,6 +8,7 @@ import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { createRuleRuntime } from '../../engine/rule-runtime.mjs'
+import { escalationDecisionStatus } from '../../engine/escalation-decisions.mjs'
 const { default: Tools } = await import('@deepseek-ai/dsh-tools')
 const Native = await import('@deepseek-ai/dsh-tool-executor-native')
 const { default: Approval } = await import('@deepseek-ai/dsh-user-approval')
@@ -33,8 +34,10 @@ test('真实审批owner与工具步骤独立处理升级三分支、拒绝、撤
   agent.ctx = createScope(root, agent).ctx
   const child = { id: 'child', session }
   child.ctx = createScope(root, child, { parent: agent }).ctx
-  const runtime = createRuleRuntime(agent.ctx, { agent })
-  const childRuntime = createRuleRuntime(child.ctx, { agent: child })
+  await child.ctx.plugin(Native)
+  const outcomes = []
+  const runtime = createRuleRuntime(agent.ctx, { agent, onOutcome: value => outcomes.push(value) })
+  const childRuntime = createRuleRuntime(child.ctx, { agent: child, onOutcome: value => outcomes.push(value) })
   childRuntime.replace([])
   t.after(async () => { runtime.dispose(); childRuntime.dispose(); await root.fiber.dispose() })
   let outcome = 'rejected', bodies = 0, deny = false, mode = 'danger-full-access', tools, prompt, waitForApproval
@@ -53,15 +56,27 @@ test('真实审批owner与工具步骤独立处理升级三分支、拒绝、撤
     ctx.on('approval/request', () => waitForApproval ? waitForApproval() : Promise.resolve(outcome))
     ctx.on('tools/pre-execute', () => Promise.resolve(deny ? { kind: 'deny', reason: 'independent refusal' } : { kind: 'ask' }))
   } })
-  const replace = capabilities => runtime.replace([{ moduleId: 'escalation', rules: compileRules([{ id: 'decision', then: [
+  const replace = capabilities => {
+    const sources = [{ moduleId: 'escalation', rules: compileRules([{ id: 'decision', then: [
     { id: 'ask', kind: 'host-control', capability: 'approval-decisions', value: { toolAskAllow: true } },
-    ...capabilities.map(capability => ({ id: capability, kind: 'host-control', capability, value: true })),
-  ] }]) }])
+    { if: { scope: {} }, then: [
+      ...capabilities.map(capability => ({ id: capability, kind: 'host-control', capability, value: true })),
+      { id: 'dependent', kind: 'inject-text', config: { layer: 'system-section', text: 'DEPENDENT EXECUTOR BODY' } },
+    ] },
+    { id: 'independent', kind: 'inject-text', config: { layer: 'system-section', text: 'INDEPENDENT EXECUTOR BODY' } },
+  ] }]) }]
+    runtime.replace(sources); childRuntime.replace(sources)
+  }
   const prepare = async (subject = agent) => {
     await subject.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) { tools = ctx.tools; prompt = ctx.systemPrompt } })
     const context = { agent: subject, scope: scopeOf(subject.ctx), signal: new AbortController().signal }
     const toolSet = await tools.resolve(context)
-    await prompt.assemble({ ...context, toolSet })
+    const assembly = await prompt.assemble({ ...context, toolSet })
+    if (capabilityBodyCheck) {
+      assert.equal(assembly.sections.some(section => section.text === 'DEPENDENT EXECUTOR BODY'), subject === agent && selectedPtc,
+        `${subject.id}: actual selected executor controls dependent BODY`)
+      assert.ok(assembly.sections.some(section => section.text === 'INDEPENDENT EXECUTOR BODY'))
+    }
     t.after(() => toolSet.dispose())
     return { ...context, toolSet }
   }
@@ -69,11 +84,21 @@ test('真实审批owner与工具步骤独立处理升级三分支、拒绝、撤
     const batch = await tools.execute({ ...context, calls: [{ type: 'tool-call', id: 'mode', name: 'run_code', arguments: JSON.stringify({ code: '', description: 'Memory-only mode consumer', sandbox_permissions: mode, justification: 'fixture' }) }] })
     return { ...batch, results: batch.results.map(item => ({ ...item, result: { ...item.result, value: item.result.value?.result } })) }
   }
+  let capabilityBodyCheck = true
+  let selectedPtc = true
   replace(['escalation-grant'])
   const granted = await prepare()
+  await prepare(child)
+  assert.ok(outcomes.some(value => value.agentId === child.id && value.outcome === 'unavailable'))
+  capabilityBodyCheck = false
   const first = await call(granted)
   assert.equal(first.results[0].result.value, 'danger-full-access', JSON.stringify(first))
   assert.equal(events.filter(event => event.type === 'approval/asked').length, 0, 'P14 bypasses this approval only')
+  const childContext = { agent: child, scope: scopeOf(child.ctx), signal: new AbortController().signal }
+  const childToolSet = await tools.resolve(childContext)
+  t.after(() => childToolSet.dispose())
+  assert.equal(escalationDecisionStatus(child, { ...childContext, toolSet: childToolSet }).available, false,
+    `子 Agent 的当前工具面不能继承父 Agent 的 PTC 可达性: ${JSON.stringify([...childToolSet.view(child).keys()])}`)
   replace([])
   await call(await prepare())
   assert.equal(bodies, 1, 'P62 alone cannot mask escalation rejection')
@@ -121,6 +146,11 @@ test('真实审批owner与工具步骤独立处理升级三分支、拒绝、撤
   assert.ok(noService.results[0].result.isError)
   await ptcFiber.dispose()
   await assert.rejects(call(granted), { code: 'TOOL_EXECUTOR_UNAVAILABLE' })
+  await agent.ctx.plugin(Native)
+  selectedPtc = false
+  capabilityBodyCheck = true
+  replace(['escalation-grant'])
+  await prepare()
 })
 
 test('同名非官方caller不借其他已加载caller就绪，缺依赖仅暂停当前分支', async t => {
