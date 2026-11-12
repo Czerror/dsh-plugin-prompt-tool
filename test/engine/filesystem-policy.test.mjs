@@ -48,6 +48,9 @@ test('真实Cordis工具策略按Agent隔离，压缩重判、取消及owner释�
       provider = ctx
       state.provider(ctx, this)
     }
+    checkedTarget(policy) {
+      return state.fence(policy, this.ctx)
+    }
   }
   await root.plugin(MemoryFilesystem)
   await root.plugin(SystemPrompt)
@@ -65,9 +68,10 @@ test('真实Cordis工具策略按Agent隔离，压缩重判、取消及owner释�
     { id: 'policy', kind: 'host-control', capability: 'filesystem-fence', value: true },
   ] }]) }])
   t.after(async () => { runtime.dispose(); childRuntime.dispose(); await root.fiber.dispose(); state.status.clear(); for (const [key, value] of previous) state.status.set(key, value) })
-  let tools, prompt, owner
+  let tools, prompt, owner, filesystem
   await root.plugin({ inject: ['fs'], apply(ctx) {
     owner = ctx
+    filesystem = ctx.fs
     state.observer(ctx)
   } })
   await root.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) {
@@ -78,7 +82,7 @@ test('真实Cordis工具策略按Agent隔离，压缩重判、取消及owner释�
       output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
       execute(_args, exec) {
         const policy = state.policy({ mode: 'read-only' }, exec)
-        return JSON.stringify([state.fence(policy, provider), state.intent(exec, owner), policy.mode])
+        return JSON.stringify([filesystem.checkedTarget(policy), state.intent(exec, owner), policy.mode])
       },
     }))
   } })

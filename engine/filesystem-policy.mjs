@@ -51,7 +51,7 @@ export function filesystemPolicyStatus(capability, agent) {
 }
 
 function ownersFor(ctx, fs) {
-  try { return fs !== undefined && owners.get(ctx)?.active === true && original(ctx.get('fs')) === original(fs) } catch { return false }
+  try { return fs !== undefined && owners.get(ctx[symbols.shadow] ?? ctx)?.active === true && original(ctx.get('fs')) === original(fs) } catch { return false }
 }
 
 export const isFilesystemPolicyAction = action => action.kind === 'host-control' && filesystemCapabilities.includes(action.capability)
