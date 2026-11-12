@@ -20,7 +20,7 @@ const mirror = '* Network access depends on the task environment. Prefer configu
 const network = "* You don't have access to the internet via this tool."
 
 test('核心模块工具说明按精确来源变换，bash/pwsh/fs约束、环境与独立开关保持', async t => {
-  for (const id of ids) assert.equal(definition.rules.find(rule => rule.id === id)?.enabled, false, `${id} 新规则默认关闭`)
+  for (const id of ids) assert.equal(definition.rules.find(rule => rule.id === id)?.enabled, true, `${id} 默认开启`)
   const root = new Context()
   for (const plugin of [SystemPrompt, Tools, native]) await root.plugin(plugin)
   root.provide('llm', {})

@@ -190,5 +190,5 @@ test('核心模块Web身份与功能说明独立、重叠幂等，交付引用�
   assert.deepEqual(cli.tools, original.tools)
   enable([])
   assert.equal(section(await render(), 'neighbor').text, `${identity}${fileProhibition}`)
-  for (const id of ids) assert.equal(definition.rules.find(rule => rule.id === id)?.enabled, false, `${id}默认关闭`)
+  for (const id of ids) assert.equal(definition.rules.find(rule => rule.id === id)?.enabled, true, `${id}默认开启`)
 })

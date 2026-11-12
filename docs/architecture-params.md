@@ -1,20 +1,22 @@
 # 后端参数框架
 
-回退待办使用独立普通 `host-control / session-rewind-todos`，仅接受 `value: true` 且无次数预算，内置卡默认关闭。它不隐式启用会话回退；按当前目标 Agent 规则条件生效，复用既有 rewind bridge 的逐目标失败与重试载荷。待办正文不进入 module.yml 或 settings，持久 owner 仍为官方 Session 的 `todo/write`。
+内置核心破限、无限制与红队模块仍由用户启用；其规则默认开启，只有核心破限的互斥审批旁路说明默认关闭，普通审批说明默认开启。模块停用再启用保留用户逐条关闭的选择。补种仍只处理缺失目录，包升级不自动重置已有副本；一次性同步已有规则状态必须由用户明确发起。
 
-会话回退使用普通 `host-control / session-rewind` 动作，仅接受 `value: true` 且不接受次数预算，内置卡默认关闭。资格沿当前 Agent 规则受众和条件求值；关闭只阻止后续回退，已提交标记仍按持久操作解释。新 bridge `rewind` 不接受模块主语，字段由 shared 契约统一定义，phase 为 `preview` / `commit` / `retry`，只接会话身份、模式、请求去重身份、页面凭据及固定边界，不接受任意事件范围或子目标列表。
+回退待办使用独立普通 `host-control / session-rewind-todos`，仅接受 `value: true` 且无次数预算，内置卡默认开启。它不隐式启用会话回退；按当前目标 Agent 规则条件生效，复用既有 rewind bridge 的逐目标失败与重试载荷。待办正文不进入 module.yml 或 settings，持久 owner 仍为官方 Session 的 `todo/write`。
 
-Messages 当前系统正文保存为普通 `host-control/messages-current-system`，仅接受 `value: true`，默认关闭，不接受次数预算或非默认时机。规则启停、受众与嵌套分支沿现有事务；不保存正文副本，不隐式开启 `current-system-snapshot`。依赖诊断沿 `host:messages-current-system`，已有用户模块不补卡或覆盖。实际接入范围见[引擎指南](engine-reuse.md)。
+会话回退使用普通 `host-control / session-rewind` 动作，仅接受 `value: true` 且不接受次数预算，内置卡默认开启。资格沿当前 Agent 规则受众和条件求值；关闭只阻止后续回退，已提交标记仍按持久操作解释。新 bridge `rewind` 不接受模块主语，字段由 shared 契约统一定义，phase 为 `preview` / `commit` / `retry`，只接会话身份、模式、请求去重身份、页面凭据及固定边界，不接受任意事件范围或子目标列表。
+
+Messages 当前系统正文保存为普通 `host-control/messages-current-system`，仅接受 `value: true`，默认开启，不接受次数预算或非默认时机。规则启停、受众与嵌套分支沿现有事务；不保存正文副本，不隐式开启 `current-system-snapshot`。依赖诊断沿 `host:messages-current-system`，已有用户模块不补卡或覆盖。实际接入范围见[引擎指南](engine-reuse.md)。
 
 请求身份首段与系统角色沿普通规则分别保存为 `host-control/oauth-identity-prefix`、`host-control/provider-system-role`，唯一值为 `value: true`。两卡独立启停与受众判定，不接受投递次数预算或 outermost 排序；已有用户模块不追加或覆盖默认卡。动作不保存第二份正文、认证或请求头，运行身份只来自已接受工具步骤与实际 prepared adapter call。缺目标诊断分别使用 `host:oauth-identity-prefix`、`host:provider-system-role`，详情见[引擎指南](engine-reuse.md)。
 
-系统段与消息形状容错归普通 host-control/message-shape-guards 动作，唯一参数为 value: true，默认关闭。它不接受次数预算或 outermost 排序；启停、受众、嵌套分支、规则版本、复制导出和显式依赖诊断沿原规则事务。已有用户模块不追加或覆盖内置卡，作用范围见[引擎指南](engine-reuse.md)。
+系统段与消息形状容错归普通 host-control/message-shape-guards 动作，唯一参数为 value: true，默认开启。它不接受次数预算或 outermost 排序；启停、受众、嵌套分支、规则版本、复制导出和显式依赖诊断沿原规则事务。已有用户模块不追加或覆盖内置卡，作用范围见[引擎指南](engine-reuse.md)。
 
-每步当前系统正文归普通 `host-control/current-system-snapshot` 动作，唯一参数为 `value: true`，默认关闭，不接受投递次数预算或 outermost 排序。正文仍归既有 inject-text / persona 声明，动作不复制或持久化第二份正文；启停、受众、分支、保存版本沿普通规则路径。已有用户模块不追加或覆盖内置卡。
+每步当前系统正文归普通 `host-control/current-system-snapshot` 动作，唯一参数为 `value: true`，默认开启，不接受投递次数预算或 outermost 排序。正文仍归既有 inject-text / persona 声明，动作不复制或持久化第二份正文；启停、受众、分支、保存版本沿普通规则路径。已有用户模块不追加或覆盖内置卡。
 
-process 规则另支持 `command-confine-passthrough: true`：每模块发布一次，仅影响后续命令 confine 调用，与构造软默认独立；不接受 Agent 私有条件。内置卡默认关闭，已有用户模块不追加或覆盖。
+process 规则另支持 `command-confine-passthrough: true`：每模块发布一次，仅影响后续命令 confine 调用，与构造软默认独立；不接受 Agent 私有条件。内置卡默认开启，已有用户模块不追加或覆盖。
 
-规则正文包含可选 `executionScope: agent | process`，省略时为 agent；该字段沿既有完整规则正文、切片与模块复制导出保存，启停仍归原 `_settings.yml`。process 规则仅保存支持的无条件构造软默认，不接受 Agent 私有条件。内置三个软默认卡初始关闭，只补缺失模块，已有用户定义不追加或覆盖；作用时机与原生新会话继承见[引擎指南](engine-reuse.md)。
+规则正文包含可选 `executionScope: agent | process`，省略时为 agent；该字段沿既有完整规则正文、切片与模块复制导出保存，启停仍归原 `_settings.yml`。process 规则仅保存支持的无条件构造软默认，不接受 Agent 私有条件。内置三个软默认卡初始开启，只补缺失模块，已有用户定义不追加或覆盖；作用时机与原生新会话继承见[引擎指南](engine-reuse.md)。
 
 委派额度归普通 `host-control/delegation-limits` 的 `value`：可选 `maxDepth`（非负安全整数）与 `askTimeout`（1–2147483秒），至少一项。复用规则数字原文、错误草稿与版本保存，清空撤销该字段，空对象与非法数字拒绝发布；内置10/300只是可编辑初值。
 
@@ -64,7 +66,7 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 规则顶层 layer 是注入动作缺省层及展示归属，不建立跨层总顺序。正文和内容策略属于动作，变量属于持久存储。读取叶子可投影稳定身份；映射写入覆盖 then、else、嵌套分支，保持原始条件、未改参数与注释，不写回编译展开或默认值。
 
-`persona.stripDefaultIdentity` 的可选值为 `preset` 或 `harness`；它是普通动作字段，沿完整定义、切片、保存版本及模块包往返保留，非法目标在候选校验阶段拒绝。内置 `limit-breaker` 仅补缺失定义，初始模块及两条身份规则不自动启用，已有目录不追加或覆盖。
+`persona.stripDefaultIdentity` 的可选值为 `preset` 或 `harness`；它是普通动作字段，沿完整定义、切片、保存版本及模块包往返保留，非法目标在候选校验阶段拒绝。内置 `limit-breaker` 仅补缺失定义，模块不自动启用，两条身份规则默认开启，已有目录不追加或覆盖。
 
 ## 规则与变量事务
 
@@ -72,9 +74,9 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 人设动作预算 `instructionsMaxBytes` 仍归module.yml普通规则，合法值为正安全整数。工作台直接复用RuleParameterFields数字原文、fields错误草稿、hasRuleFields保存阻断和原rule-drafts/CAS；切回继承清除此字段的原草稿，不创建独立预算保存。参考初值65536不限制用户采用其他合法值。
 
-委派参数同样保存在普通规则动作 `subagent-params`，当前只接受 `provider: spawn`、合法工具名 `tool` 与必填非负安全整数 `maxDepth`。0 表示明确禁止委派；空值、负数、小数与非数值均拒绝，撤回贡献通过关闭规则或删除动作表达。数字沿原 RuleParameterFields、fields/hasRuleFields、规则 CAS 与发布，不新增深度草稿或保存端点。`assembly.target.sections.replace` 的名称与完整正文沿原装配表单及规则事务编辑。内置 unrestricted 只补缺失定义，模块及所有规则初始关闭，复制导出保留完整规则与所选文本许可，已有用户副本不覆盖。
+委派参数同样保存在普通规则动作 `subagent-params`，当前只接受 `provider: spawn`、合法工具名 `tool` 与必填非负安全整数 `maxDepth`。0 表示明确禁止委派；空值、负数、小数与非数值均拒绝，撤回贡献通过关闭规则或删除动作表达。数字沿原 RuleParameterFields、fields/hasRuleFields、规则 CAS 与发布，不新增深度草稿或保存端点。`assembly.target.sections.replace` 的名称与完整正文沿原装配表单及规则事务编辑。内置 unrestricted 只补缺失定义，模块初始关闭、六条规则默认开启，复制导出保留完整规则与所选文本许可，已有用户副本不覆盖。
 
-显式瞬时额度 `request-params.maxTokens` 与 `phase.maxPromoteSteps` 同样沿原数字原文草稿和规则事务保存，合法范围均为正安全整数。非法或未完成原文不发保存请求，折叠保留草稿。该额度与同动作的patch/unset.maxTokens及replace互斥；原有patch组合不迁移。`pre-step-filter.instructionHint` 是普通规则中的可编辑完整模板。内置redteam只补缺失定义，七规则全部初始关闭；复制导出保留已保存数值、条件、正文和适用许可，不覆盖用户副本。请求额度运行接缝和指令字节预算分别取资格，详见[引擎指南](engine-reuse.md)。
+显式瞬时额度 `request-params.maxTokens` 与 `phase.maxPromoteSteps` 同样沿原数字原文草稿和规则事务保存，合法范围均为正安全整数。非法或未完成原文不发保存请求，折叠保留草稿。该额度与同动作的patch/unset.maxTokens及replace互斥；原有patch组合不迁移。`pre-step-filter.instructionHint` 是普通规则中的可编辑完整模板。内置redteam只补缺失定义，七规则全部默认开启；复制导出保留已保存数值、条件、正文和适用许可，不覆盖用户副本。请求额度运行接缝和指令字节预算分别取资格，详见[引擎指南](engine-reuse.md)。
 
 ### 规则事务与互斥
 
@@ -207,7 +209,7 @@ module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块i
 
 文件读取额度归普通 `host-control/file-read-limits` 动作的 `value`，不进入部署settings或独立参数表。三个可选正安全整数复用原 `RuleParameterFields` 数字原文、错误草稿、版本保存和完整候选校验；清空只撤销该字段，三项全空仍由编译拒绝，不发布为0。标签保持简短，单位及继承说明使用原hint。实际接入边界见[文件读取上限](engine-reuse.md#文件读取上限)。
 
-结果片段配置归 `module.yml.rules` 的普通 `tool-result/action: edit-text` 动作，`edits` 保存非空数组及每项的 `region/match/text`；空替文为有效删除，空匹配由完整候选校验拒绝。装配替句的 `match` 可为非空字面候选数组，候选仍按明确原文匹配，不转换为正则或逗号拼接。两者沿原规则CAS、YAML Document、切片、导入导出与发布链保存，没有独立结果配置文件或保存端点。limit-breaker新增结果/Web/交付规则全部默认关闭，只补缺失定义，已有用户模块不追加或覆盖；运行支持边界见[工具结果与Web功能段](engine-reuse.md#工具结果与web功能段)。
+结果片段配置归 `module.yml.rules` 的普通 `tool-result/action: edit-text` 动作，`edits` 保存非空数组及每项的 `region/match/text`；空替文为有效删除，空匹配由完整候选校验拒绝。装配替句的 `match` 可为非空字面候选数组，候选仍按明确原文匹配，不转换为正则或逗号拼接。两者沿原规则CAS、YAML Document、切片、导入导出与发布链保存，没有独立结果配置文件或保存端点。limit-breaker新增结果/Web/交付规则全部默认开启，只补缺失定义，已有用户模块不追加或覆盖；运行支持边界见[工具结果与Web功能段](engine-reuse.md#工具结果与web功能段)。
 ## 自定义模型工具
 
 customTools 独立于规则/变量。`compileCustomTool` 使用官方 DSL 转换再交 `tool-definition.mjs` 校验；身份、Schema、执行器和输出都在保存/装配前检查。保存保留作者 DSL，运行内联编译工具，不另写工具产物目录。

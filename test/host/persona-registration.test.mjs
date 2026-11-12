@@ -135,7 +135,7 @@ test('真实插件总闸撤回身份贡献，重新开启保持已保存的规�
   ensureModuleSeed(moduleRoot)
   const dir = join(moduleRoot, 'limit-breaker'), current = readModuleRules(dir)
   const identityRuleIds = ['default-preset-identity', 'default-harness-identity']
-  editModuleRules(dir, { expectedRevisions: current.revisions, edits: current.rules.filter(rule => identityRuleIds.includes(rule.id)).map(rule => ({ previousId: rule.id, rule: { ...rule, enabled: true }, settingsChanged: true })) })
+  editModuleRules(dir, { expectedRevisions: current.revisions, edits: current.rules.map(rule => ({ previousId: rule.id, rule: { ...rule, enabled: identityRuleIds.includes(rule.id) }, settingsChanged: true })) })
   setModuleEnabled(moduleRoot, 'limit-breaker', true)
   let modulesEnabled = true
   const world = await personaWorld(t, () => [], { modulesEnabled: { get: () => modulesEnabled } })

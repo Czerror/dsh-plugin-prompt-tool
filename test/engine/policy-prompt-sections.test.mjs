@@ -35,9 +35,10 @@ test('策略说明普通规则精准转换目标分支，保留动态路径、�
   }
   const enable = ids => runtime.replace([{ moduleId: 'limit-breaker', rules: compileRules(definition.rules.map(rule => ({ ...rule, enabled: ids.includes(rule.id) })), { moduleId: 'limit-breaker' }) }])
   const original = await render()
-  for (const id of ['approval-never-guidance', 'approval-never-bypass-guidance', 'approval-ask-guidance', 'sandbox-readonly-guidance', 'sandbox-brand-guidance', 'plan-mode-guidance']) {
-    assert.equal(definition.rules.find(rule => rule.id === id)?.enabled, false, `${id} 新规则默认关闭`)
+  for (const id of ['approval-never-guidance', 'approval-ask-guidance', 'sandbox-readonly-guidance', 'sandbox-brand-guidance', 'plan-mode-guidance']) {
+    assert.equal(definition.rules.find(rule => rule.id === id)?.enabled, true, `${id} 默认开启`)
   }
+  assert.equal(definition.rules.find(rule => rule.id === 'approval-never-bypass-guidance')?.enabled, false, '互斥旁路规则默认关闭')
   enable(['approval-never-guidance'])
   assert.equal((await render()).find(section => section.name === 'approval:policy').text,
     'Approval prompts are disabled in this session: actions run with full access. You may request sandbox escalation freely when a wider operation needs it.')

@@ -48,7 +48,7 @@ for (const kind of ['claude-code', 'codex']) test(`${kind} 官方四事件保留
   t.after(async () => { runtime.dispose(); await root.fiber.dispose(); await rm(dir, { recursive: true }) })
   const definition = parseDocument(await readFile(new URL('../../modules/limit-breaker/module.yml', import.meta.url), 'utf8')).toJS()
   const card = definition.rules.find(rule => rule.id === `${kind}-hook-decisions`)
-  assert.equal(card.enabled, false)
+  assert.equal(card.enabled, true)
   const replace = enabled => runtime.replace([{ moduleId: 'hook', rules: compileRules([{ ...card, enabled,
     if: { scope: { modelScope: 'flash' } } }]) }])
   const signal = new AbortController().signal

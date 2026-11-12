@@ -14,9 +14,9 @@ const { packageModulesDir } = await import('../../src/host/module-dirs.ts')
 
 const PRESETS_DIR = join(storageRootOf(home), 'modules')
 
-test('核心破限模块沿普通补种与启用表，默认关闭且已有用户选择不覆盖', async () => {
+test('核心破限模块沿普通补种与启用表，默认规则开启且已有用户选择不覆盖', async () => {
   const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
-  const { readStorageConfig } = await import('../../src/host/config-store.ts')
+  const { readStorageConfig, setModuleEnabled } = await import('../../src/host/config-store.ts')
   const root = tempDir('pt-identity-seed-')
   ensureModuleSeed(root)
   const dir = join(root, 'limit-breaker')
@@ -26,48 +26,53 @@ test('核心破限模块沿普通补种与启用表，默认关闭且已有用�
     ['http-fetch', 'http_fetch', false, 'GET'],
   ])
   assert.deepEqual(definition.rules.map(rule => [rule.id, rule.enabled, rule.then[0].stripDefaultIdentity]), [
-    ['official-instruction-budget', false, undefined],
-    ['default-preset-identity', false, 'preset'], ['default-harness-identity', false, 'harness'],
-    ['approval-never-guidance', false, undefined], ['approval-never-bypass-guidance', false, undefined],
-    ['approval-ask-guidance', false, undefined], ['sandbox-readonly-guidance', false, undefined],
-    ['sandbox-brand-guidance', false, undefined], ['plan-mode-guidance', false, undefined],
-    ['shell-denial-guidance', false, undefined], ['fs-escalation-guidance', false, undefined],
-    ['shell-delete-move-guidance', false, undefined], ['shell-network-guidance', false, undefined],
-    ['shell-mirror-guidance', false, undefined],
-    ['file-read-limits', false, undefined],
-    ['subagent-default-depth', false, undefined], ['question-wait-cap', false, undefined],
-    ['subagent-scope-guidance', false, undefined], ['ptc-escalation-guidance', false, undefined],
-    ['skill-badge-guidance', false, undefined],
-    ['web-reference-guidance', false, undefined], ['web-surface-identity', false, undefined],
-    ['web-surface-guidance', false, undefined], ['sandbox-result-guidance', false, undefined],
-    ['deliverable-reference-guidance', false, undefined], ['program-sandbox-result-guidance', false, undefined],
-    ['sandbox-soft-default', false, undefined],
-    ['command-confine-passthrough', false, undefined],
-    ['approval-auto-grant', false, undefined], ['auto-review-passthrough', false, undefined], ['tool-ask-allow', false, undefined],
-    ['sandbox-file-write', false, undefined], ['filesystem-fence', false, undefined], ['filesystem-observation', false, undefined],
-    ['approval-composition-default', false, undefined], ['approval-config-default', false, undefined],
-    ['escalation-criteria', false, undefined], ['escalation-grant', false, undefined], ['escalation-outcome', false, undefined],
-    ['claude-code-hook-decisions', false, undefined], ['codex-hook-decisions', false, undefined],
-    ['repeat-tool-reminder', false, undefined], ['compaction-tool-result-pruner', false, undefined],
-    ['current-system-snapshot', false, undefined],
-    ['message-shape-guards', false, undefined],
-    ['oauth-identity-prefix', false, undefined], ['provider-system-role', false, undefined],
-    ['messages-current-system', false, undefined],
-    ['session-rewind', false, undefined],
-    ['session-rewind-todos', false, undefined],
+    ['official-instruction-budget', true, undefined],
+    ['default-preset-identity', true, 'preset'], ['default-harness-identity', true, 'harness'],
+    ['approval-never-guidance', true, undefined], ['approval-never-bypass-guidance', false, undefined],
+    ['approval-ask-guidance', true, undefined], ['sandbox-readonly-guidance', true, undefined],
+    ['sandbox-brand-guidance', true, undefined], ['plan-mode-guidance', true, undefined],
+    ['shell-denial-guidance', true, undefined], ['fs-escalation-guidance', true, undefined],
+    ['shell-delete-move-guidance', true, undefined], ['shell-network-guidance', true, undefined],
+    ['shell-mirror-guidance', true, undefined],
+    ['file-read-limits', true, undefined],
+    ['subagent-default-depth', true, undefined], ['question-wait-cap', true, undefined],
+    ['subagent-scope-guidance', true, undefined], ['ptc-escalation-guidance', true, undefined],
+    ['skill-badge-guidance', true, undefined],
+    ['web-reference-guidance', true, undefined], ['web-surface-identity', true, undefined],
+    ['web-surface-guidance', true, undefined], ['sandbox-result-guidance', true, undefined],
+    ['deliverable-reference-guidance', true, undefined], ['program-sandbox-result-guidance', true, undefined],
+    ['sandbox-soft-default', true, undefined],
+    ['command-confine-passthrough', true, undefined],
+    ['approval-auto-grant', true, undefined], ['auto-review-passthrough', true, undefined], ['tool-ask-allow', true, undefined],
+    ['sandbox-file-write', true, undefined], ['filesystem-fence', true, undefined], ['filesystem-observation', true, undefined],
+    ['approval-composition-default', true, undefined], ['approval-config-default', true, undefined],
+    ['escalation-criteria', true, undefined], ['escalation-grant', true, undefined], ['escalation-outcome', true, undefined],
+    ['claude-code-hook-decisions', true, undefined], ['codex-hook-decisions', true, undefined],
+    ['repeat-tool-reminder', true, undefined], ['compaction-tool-result-pruner', true, undefined],
+    ['current-system-snapshot', true, undefined],
+    ['message-shape-guards', true, undefined],
+    ['oauth-identity-prefix', true, undefined], ['provider-system-role', true, undefined],
+    ['messages-current-system', true, undefined],
+    ['session-rewind', true, undefined],
+    ['session-rewind-todos', true, undefined],
   ])
+
   assert.deepEqual(definition.rules.filter(rule => rule.executionScope === 'process').map(rule => [rule.id, rule.then[0].value]), [
     ['sandbox-soft-default', 'danger-full-access'], ['command-confine-passthrough', true], ['approval-composition-default', 'never'], ['approval-config-default', 'never'],
   ])
   assert.equal(readStorageConfig(root).source.enabled.includes('limit-breaker'), false)
-  const initial = readModuleRules(dir), changed = { ...initial.rules[0], enabled: true, name: 'USER CHOICE' }
+  const initial = readModuleRules(dir), changed = { ...initial.rules[0], enabled: false, name: 'USER CHOICE' }
   editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: changed.id, rule: changed, settingsChanged: true }] })
   const before = readFileSync(join(dir, 'module.yml'), 'utf8')
+  setModuleEnabled(root, 'limit-breaker', true)
+  setModuleEnabled(root, 'limit-breaker', false)
+  setModuleEnabled(root, 'limit-breaker', true)
   ensureModuleSeed(root)
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before)
+  assert.equal(readModuleRules(dir).rules.find(rule => rule.id === changed.id).enabled, false)
 })
 
-test('无限制模式是普通独立模块，补缺默认关闭，编辑与复制保留完整规则和许可', async () => {
+test('无限制模式是普通独立模块，规则默认开启，编辑与复制保留完整规则和许可', async () => {
   const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
   const { readStorageConfig } = await import('../../src/host/config-store.ts')
   const root = tempDir('pt-unrestricted-seed-')
@@ -76,13 +81,13 @@ test('无限制模式是普通独立模块，补缺默认关闭，编辑与复�
   const definition = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
   assert.equal(definition.name, '无限制模式')
   assert.deepEqual(definition.modules, ['rule-engine'])
-  assert.ok(definition.rules.every(rule => rule.enabled === false))
+  assert.ok(definition.rules.every(rule => rule.enabled === true))
   assert.equal(readStorageConfig(root).source.enabled.includes('unrestricted'), false)
   const initial = readModuleRules(dir)
   const depth = initial.rules.find(rule => rule.id === 'spawn-depth')
   assert.equal(depth.then[0].maxDepth, 1)
-  const changed = { ...depth, then: [{ ...depth.then[0], maxDepth: 2 }] }
-  editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: depth.id, rule: changed }] })
+  const changed = { ...depth, enabled: false, then: [{ ...depth.then[0], maxDepth: 2 }] }
+  editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: depth.id, rule: changed, settingsChanged: true }] })
   const before = readFileSync(join(dir, 'module.yml'), 'utf8')
   ensureModuleSeed(root)
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before)
@@ -94,7 +99,7 @@ test('无限制模式是普通独立模块，补缺默认关闭，编辑与复�
   assert.match(readFileSync(join(root, copied.id, 'module.yml'), 'utf8'), /Permission is hereby granted/)
 })
 
-test('红队模式沿普通补种、数字规则保存和复制，默认关闭并保留覆盖', async () => {
+test('红队模式沿普通补种、数字规则保存和复制，默认开启并保留覆盖', async () => {
   const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
   const { readStorageConfig } = await import('../../src/host/config-store.ts')
   const root = tempDir('pt-redteam-seed-')
@@ -103,14 +108,14 @@ test('红队模式沿普通补种、数字规则保存和复制，默认关闭�
   const definition = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
   assert.equal(definition.name, '红队模式内容')
   assert.deepEqual(definition.modules, ['rule-engine'])
-  assert.ok(definition.rules.every(rule => rule.enabled === false))
+  assert.ok(definition.rules.every(rule => rule.enabled === true))
   assert.equal(readStorageConfig(root).source.enabled.includes('redteam'), false)
   const initial = readModuleRules(dir)
   const budget = initial.rules.find(rule => rule.id === 'bootstrap-budget')
   assert.equal(budget.then[0].maxTokens, 8192)
   assert.equal(budget.if.phase.maxPromoteSteps, 2)
-  const changed = { ...budget, if: { phase: { ...budget.if.phase, maxPromoteSteps: 3 } }, then: [{ ...budget.then[0], maxTokens: 4096 }] }
-  editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: budget.id, rule: changed }] })
+  const changed = { ...budget, enabled: false, if: { phase: { ...budget.if.phase, maxPromoteSteps: 3 } }, then: [{ ...budget.then[0], maxTokens: 4096 }] }
+  editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: budget.id, rule: changed, settingsChanged: true }] })
   const before = readFileSync(join(dir, 'module.yml'), 'utf8')
   ensureModuleSeed(root)
   assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), before)

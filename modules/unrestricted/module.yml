@@ -23,7 +23,7 @@ modules: [rule-engine]
 rules:
   - id: mode-persona
     name: 模式人设
-    enabled: false
+    enabled: true
     then:
       - id: persona
         kind: persona
@@ -38,14 +38,14 @@ rules:
         suffix: ''
   - id: instruction-budget
     name: 官方指令预算
-    enabled: false
+    enabled: true
     then:
       - id: budget
         kind: persona
         instructionsMaxBytes: 65536
   - id: plan-guidance
     name: 计划模式正文
-    enabled: false
+    enabled: true
     then:
       - id: plan
         kind: assembly
@@ -67,7 +67,7 @@ rules:
                   When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
   - id: spawn-depth
     name: 委派深度
-    enabled: false
+    enabled: true
     then:
       - id: depth
         kind: subagent-params
@@ -76,7 +76,7 @@ rules:
         maxDepth: 1
   - id: child-tool-surface
     name: 子代理工具面
-    enabled: false
+    enabled: true
     if:
       scope:
         audience: subagent
@@ -86,7 +86,7 @@ rules:
         deny: [subagent_fork, workflow, ralph]
   - id: search-only-surface
     name: 搜索工具面（不提供抓取）
-    enabled: false
+    enabled: true
     then:
       - id: no-fetch
         kind: tool-visibility
