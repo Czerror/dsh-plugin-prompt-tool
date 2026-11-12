@@ -51,7 +51,7 @@ function run(agent, assembly, signal, invoke) {
 }
 function active(session) {
   const current = calls.getStore()
-  return current?.agent.session === session && current.signal?.aborted !== true && accepted(current.agent, current.step)
+  return current !== undefined && current.agent.session === session && current.signal?.aborted !== true && accepted(current.agent, current.step)
 }
 globalThis[Symbol.for('prompt-tool:message-shape-guards')] = {
   decision, run,

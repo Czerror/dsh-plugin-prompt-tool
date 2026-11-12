@@ -166,7 +166,9 @@ test('缺 messages 的首步和结束判据经真实 Agent 保持空数组语义
   await root.sessions.flush(handle.agent.session)
   const stored = await root.sessionPersistence.open(handle.agent.id, 'read')
   try { assert.deepEqual((await stored.read()).events.find(event => event.seq === recorded[0].seq), recorded[0]) } finally { await stored.close() }
-  assert.throws(() => deriveEventMessage({ type: 'system/message', seq: 0, data: {} }), TypeError, 'unscoped public export preserves official rejection')
+  const unscopedMessage = createSystemMessage(' UNSCOPED ')
+  assert.equal(deriveEventMessage({ type: 'system/message', seq: 0, data: { message: unscopedMessage } }), unscopedMessage, 'unscoped public export preserves the official message identity outside a run')
+  assert.throws(() => deriveEventMessage({ type: 'system/message', seq: 0, data: {} }), error => error instanceof TypeError && /content/.test(error.message), 'unscoped public export preserves official malformed-message rejection')
 })
 
 test('关闭、来源异常与 owner 失配维持原拒绝，已接受步骤不被热更新或并发裸装配替换', async t => {
