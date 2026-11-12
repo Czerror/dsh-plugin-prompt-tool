@@ -173,6 +173,7 @@ test('真实审批审计与自动审核owner独立接受快照，取消、隔离
   replace({ toolAskAllow: false })
   const refused = await call(await prepare())
   assert.equal(refused.results[0].result.error.message, 'the user rejected tool "owner_memory_fixture"')
+  assert.deepEqual(refused.results[0].result.error.info, { name: 'ApprovalError', code: 'APPROVAL_REJECTED' })
   assert.equal(bodies, 2)
   replace({ toolAskAllow: true })
   const askAllowed = await prepare()
@@ -181,6 +182,10 @@ test('真实审批审计与自动审核owner独立接受快照，取消、隔离
   deny = true
   const guarded = await call(askAllowed)
   assert.equal(guarded.results[0].result.error.message, 'independent guard')
+  assert.equal(guarded.results[0].result.error.info, undefined, 'independent deny cannot acquire approval identity')
+  assert.equal(bodies, 3)
+  const cancelled = await call({ ...askAllowed, signal: AbortSignal.abort(new Error('caller stopped')) })
+  assert.deepEqual(cancelled.results[0].result.error.info, { name: 'AbortError', code: 'ABORTED_BEFORE_DISPATCH' })
   assert.equal(bodies, 3)
   deny = false
   replace({ toolAskAllow: false })
