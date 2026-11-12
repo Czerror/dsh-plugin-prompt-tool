@@ -1,5 +1,9 @@
 # Web 客户端 UI 结构框架
 
+会话输入区 `conversation.input.right` 的回退菜单提供“回退一次”和“回退上一轮”，使用槽的真实 `sessionId` 与公开输入动作；复用共享 Button、Menu、HintTooltip 及中英文词条。预览固定边界后提交，busy 同时禁用两项。部分成功列出逐目标结果，“仅重试失败目标”沿原边界重新授权，已提交目标不重复执行。
+
+空白且未修改的草稿通过 `captureInsertion` / `insertText` 版本校验回填，随后持久化，不自动提交。新草稿、引用、附件、会话切换或提交锁定时保留原草稿，提供只读回退文本；历史已提交而回填失败分别报告。回退槽由 `app/register-rewind.tsx` 持有接线和瞬时结果 owner；迟到文本、失败与重试凭据按原会话保存并通知重挂视图，回到原会话即可取回，插件释放清空，不写持久草稿库。提交响应丢失或失败目标重试后首次确认成功仍保留文本；同一标记已回填则不重复插入。Conversation 适配只包装公开 binding snapshot 实际返回的 assembler 实例，核对构造身份、原型方法与实例可扩展性；已有第三方实例覆盖不接管。即时 append、替窗重放和向前分页统一解释标记，原事件源保持。插件卸载后的环境不支持完整回退展示，需恢复解释器，不能把卸载当历史撤销。
+
 宿主能力卡提供“Messages 当前系统正文”（Messages current system body），选择 `messages-current-system` 后使用布尔 `value: true`。它沿普通规则草稿、保存版本与 `host:messages-current-system` 诊断展示，默认关闭，独立于每步当前系统正文开关；不新增正文编辑入口。实际效果及 early 重启要求见[引擎指南](engine-reuse.md)。
 
 宿主能力卡提供独立的“移除 OAuth 自动身份首段”（Remove automatic OAuth identity prefix）与“按原生服务域名映射系统角色”（Map system role by native provider hostname），分别选择 `oauth-identity-prefix`、`provider-system-role` 并使用布尔 `value: true`。沿普通规则草稿、版本保存、受众与分支编辑；卡片只展示当前保存版本对应 `host:<capability>` 的必要 owner 缺失原因。开启表示选择意图，实际接入范围与 early 重启要求见[引擎指南](engine-reuse.md)。
@@ -9,6 +13,8 @@
 宿主能力卡提供“每步当前系统正文与完整性”（Current system body and integrity per step），选择 `current-system-snapshot` 时使用布尔 `value: true`。卡片依赖诊断沿 `host:current-system-snapshot` 展示当前保存版本的缺失 early owner 原因；正文、受众和启停仍由普通规则编辑，不新增独立正文入口。默认关闭与运行契约见 [引擎复用](engine-reuse.md)。
 
 Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 对象，选择 `claude-code: true` / `codex: true`；两张内置卡默认关闭。依赖诊断使用 `host:provider-hook-decisions`，运行与恢复契约见 [引擎复用](engine-reuse.md)。
+
+规则卡头部七个字段横向排列，字段名称统一一行、对应控件统一一行，窄容器内横向滚动；移除常驻机制长说明，不可用原因复用状态文字上的说明浮窗并支持键盘聚焦。宿主能力下拉提供“会话回退”（`session-rewind`），切换使用布尔 `value: true`，保存版本诊断沿 `host:session-rewind` 展示。
 
 升级动作编辑沿现有规则卡：`escalation-criteria`、`escalation-grant`、`escalation-outcome` 均使用布尔 value，分别显示当前能力诊断；开启意图不等于真实 caller 就绪，运行契约见 [引擎复用](engine-reuse.md)。
 

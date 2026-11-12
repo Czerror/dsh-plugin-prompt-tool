@@ -676,3 +676,11 @@ rules:
         kind: host-control
         capability: messages-current-system
         value: true
+  - id: session-rewind
+    name: 会话回退
+    enabled: false
+    then:
+      - id: rewind
+        kind: host-control
+        capability: session-rewind
+        value: true

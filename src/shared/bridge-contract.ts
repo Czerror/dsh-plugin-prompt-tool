@@ -28,6 +28,7 @@ export const MAX_CHARACTER_CARD_STREAM_BYTES = 64 * 1024 * 1024
 
 /** 桥端点路径（相对前缀）。新增端点必须同时登记到契约测试。 */
 export const BRIDGE_ENDPOINTS = {
+  rewind: '/rewind',
   meta: '/meta',
   bootstrap: '/bootstrap',
   describe: '/describe',
@@ -85,6 +86,7 @@ export type BridgeSubjectPolicy = 'required' | 'optional' | 'none'
  * 不用 `: Record<...>` 注解：注解会把每项加宽成 `BridgeSubjectPolicy`，客户端就再也读不到单个端点的字面量。
  */
 export const BRIDGE_SUBJECT_POLICY = {
+  rewind: 'none',
   meta: 'none',
   /** 空主语只回全局段。 */
   bootstrap: 'optional',
@@ -177,6 +179,7 @@ export interface ModuleSummary {
  * 载荷仍统一走 { ok, value } 包装（见 BridgeResult），这里收敛每端的 value 具体形状。
  */
 export interface BridgeRequestMap {
+  rewind: import('./rewind.ts').RewindRequest
   meta: undefined
   /** 可选 sessionId：服务端据此解析该本地 Agent 的工作区，返回对应指令文件快照。 */
   bootstrap: { sessionId?: string } | undefined
@@ -493,6 +496,7 @@ export type BridgeResponse<K extends BridgeEndpointKey> =
 
 /** 端点级响应 value 契约（value 字段形状；扩展字段仍以 value 旁可选字段出现）。 */
 export interface BridgeValueMap {
+  rewind: import('./rewind.ts').RewindResult
   /** `/meta` 与 `/bootstrap` 的 meta 段（形状与缺席语义见 {@link BridgeMetaSection}）。 */
   meta: BridgeMetaSection
   bootstrap: BridgeSettingsView

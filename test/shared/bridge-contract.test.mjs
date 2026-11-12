@@ -34,12 +34,14 @@ function makeHarness(otherServices = {}, logger = undefined) {
     ...otherServices.agentPresets,
   }
   const sctx = {
+    on: () => () => {},
     settings: {
       describe: () => [{ ns: 'prompt-tool', value: { promptText: 'P' }, base: {} }],
       mutate: async () => {},
     },
     webServer: { register: table.register },
     agents: {
+      list: () => [],
       get: (id) => id === 'live-session' ? { id } : undefined,
     },
     tools: {
@@ -334,6 +336,8 @@ test('部署总闸经桥读写 modulesEnabled', async () => {
   let value = { modulesEnabled: false }
   const writes = []
   const scope = {
+    on: () => () => {},
+    agents: { get: () => undefined, list: () => [] },
     settings: {
       describe: () => [{ ns: 'prompt-tool', value, base: {}, revision: 1 }],
       mutate: async (_ns, ops) => {

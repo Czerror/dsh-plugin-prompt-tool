@@ -9,6 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createBridgeRuntime, type BridgeDeps } from './bridge-runtime.ts'
 import { registerDefinitions } from './routes/definitions.ts'
 import { registerDiagnostics } from './routes/diagnostics.ts'
+import { registerRewind } from './routes/rewind.ts'
 import { registerInstructions } from './routes/instructions.ts'
 import { registerLifecycle } from './routes/lifecycle.ts'
 import { registerMeta } from './routes/meta.ts'
@@ -57,7 +58,7 @@ export function registerSettingsBridge(
   ctx.inject(['agents', 'tools', 'webServer'], (stx: Context) => {
     stx.effect(() => {
       runtime.attachAgentScope(stx)
-      const disposers = registerDiagnostics(runtime)
+      const disposers = [...registerDiagnostics(runtime), ...registerRewind(runtime)]
       return () => {
         for (const dispose of disposers) dispose()
       }

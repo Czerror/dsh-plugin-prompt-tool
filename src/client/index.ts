@@ -19,6 +19,7 @@ import type { PromptToolWorkbenchFace } from './app/workbench/workbench-face.ts'
 import type { PromptToolHostApi } from './data/host-api.ts'
 import { registerPromptToolLocale } from './locales.ts'
 import { PROMPT_TOOL_NS } from '../shared/namespace.ts'
+import { registerRewindSlot } from './app/register-rewind.tsx'
 
 export const inject = [
   'locale',
@@ -30,6 +31,7 @@ export const inject = [
   'remote.agentPresets',
   'remote.session',
   'sessions',
+  'uiConversation',
 ]
 
 export function apply(ctx: ClientContext): void {
@@ -38,6 +40,7 @@ export function apply(ctx: ClientContext): void {
   // 命名空间在 locales.ts 里并入官方 LocaleNamespaceMap，slot 注册据此拿到 typed t。
   ctx.effect(() => registerPromptToolLocale(ctx.locale))
   const t = ctx.locale.bind(PROMPT_TOOL_NS)
+  ctx.effect(() => registerRewindSlot(ctx, t))
   // 官方连接世代重建（connection/reset）后，宿主的模型目录缓存可能已过期：
   // 显式刷新一次（越过 10 分钟 TTL），下一次打开工作台即命中新目录。
   // 目录刷新不是关键路径，失败静默。

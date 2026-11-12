@@ -21,6 +21,7 @@ type RequestFieldRule =
   | { fields: readonly string[] }
 
 export const BRIDGE_REQUEST_FIELDS = {
+  rewind: { fields: ['phase', 'sessionId', 'mode', 'requestId', 'credential', 'boundary'] },
   meta: { body: 'none' },
   bootstrap: { fields: ['sessionId'] },
   describe: { body: 'none' },

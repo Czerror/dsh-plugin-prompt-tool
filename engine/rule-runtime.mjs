@@ -28,6 +28,7 @@ import { bindResultTextDependencies } from './result-text.mjs'
 import { providerHookDecisionsState, isProviderHookDecisionsAction, prepareProviderHookDecisions, bindProviderHookDependencies } from './provider-hook-decisions.mjs'
 import { bindRepeatCompactionDependencies, filterRepeatReminderDecision, installPrunerGate, isRepeatCompactionAction, repeatReminderStatus } from './repeat-compaction-policy.mjs'
 import { bindCurrentSystemSnapshotDependencies, isCurrentSystemSnapshotAction, registerCurrentSystemSnapshot } from './current-system-snapshot.mjs'
+import { isRewindAction, registerRewindControl } from './rewind-control.mjs'
 import { bindMessageShapeGuardsDependencies, isMessageShapeGuardsAction, registerMessageShapeGuards } from './message-shape-guards.mjs'
 import { bindProviderSystemRolesDependencies, isProviderSystemRolesAction, registerProviderSystemRoles } from './provider-system-roles.mjs'
 
@@ -157,6 +158,10 @@ function mountSources(ctx, sources, options = {}) {
           options.collectCurrentSystemSnapshot({ action, rule, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
           continue
         }
+        if (isRewindAction(action)) {
+          options.collectRewind({ action, rule, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
+          continue
+        }
         if (action.kind === 'host-control' && isRepeatCompactionAction(action)) {
           options.collectRepeatCompaction?.({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
             ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
@@ -279,6 +284,8 @@ export function createRuleRuntime(ctx, options = {}) {
     }
     return frame
   }
+  const releaseRewind = options.agent === undefined ? undefined : registerRewindControl(options.agent, () => active
+    && [...records.values()].some(record => record.rewind.some(entry => actionMatches(entry, assemblyFrame({ agent: options.agent })))))
   let layers
   const readLimitEntries = () => [...records.values()].flatMap(record => record.readLimits)
   const delegationLimitEntries = () => [...records.values()].flatMap(record => record.delegationLimits)
@@ -310,7 +317,7 @@ export function createRuleRuntime(ctx, options = {}) {
     } catch (error) { releaseMemo(); releaseMemo = undefined; throw error }
   }
   const mount = source => {
-    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], providerHookDecisions: [], repeatCompaction: [], currentSystemSnapshot: [], messageShapeGuards: [], dispose: undefined }
+    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], providerHookDecisions: [], repeatCompaction: [], currentSystemSnapshot: [], rewind: [], messageShapeGuards: [], dispose: undefined }
     record.approvalDecisions = []
     record.providerSystemRoles = []
     record.escalationDecisions = []
@@ -397,6 +404,7 @@ export function createRuleRuntime(ctx, options = {}) {
       collectProviderHookDecisions(entry) { record.providerHookDecisions.push(entry) },
       collectRepeatCompaction(entry) { record.repeatCompaction.push(entry) },
       collectCurrentSystemSnapshot(entry) { record.currentSystemSnapshot.push(entry) },
+      collectRewind(entry) { record.rewind.push(entry) },
       collectMessageShapeGuards(entry) { record.messageShapeGuards.push(entry) },
       collectProviderSystemRoles(entry) { record.providerSystemRoles.push(entry) },
       collectText(point, configs) {
@@ -802,6 +810,7 @@ export function createRuleRuntime(ctx, options = {}) {
       prunerRelease?.()
       repeatSessions.clear(); prunerBlockedSessions.clear()
       currentSystemSnapshot?.dispose()
+      releaseRewind?.()
       messageShapeGuards?.dispose()
       providerSystemRoles?.dispose()
       if (ownsPool) pool.dispose()

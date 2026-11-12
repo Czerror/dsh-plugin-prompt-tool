@@ -6,10 +6,9 @@
 .headerActions .row { flex-wrap: nowrap; gap: 4px; }
 .body { container: rule-editor / inline-size; display: flex; flex-direction: column; gap: 16px; padding: 0; min-width: 0; border-top: 0; }
 .fields { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; min-width: 0; }
+.headerFields { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(6rem, 1fr) max-content max-content minmax(6rem, 1fr) max-content max-content; align-items: start; gap: 12px; min-width: 0; overflow-x: auto; padding-bottom: 4px; }
 .fields > * { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .fields > .full, .fields > .parameterGroup { flex-basis: 100%; }
-.fields > .exclusiveGroup { display: inline-flex; align-items: flex-start; gap: 12px; }
-.exclusiveGroup > :first-child { min-width: 0; }
 .full, .parameterGroup { min-width: 0; width: 100%; }
 .parameterGroup { display: flex; flex-direction: column; gap: 8px; }
 .parameterGroup h5, .section h3 { margin: 0; font: 500 13px/20px system-ui,sans-serif; color: var(--dsw-alias-label-primary); }

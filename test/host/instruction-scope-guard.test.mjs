@@ -56,6 +56,8 @@ function fakeRes() {
 function makeHarness(cwdBySession, stat = async () => undefined) {
   const handlers = new Map()
   const sctx = {
+    on: () => () => {},
+    agents: { list: () => [] },
     settings: {
       describe: () => [{ ns: 'prompt-tool', value: {}, base: {}, revision: 3 }],
       get: () => undefined,

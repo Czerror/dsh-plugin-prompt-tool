@@ -473,6 +473,9 @@ importers:
       '@deepseek-ai/dsh-client-locale':
         specifier: file:.scratch/harness/packages/deepseek-ai-dsh-client-locale-0.2.2-rc.2.tgz
         version: file:.scratch/harness/packages/deepseek-ai-dsh-client-locale-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))
+      '@deepseek-ai/dsh-client-ui-conversation':
+        specifier: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-conversation-0.2.2-rc.2.tgz
+        version: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-conversation-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))
       '@deepseek-ai/dsh-client-ui-layout':
         specifier: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-layout-0.2.2-rc.2.tgz
         version: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-layout-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))
@@ -894,6 +897,12 @@ packages:
 
   '@deepseek-ai/dsh-client-locale@file:.scratch/harness/packages/deepseek-ai-dsh-client-locale-0.2.2-rc.2.tgz':
     resolution: {integrity: sha512-vjn5JIAyir1bsvfI+B6QYSaKWxdc2dOj8oekaG+wa+826pkq1Q77S/Tle0lHx35GahLdUcJ6HGmrdMnccf2gEA==, tarball: file:.scratch/harness/packages/deepseek-ai-dsh-client-locale-0.2.2-rc.2.tgz}
+    version: 0.2.2-rc.2
+    peerDependencies:
+      '@deepseek-ai/cordis': ~4.1.0
+
+  '@deepseek-ai/dsh-client-ui-conversation@file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-conversation-0.2.2-rc.2.tgz':
+    resolution: {integrity: sha512-wvLhkiWP13gLy3a2gkWd5AVXzfjMGTVtdpTpxEPQZtYDWWYIckHaW3BJ60P+hCe+eyHoX8eCg65l03s72qco0g==, tarball: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-conversation-0.2.2-rc.2.tgz}
     version: 0.2.2-rc.2
     peerDependencies:
       '@deepseek-ai/cordis': ~4.1.0
@@ -3347,6 +3356,11 @@ snapshots:
       zod: 4.6.6
 
   '@deepseek-ai/dsh-client-locale@file:.scratch/harness/packages/deepseek-ai-dsh-client-locale-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))':
+    dependencies:
+      '@deepseek-ai/cordis': file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9)
+      '@deepseek-ai/schemastery': file:.scratch/harness/packages/deepseek-ai-schemastery-3.19.0.tgz
+
+  '@deepseek-ai/dsh-client-ui-conversation@file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-conversation-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))':
     dependencies:
       '@deepseek-ai/cordis': file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9)
       '@deepseek-ai/schemastery': file:.scratch/harness/packages/deepseek-ai-schemastery-3.19.0.tgz

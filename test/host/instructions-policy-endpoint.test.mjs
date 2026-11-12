@@ -27,9 +27,10 @@ const endpoint = SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.instructionsPolicy
 function handlers() {
   const registered = new Map()
   const sctx = {
+    on: () => () => {},
     settings: { describe: () => [{ ns: 'prompt-tool', value: {}, base: {} }], mutate: async () => {} },
     webServer: { register: ({ path, handler }) => { registered.set(path, handler); return () => {} } },
-    agents: { get: () => undefined },
+    agents: { get: () => undefined, list: () => [] },
     tools: { schemas: () => [] },
     get: () => undefined,
     effect: (fn) => fn(),

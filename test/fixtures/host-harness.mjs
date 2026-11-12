@@ -196,6 +196,8 @@ export function handlerTable() {
 /**
  * 宿主注入作用域桩（`ctx.inject` 回调的入参）：只含桥用例真正用到的服务面。
  * @typedef {object} HostScope
+ * @property {(event: string, listener: (...args: unknown[]) => unknown) => () => void} on
+ * @property {{ list: () => unknown[], get: (id: string) => unknown }} agents
  * @property {(name: string) => unknown} get
  * @property {{ describe: () => SettingsDescriptor[], mutate: (ns: string, ops: unknown[], expectedRevision?: number) => Promise<void> }} settings
  * @property {{ register: (route: BridgeRoute) => () => void }} webServer
@@ -227,6 +229,8 @@ export function makeHostContext(options = {}) {
   const handlers = new Map()
   /** @type {HostScope} */
   const sctx = {
+    on: () => () => {},
+    agents: { list: () => [], get: () => undefined },
     get: options.get ?? (() => undefined),
     settings: {
       describe: options.describe ?? (() => [{ ns: 'prompt-tool', value: options.value ?? {}, base: {} }]),

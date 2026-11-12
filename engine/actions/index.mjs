@@ -25,6 +25,7 @@ import { isCommandConfineAction, validateCommandConfine } from '../command-confi
 import { isProviderHookDecisionsAction, validateProviderHookDecisions } from '../provider-hook-decisions.mjs'
 import { isRepeatCompactionAction, validateRepeatCompactionAction } from '../repeat-compaction-policy.mjs'
 import { isCurrentSystemSnapshotAction, validateCurrentSystemSnapshotAction } from '../current-system-snapshot.mjs'
+import { isRewindAction, validateRewindAction } from '../rewind-control.mjs'
 import { isMessageShapeGuardsAction, validateMessageShapeGuardsAction } from '../message-shape-guards.mjs'
 import { isProviderSystemRolesAction, validateProviderSystemRolesAction } from '../provider-system-roles.mjs'
 export { ACTION_KINDS, ACTION_DEGRADE } from './catalog.mjs'
@@ -102,6 +103,7 @@ export function prepareAction(action, options = {}) {
     else if (isProviderHookDecisionsAction(action)) validateProviderHookDecisions(action)
     else if (isRepeatCompactionAction(action)) validateRepeatCompactionAction(action)
     else if (isCurrentSystemSnapshotAction(action)) validateCurrentSystemSnapshotAction(action)
+    else if (isRewindAction(action)) validateRewindAction(action)
     else if (isMessageShapeGuardsAction(action)) validateMessageShapeGuardsAction(action)
     else if (isProviderSystemRolesAction(action)) validateProviderSystemRolesAction(action)
     else if (action.capability === 'delegation-limits') validateDelegationLimits(action)

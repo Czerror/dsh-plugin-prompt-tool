@@ -18,8 +18,8 @@ const render = action => renderElement(RuleStepsPanel, {
 })
 const labels = html => [...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
 
-test('请求身份、系统角色与Messages能力卡独立展示保存版本诊断', () => {
-  for (const capability of ['oauth-identity-prefix', 'provider-system-role', 'messages-current-system']) {
+test('请求身份、系统角色、Messages与会话回退能力卡独立展示保存版本诊断', () => {
+  for (const capability of ['oauth-identity-prefix', 'provider-system-role', 'messages-current-system', 'session-rewind']) {
     const rule = { id: 'provider', enabled: true, then: [{ id: 'control', kind: 'host-control', capability, value: true }] }
     assert.ok(render(rule.then[0]).includes(t('triggers.option.' + capability)))
     const draft = getRulesDraft(createWorkspaceDrafts(), 'provider-module')
@@ -29,6 +29,18 @@ test('请求身份、系统角色与Messages能力卡独立展示保存版本诊
       onToggle() {}, onDuplicate() {}, expandedRows: new Map(), moduleId: 'provider-module', diagnostics: [{ moduleId: 'provider-module', ruleId: 'provider', actionId: 'control', agentId: 'agent-a', channel: 'host:' + capability, hit: 0, miss: 0, unavailable: 1, error: 0, identityOutcome: 'condition-unavailable', definitionRevision: 'R1:S1', reason }] })
     assert.ok(card.includes(reason))
   }
+})
+
+test('宿主能力切换为会话回退时保存布尔意图并清理旧值草稿', async () => {
+  const { RuleParameterFields } = await withSsr([new URL('../../src/client/features/prompts/RuleFields.tsx', import.meta.url).href])
+  const fields = new Map([['control:value:limit', { text: '20000', source: '20000', error: '' }]])
+  let value = { id: 'control', kind: 'host-control', capability: 'file-read-limits', value: { limit: 20000 } }
+  const rows = RuleParameterFields({ t, value, fields, fieldKey: 'control', onDraft() {}, onChange(next) { value = next } })
+  const field = rows.find(row => row?.props?.label === t('triggers.label.capability'))
+  assert.ok(field.props.children.props.options.some(option => option.value === 'session-rewind' && option.label === t('triggers.option.session-rewind')))
+  field.props.children.props.onChange('session-rewind')
+  assert.deepEqual(value, { id: 'control', kind: 'host-control', capability: 'session-rewind', value: true })
+  assert.equal(fields.size, 0)
 })
 
 test('当前系统正文能力沿普通规则卡展示布尔值及保存版本的依赖诊断', () => {

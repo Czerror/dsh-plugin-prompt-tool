@@ -42,6 +42,8 @@ function bridgeHarness(deps = {}) {
   const table = handlerTable()
   const ctx = {
     inject: (_deps, cb) => cb({
+      on: () => () => {},
+      agents: { get: () => undefined, list: () => [] },
       get: () => undefined,
       settings: { describe: () => [{ ns: 'prompt-tool', value: {}, base: {} }], mutate: async () => {} },
       webServer: { register: table.register },
