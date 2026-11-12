@@ -90,11 +90,11 @@ function createInstallation(ctx) {
         const exec = calls.getStore()
         const step = exec === undefined ? undefined : toolStepOf(exec.toolSet, exec.agent)
         const entry = step?.subagentParams?.find(entry => entry.tool === exec.name && entry.provider === spec.provider)
-        if (entry === undefined || spec.request?.parent !== exec.agent) return Reflect.apply(value, target, [spec])
+        if (entry === undefined || spec.parent !== exec.agent) return Reflect.apply(value, target, [spec])
         if (step.status !== 'sealed') throw unavailable()
         exec.signal.throwIfAborted()
         if (target.getProvider(spec.provider)?.capabilities?.depthLimit !== true) throw new Error('prompt-tool: delegation provider no longer supports depth limits')
-        return Reflect.apply(value, target, [{ ...spec, request: { ...spec.request, maxDepth: entry.maxDepth } }])
+        return Reflect.apply(value, target, [{ ...spec, maxDepth: entry.maxDepth }])
       }
       if (name === 'tools' && property === 'resolve') return async context => {
         const current = selected(context.agent)

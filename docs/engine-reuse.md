@@ -194,7 +194,7 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 普通 `subagent-params` 动作声明 `provider: spawn`、明确的 `tool` 和非负安全整数 `maxDepth`（0 禁止委派）。装配沿当前 Agent 的真实工具集合和 provider.depthLimit 接受参数，存于原 toolStep；同目标同时有效的同值贡献共存，静态异值候选拒绝并保旧，正常重判产生的动态异值冲突暂停该目标贡献并显示原因。缺工具、提供者或能力只暂停此动作所在分支及后代的显式关联正文，无关规则继续；恢复后下一正常步骤重新判断，不重放已有动作。
 
-执行适配复用官方 `tools/execute` waterfall 的真实调用上下文，调用期只代理 `subagents.startActivation`：工具名、spawn、真实 parent 和 sealed step 全部匹配才替换原请求的 maxDepth，其余调用透传。官方 0.2.2-rc.2 发行物使用 `spec.request.parent/maxDepth`，支持证据以发行物为准，不依据源码构建的不同请求形状宣称兼容。深度上下文与 refreshContext 使用同一已接受值；已有工具集合不读热更值，取消仍沿原管线，dispose 关闭步骤。没有第二套深度配置库，也不修改宿主默认深度或 provider。
+执行适配复用官方 `tools/execute` waterfall 的真实调用上下文，调用期只代理 `subagents.startActivation`：工具名、spawn、真实 parent 和 sealed step 全部匹配才替换原请求的 maxDepth，其余调用透传。官方 0.2.2-rc.2 使用顶层 `spec.parent` 与 `spec.maxDepth`；适配按该契约核对真实 parent 并替换顶层深度，不兼容旧的嵌套请求形状。深度上下文与 refreshContext 使用同一已接受值；已有工具集合不读热更值，取消仍沿原管线，dispose 关闭步骤。没有第二套深度配置库，也不修改宿主默认深度或 provider。
 
 内置 `unrestricted` 的模块与全部新增规则默认关闭，各条可独立编辑启用。人设和计划正文随普通 module.yml 保存；65536 是可编辑预算初值，仍须原 early 接缝；显式 spawn 深度初值为 1，子代理工具面沿 scope 条件排除 subagent_fork/workflow/ralph，不注册子预设。搜索工具面启用时使用已有 web_fetch 的 deny；需要抓取时用户先关闭该限制，再按实际已安装能力另行配置。模块不隐式启用核心破限规则，不补装官方工具、计划或压缩 owner；现有预设的外围参数继续由其原所有者控制。
 

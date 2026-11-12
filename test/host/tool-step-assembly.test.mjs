@@ -246,11 +246,11 @@ test('普通委派参数使用已接受步骤快照，数值冲突拒绝且关�
   const rules = [{ id: 'depth', then: [{ id: 'depth', kind: 'subagent-params', provider: 'spawn', tool: 'subagent', maxDepth: 1 }] }]
   const h = await harness(t, rules)
   h.root.systemPrompt.context({ name: 'tool:subagent:depth', order: 20, text: 'ORIGINAL DEPTH' })
-  const service = { getProvider: () => ({ capabilities: { depthLimit: true } }), startActivation: async spec => ({ maxDepth: spec.request.maxDepth }) }
+  const service = { getProvider: () => ({ capabilities: { depthLimit: true } }), startActivation: async spec => ({ maxDepth: spec.maxDepth }) }
   h.root.provide('subagents', service)
   await h.agent.ctx.plugin({ inject: ['tools', 'subagents'], apply(ctx) {
     for (const name of ['subagent', 'subagent_fork']) ctx.tools.register({ name, description: name, parameters: { type: 'object', properties: {} },
-      output: { schema: { type: 'object' }, render: () => [] }, execute: (_args, run) => ctx.subagents.startActivation({ provider: name === 'subagent' ? 'spawn' : 'fork', request: { parent: run.agent, maxDepth: 9 } }) })
+      output: { schema: { type: 'object' }, render: () => [] }, execute: (_args, run) => ctx.subagents.startActivation({ provider: name === 'subagent' ? 'spawn' : 'fork', parent: run.agent, maxDepth: 9 }) })
   } })
   const resolve = async () => { const set = await h.services.tools.resolve(h.context); const assembly = await h.services.prompt.assemble({ ...h.context, toolSet: set }); return { set, assembly } }
   const value = async (set, name = 'subagent') => (await h.execute(set, name)).results[0].result.value.maxDepth
@@ -288,7 +288,7 @@ test('普通委派参数使用已接受步骤快照，数值冲突拒绝且关�
   assert.match(zero.assembly.contexts.find(context => context.name === 'tool:subagent:depth').text, /current 0, maximum 0, remaining levels 0/)
   const refreshed = h.services.prompt.refreshContext(zero.assembly, { ...h.context, toolSet: zero.set })
   assert.match(refreshed.contexts.find(context => context.name === 'tool:subagent:depth').text, /current 0, maximum 0, remaining levels 0/)
-  assert.equal((await service.startActivation({ provider: 'spawn', request: { parent: h.agent, maxDepth: 7 } })).maxDepth, 7, '直接服务调用不借用模型工具步骤')
+  assert.equal((await service.startActivation({ provider: 'spawn', parent: h.agent, maxDepth: 7 })).maxDepth, 7, '直接服务调用不借用模型工具步骤')
   for (const set of [first.set, second.set, same.set, retained.set, conflict.set, recovered.set, disabled.set, zero.set]) set.dispose()
 })
 
