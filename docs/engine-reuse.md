@@ -1,5 +1,9 @@
 # 统一规则引擎复用指南
 
+普通规则 `host-control / messages-current-system` 仅接受 `value: true`，默认关闭，独立于 `current-system-snapshot`，不隐式开启它。单独生效时，Messages 顶层 system 使用当前请求历史中最后一条非空 system 正文，空正文不擦除已有正文，原 `options.system` 前缀保持。两者在同一步同时获准时，按真实消息来源先放本步已接受的完整 `system-prompt` 正文，再按原顺序组合其他来源 system；其他来源的空白、换行和同文贡献保持，不按正文全局去重，不把这些正文降为中途 system。工具增删通知仍沿官方 developer 路径，工具配对、ID 和内容校验不绕过。
+
+Messages 资格复用真实 Agent 的 sealed 工具步骤、原 prepared adapter 身份与 snapshot owner 判据，热更新不混入旧步及重试，缺 owner、取消、释放或路由重挂停止旧资格。缺失必要 owner 只暂停该动作及显式依赖正文，无关规则继续。可选 early 接入逐一校验 `@deepseek-ai/dsh-llm-deepseek@0.2.2-rc.1` 的完整发行指纹和唯一锚点；该基线仅为后续统一迁移前的开发中间态。需用户重启 DSH 后生效，真实 CLI/Web 综合验收另行执行。
+
 Responses 同段包含系统正文和工具删除时，仅在角色映射生效且两者角色不同的请求中按原顺序拆分：系统正文使用映射角色，删除通知保留官方原角色；关闭时保留官方合并形式。
 
 请求身份首段与系统角色由两个独立 `host-control` 动作控制：`oauth-identity-prefix` 和 `provider-system-role`，均只接受 `value: true`，内置卡默认关闭。前者只跳过 Anthropic OAuth builder 自动添加的 Claude Code 身份首块，用户正文中的相同句子保留；认证、headers、工具名、缓存与其他正文保持官方路径。后者只调整 completions 与 responses 的系统正文角色判据：原推理与 compat 条件允许 developer 时，仅 `URL.hostname` 精确为 `api.openai.com` 或真正的 `.azure.com` 子域保留 developer，其余使用 system。工具增删通知的既有 developer 语义不改；相似后缀、userinfo 和 query 不授权原生角色。

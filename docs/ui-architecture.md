@@ -1,5 +1,7 @@
 # Web 客户端 UI 结构框架
 
+宿主能力卡提供“Messages 当前系统正文”（Messages current system body），选择 `messages-current-system` 后使用布尔 `value: true`。它沿普通规则草稿、保存版本与 `host:messages-current-system` 诊断展示，默认关闭，独立于每步当前系统正文开关；不新增正文编辑入口。实际效果及 early 重启要求见[引擎指南](engine-reuse.md)。
+
 宿主能力卡提供独立的“移除 OAuth 自动身份首段”（Remove automatic OAuth identity prefix）与“按原生服务域名映射系统角色”（Map system role by native provider hostname），分别选择 `oauth-identity-prefix`、`provider-system-role` 并使用布尔 `value: true`。沿普通规则草稿、版本保存、受众与分支编辑；卡片只展示当前保存版本对应 `host:<capability>` 的必要 owner 缺失原因。开启表示选择意图，实际接入范围与 early 重启要求见[引擎指南](engine-reuse.md)。
 
 宿主能力卡另提供“系统段与消息形状容错”（System sections and message shape guards），选择 message-shape-guards 时使用布尔 value: true。沿 host:message-shape-guards 展示当前保存版本的必要 owner 缺失原因；启停、受众和分支沿普通规则草稿与保存，不增加独立存储入口。

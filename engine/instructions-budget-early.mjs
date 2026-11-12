@@ -8,6 +8,7 @@ import { instructionsBudgetState as state } from './instructions-budget-bridge.m
 import './request-budget-early.mjs'
 import './message-shape-guards-early.mjs'
 import './provider-system-roles-early.mjs'
+import './messages-current-system-early.mjs'
 import './read-limits-early.mjs'
 import './process-defaults-early.mjs'
 import './filesystem-policy-early.mjs'

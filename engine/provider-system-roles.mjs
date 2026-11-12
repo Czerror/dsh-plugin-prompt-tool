@@ -1,12 +1,13 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { actionMatches } from './conditions/evaluation.mjs'
 import { toolStepFor } from './tool-scope.mjs'
+import { acceptedCurrentSystemStep, currentSystemSnapshotStatus } from './current-system-snapshot.mjs'
 
 const owners = new WeakMap(), preparing = new AsyncLocalStorage(), identityKey = Symbol('provider system roles request'), loaded = new Set()
 const adapterKey = Symbol.for('prompt-tool:provider-system-roles-adapter')
 const routeKey = Symbol.for('prompt-tool:provider-system-roles-route')
 const loopKey = Symbol.for('prompt-tool:provider-system-roles-loop-owner')
-export const isProviderSystemRolesAction = action => action?.kind === 'host-control' && ['oauth-identity-prefix', 'provider-system-role'].includes(action.capability)
+export const isProviderSystemRolesAction = action => action?.kind === 'host-control' && ['oauth-identity-prefix', 'provider-system-role', 'messages-current-system'].includes(action.capability)
 export function validateProviderSystemRolesAction(action) {
   if (action.value !== true) throw new TypeError(`${action.capability}.value must be true`)
   if (action.maxPerTurn !== undefined || action.waterfallPosition !== undefined && action.waterfallPosition !== 'default') throw new TypeError(`${action.capability} is prepared before assemble`)
@@ -17,7 +18,8 @@ function routeFor(agent, selection) {
 export function providerSystemRolesStatus(agent, capability, selection) {
   const adapter = routeFor(agent, selection)?.adapter, group = adapter?.[adapterKey]
   if (!owners.has(agent) || agent?.[loopKey] !== true || group === undefined) return { available: false, reason: 'provider system roles loop/adapter owner unavailable' }
-  const keys = capability === 'oauth-identity-prefix' ? ['anthropic'] : ['completions', 'responses']
+  if (capability === 'messages-current-system' && !currentSystemSnapshotStatus(agent).available) return { available: false, reason: 'current-system snapshot owner unavailable' }
+  const keys = capability === 'messages-current-system' ? ['messages'] : capability === 'oauth-identity-prefix' ? ['anthropic'] : ['completions', 'responses']
   return keys.every(key => loaded.has(group[key])) ? { available: true } : { available: false, reason: `${capability} provider artifact fingerprint or structure mismatch` }
 }
 export function bindProviderSystemRolesDependencies(rule, moduleId, onOutcome) {
@@ -63,6 +65,10 @@ export const providerSystemRolesBridge = {
     return { ...current, route }
   },
   loaded(token) { loaded.add(token) },
+  messages(identity, signal) {
+    if (identity === undefined || !active({ ...identity, signal }, 'messages-current-system')) return false
+    return acceptedCurrentSystemStep(identity.agent, identity.step) ? 'snapshot' : true
+  },
   model(model, identity, signal) {
     if (identity === undefined) return model
     const copy = { ...model }

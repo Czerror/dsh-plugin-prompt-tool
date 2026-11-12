@@ -45,6 +45,11 @@ function acceptedSnapshot(agent, assembly) {
   if (!currentSystemSnapshotStatus(agent).available || assembly == null) return false
   const context = toolAssemblyContext(assembly, { agent })
   const step = context === undefined ? undefined : toolStepFor(context)
+  return acceptedCurrentSystemStep(agent, step)
+}
+
+export function acceptedCurrentSystemStep(agent, step) {
+  if (!currentSystemSnapshotStatus(agent).available) return false
   return step?.status === 'sealed' && step.currentSystemSnapshot?.owner === owners.get(agent) && step.currentSystemSnapshot.enabled === true
 }
 

@@ -1,5 +1,7 @@
 # 后端参数框架
 
+Messages 当前系统正文保存为普通 `host-control/messages-current-system`，仅接受 `value: true`，默认关闭，不接受次数预算或非默认时机。规则启停、受众与嵌套分支沿现有事务；不保存正文副本，不隐式开启 `current-system-snapshot`。依赖诊断沿 `host:messages-current-system`，已有用户模块不补卡或覆盖。实际接入范围见[引擎指南](engine-reuse.md)。
+
 请求身份首段与系统角色沿普通规则分别保存为 `host-control/oauth-identity-prefix`、`host-control/provider-system-role`，唯一值为 `value: true`。两卡独立启停与受众判定，不接受投递次数预算或 outermost 排序；已有用户模块不追加或覆盖默认卡。动作不保存第二份正文、认证或请求头，运行身份只来自已接受工具步骤与实际 prepared adapter call。缺目标诊断分别使用 `host:oauth-identity-prefix`、`host:provider-system-role`，详情见[引擎指南](engine-reuse.md)。
 
 系统段与消息形状容错归普通 host-control/message-shape-guards 动作，唯一参数为 value: true，默认关闭。它不接受次数预算或 outermost 排序；启停、受众、嵌套分支、规则版本、复制导出和显式依赖诊断沿原规则事务。已有用户模块不追加或覆盖内置卡，作用范围见[引擎指南](engine-reuse.md)。

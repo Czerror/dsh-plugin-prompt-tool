@@ -668,3 +668,11 @@ rules:
         kind: host-control
         capability: provider-system-role
         value: true
+  - id: messages-current-system
+    name: Messages 当前系统正文
+    enabled: false
+    then:
+      - id: system
+        kind: host-control
+        capability: messages-current-system
+        value: true
