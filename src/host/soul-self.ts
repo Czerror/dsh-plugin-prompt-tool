@@ -60,7 +60,6 @@ function renderSelfFacts({ source, renderedSource, ledger }: ReturnType<typeof s
   }
   const now = new Date().toISOString()
   const lines = [seal(renderedSource), '', '## 活体（当前权威事实）',
-    `- 当前时钟：${now}；时区：${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
     `- 账本：共 ${ledger.total} 条；未结 ${ledger.open} 条；历史待核对 ${ledger.pendingReview} 条${ledger.initialized ? '' : '；历史分界待初始化'}`,
     `- 主导：${ledger.lead ? seal(ledger.lead['概要']).slice(0, 160) : '尚无 lead 记录'}`,
     `- 索引：${index.state}${index.files === undefined ? '' : `；文件 ${count('files')}；会话 ${count('sessions')}；事件 ${count('events')}`}`,
@@ -124,7 +123,7 @@ export function renderSoulSelf(moduleDir: string, agent: SoulSelfAgent, signal?:
     prefix = snapshot.revision === null ? `[SELF unavailable：${reason}；无安全诊断快照；未结数量未知]`
       : `[SELF degraded：来源时间：${sourceTime}；原因：${reason}；以下仅为历史诊断，当前未结未知]\n${seal(snapshot.content).replaceAll('当前权威事实', '历史诊断事实').replaceAll('当前时钟', '快照时钟')}`
   }
-  let text = seal(`${prefix}\n## 当前运行身份\n- 当前时钟：${new Date().toISOString()}\n- 本会话：${agent.session.id}\n- 受众：${(agent.session.header?.delegationDepth ?? 0) > 0 ? '子代理' : '主会话'}\n`)
+  let text = seal(`${prefix}\n## 当前运行身份\n- 本会话：${agent.session.id}\n- 受众：${(agent.session.header?.delegationDepth ?? 0) > 0 ? '子代理' : '主会话'}\n`)
   if (Buffer.byteLength(text) > validateSelfBudget(budgetBytes)) throw new Error('SELF 动态上下文超预算')
   for (const line of runtimeLines) {
     const available = budgetBytes - Buffer.byteLength(text) - 1

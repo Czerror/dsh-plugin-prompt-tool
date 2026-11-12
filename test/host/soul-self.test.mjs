@@ -68,11 +68,13 @@ test('SELF每步读取当前骨架与账本，缺失或陈旧诊断快照不阻�
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-31T02:00:00Z') })
   const dir = fixture('self-current'), agent = { session: { id: 'current-session' } }
   const first = renderSoulSelf(dir, agent)
-  assert.match(first, /2026-10-31T02:00:00.000Z/)
   assert.match(first, /待核对 1/)
   assert.match(first, /未建|unbuilt/)
+  t.mock.timers.tick(1000)
+  assert.equal(renderSoulSelf(dir, agent), first, '事实不变时模型正文跨时钟保持相等')
   refreshSoulSelf(dir, index, { expectedRevision: null })
   const snapshot = readSoulSelfSnapshot(dir)
+  assert.match(snapshot.content, /快照时刻：2026-10-31T02:00:01.000Z/)
   const path = join(dir, 'data', 'SELF.src.md'), stamp = fs.statSync(path)
   writeFileSync(path, '# SELF\n硬线：尊重用户。\npassword=never-show-this\n')
   utimesSync(path, stamp.atime, stamp.mtime)
@@ -80,7 +82,6 @@ test('SELF每步读取当前骨架与账本，缺失或陈旧诊断快照不阻�
   const current = renderSoulSelf(dir, agent)
   assert.match(current, /尊重用户/)
   assert.doesNotMatch(current, /保护用户|never-show-this/)
-  assert.match(current, /2026-10-31T02:01:00.000Z/)
   assert.equal(readSoulSelfSnapshot(dir).revision, snapshot.revision)
 })
 

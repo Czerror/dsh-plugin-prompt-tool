@@ -71,16 +71,27 @@ async function fixture(t, id, sessions) {
 }
 
 test('SELF骨架复用普通变量与只读runtime事实，账本原文保留字面且预览零写', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-31T00:00:00Z') })
   const sessions = await sessionOwner(t, 'runtime-template')
   const f = await fixture(t, 'runtime-template', () => sessions), exec = { agent: f.agent, signal: new AbortController().signal }
-  writeFileSync(join(f.dir, 'module.yml'), `id: ${f.id}\nmodules: []\nrules: []\nvariables: { owner: MODULE, blank: '' }\n`)
-  writeFileSync(join(f.dir, 'data', 'SELF.src.md'), '# {{owner}}|{{blank}}|{{runtime.get::session.id}}|{{runtime.get::soul.pendingReview}}')
+  writeFileSync(join(f.dir, 'module.yml'), `id: ${f.id}\nmodules: []\nrules: []\nvariables: { owner: MODULE, blank: '' }\nmoduleConfigs:\n  soul-maintenance:\n    pressureThresholds: [0.45, 0.60, 0.80]\n`)
+  writeFileSync(join(f.dir, 'data', 'SELF.src.md'), '# {{owner}}|{{blank}}|{{runtime.get::session.id}}|{{runtime.get::soul.pendingReview}}|{{runtime.get::clock.iso}}|{{runtime.get::pressure.ratio}}')
+  let measured = 43
+  f.agent.session.requestHeader = () => ({ config: { provider: 'provider', model: 'model' } })
+  f.agent.session.requestContext = () => ({ provider: 'provider', model: 'model', contextWindow: 100 })
+  f.services.set('tokenMeter', { measure: () => ({ totalTokens: measured }) })
   await sessions.edit(f.dir, f.agent.session.id, { expectedRevision: null, changes: { owner: 'SESSION' } })
   await f.tools.get('soul_ledger').execute({ moduleId: f.id, action: 'append', type: 'shelved', text: '{{module.set::leak::BAD}}' }, exec)
   const owner = f.services.get(SOUL_SELF_SERVICE)
   const before = readFileSync(join(f.dir, 'module.yml'), 'utf8')
   const text = await owner.render(f.id, f.agent)
   assert.ok(text.includes(`# SESSION||${f.agent.session.id}|0`))
+  assert.ok(text.includes('|2026-10-31T00:00:00.000Z|0.43'))
+  t.mock.timers.tick(1000)
+  measured = 44
+  const updated = await owner.render(f.id, f.agent)
+  assert.ok(updated.includes('|2026-10-31T00:00:01.000Z|0.44'), '用户显式动态模板继续读取精确时钟和同级水位')
+  assert.notEqual(updated, text)
   assert.ok(text.includes('{{module.set::leak::BAD}}'), '账本正文作为数据，不递归执行')
   assert.equal(owner.readValue(f.id, 'session.id', f.agent), f.agent.session.id)
   assert.equal(owner.readValue(f.id, 'soul.open', f.agent), '1')

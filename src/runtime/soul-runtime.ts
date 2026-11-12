@@ -150,10 +150,8 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
         const water = pressure(dir, agent)
         const text = renderSoulSelf(dir, agent, signal, budget, retrieval.status(agent, id), [
           `- 显式状态：${state.mark?.text ?? '尚未标记'}；标记时刻：${state.mark?.recordedAt ?? '无'}`,
-          `- 实际活动时刻：${activityOf(agent) ?? '未观测'}`,
-          `- SELF实际投递观测：${delivered.get(keyOf(id, agent)) ?? '尚未观测'}`,
           ...(water.state === 'disabled' ? [] : [water.state === 'known'
-            ? `- 上下文水位：${(water.ratio * 100).toFixed(1)}%（${water.tokens}/${water.capacity}；${water.source}）；${water.guidance}。此为提示，不自动压缩。`
+            ? `- 上下文水位：${water.guidance}。此为提示，不自动压缩。`
             : `- 上下文水位：未知；${water.reason}`]),
         ], sourceText => {
           if (!sourceText.includes('{{')) return { text: sourceText, revision: '' }

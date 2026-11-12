@@ -78,14 +78,29 @@ test('真实Soul装配贯通lead/promise/close与下一步SELF，陈旧快照不
   assert.equal(checked.observation.checks.find(check => check.name === 'self-delivered').state, 'not-observed')
   assert.deepEqual(files.map(file => readFileSync(join(dir, file), 'utf8')), beforeCheck)
   assert.deepEqual((await stateTool({ action: 'status' })).mark, markedBefore.mark)
-  for (const [tokens, level] of [[44, 'normal'], [45, 'organize'], [60, 'persist'], [80, 'urgent']]) {
+  let previousLevel
+  for (const [tokens, level, guidance] of [[43, 'normal', '当前低于提示阈值'], [45, 'organize', '可开始整理上下文与未结事项'], [60, 'persist', '先落盘关键事实与承诺'], [80, 'urgent', '优先落盘未结与关键依据，再整理上下文']]) {
     measured = tokens
     assert.equal((await stateTool({ action: 'status' })).observation.pressure.level, level)
-    assert.match((await assemble(main))[0].text, new RegExp(`${tokens}\\.0%`))
+    const current = await assemble(main)
+    assert.ok(current[0].text.includes(guidance))
+    if (previousLevel) assert.notDeepEqual(current, previousLevel, '跨水位级别更新行动提示')
+    t.mock.timers.tick(1000)
+    events.push({ seq: events.length, time: Date.now(), type: 'tool/result', data: {} })
+    measured++
+    assert.deepEqual(await assemble(main), current, '时钟、工具活动和同级精确水位不改变完整上下文')
+    const observation = (await stateTool({ action: 'status' })).observation
+    assert.equal(observation.clock, new Date().toISOString())
+    assert.equal(observation.activityAt, new Date().toISOString())
+    assert.equal(observation.pressure.tokens, tokens + 1)
+    assert.equal(observation.pressure.ratio, (tokens + 1) / 100)
+    previousLevel = current
   }
   model = 'model-b'
   assert.equal((await stateTool({ action: 'status' })).observation.pressure.state, 'unknown')
-  assert.match((await assemble(main))[0].text, /上下文水位：未知/)
+  const unknown = await assemble(main)
+  assert.match(unknown[0].text, /上下文水位：未知/)
+  assert.notDeepEqual(unknown, previousLevel)
   model = 'model-a'
   assert.equal(historyReads, 0)
   assert.equal(modelCalls, 0)
@@ -104,6 +119,18 @@ test('真实Soul装配贯通lead/promise/close与下一步SELF，陈旧快照不
   events.push(event)
   for (const handler of listeners.get('session/event') ?? []) await handler(main.session, event)
   assert.equal((await runtime.status(exec, id)).deliveredAt, '2026-10-31T00:00:00.000Z')
+  for (let step = 0; step < 12; step++) {
+    t.mock.timers.tick(1000)
+    measured++
+    events.push({ seq: events.length, time: Date.now(), type: 'step/start', data: {} })
+    assert.deepEqual(await assemble(main), before, '已投递后连续步骤仍复用同一完整上下文')
+  }
+  await stateTool({ action: 'mark', text: 'UPDATED STATUS', expectedRevision: markedBefore.revision })
+  const remarked = await assemble(main)
+  assert.match(remarked[0].text, /UPDATED STATUS/)
+  assert.notDeepEqual(remarked, before)
+  writeFileSync(join(dir, 'data/SELF.src.md'), '# UPDATED SKELETON')
+  assert.match((await assemble(main))[0].text, /UPDATED SKELETON/)
   const pending = await ledger({ action: 'list', view: 'pending' })
   await ledger({ action: 'close', targetId: pending.entries[0].id, outcome: 'completed', reason: 'KNOWN GOOD EVIDENCE' })
   assert.match((await assemble(main))[0].text, /未结 0/)
@@ -111,6 +138,12 @@ test('真实Soul装配贯通lead/promise/close与下一步SELF，陈旧快照不
   assert.equal((await assemble(main, AbortSignal.abort()))[0].text, '')
   offRules()
   assert.deepEqual(await assemble(main), [])
+  offRules = mountRuleSources(ctx, [{ moduleId: id, rules }])
+  const remounted = await assemble(main)
+  assert.match(remounted[0].text, /UPDATED SKELETON/)
+  assert.match(remounted[0].text, /UPDATED STATUS/)
+  assert.match(remounted[0].text, /未结 0/)
+  offRules()
   for (const off of cleanups) off()
   assert.throws(() => runtime.status(exec, id), /未参与/)
 })

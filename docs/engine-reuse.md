@@ -513,15 +513,15 @@ config:
 
 `soul-self` 是已有 `fill` 字段的内置取值，不是独立能力行。引擎在实际求值时把来源模块、当前 Agent 与取消信号交给插件的 SELF owner；条件、受众、启停、排序和卸载沿用规则引擎。未声明规则时不注入，不需要模块 JS 资产或服务名参数。此内容源也支持 `pre-step`，遵循 placeholder 的插入点限制。
 
-SELF每步直接派生骨架、账本未结/历史待核对、身份与活时钟。索引状态同步读取provider，不触发历史loader；unbuilt/refreshing/ready/stale/failed/unauthorized分别报告，最近成功观测不代表尚未扫描的外部变化。写入成功立即失效派生观测，索引或快照失败不能把已提交账本报成未写；实时SELF不等后台ready。可恢复失败仅安全快照降级，显示时间与原因；同戳等长改写也按内容版本识别。
+SELF每步直接派生骨架、账本未结/历史待核对与真实身份；业务事实不变时自动正文保持相同，不加入当前时钟、实际活动时间或投递观测时间。官方runtime-context在任一section变化时追加完整快照，因此这些采样值不能驱动整份上下文重复投递。精确时间和观测继续由既有`soul_state status/check`读取，诊断快照保留生成时间。索引状态同步读取provider，不触发历史loader；unbuilt/refreshing/ready/stale/failed/unauthorized分别报告，最近成功观测不代表尚未扫描的外部变化。写入成功立即失效派生观测，索引或快照失败不能把已提交账本报成未写；实时SELF不等后台ready。可恢复失败仅安全快照降级，显示时间与原因；同戳等长改写也按内容版本识别。
 
-`data/SELF.src.md` 的骨架使用通用只读模板，支持自定义变量、会话覆盖和 `{{runtime.get::soul.open}}`。仅骨架作为模板执行；账本、mark 和派生正文不再次展开。SELF 的setter与写回默认值明确拒绝，预览不产生持久写，完整骨架和真实身份仍受原UTF-8预算与脱敏保护。
+`data/SELF.src.md` 的骨架使用通用只读模板，支持自定义变量、会话覆盖和 `{{runtime.get::soul.open}}`。仅骨架作为模板执行；账本、mark 和派生正文不再次展开。用户显式引用`clock.iso`、`pressure.ratio`等高频runtime事实仍逐次求值，会使正文变化；自动正文的稳定性不覆盖这些自定义模板。SELF 的setter与写回默认值明确拒绝，预览不产生持久写，完整骨架和真实身份仍受原UTF-8预算与脱敏保护。
 
 runtime 可读键：`session.id`、`session.audience`（main/subagent）、`clock.iso`、`clock.timeZone`、`soul.total`、`soul.open`、`soul.pendingReview`、`soul.lead`、`soul.leadSessionId`、`soul.mark`、`soul.markAt`、`index.state`、`index.observedAt`、`pressure.state`、`pressure.ratio`。缺少 lead/mark/观测或可靠水位时对应值不可用，不伪造空串或零。条件示例：`variable: { scope: runtime, key: soul.open, op: gt, value: '0' }`；这只比较事实，不替代下述提醒投递协议。
 
 `soul: { pending: true }` 是窄事实条件，缺来源为UNAVAILABLE，not不反转。Soul `soul-ledger-open` 默认主会话，在需处理集合或成功压缩epoch变化后提醒一次；只消费真实持久投递，A→B→A按最后确认态判断，预览/取消/未投递不消费。可用pre-step与runtime-context；无确认通道的其他层编译时拒绝。runtime-context在官方snapshot内携带不含事项正文的确认标记；重挂从真实会话事件恢复。
 
-`pressureThresholds: [0.45, 0.6, 0.8]` 由Soul在soul-maintenance配置显式选择，维护enabled=false也可读取。使用当前会话 `tokenMeter.measure` 与路由匹配的 `requestContext.contextWindow`，无可靠分母/换模型信息未对齐时显示未知；仅提示整理和先落盘，不新增压缩、唤醒或模型调用。
+`pressureThresholds: [0.45, 0.6, 0.8]` 由Soul在soul-maintenance配置显式选择，维护enabled=false也可读取。使用当前会话 `tokenMeter.measure` 与路由匹配的 `requestContext.contextWindow`，无可靠分母/换模型信息未对齐时显示未知。自动SELF仅呈现normal/organize/persist/urgent级别对应的行动提示，同级别的精确token数和比例变化不改变正文；精确值仍由`soul_state status/check`与runtime事实提供。仅提示整理和先落盘，不新增压缩、唤醒或模型调用；本修复不撤回旧会话已经累积的快照。
 
 已有用户副本若仍声明 `strategy: self` 并保留自己的策略资产，继续由既有自定义策略加载器执行。包升级不覆盖用户副本；显式更新为内置声明后才去掉对应 `strategyDir` 与服务名参数。私有 `data/` 不随此变更迁移。
 
