@@ -7,7 +7,7 @@ import { resolveHostPackage } from './host-package.mjs'
 import { filesystemPolicyState as state } from './filesystem-policy.mjs'
 
 const groups = [
-  ['fence', '@deepseek-ai/dsh-fs-sandbox', 'f4edd14bf48f8d5bfdea10a61c6651ccde99f2d08a79855746ad2a8d89c6fb73', [
+  ['fence', '@deepseek-ai/dsh-fs-sandbox', 'f1b987fa86584ea3e194a8a413f6ce4c7d1d86de380dc1608634be5124612e61', [
     ['this.defaultMode = ctx.sandboxPolicy.defaultMode;', 'this.defaultMode = ctx.sandboxPolicy.defaultMode;\nglobalThis[Symbol.for("prompt-tool:filesystem-policy")]?.provider(ctx, this);'],
     ['async checkedTarget(target, sandboxPolicy) {', 'async checkedTarget(target, sandboxPolicy) {\nif (globalThis[Symbol.for("prompt-tool:filesystem-policy")]?.fence(sandboxPolicy, this.ctx)) return target;'],
   ]],
@@ -23,7 +23,7 @@ for (const [id, name, digest, edits] of groups) {
   try {
     const entry = resolveHostPackage(name)
     const pkg = JSON.parse(readFileSync(join(dirname(entry), '../package.json'), 'utf8'))
-    if (pkg.name !== name || pkg.version !== '0.2.2-rc.1') throw new Error(`unsupported ${name} package/version`)
+    if (pkg.name !== name || pkg.version !== '0.2.2-rc.2') throw new Error(`unsupported ${name} package/version`)
     targets.set(pathToFileURL(entry).href, { id, digest, edits })
     state.status.set(id, { available: false, reason: `${name} not loaded through early entry; restart DSH` })
   } catch (error) { state.status.set(id, { available: false, reason: error.message }) }

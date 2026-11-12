@@ -13,7 +13,8 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -95,8 +96,8 @@ try {
 
   const unpacked = join(work, 'unpacked')
   mkdirSync(unpacked)
-  // GNU tar on Windows treats `C:\...` as a remote host; `--force-local` keeps the path local.
-  run(`tar${process.platform === 'win32' ? ' --force-local' : ''} -xzf ${quote(join(packDir, tarball))} -C ${quote(unpacked)}`)
+  const tar = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:/Windows', 'System32/tar.exe') : 'tar'
+  execFileSync(tar, ['-xzf', join(packDir, tarball), '-C', unpacked], { windowsHide: true })
   const pkg = join(unpacked, 'package')
 
   for (const name of REQUIRED_DIRS) {
@@ -124,12 +125,26 @@ try {
 
   const project = join(work, 'project')
   mkdirSync(project)
-  writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'verify-pack', private: true, type: 'module' }))
-  run(`pnpm add --allow-build=koffi ${quote(join(packDir, tarball))}`, { cwd: project })
+  const { packageManager } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'verify-pack', private: true, type: 'module', packageManager }))
+  // 临时安装复用固定源图；绝对路径只写进临时 hook，不进入发布 manifest。
+  const sourceConfig = createRequire(import.meta.url)(join(root, '.scratch/harness/pnpmfile.cjs')).hooks.updateConfig({})
+  const overrides = Object.fromEntries(Object.entries(sourceConfig.overrides).map(([name, value]) => [name, value.startsWith('file:') ? `file:${resolve(root, value.slice(5)).replaceAll('\\', '/')}` : value]))
+  const patchedDependencies = Object.fromEntries(Object.entries(sourceConfig.patchedDependencies).map(([name, path]) => [name, resolve(root, path).replaceAll('\\', '/')]))
+  // 发布闭包可以不含 PI；若存在仍应用原 patch，应用失败仍由 pnpm 阻断。
+  writeFileSync(join(project, 'pnpmfile.cjs'), `module.exports = { hooks: { updateConfig(config) { return { ...config, overrides: ${JSON.stringify(overrides)}, patchedDependencies: ${JSON.stringify(patchedDependencies)}, allowUnusedPatches: true }; } } };\n`)
+  if (!process.env.npm_execpath) throw new Error('请通过 pnpm run verify:pack 使用仓库固定的 pnpm 版本')
+  execFileSync(process.execPath, [process.env.npm_execpath, 'add', '--allow-build=koffi', '--pnpmfile', join(project, 'pnpmfile.cjs'), join(packDir, tarball)], { cwd: project, stdio: 'pipe', windowsHide: true })
   writeFileSync(join(project, 'smoke.mjs'), SMOKE)
   process.stdout.write(run(`${quote(process.execPath)} smoke.mjs`, { cwd: project, encoding: 'utf8' }))
 } catch (error) {
   failures.push(String(error?.message ?? error))
+  const output = [error?.stdout, error?.stderr].filter(Boolean).map(value => String(value)).join('\n')
+    .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/g, '$1[redacted]@')
+    .replace(/((?:authorization|_authToken|token)\s*[:=]\s*)\S+/gi, '$1[redacted]')
+    .split(/\r?\n/).filter(line => line.trim())
+  const firstError = output.findIndex(line => /ERR_|Error:/i.test(line))
+  if (output.length) failures.push(output.slice(firstError < 0 ? -6 : firstError, firstError < 0 ? undefined : firstError + 6).join('\n'))
 } finally {
   rmSync(work, { recursive: true, force: true })
 }

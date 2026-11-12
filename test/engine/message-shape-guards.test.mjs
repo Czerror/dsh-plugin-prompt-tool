@@ -120,6 +120,23 @@ test('缺 messages 的首步和结束判据经真实 Agent 保持空数组语义
   const observe = root.on('agent/request', async (_payload, next) => {
     const session = handle.agent.session
     const position = session.snapshotEvents().findLast(event => event.type === 'step/start').data
+    const batchViews = []
+    const stopBatch = root.on('session/event', (owner, event) => {
+      if (owner === session && event.type === 'system/message') batchViews.push(session.deriveMessages().filter(message => message.content?.[0]?.text?.startsWith('BATCH')).map(message => message.content[0].text))
+    })
+    const batchMessage = text => createSystemMessage(text)
+    const batch = session.append([
+      ['system/message', { ...position, message: batchMessage('BATCH A') }, { surfaceOp: 'append' }],
+      ['system/message', { ...position, message: { ...batchMessage(''), content: [] } }, { surfaceOp: 'append' }],
+      ['system/message', { ...position, message: batchMessage('BATCH B') }, { surfaceOp: 'append' }],
+    ])
+    assert.deepEqual(batchViews, [['BATCH A', 'BATCH B'], ['BATCH A', 'BATCH B'], ['BATCH A', 'BATCH B']], '批量发布的每个旁听者均看到完整最终surface，空正文仍过滤')
+    batchViews.length = 0
+    session.append([0, 2].map((index, offset) => ['system/message', { ...position, message: batchMessage(['BATCH A2', 'BATCH B2'][offset]) }, { surfaceOp: { op: 'replace', startSeq: batch[index].seq, endSeq: batch[index].seq }, sourceEventSeqs: [batch[index].seq] }]))
+    assert.deepEqual(batchViews, [['BATCH A2', 'BATCH B2'], ['BATCH A2', 'BATCH B2']], '同batch替换使缓存完整失效，不泄露中间候选')
+    assert.deepEqual(session.deriveMessages().filter(message => message.content?.[0]?.text?.startsWith('BATCH')).map(message => message.content[0].text), ['BATCH A2', 'BATCH B2'])
+    assert.equal(session.snapshotEvents().find(event => event.seq === batch[0].seq).data.message.content[0].text, 'BATCH A', '旧durable事件不改写')
+    stopBatch()
     if (recorded.length === 0) recorded.push(session.append('system/message', { ...position, message: { ...createSystemMessage(''), content: [] } }, { surfaceOp: 'append' }))
     const before = session.deriveMessages()
     const extra = session.append('system/message', { ...position, message: { ...createSystemMessage(''), content: [] } }, { surfaceOp: 'append' })

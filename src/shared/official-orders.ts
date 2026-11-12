@@ -3,8 +3,8 @@
  *
  * ## 来源与同源纪律
  *
- * 抄录自已安装的 `@deepseek-ai/dsh-system-prompt@0.2.2-rc.1` 发布类型：
- * `lib/types/index.d.ts` 的 `SECTION_ORDERS`（34 项）与 `CONTEXT_ORDERS`（7 项）。
+ * 抄录自固定源码构建的 `@deepseek-ai/dsh-system-prompt@0.2.2-rc.2` 类型：
+ * `lib/types/index.d.ts` 的 `SECTION_ORDERS`（35 项）与 `CONTEXT_ORDERS`（6 项）。
  * `verify:host` 使用 AST 比较发布类型与本文件分组的键集合，缺项或多项都会失败。
  *
  * 官方**新增、改名或删除**档位时必须同步本文件——本文件与官方包同源，不构成第二权威。
@@ -36,6 +36,7 @@ export type OfficialSectionOrderName =
   | 'TOOL_GREP'
   | 'TOOL_JOBS'
   | 'TOOL_PTY'
+  | 'TOOL_PTY_PANEL'
   | 'TOOL_WEB_SEARCH'
   | 'TOOL_WEB_FETCH'
   | 'TOOL_LSP'
@@ -55,13 +56,12 @@ export type OfficialSectionOrderName =
   | 'WEB_SURFACE'
   | 'DEPLOYMENT_PERSONA_SUFFIX'
 
-/** 官方 runtime-context 档位名（7 项，与官方 `CONTEXT_ORDERS` 的键集逐项对应）。 */
+/** 官方 runtime-context 档位名（6 项，与官方 `CONTEXT_ORDERS` 的键集逐项对应）。 */
 export type OfficialContextOrderName =
   | 'WORKING_DIRECTORY'
   | 'SANDBOX_POLICY'
   | 'APPROVAL_POLICY'
   | 'SUBAGENT_DELEGATION'
-  | 'TEAM_IDENTITY'
   | 'HARNESS_SOURCE'
   | 'WEB_SURFACE'
 
@@ -79,7 +79,7 @@ export const OFFICIAL_SECTION_ORDER_GROUPS: readonly OfficialOrderGroup<Official
     id: 'tools',
     names: [
       'TOOL_BASH', 'TOOL_PWSH', 'TOOL_READ', 'TOOL_WRITE', 'TOOL_EDIT', 'TOOL_APPLY_PATCH', 'TOOL_GLOB', 'TOOL_GREP',
-      'TOOL_JOBS', 'TOOL_PTY', 'TOOL_WEB_SEARCH', 'TOOL_WEB_FETCH', 'TOOL_LSP', 'TOOL_SESSION_QUERY',
+      'TOOL_JOBS', 'TOOL_PTY', 'TOOL_PTY_PANEL', 'TOOL_WEB_SEARCH', 'TOOL_WEB_FETCH', 'TOOL_LSP', 'TOOL_SESSION_QUERY',
       'TOOL_GOAL', 'TOOL_SCHEDULE', 'TOOL_WORKFLOW', 'TOOL_RALPH', 'TOOL_SUBAGENT', 'TOOL_REPORT',
       'TOOL_COMPUTER_USE', 'MCP_SERVERS',
     ],
@@ -89,13 +89,13 @@ export const OFFICIAL_SECTION_ORDER_GROUPS: readonly OfficialOrderGroup<Official
   { id: 'closing', names: ['HARNESS_SOURCE', 'WEB_SURFACE', 'DEPLOYMENT_PERSONA_SUFFIX'] },
 ]
 
-/** context 侧 1 组，覆盖官方 7 个档位名（顺序即官方数值升序）。 */
+/** context 侧 1 组，覆盖官方 6 个档位名（顺序即官方数值升序）。 */
 export const OFFICIAL_CONTEXT_ORDER_GROUPS: readonly OfficialOrderGroup<OfficialContextOrderName>[] = [
   {
     id: 'runtime-policy',
     names: [
       'WORKING_DIRECTORY', 'SANDBOX_POLICY', 'APPROVAL_POLICY', 'SUBAGENT_DELEGATION',
-      'TEAM_IDENTITY', 'HARNESS_SOURCE', 'WEB_SURFACE',
+      'HARNESS_SOURCE', 'WEB_SURFACE',
     ],
   },
 ]

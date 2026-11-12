@@ -23,7 +23,7 @@ let target
 try {
   target = pathToFileURL(resolveHostPackage('@deepseek-ai/dsh-agent-instructions')).href
   const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(target)), '../package.json'), 'utf8'))
-  if (pkg.name !== '@deepseek-ai/dsh-agent-instructions' || pkg.version !== '0.2.2-rc.1') throw new Error('unsupported instructions package/version')
+  if (pkg.name !== '@deepseek-ai/dsh-agent-instructions' || pkg.version !== '0.2.2-rc.2') throw new Error('unsupported instructions package/version')
 } catch (error) { target = undefined; state.reason = String(error.message) }
 if (target !== undefined) registerHooks({ load(url, context, next) {
   const result = next(url, context)

@@ -8,14 +8,14 @@ import { processDefaultsState as state } from './process-defaults.mjs'
 import { transformApprovalService, approvalDecisionsState } from './approval-decisions.mjs'
 
 for (const [name, owner, digest] of [
-  ['@deepseek-ai/dsh-sandbox-policy', 'SandboxPolicyService', '8eb1674f9c3c2e336efae7ecc734d5197dc8b80bc29f1f1d61bfe0b5a1472188'],
+  ['@deepseek-ai/dsh-sandbox-policy', 'SandboxPolicyService', '6c229f24f4b9ad67790ab5c8d1695e1ed538c0354955494bedd0dbe836debec4'],
   ['@deepseek-ai/dsh-user-approval', 'ApprovalService', '45b7c170b6897f15a338037b1951997a1b99018c30b5fc95f7e08ad798075be2'],
 ]) {
   let target
   try {
     target = pathToFileURL(resolveHostPackage(name)).href
     const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(target)), '../package.json'), 'utf8'))
-    if (pkg.name !== name || pkg.version !== '0.2.2-rc.1') throw new Error('unsupported process default owner package/version')
+    if (pkg.name !== name || pkg.version !== '0.2.2-rc.2') throw new Error('unsupported process default owner package/version')
   } catch (error) {
     state.ownerUnavailable(name, String(error.message))
     if (owner === 'ApprovalService') { approvalDecisionsState.autoGrant.available = false; approvalDecisionsState.autoGrant.reason = String(error.message) }

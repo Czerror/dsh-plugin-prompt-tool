@@ -2,13 +2,13 @@
 
 普通规则 `host-control / messages-current-system` 仅接受 `value: true`，默认关闭，独立于 `current-system-snapshot`，不隐式开启它。单独生效时，Messages 顶层 system 使用当前请求历史中最后一条非空 system 正文，空正文不擦除已有正文，原 `options.system` 前缀保持。两者在同一步同时获准时，按真实消息来源先放本步已接受的完整 `system-prompt` 正文，再按原顺序组合其他来源 system；其他来源的空白、换行和同文贡献保持，不按正文全局去重，不把这些正文降为中途 system。工具增删通知仍沿官方 developer 路径，工具配对、ID 和内容校验不绕过。
 
-Messages 资格复用真实 Agent 的 sealed 工具步骤、原 prepared adapter 身份与 snapshot owner 判据，热更新不混入旧步及重试，缺 owner、取消、释放或路由重挂停止旧资格。缺失必要 owner 只暂停该动作及显式依赖正文，无关规则继续。可选 early 接入逐一校验 `@deepseek-ai/dsh-llm-deepseek@0.2.2-rc.1` 的完整发行指纹和唯一锚点；该基线仅为后续统一迁移前的开发中间态。需用户重启 DSH 后生效，真实 CLI/Web 综合验收另行执行。
+Messages 资格复用真实 Agent 的 sealed 工具步骤、原 prepared adapter 身份与 snapshot owner 判据，热更新不混入旧步及重试，缺 owner、取消、释放或路由重挂停止旧资格。缺失必要 owner 只暂停该动作及显式依赖正文，无关规则继续。可选 early 接入逐一校验 `@deepseek-ai/dsh-llm-deepseek@0.2.2-rc.2` 的完整发行指纹和唯一锚点；目标为固定源码构建产物。需用户重启 DSH 后生效，真实 CLI/Web 综合验收另行执行。
 
-Responses 同段包含系统正文和工具删除时，仅在角色映射生效且两者角色不同的请求中按原顺序拆分：系统正文使用映射角色，删除通知保留官方原角色；关闭时保留官方合并形式。
+Responses 同段包含系统正文和工具删除时，正文沿系统角色映射，工具删除沿固定 PI 的当前工具集合折叠；关闭时保留官方角色判据。
 
 请求身份首段与系统角色由两个独立 `host-control` 动作控制：`oauth-identity-prefix` 和 `provider-system-role`，均只接受 `value: true`，内置卡默认关闭。前者只跳过 Anthropic OAuth builder 自动添加的 Claude Code 身份首块，用户正文中的相同句子保留；认证、headers、工具名、缓存与其他正文保持官方路径。后者只调整 completions 与 responses 的系统正文角色判据：原推理与 compat 条件允许 developer 时，仅 `URL.hostname` 精确为 `api.openai.com` 或真正的 `.azure.com` 子域保留 developer，其余使用 system。工具增删通知的既有 developer 语义不改；相似后缀、userinfo 和 query 不授权原生角色。
 
-当前适配只支持正式测试依赖图中的 `@deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.1` 与其实际解析的 `@earendil-works/pi-ai@1.5.2`，不保留旧 PI 版本兼容分支。三条协议分别校验完整指纹与唯一锚点，未验证的版本或文件不投影。PI 1.5.2 的 completions 缓存键选项和工具历史兼容项沿官方行为；Anthropic message threads 也沿官方路径，身份开关改变 system 时由官方指纹启动新线程，正文不变时可继续线程；不手工保留或回填 continuation 省略的 system/tools。该 rc.1 支持是后续整体迁移前的开发中间态，不代表 rc.2 验收完成。
+当前适配仅面向固定官方源码 `ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c` 构建的 `@deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.2` 与实际解析的 `@earendil-works/pi-ai@1.3.0`，应用该源码的共享 streamed tool-argument patch。三条协议分别校验完整指纹与唯一锚点，未验证文件不投影。Messages 每次发送完整 system/tools；第三方 completions 缓存键沿该版官方判据，不启用后续版本专有选项。Responses 纯新增工具声明保留原生 developer `additional_tools`；出现删除或同名重声明时，官方将工具历史折叠到顶层当前集合，插件不添加文本通知。角色映射只改变系统正文。
 
 资格在实际 Agent 的工具步骤准备时冻结，loop 只在本次 `llm.prepareCall` 期间携带身份，实际 adapter 将它绑定到原 prepared stream。请求专属模型副本携带该身份，不按 sessionId、最近 Agent 或全局 fetch 关联。热更只影响后续步骤；取消、步骤关闭、规则 owner 撤回或 adapter 注册释放后停止本来源效果，重挂不能复活旧资格。发行适配分别校验 loop、LLM 路由、DSH PI adapter 与 PI provider 的版本、完整指纹和唯一锚点；两个 OpenAI 目标均成功加载才就绪，缺失仅暂停该能力及显式依赖分支，OAuth 能力独立。需要 early 入口与用户重启 DSH 后生效；本地最终载荷不承诺远端服务接受，CLI/Web 综合验收另行执行。
 
@@ -16,7 +16,7 @@ Responses 同段包含系统正文和工具删除时，仅在角色映射生效�
 
 缺省或非数组 messages 仅在 enter 决定归为空数组；模型切换的前置消费者和最终 turn 消费均使用同一 Agent、modelSelection 所关联的 sealed 步骤。未知 kind、reject、取消和独立异常不变。真实 step 内，Session 的 system/developer/assistant 派生仅过滤缺消息、非数组或空 content，官方投影仍优先，合法消息保原身份；user/tool 不参与该过滤。loop 的 systemNodes/textOf 沿同一步处理空 content，首尝试 runtime-context 原分流与一次投递保持，历史事件不改写。脱离该 Agent 步骤的公开派生调用仍透传。
 
-agent、session、loop 的实际发行物分别验证版本、指纹和唯一结构，并由实际 Agent.model、Session.surface 和 loop 实例联合握手。任一必要 owner 缺失仅暂停本能力和显式依赖分支，预算与当前系统快照能力独立。热更新只影响后续步骤，关闭、释放、取消或旧步骤结束后不能借新 owner 复活。rc.1 JSONL v4 仍拒绝缺 message 或非数组 system content，容错不绕过持久格式校验；空 content 数组可正常持久化。需 early 入口和用户重启 DSH 后生效；真实 CLI/Web 综合验收另行执行。
+agent、session、loop 的实际发行物分别验证版本、指纹和唯一结构，并由实际 Agent.model、Session.surface 和 loop 实例联合握手。任一必要 owner 缺失仅暂停本能力和显式依赖分支，预算与当前系统快照能力独立。热更新只影响后续步骤，关闭、释放、取消或旧步骤结束后不能借新 owner 复活。rc.2 JSONL v4 仍拒绝缺 message 或非数组 system content，容错不绕过持久格式校验；空 content 数组可正常持久化。需 early 入口和用户重启 DSH 后生效；真实 CLI/Web 综合验收另行执行。
 
 普通规则 `host-control / current-system-snapshot` 使用 `value: true`，内置卡默认关闭。它复用请求前 `prepareAssembly`，把资格与兼容状态固定在原工具步骤；请求按已接受 assembly 对象身份读取同一个 sealed 步骤和局部 renderedPrompt，热更新、裸装配及同 Agent 并发装配不改变在途步骤与重试。按真实 Agent 隔离主子受众，取消沿官方信号；规则关闭影响后续步骤，owner 释放、步骤关闭或当前接缝失配立即停止本来源投影，旧资格不借新 owner 复活。
 
@@ -184,7 +184,7 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 普通 `subagent-params` 动作声明 `provider: spawn`、明确的 `tool` 和非负安全整数 `maxDepth`（0 禁止委派）。装配沿当前 Agent 的真实工具集合和 provider.depthLimit 接受参数，存于原 toolStep；同目标同时有效的同值贡献共存，静态异值候选拒绝并保旧，正常重判产生的动态异值冲突暂停该目标贡献并显示原因。缺工具、提供者或能力只暂停此动作所在分支及后代的显式关联正文，无关规则继续；恢复后下一正常步骤重新判断，不重放已有动作。
 
-执行适配复用官方 `tools/execute` waterfall 的真实调用上下文，调用期只代理 `subagents.startActivation`：工具名、spawn、真实 parent 和 sealed step 全部匹配才替换原请求的 maxDepth，其余调用透传。官方 0.2.2-rc.1 发行物使用 `spec.request.parent/maxDepth`，支持证据以发行物为准，不依据源码构建的不同请求形状宣称兼容。深度上下文与 refreshContext 使用同一已接受值；已有工具集合不读热更值，取消仍沿原管线，dispose 关闭步骤。没有第二套深度配置库，也不修改宿主默认深度或 provider。
+执行适配复用官方 `tools/execute` waterfall 的真实调用上下文，调用期只代理 `subagents.startActivation`：工具名、spawn、真实 parent 和 sealed step 全部匹配才替换原请求的 maxDepth，其余调用透传。官方 0.2.2-rc.2 发行物使用 `spec.request.parent/maxDepth`，支持证据以发行物为准，不依据源码构建的不同请求形状宣称兼容。深度上下文与 refreshContext 使用同一已接受值；已有工具集合不读热更值，取消仍沿原管线，dispose 关闭步骤。没有第二套深度配置库，也不修改宿主默认深度或 provider。
 
 内置 `unrestricted` 的模块与全部新增规则默认关闭，各条可独立编辑启用。人设和计划正文随普通 module.yml 保存；65536 是可编辑预算初值，仍须原 early 接缝；显式 spawn 深度初值为 1，子代理工具面沿 scope 条件排除 subagent_fork/workflow/ralph，不注册子预设。搜索工具面启用时使用已有 web_fetch 的 deny；需要抓取时用户先关闭该限制，再按实际已安装能力另行配置。模块不隐式启用核心破限规则，不补装官方工具、计划或压缩 owner；现有预设的外围参数继续由其原所有者控制。
 
@@ -192,7 +192,7 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 普通 `request-params.maxTokens` 是正安全整数的瞬时额度贡献，不能与本动作的 `patch/unset.maxTokens` 或 `replace:true` 混用。原 `patch/unset` 的有序组合语义保持。当前真实Agent和请求目标上有效的显式额度同值共存、异值拒绝完整候选并保旧；运行事实翻转形成冲突时，全部冲突额度及其分支后代正文暂停，后续正常重判恢复。只有实际参与同一额度目标的正向phase条件才比较 `maxPromoteSteps`，不同值同样冲突；独立phase追踪器不建立全局互斥。
 
-瞬时额度沿同一 `/early` 入口接入官方 `@deepseek-ai/dsh-agent-loop@0.2.2-rc.1`，入口SHA-256为 `a6fa8e0c7c90191caf5f4a3bb5c624a86e9845cf3c79d020b71420d0e20ae4c1`。包版本、完整指纹与三处唯一锚点必须全部匹配，且目标须在早期入口之后求值。普通入口、已缓存原始实例或指纹失配时只暂停该额度及同分支后代正文，诊断给出原因；不暂停其它规则。官方prepared配置、request/header和实际provider请求使用同一真实额度，不伪造prepared配置。官方loop自身持有上次瞬时覆盖的原值凭据，下一步seed只在其值仍归本贡献时恢复并消费凭据；后续第三方不同值保持，旧patch仍按原行为持久组合。关闭规则、移除模块或直接卸载插件后，恢复不依赖残留监听，不改写已有历史。代码与early入口变更需要用户重启DSH服务，不自动重启。
+瞬时额度沿同一 `/early` 入口接入官方 `@deepseek-ai/dsh-agent-loop@0.2.2-rc.2`，入口SHA-256为 `a6fa8e0c7c90191caf5f4a3bb5c624a86e9845cf3c79d020b71420d0e20ae4c1`。包版本、完整指纹与三处唯一锚点必须全部匹配，且目标须在早期入口之后求值。普通入口、已缓存原始实例或指纹失配时只暂停该额度及同分支后代正文，诊断给出原因；不暂停其它规则。官方prepared配置、request/header和实际provider请求使用同一真实额度，不伪造prepared配置。官方loop自身持有上次瞬时覆盖的原值凭据，下一步seed只在其值仍归本贡献时恢复并消费凭据；后续第三方不同值保持，旧patch仍按原行为持久组合。关闭规则、移除模块或直接卸载插件后，恢复不依赖残留监听，不改写已有历史。代码与early入口变更需要用户重启DSH服务，不自动重启。
 
 `phase.promoteAfterFirstTool:true` 显式允许首步已实际调用工具后晋升，默认false，原锚点/首响应语义保持；`maxPromoteSteps` 必须是正安全整数。phase在主/子会话分别计数，只有成功压缩开启新Epoch，失败压缩不重置；这与参考脚本对任意compaction/end重置的行为不同。`pre-step-filter.instructionHint` 为非空可编辑模板，使用 `{{FILES}}` 填入本次可靠识别的官方指令路径。它复用既有指令提示转换，仅在规则命中时把后续官方全文替换为一次提示；已有可见提示时不再重复，无法识别路径和非目标来源保持，撤回后放行后续全文，不补发历史。
 
@@ -204,7 +204,7 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 官方指令预算是persona可选正安全整数 `instructionsMaxBytes`，按当前真实Agent的有效动作聚合，同值共存、异值拒绝完整候选并保旧；与prefix/complete同一计划预检。预算不新建指令owner，不复制正文，不改已有baseline/projection或历史。当前步预算附在原toolStep接受计划，modelSelection反查同一步；取消信号为turn级，不能充当step键。后台projection在compose入口读取本Agent已提交计划一次，不修改在途step。
 
-可选包出口 `/early` 仅在目标求值前按包名、版本、完整SHA-256和唯一结构锚点进行内存接入。官方instructions compose局部resolved读取预算，其余读取/身份/投影仍由官方闭包负责。当前支持0.2.2-rc.1入口SHA-256 afbd526d1e3126a368774f24105140adc3ef532ca4aa93cfa0fb1318d5b9b75d；失配保持原行为。运行资格来自已验证接缝及实际scope链官方实例和fs/workingDirectory，依赖缺失只暂停同条件分支的预算动作与关联正文，else及无关规则保持；恢复后正常重判，不补发过去动作。关闭插件注销reader后内存接缝透传，卸载加载钩子不清ESM缓存。
+可选包出口 `/early` 仅在目标求值前按包名、版本、完整SHA-256和唯一结构锚点进行内存接入。官方instructions compose局部resolved读取预算，其余读取/身份/投影仍由官方闭包负责。当前支持0.2.2-rc.2入口SHA-256 afbd526d1e3126a368774f24105140adc3ef532ca4aa93cfa0fb1318d5b9b75d；失配保持原行为。运行资格来自已验证接缝及实际scope链官方实例和fs/workingDirectory，依赖缺失只暂停同条件分支的预算动作与关联正文，else及无关规则保持；恢复后正常重判，不补发过去动作。关闭插件注销reader后内存接缝透传，卸载加载钩子不清ESM缓存。
 
 复制完整 `engine/` 可复用纯编译器、动作、条件、历史与模板求值。宿主接线仍需要相应官方服务，五个模块工具外壳还需要 Prompt Tool 的 provider。独立引擎不偷偷读取插件 DSH_HOME 或 session 变量表。`env-safety.mjs` 与 `path-safety.mjs` 是纯安全 helper，随复制协议一起带走；`env-facts` 白名单外键在构造期 fail loud，`instruction-hint` 的 `params.file` 只允许指令文件候选名且 realpath 必须落在 cwd→最近项目根或 DSH_HOME。
 
@@ -372,7 +372,7 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 额度沿普通条件、受众、完整候选及数字草稿/CAS链进入当前Agent的工具步骤。同Agent同字段同值共存，不同字段组合；异值候选拒绝，动态冲突拒绝新步骤，已接受步骤保留快照。调用在首个await之前固定额度，原官方read继续拥有路径、文件读取、流式路由、解码、资源校验、输出及观测；render采用同调用快照，不重挂或复制官方服务。
 
-部署期公开Config捕获在官方闭包，按Agent热改通过既有 `/early` 出口的最窄内存接缝实现。仅核验 `@deepseek-ai/dsh-tool-fs@0.2.2-rc.1`，完整入口SHA-256为 `0e866969b6bf1aa93407ccd9c944b50bc27a1d961b7e4209ed60bd2b73d28805`；指纹及owner登记、定义标记、执行、渲染四处唯一锚点整组匹配才生效。缺early、已缓存、目标失配或真实owner/依赖不可用时三项一起透传，显式关联正文暂停，无关规则继续。依赖恢复后正常重判恢复，暂停期间关闭不会重开，也不重放读取；需启动期接入时只提示用户正常重启。
+部署期公开Config捕获在官方闭包，按Agent热改通过既有 `/early` 出口的最窄内存接缝实现。仅核验 `@deepseek-ai/dsh-tool-fs@0.2.2-rc.2`，完整入口SHA-256为 `0e866969b6bf1aa93407ccd9c944b50bc27a1d961b7e4209ed60bd2b73d28805`；指纹及owner登记、定义标记、执行、渲染四处唯一锚点整组匹配才生效。缺early、已缓存、目标失配或真实owner/依赖不可用时三项一起透传，显式关联正文暂停，无关规则继续。依赖恢复后正常重判恢复，暂停期间关闭不会重开，也不重放读取；需启动期接入时只提示用户正常重启。
 
 模型参数说明只定点更新已验证owner的原生默认行数句，保留其他贡献，再沿通用工具说明投影生成目录。关闭后新步骤恢复原owner配置，在途调用和已接受旧步骤保持原值。官方磁盘文件不变；桌面与其他发行物仍须各自验收。
 
@@ -382,7 +382,7 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 原 `execute` 引用不变，原render/projectContent/finalizeContent保留this、参数和异常。project阶段只记录同一次执行的结果与已接受计划；其它post策略全部结算后，才在final出口求条件、消费次数并编辑。原finalize返回内容，或post接管内容、值、错误、meta、isError时，结果编辑让位。同一执行内条件共用判定帧；模型取已接受步骤冻结的modelSelection，变量与次数仍在最终出口读取和结算。关闭、更新或释放来源不改在途计划，也不重新执行工具；保留模型事实不复活已关闭步骤的调用权限。
 
-`web-notice` 支持已标记的官方Web结果；`sandbox` 支持已标记的bash、pwsh、FS、str_replace_editor及PTC结果。启动期须通过包的 `/early` 出口，在目标工具包首次加载前接入；当前仅支持 `0.2.2-rc.1` 的固定发行产物，完整指纹和唯一结构锚点在 `result-text-early.mjs` 与 `fs-tool-early.mjs` 核验。FS读取额度与结果标记由同一加载owner组合，各组分别校验必要锚点，共同产物指纹失配则都透传。不改官方磁盘文件。普通加载不能补标已缓存工具，同名自定义工具也不当作真实owner；缺early、版本/指纹失配或必要slot被接管时保持原行为。
+`web-notice` 支持已标记的官方Web结果；`sandbox` 支持已标记的bash、pwsh、FS、str_replace_editor及PTC结果。启动期须通过包的 `/early` 出口，在目标工具包首次加载前接入；当前仅支持 `0.2.2-rc.2` 的固定发行产物，完整指纹和唯一结构锚点在 `result-text-early.mjs` 与 `fs-tool-early.mjs` 核验。FS读取额度与结果标记由同一加载owner组合，各组分别校验必要锚点，共同产物指纹失配则都透传。不改官方磁盘文件。普通加载不能补标已缓存工具，同名自定义工具也不当作真实owner；缺early、版本/指纹失配或必要slot被接管时保持原行为。
 
 同规则结构分支中显式关联的装配正文，在实际装配toolSet缺少所需真实结果owner时局部暂停；无关规则继续。结果条件仍在结果出口求值，不在装配期提前消费；条件或受众未命中不误报依赖不可用。依赖恢复后按正常后续装配重判，暂停期间关闭的规则不重开、不重放旧调用。运行观测沿 `tool:results` 报告，保存配置不代表能力已就绪。
 
@@ -394,7 +394,7 @@ surface 缺失或非法时可见视图退回完整日志；合法空 nodes 就�
 
 该说明投影复用原真实Agent的 `resolve → prepareAssembly → assemble` 步骤，先固定条件和说明配置，再由官方native/PTC生成目录及SDK。它不重注册工具、不替换执行函数，不改变schema类型、必填、值域、输出或实际审批/沙箱/网络权限；发现候选和原registry保持。热更新、关闭与条件失配只作用后续步骤；旧步骤保留已接受说明，原集合移除/释放仍为上限。裸装配缺少真实步骤时只诊断并透传，不伪造工具集合。
 
-核心模块中的终端拒绝、文件升级、删除移动、网络和镜像五类说明分别默认关闭，通过普通工具条件和精确说明配置应用于任何提供对应工具的预设。当前字面量对齐官方0.2.2-rc.1的bash/pwsh/fs实际目录；来源旧升级长句已演进为 `sandboxPermissionsDescription`，只适配当前实测句式，未知变体保留并诊断。文案中的自动放行不改变真实准入；真实操作拒绝与原错误仍由官方owner处理。
+核心模块中的终端拒绝、文件升级、删除移动、网络和镜像五类说明分别默认关闭，通过普通工具条件和精确说明配置应用于任何提供对应工具的预设。当前字面量对齐官方0.2.2-rc.2的bash/pwsh/fs实际目录；来源旧升级长句已演进为 `sandboxPermissionsDescription`，只适配当前实测句式，未知变体保留并诊断。文案中的自动放行不改变真实准入；真实操作拒绝与原错误仍由官方owner处理。
 
 PTC的 `run_code` 是官方执行器生成的保留传输，不在原registry目录中；同一 `toolDescriptions` 配置在最终模型schema出口投影其说明，保留参数约束、执行器、原结果及真实批准管线，不注册或遮蔽该名称。普通工具继续使用原步骤视图投影；缺传输或句式不匹配原样保留并诊断。
 

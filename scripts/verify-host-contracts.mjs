@@ -16,9 +16,13 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { parse } from 'yaml'
 import {
   OFFICIAL_SCOPE,
+  DSH_SOURCE_SHA,
+  peerRangeAccepts,
   dependencyVersionProblems,
   enginesDshProblems,
   isRepoLocalResolution,
@@ -29,10 +33,61 @@ import {
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-const lockedImporter = parse(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8')).importers?.['.'] ?? {}
+const lock = parse(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8'))
+const lockedImporter = lock.importers?.['.'] ?? {}
+const source = JSON.parse(readFileSync(join(root, '.scratch/harness/source.json'), 'utf8'))
 
 const failures = []
 const rows = []
+if (source.sha !== DSH_SOURCE_SHA) failures.push('固定源码 SHA 不匹配')
+const integrity = bytes => `sha512-${createHash('sha512').update(bytes).digest('base64')}`
+for (const [name, item] of Object.entries(source.packages)) {
+  if (integrity(readFileSync(join(root, item.path))) !== item.integrity) failures.push(`${name}: tarball integrity 不匹配`)
+  const records = Object.entries(lock.packages ?? {}).filter(([key]) => key.startsWith(`${name}@file:${item.path}`))
+  for (const [, record] of records) {
+    if (record.resolution?.integrity !== item.integrity) failures.push(`${name}: 锁文件 integrity 不匹配`)
+  }
+}
+for (const [name, item] of Object.entries(source.patches)) {
+  if (integrity(readFileSync(join(root, item.path))) !== item.integrity) failures.push(`${name}: 官方 patch integrity 不匹配`)
+  const hash = createHash('sha256').update(readFileSync(join(root, item.path))).digest('hex')
+  if (lock.patchedDependencies?.[name] !== hash) failures.push(`${name}: 锁文件未使用官方 patch`)
+}
+
+// 从根图逐包解析依赖与 peer，拒绝同号但落到另一棵树的实例。
+const visited = new Set()
+function verifyGraph(directory) {
+  const actual = realpathSync(directory)
+  if (visited.has(actual)) return
+  visited.add(actual)
+  const pkg = JSON.parse(readFileSync(join(actual, 'package.json'), 'utf8'))
+  const input = source.packages[pkg.name]
+  if (input && lock.packages?.[`${pkg.name}@file:${input.path}`]?.resolution?.integrity !== input.integrity) failures.push(`${pkg.name}: 缺少固定源码完整性记录`)
+  if (input?.entry && createHash('sha256').update(readFileSync(join(actual, input.entry))).digest('hex') !== input.entryHash) failures.push(`${pkg.name}: 安装入口不等于固定源码构建入口`)
+  const resolver = createRequire(join(actual, 'package.json'))
+  for (const [name, range] of Object.entries({ ...pkg.dependencies, ...pkg.peerDependencies })) {
+    if (!name.startsWith(OFFICIAL_SCOPE) && name !== '@earendil-works/pi-ai') continue
+    let path
+    try {
+      path = (resolver.resolve.paths(name) ?? []).map(base => join(base, name)).find(base => existsSync(join(base, 'package.json')))
+      if (!path) throw new Error('missing package')
+    } catch {
+      if (!pkg.peerDependenciesMeta?.[name]?.optional) failures.push(`${pkg.name}: 无法解析 ${name}`)
+      continue
+    }
+    const dependency = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'))
+    if (dependency.name !== name || !peerRangeAccepts(range, dependency.version)) failures.push(`${pkg.name}: ${name}@${dependency.version} 不满足 ${range}`)
+    if (!isRepoLocalResolution(realpathSync(path), root)) failures.push(`${pkg.name}: ${name} 不在根安装图`)
+    const expected = source.packages[name]
+    if (expected && dependency.version !== expected.version) failures.push(`${pkg.name}: ${name} 未命中固定源码版本`)
+    if (name === '@earendil-works/pi-ai' && dependency.version !== '1.3.0') failures.push('PI 必须为官方实际 1.3.0')
+    if (expected) {
+      const records = Object.entries(lock.packages ?? {}).filter(([key]) => key === `${name}@file:${expected.path}`)
+      if (records.length !== 1 || records[0][1].resolution?.integrity !== expected.integrity) failures.push(`${name}: 缺少唯一源码锁定记录`)
+      verifyGraph(path)
+    }
+  }
+}
 
 function installedPackage(name) {
   const dir = join(root, 'node_modules', ...name.split('/'))
@@ -45,7 +100,7 @@ function installedPackage(name) {
     failures.push(`${name}: package.json 无法解析（${String(error?.message ?? error)}）`)
     return undefined
   }
-  return { dir, version, realPath: realpathSync(dir) }
+  return { dir, version, name: JSON.parse(readFileSync(file, 'utf8')).name, realPath: realpathSync(dir) }
 }
 
 function shortTarget(target) {
@@ -65,12 +120,16 @@ for (const section of ['peerDependencies', 'devDependencies', 'dependencies']) {
 
     const locked = section === 'peerDependencies'
       ? lockedImporter.devDependencies?.[name] ?? lockedImporter.dependencies?.[name]
-      : lockedImporter[section]?.[name]
-    const problems = dependencyVersionProblems(name, section, installed.version, manifest, locked)
+      : lockedImporter[section]?.[name] ?? lockedImporter.dependencies?.[name]
+    const sourcePackage = source.packages[name]
+    const problems = dependencyVersionProblems(name, section, installed.version, manifest, locked, sourcePackage)
+    if (installed.name !== name) problems.push(`安装包名不匹配：${installed.name}`)
+    if (!sourcePackage) problems.push('固定源码产物缺少该官方包')
     if (locked === undefined) problems.push('锁文件缺少直接依赖记录')
     if (!isRepoLocalResolution(installed.realPath, root)) {
       problems.push(`解析目标在仓库 node_modules 之外（${installed.realPath}）`)
     }
+    verifyGraph(installed.dir)
     if (problems.length > 0) failures.push(`${section}.${name}: ${problems.join('；')}`)
     rows.push({
       name,

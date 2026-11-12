@@ -11,11 +11,11 @@ import { transformEscalationCaller, escalationDecisionsState } from './escalatio
 const escalationOwners = { '@deepseek-ai/dsh-tool-executor-ptc': 'ptc', '@deepseek-ai/dsh-tool-bash': 'bash', '@deepseek-ai/dsh-tool-pwsh': 'pwsh' }
 
 const artifacts = [
-  ['dsh-tool-web', '129af8e6bf485d47d3f5f562877b5c266fd57f1a5cc14bfebacc2780b2837d46'],
-  ['dsh-tool-executor-ptc', 'aab21d46e71316a97ad2a071ab7d8d21aa876c4192a4cd98094f61b2800cad9a'],
-  ['dsh-tool-bash', 'ae6be2d8b287b5e410d026acd2fdfc553ebb95565f7b361029c7fb5bcda5fd27'],
-  ['dsh-tool-pwsh', '157aa3964db76e64d3013e63daed72a61d7fc5f86b247b0103753290d7dd6ed9'],
-  ['dsh-tool-str-replace-editor', '14a7380c94b53150ec5545dfb8fcf28bb26c99b6deef9b27bb9cf4ff6fabb616'],
+  ['dsh-tool-web', '34a99a7eb86f940e9cb5734ab19482ac231f5d5a2411ba6736b3b9ecf4699177'],
+  ['dsh-tool-executor-ptc', 'ce5425f21f6da7eaf5d660979d4e69159f47446f612ccf9553d4e2636a30d86a'],
+  ['dsh-tool-bash', '8fb836a65eb633f85aa8b1b079fb306866e597fe8f4987c2205b5c4482df57de'],
+  ['dsh-tool-pwsh', '03a29fb9cff987662c14ab925a37ff4ae8b1ec3cce21f8af9c44eec7dd4c66eb'],
+  ['dsh-tool-str-replace-editor', 'd400e702c4606d4d94986174409a351bec9b3061a4a6d6d4c9f0493bf0acb3f9'],
 ]
 const targets = new Map()
 for (const [name, digest] of artifacts) {
@@ -23,7 +23,7 @@ for (const [name, digest] of artifacts) {
   try {
     const url = pathToFileURL(resolveHostPackage(owner)).href
     const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(url)), '../package.json'), 'utf8'))
-    if (pkg.name !== owner || pkg.version !== '0.2.2-rc.1') throw new Error('unsupported result owner package/version')
+    if (pkg.name !== owner || pkg.version !== '0.2.2-rc.2') throw new Error('unsupported result owner package/version')
     targets.set(url, { owner, digest })
     state.status.set(owner, { available: false, reason: 'result owner not loaded through early entry' })
   } catch (error) { state.status.set(owner, { available: false, reason: String(error.message) }) }

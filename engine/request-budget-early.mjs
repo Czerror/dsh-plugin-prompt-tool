@@ -6,12 +6,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolveHostPackage } from './host-package.mjs'
 import { requestBudgetState as state } from './request-budget-bridge.mjs'
 
-const digest = 'a6fa8e0c7c90191caf5f4a3bb5c624a86e9845cf3c79d020b71420d0e20ae4c1'
+const digest = 'f09f60814d4e96a880f41b9fc3832f33c56a28f954f48810d8439ce83ad6ffa8'
 let target
 try {
   target = pathToFileURL(resolveHostPackage('@deepseek-ai/dsh-agent-loop')).href
   const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(target)), '../package.json'), 'utf8'))
-  if (pkg.name !== '@deepseek-ai/dsh-agent-loop' || pkg.version !== '0.2.2-rc.1') throw new Error('unsupported agent-loop package/version')
+  if (pkg.name !== '@deepseek-ai/dsh-agent-loop' || pkg.version !== '0.2.2-rc.2') throw new Error('unsupported agent-loop package/version')
 } catch (error) { target = undefined; state.reason = String(error.message) }
 
 if (target !== undefined) registerHooks({ load(url, context, next) {

@@ -11,17 +11,37 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    env:
+      NODE_TLS_REJECT_UNAUTHORIZED: '1'
+      NO_PROXY: localhost,127.0.0.1,::1
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 12
+          version: 11.28.5
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 26.13.0
           registry-url: https://registry.npmjs.org
-          cache: pnpm
+      - uses: actions/checkout@v4
+        with:
+          repository: deepseek-ai/deepseek-harness
+          ref: ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c
+          path: .scratch/harness-source
+          fetch-depth: 0
+      - name: Install fixed official source tooling
+        run: pnpm --dir .scratch/harness-source install --frozen-lockfile
+      - uses: actions/cache@v4
+        id: harness-packages
+        with:
+          path: .scratch/harness-source/apps/desktop/.desktop-build/targets/win-x64/packed
+          key: harness-win-x64-ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c-node26.13.0-pnpm11.28.5-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Build fixed official source packages
+        if: steps.harness-packages.outputs.cache-hit != 'true'
+        run: pnpm --dir .scratch/harness-source run package:desktop:win:x64:unsigned
+      - name: Stage fixed source installation inputs
+        run: node scripts/sync-harness-deps.mjs --source-root .scratch/harness-source
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
       - run: pnpm run lint
@@ -29,7 +49,7 @@ jobs:
       - run: pnpm run build
       - name: Verify fixed host baseline
         run: pnpm run verify:host
-      - name: Verify current registry candidates
+      - name: Verify fixed source inputs
         run: pnpm run verify:harness
       - run: pnpm run verify:pack
       - run: npm publish

@@ -24,8 +24,7 @@ export const configContract = defineConfig({
 const runtimes = new WeakMap()
 export const contextRuntimeOf = agent => runtimes.get(agent)
 
-// 0.2.2-rc.1 的发布形态只带 compaction-basic/pruner，@deepseek-ai/dsh-compaction 不是
-// 任何宿主包的依赖，从宿主入口解析必然失败；配对平衡是纯读逻辑，按同语义本地兜底。
+// 优先使用 rc.2 compaction 的公开配对判据；可选宿主能力未装配时保留纯读兜底。
 const localPairing = {
   toolPairingBalancedBefore: (session, seq) => surfaceCutBalanced(session, seq, 0),
   toolPairingBalancedAfter: (session, seq) => surfaceCutBalanced(session, seq, 1),

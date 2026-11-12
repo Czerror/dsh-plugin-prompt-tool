@@ -22,8 +22,8 @@ function target(file, digest, edits) {
 }
 function configureLlm(llm) {
   const pkg = JSON.parse(readFileSync(join(dirname(llm), '../package.json'), 'utf8'))
-  if (pkg.name !== '@deepseek-ai/dsh-llm' || pkg.version !== '0.2.2-rc.1') return
-  target(llm, '8e541fc98a11897706a122fde1db42f8b2a41b3b354ba3fcb932e9a16929ac6a', [
+  if (pkg.name !== '@deepseek-ai/dsh-llm' || pkg.version !== '0.2.2-rc.2') return
+  target(llm, '6384b5f1e21404e997a41a31a22a079c9533f2ddc1ffd9148e684884ff62eb74', [
     ['registration(provider) {', '[Symbol.for("prompt-tool:provider-system-roles-route")](provider) { return this.adapters.get(provider); }\n\t\tregistration(provider) {'],
   ])
 }
@@ -34,24 +34,22 @@ try {
 } catch { /* An absent route owner is reported only for these capabilities. */ }
 function configureAdapter(adapter) {
   const pkg = JSON.parse(readFileSync(join(dirname(adapter), '../package.json'), 'utf8'))
-  if (pkg.name !== '@deepseek-ai/dsh-llm-pi-ai' || pkg.version !== '0.2.2-rc.1') throw new Error('unsupported pi-ai adapter')
+  if (pkg.name !== '@deepseek-ai/dsh-llm-pi-ai' || pkg.version !== '0.2.2-rc.2') throw new Error('unsupported pi-ai adapter')
   const pi = realpathSync(join(dirname(adapter), '../../../@earendil-works/pi-ai'))
   const piPackage = JSON.parse(readFileSync(join(pi, 'package.json'), 'utf8'))
-  if (piPackage.name !== '@earendil-works/pi-ai' || piPackage.version !== '1.5.2') throw new Error('unsupported pi-ai provider')
+  if (piPackage.name !== '@earendil-works/pi-ai' || piPackage.version !== '1.3.0') throw new Error('unsupported pi-ai provider')
   const group = {
-    anthropic: target(join(pi, 'dist/api/anthropic-messages.js'), '47cce5fb2770f6ffde0268cfb6549c4839af04129f776149bd60e04555c584dc', [
+    anthropic: target(join(pi, 'dist/api/anthropic-messages.js'), 'b65f40610f7c2d3120eeaa36512c0e3db37a93e6ba3a9baf6650294785880de0', [
       ['if (isOAuthToken) {\n        params.system = [', 'if (isOAuthToken && !' + bridge + '?.strip(model)) {\n        params.system = ['],
     ]),
-    completions: target(join(pi, 'dist/api/openai-completions.js'), '3221deb8b506eab9722d27694fc1bceb752d8786180999add590c2489ac91846', [
+    completions: target(join(pi, 'dist/api/openai-completions.js'), 'f5cf6982b703ef0af515d3c61926cd861ff17feeea3229522bf97bcd88d93b76', [
       ['const instructionRole = model.reasoning && compat.supportsDeveloperRole ? "developer" : "system";', 'const originalInstructionRole = model.reasoning && compat.supportsDeveloperRole ? "developer" : "system";\n    const instructionRole = ' + bridge + '?.role(model, originalInstructionRole) ?? originalInstructionRole;'],
     ]),
-    responses: target(join(pi, 'dist/api/openai-responses-shared.js'), '00796997da00cd4cb77ae8c1c4bb92a3d4a4a4dd5bea18524de7173e4f877e4c', [
+    responses: target(join(pi, 'dist/api/openai-responses-shared.js'), '919b1dbf276ab8805f6ce26bfe389da189711dad8f79354534091d2225e6d25a', [
       ['const instructionRole = model.reasoning && compat?.supportsDeveloperRole !== false ? "developer" : "system";', 'const originalInstructionRole = model.reasoning && compat?.supportsDeveloperRole !== false ? "developer" : "system";\n    const instructionRole = ' + bridge + '?.role(model, originalInstructionRole) ?? originalInstructionRole;'],
-      ['messages.push({ role: instructionRole, content: renderIncrementalToolsNotice(unavailableTools) });', 'messages.push({ role: originalInstructionRole, content: renderIncrementalToolsNotice(unavailableTools) });'],
-      ['if (text.length > 0) {\n                    messages.push({ role: instructionRole, content: sanitizeSurrogates(text) });', 'if (instructionRole !== originalInstructionRole && parts.length > 1) {\n                    if (parts[0].length > 0) messages.push({ role: instructionRole, content: sanitizeSurrogates(parts[0]) });\n                    messages.push({ role: originalInstructionRole, content: sanitizeSurrogates(parts[1]) });\n                }\n                else if (text.length > 0) {\n                    messages.push({ role: instructionRole, content: sanitizeSurrogates(text) });'],
     ]),
   }
-  const adapterToken = target(adapter, '1a3ae58f9b4493e15459cc5000ec80f21b5d3f4a9dea6ffb6bc28e5b8817ae8a', [
+  const adapterToken = target(adapter, 'e956da3d7300e1426e13e14f47e6f981dd1ca345633a406568ee5058ad93e9d8', [
     ['this.config = config;', 'this.config = config; this[Symbol.for("prompt-tool:provider-system-roles-adapter")] = ' + JSON.stringify(group) + ';'],
     ['prepareCall(provider, model, _signal) {\n\t\tconst snapshot = this.current();', 'prepareCall(provider, model, _signal) {\n\t\tconst identity = ' + bridge + '?.capture(this);\n\t\tconst snapshot = this.current();'],
     ['stream: (options) => this.streamWithSnapshot(options, snapshot)', 'stream: (options) => this.streamWithSnapshot(options, snapshot, identity)'],
@@ -69,10 +67,10 @@ registerHooks({ load(url, context, next) {
   const result = next(url, context)
   if (result.source == null) return result
   const source = typeof result.source === 'string' ? result.source : Buffer.from(result.source).toString()
-  if (!targets.has(url) && createHash('sha256').update(source).digest('hex') === '8e541fc98a11897706a122fde1db42f8b2a41b3b354ba3fcb932e9a16929ac6a') {
+  if (!targets.has(url) && createHash('sha256').update(source).digest('hex') === '6384b5f1e21404e997a41a31a22a079c9533f2ddc1ffd9148e684884ff62eb74') {
     try { configureLlm(fileURLToPath(url)) } catch { /* A separate runtime owns its own route registry. */ }
   }
-  if (!targets.has(url) && createHash('sha256').update(source).digest('hex') === '1a3ae58f9b4493e15459cc5000ec80f21b5d3f4a9dea6ffb6bc28e5b8817ae8a') {
+  if (!targets.has(url) && createHash('sha256').update(source).digest('hex') === 'e956da3d7300e1426e13e14f47e6f981dd1ca345633a406568ee5058ad93e9d8') {
     try { configureAdapter(fileURLToPath(url)) } catch { /* Each deployed copy validates its own provider group. */ }
   }
   const entry = targets.get(url)

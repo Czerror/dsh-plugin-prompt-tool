@@ -6,7 +6,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url'
 import { resolveHostPackage } from './host-package.mjs'
 import './provider-system-roles.mjs'
 
-const digest = '955dc7bc7ca6c857ff4a7e373b87c143b96a4c43fc80325b67dc0982600dcc75'
+const digest = 'e00c1816c29803ddd02b61e165e0376a62805b0af9873e3bac6daebf958cc137'
 const bridge = 'globalThis[Symbol.for("prompt-tool:provider-system-roles")]'
 const targets = new Set()
 const edits = [
@@ -25,7 +25,7 @@ const edits = [
 function valid(source) { return createHash('sha256').update(source).digest('hex') === digest && edits.every(([from]) => source.split(from).length === 2) }
 function configure(file) {
   const pkg = JSON.parse(readFileSync(join(dirname(file), '../package.json'), 'utf8'))
-  if (pkg.name === '@deepseek-ai/dsh-llm-deepseek' && pkg.version === '0.2.2-rc.1' && valid(readFileSync(file, 'utf8'))) targets.add(pathToFileURL(file).href)
+  if (pkg.name === '@deepseek-ai/dsh-llm-deepseek' && pkg.version === '0.2.2-rc.2' && valid(readFileSync(file, 'utf8'))) targets.add(pathToFileURL(file).href)
 }
 try { configure(resolveHostPackage('@deepseek-ai/dsh-llm-deepseek')) } catch { /* Optional Messages owner. */ }
 registerHooks({ load(url, context, next) {

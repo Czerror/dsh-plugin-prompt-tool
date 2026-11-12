@@ -12,7 +12,8 @@ const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.
 export const OFFICIAL_SCOPE = '@deepseek-ai/'
 
 /** 已验证的最低宿主契约；范围可以开放上界，锁文件固定本地验证输入。 */
-export const DSH_BASELINE = '0.2.2-rc.1'
+export const DSH_BASELINE = '0.2.2-rc.2'
+export { DSH_SOURCE_SHA } from './harness-source.mjs'
 
 /** 比较发布类型的档位键与插件分组；只解析声明，不执行宿主包或手抄数值。 */
 export function officialOrderContractProblems(officialSource, pluginSource) {
@@ -85,7 +86,7 @@ export function isExactBaseline(version, expected) {
 }
 
 /** CLI 与行为测试共用的版本验证；manifest 可显式传入，不需要改写仓库文件。 */
-export function dependencyVersionProblems(name, section, version, selectedManifest = manifest, locked) {
+export function dependencyVersionProblems(name, section, version, selectedManifest = manifest, locked, sourcePackage) {
   const range = selectedManifest[section]?.[name]
   const problems = []
   if (!peerRangeAccepts(range, version)) {
@@ -98,9 +99,10 @@ export function dependencyVersionProblems(name, section, version, selectedManife
     }
   }
   if (locked !== undefined) {
-    const lockedVersion = typeof locked.version === 'string' ? locked.version.split('(')[0] : undefined
+    const sourceVersion = sourcePackage && locked.version?.split('(')[0] === `file:${sourcePackage.path}` ? sourcePackage.version : undefined
+    const lockedVersion = sourceVersion ?? (typeof locked.version === 'string' ? locked.version.split('(')[0] : undefined)
     if (!isExactBaseline(version, lockedVersion)) problems.push(`安装版本 ${version} 不等于锁定版本 ${String(lockedVersion)}`)
-    if (section !== 'peerDependencies' && locked.specifier !== range) {
+    if (section !== 'peerDependencies' && locked.specifier !== (sourceVersion ? `file:${sourcePackage.path}` : range)) {
       problems.push(`锁文件声明 ${String(locked.specifier)} 与 ${section} 范围 ${range} 不一致`)
     }
   }

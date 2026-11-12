@@ -8,14 +8,14 @@ import { escalationDecisionsState as state, transformEscalationOwner } from './e
 
 const targets = new Map()
 for (const [owner, name, digest] of [
-  ['sandbox', 'sandbox', '9ece3e7b04d5526441e2439431d769acf67abc46fa49de000dd9c792893eb5e7'],
+  ['sandbox', 'sandbox', 'dcf74e4cea1a0dbd8bfeaa1b454619b55aab83f3b3b761f0534165f0ac05f138'],
 ]) {
   try {
     let entry
     try { entry = resolveHostPackage(`@deepseek-ai/dsh-${name}`) }
     catch { entry = resolveHostPackage(`@deepseek-ai/dsh-${name}`, resolveHostPackage('@deepseek-ai/dsh-tool-executor-ptc')) }
     const pkg = JSON.parse(readFileSync(join(dirname(entry), '../package.json'), 'utf8'))
-    if (pkg.name !== `@deepseek-ai/dsh-${name}` || pkg.version !== '0.2.2-rc.1') throw new Error(`unsupported escalation ${owner} package/version`)
+    if (pkg.name !== `@deepseek-ai/dsh-${name}` || pkg.version !== '0.2.2-rc.2') throw new Error(`unsupported escalation ${owner} package/version`)
     targets.set(pathToFileURL(entry).href, { owner, digest })
     state.status.set(owner, { available: false, reason: `escalation ${owner} not loaded through early entry; restart DSH` })
   } catch (error) { state.status.set(owner, { available: false, reason: error.message }) }

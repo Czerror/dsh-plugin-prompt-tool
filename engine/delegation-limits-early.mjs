@@ -8,7 +8,7 @@ import { delegationLimitsState as state } from './delegation-limits.mjs'
 
 const lookup = 'globalThis[Symbol.for("prompt-tool:delegation-limits")]'
 const groups = [
-  { field: 'maxDepth', name: '@deepseek-ai/dsh-tool-subagent', digest: 'e73d2fb1753421bfd80e8adf38a3cafe93a4fa2516e07f9764279a880821734e', edits: [
+  { field: 'maxDepth', name: '@deepseek-ai/dsh-tool-subagent', digest: '13ae95219c99308fa85f543f66ba54ae0b5beb2940686958ff38df9a16a2a39f', edits: [
     ['const unregister = ctx.tools.register(definition);', `const unregister = ctx.tools.register(config.provider === "spawn" ? ${lookup}.mark("maxDepth", ctx, definition) : definition);`],
     ['const maxDepth = ctx.subagents.resolveMaxDepth(config.maxDepth);', `const maxDepth = ctx.subagents.resolveMaxDepth(${lookup}.depth(ctx, config.maxDepth));`, 2],
   ] },
@@ -22,7 +22,7 @@ for (const group of groups) {
   try {
     const target = pathToFileURL(resolveHostPackage(group.name)).href
     const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(target)), '../package.json'), 'utf8'))
-    if (pkg.name !== group.name || pkg.version !== '0.2.2-rc.1') throw new Error('unsupported official package/version')
+    if (pkg.name !== group.name || pkg.version !== '0.2.2-rc.2') throw new Error('unsupported official package/version')
     targets.set(target, group)
   } catch (error) { state[group.field].reason = String(error.message) }
 }

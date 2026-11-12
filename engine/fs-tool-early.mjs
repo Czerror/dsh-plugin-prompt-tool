@@ -10,12 +10,12 @@ import { transformFilesystemTool, filesystemPolicyState } from './filesystem-pol
 import { transformEscalationCaller, escalationDecisionsState } from './escalation-decisions.mjs'
 
 const owner = '@deepseek-ai/dsh-tool-fs'
-const digest = '0e866969b6bf1aa93407ccd9c944b50bc27a1d961b7e4209ed60bd2b73d28805'
+const digest = 'f27783bf0d89391ed775b65df47acb6b52adf526f4b9d849a0eeb3937a80d6c1'
 let target
 try {
   target = pathToFileURL(resolveHostPackage(owner)).href
   const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(target)), '../package.json'), 'utf8'))
-  if (pkg.name !== owner || pkg.version !== '0.2.2-rc.1') throw new Error('unsupported tool-fs package/version')
+  if (pkg.name !== owner || pkg.version !== '0.2.2-rc.2') throw new Error('unsupported tool-fs package/version')
   results.status.set(owner, { available: false, reason: 'result owner not loaded through early entry' })
 } catch (error) {
   target = undefined

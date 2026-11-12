@@ -39,7 +39,7 @@ for (const kind of Object.keys(digests)) {
   try {
     const target = pathToFileURL(resolveHostPackage(name)).href
     const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(target)), '../package.json'), 'utf8'))
-    if (pkg.name !== name || pkg.version !== '0.2.2-rc.1') throw new Error('unsupported official hook package/version')
+    if (pkg.name !== name || pkg.version !== '0.2.2-rc.2') throw new Error('unsupported official hook package/version')
     targets.set(target, kind)
   } catch (error) { state[kind].reason = String(error.message) }
 }
@@ -51,7 +51,7 @@ if (targets.size > 0) registerHooks({ load(url, context, next) {
   if (kind === undefined) return result
   try {
     const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(url)), '../package.json'), 'utf8'))
-    if (pkg.name !== `@deepseek-ai/dsh-hooks-${kind}` || pkg.version !== '0.2.2-rc.1') return result
+    if (pkg.name !== `@deepseek-ai/dsh-hooks-${kind}` || pkg.version !== '0.2.2-rc.2') return result
   } catch { return result }
   const transformed = transformProviderHooks(kind, source)
   state[kind].available = transformed !== undefined

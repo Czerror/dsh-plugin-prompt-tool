@@ -250,7 +250,7 @@ test('OAuth步骤热更、并行主子、缺目标局部暂停及释放保持请
   assert.equal(released.body.system[0].text, identity)
 })
 
-test('Responses真实HTTP保留developer工具增删通知，并只映射系统正文', async t => {
+test('Responses真实HTTP保持官方工具增删集合与developer声明，只映射系统正文', async t => {
   const world = await fixture(t, 'openai-responses', 'https://third-party.test/v1', true, { supportsDeveloperRole: true, supportsMidConvoSystemMessages: true, supportsAdditionalTools: true })
   const agent = await world.agent('pt24-tool-notice')
   world.define(true)
@@ -260,46 +260,40 @@ test('Responses真实HTTP保留developer工具增删通知，并只映射系统�
   t.after(() => context.toolSet.dispose())
   await agent.loopCtx.systemPrompt.assemble(context)
   const prepared = await providerSystemRolesBridge.prepare(agent, selection, () => world.adapter.prepareCall(selection.provider, selection.model, context.signal))
-  const tool = { name: 'FixtureTool', description: 'KEEP TOOL', parameters: { type: 'object', properties: {} } }
+  const base = { name: 'BaseTool', description: 'KEEP BASE', parameters: { type: 'object', properties: {} } }
+  const tool = { name: 'FixtureTool', description: 'KEEP TOOL', parameters: { type: 'object', properties: {} }, deferLoading: true }
   const user = text => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
-  const addition = toolName => createDeveloperMessage({ source: { kind: 'tool-registry' }, content: [{ type: 'tool-addition', toolName }] })
-  const removal = createDeveloperMessage({ source: { kind: 'tool-registry' }, content: [{ type: 'tool-removal', toolName: 'FixtureTool' }] })
-  const request = { ...selection, tools: [tool], messages: [createSystemMessage('BASE'), user('one'), addition('FixtureTool'), user('two'), removal, user('three')], sessionId: agent.id, signal: context.signal }
-  for await (const chunk of prepared.stream(request)) assert.notEqual(chunk.type === 'finish' && chunk.reason.kind, 'error', JSON.stringify(chunk))
-  const input = world.requests.at(-1).body.input
-  const declarations = input.filter(message => message.type === 'additional_tools')
-  assert.equal(declarations.length, 2, JSON.stringify(input))
-  assert.ok(declarations.every(message => message.role === 'developer'))
-  assert.equal(input.find(message => typeof message.content === 'string' && message.content.startsWith('This is an incremental tools update.')).role, 'developer')
-  assert.equal(input.find(message => message.content === 'BASE').role, 'system')
-  assert.equal(input.find(message => typeof message.content === 'string' && message.content.startsWith('The following tools are no longer available.')).role, 'developer', JSON.stringify(input))
-  assert.deepEqual(input.map(message => [message.role, message.type ?? (typeof message.content === 'string' ? message.content : textOf(message.content))]), [
-    ['developer', 'additional_tools'], ['system', 'BASE'], ['user', 'one'],
-    ['developer', 'This is an incremental tools update. Previously declared tools remain available unless explicitly marked unavailable. A tool declared again here is available again, and its latest definition replaces the earlier one.'],
-    ['developer', 'additional_tools'], ['user', 'two'], ['developer', 'The following tools are no longer available. Do not call them:\n- FixtureTool'], ['user', 'three'],
+  const addition = createDeveloperMessage({ source: { kind: 'tool-registry' }, content: [{ type: 'tool-addition', toolName: 'FixtureTool' }] })
+  const removal = createDeveloperMessage({ source: { kind: 'tool-registry' }, content: [{ type: 'text', text: 'MIXED BODY' }, { type: 'tool-removal', toolName: 'FixtureTool' }] })
+  const request = { ...selection, tools: [base, tool], messages: [createSystemMessage('BASE'), user('one'), addition, user('two')], sessionId: agent.id, signal: context.signal }
+  const send = async (call, value) => {
+    for await (const chunk of call.stream(value)) assert.notEqual(chunk.type === 'finish' && chunk.reason.kind, 'error', JSON.stringify(chunk))
+    return world.requests.at(-1).body
+  }
+  const added = await send(prepared, request)
+  const declarations = added.input.filter(message => message.type === 'additional_tools')
+  assert.equal(declarations.length, 1)
+  assert.equal(declarations[0].role, 'developer')
+  assert.deepEqual(declarations[0].tools.map(item => item.name), ['FixtureTool'])
+  assert.deepEqual(added.tools.map(item => item.name), ['BaseTool'])
+  assert.equal(added.input.find(message => message.content === 'BASE').role, 'system')
+  const removedRequest = { ...request, messages: [...request.messages, removal, user('three')] }
+  const removed = await send(prepared, removedRequest)
+  assert.deepEqual(removed.tools.map(item => item.name), ['BaseTool'], '初始BaseTool加FixtureTool再移除FixtureTool，仅留下BaseTool')
+  assert.equal(removed.input.filter(message => message.type === 'additional_tools').length, 0)
+  assert.deepEqual(removed.input.map(message => [message.role, typeof message.content === 'string' ? message.content : textOf(message.content)]), [
+    ['system', 'BASE'], ['user', 'one'], ['user', 'two'], ['system', 'MIXED BODY'], ['user', 'three'],
   ])
   world.define(false)
   await world.runtime.refresh()
   const offPrepared = await world.adapter.prepareCall(selection.provider, selection.model, context.signal)
-  for await (const chunk of offPrepared.stream(request)) assert.notEqual(chunk.type === 'finish' && chunk.reason.kind, 'error', JSON.stringify(chunk))
-  assert.deepEqual(world.requests.at(-1).body.input, input.map(message => message.content === 'BASE' ? { ...message, role: 'developer' } : message))
-  const mixedRemoval = createDeveloperMessage({ source: { kind: 'tool-registry' }, content: [{ type: 'text', text: 'MIXED BODY' }, { type: 'tool-removal', toolName: 'FixtureTool' }] })
-  const mixedRequest = { ...request, messages: [createSystemMessage('BASE'), user('one'), addition('FixtureTool'), user('two'), mixedRemoval, user('three')] }
-  for await (const chunk of offPrepared.stream(mixedRequest)) assert.notEqual(chunk.type === 'finish' && chunk.reason.kind, 'error', JSON.stringify(chunk))
-  const mixedOff = world.requests.at(-1).body.input
-  assert.equal(mixedOff[6].content, 'MIXED BODY\n\nThe following tools are no longer available. Do not call them:\n- FixtureTool')
-  assert.equal(mixedOff[6].role, 'developer')
-  world.define(true)
-  await world.runtime.refresh()
-  await agent.loopCtx.systemPrompt.assemble(context)
-  const mixedPrepared = await providerSystemRolesBridge.prepare(agent, selection, () => world.adapter.prepareCall(selection.provider, selection.model, context.signal))
-  for await (const chunk of mixedPrepared.stream(mixedRequest)) assert.notEqual(chunk.type === 'finish' && chunk.reason.kind, 'error', JSON.stringify(chunk))
-  assert.deepEqual(world.requests.at(-1).body.input, [
-    ...mixedOff.slice(0, 6).map(message => message.content === 'BASE' ? { ...message, role: 'system' } : message),
-    { role: 'system', content: 'MIXED BODY' },
-    { role: 'developer', content: 'The following tools are no longer available. Do not call them:\n- FixtureTool' },
-    ...mixedOff.slice(7),
-  ])
+  const off = await send(offPrepared, removedRequest)
+  assert.deepEqual(off.tools, removed.tools)
+  assert.deepEqual(off.input, removed.input.map(message => message.role === 'system' ? { ...message, role: 'developer' } : message))
+  const invalid = { ...request, messages: [createSystemMessage('BASE'), user('one'), createDeveloperMessage({ source: { kind: 'tool-registry' }, content: [{ type: 'tool-addition', toolName: 'MissingTool' }] })] }
+  const count = world.requests.length
+  await assert.rejects(async () => { for await (const chunk of offPrepared.stream(invalid)) void chunk }, { code: 'INVALID_REQUEST' })
+  assert.equal(world.requests.length, count, '未声明工具仍由官方拒绝，不发HTTP')
 })
 
 test('compat省略保留两路各自默认，缺一个OpenAI目标仅暂停角色能力与依赖正文', async t => {
@@ -324,7 +318,7 @@ test('compat省略保留两路各自默认，缺一个OpenAI目标仅暂停角�
   })
 })
 
-test('正式PI缓存和线程选项在身份与角色映射开关后保持官方行为', async t => {
+test('固定PI缓存与完整Messages请求在身份与角色映射开关后保持官方行为', async t => {
   for (const promptCacheKeyMode of ['enabled', 'disabled']) await t.test('completions ' + promptCacheKeyMode, async t => {
     const world = await fixture(t, 'openai-completions', 'https://third-party.test/v1', true, { supportsDeveloperRole: true, promptCacheKeyMode }), agent = await world.agent('pt24-cache-' + promptCacheKeyMode)
     const off = await world.send(agent, 'cache-off')
@@ -333,28 +327,27 @@ test('正式PI缓存和线程选项在身份与角色映射开关后保持官方
     const on = await world.send(agent, 'cache-on')
     assert.equal(off.body.messages[0].role, 'developer')
     assert.equal(on.body.messages[0].role, 'system')
-    assert.equal(typeof off.body.prompt_cache_key, promptCacheKeyMode === 'enabled' ? 'string' : 'undefined')
+    assert.equal(off.body.prompt_cache_key, undefined)
     assert.equal(on.body.prompt_cache_key, off.body.prompt_cache_key)
   })
-  await t.test('anthropic message threads', async t => {
+  await t.test('anthropic完整请求', async t => {
     const world = await fixture(t, 'anthropic-messages', 'https://anthropic.test/v1', false, { supportsMessageThreads: true }), agent = await world.agent('pt24-threads')
     world.define(true)
     await world.runtime.refresh()
     const on = await world.send(agent, 'thread-on')
-    assert.deepEqual(on.body.thread, { type: 'create' })
+    assert.equal(on.body.thread, undefined)
     assert.equal(on.body.system.length, 1)
-    assert.ok(on.headers['anthropic-beta'].includes('message-threads-2026-08-12'))
     world.define(false)
     await world.runtime.refresh()
     const off = await world.send(agent, 'thread-off')
-    assert.deepEqual(off.body.thread, { type: 'create' }, 'changed system starts a new official thread')
+    assert.equal(off.body.thread, undefined)
     assert.equal(off.body.system[0].text, identity)
     assert.deepEqual(off.body.tools, on.body.tools)
     assert.equal(off.headers['anthropic-beta'], on.headers['anthropic-beta'])
     const continued = await world.send(agent, 'thread-continue')
-    assert.deepEqual(continued.body.thread, { type: 'continue', previous_message_id: 'msg_1' })
-    assert.equal(continued.body.system, undefined)
-    assert.equal(continued.body.tools, undefined)
+    assert.equal(continued.body.thread, undefined)
+    assert.deepEqual(continued.body.system, off.body.system)
+    assert.deepEqual(continued.body.tools, off.body.tools)
   })
 })
 
