@@ -47,6 +47,138 @@ async function post(handlers, body) {
   return { status, payload }
 }
 
+test('回退待办通过真实 bridge 与官方 todo owner 持久更新，重复提交不重写', { timeout: 15000 }, async t => {
+  const root = new Context(), handlers = new Map(), home = mkdtempSync(join(tmpdir(), 'pt27-'))
+  const moduleRoot = join(home, 'modules'), moduleDir = join(moduleRoot, 'rewind')
+  mkdirSync(moduleDir, { recursive: true })
+  const definition = { id: 'rewind', modules: ['rule-engine'], rules: ['session-rewind', 'session-rewind-todos'].map(capability => ({ id: capability, then: [{ id: capability, kind: 'host-control', capability, value: true }] })) }
+  writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify(definition))
+  const Todo = await load('@deepseek-ai/dsh-tool-todo'), Persistence = await load('@deepseek-ai/dsh-session-persistence-jsonl')
+  for (const plugin of [Llm, Sessions, Projections, Prompt, Tools, Native, Agents]) await root.plugin(plugin)
+  await root.plugin(Persistence, { root: join(home, 'sessions'), compression: 'none' })
+  await root.plugin(Todo, { allowParallelInProgress: true })
+  await root.plugin(Loop, { agents: [] })
+  root.provide('workingDirectory', { get: () => home, ensure: async () => home, set: async () => home })
+  root.provide('webServer', { register({ path, handler }) { handlers.set(path, handler); return () => handlers.delete(path) } })
+  root.provide('remoteAccess', { decide: () => ({ kind: 'allow' }) })
+  const original = [{ content: 'A', status: 'completed' }, { content: 'B', status: 'in_progress' }, { content: 'C', status: 'pending' }]
+  const expected = [{ content: 'A', status: 'pending' }, { content: 'B', status: 'in_progress' }, { content: 'C', status: 'pending' }]
+  class TodoCapture extends Capture {
+    async *stream(request) {
+      if (!request.messages.some(message => message.role === 'tool')) {
+        yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+        yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'fixture-todos', name: 'todo_write', arguments: JSON.stringify({ todos: original }) } }
+        yield { type: 'finish', reason: { kind: 'tool-calls' } }
+        return
+      }
+      yield* super.stream(request)
+    }
+  }
+  root.llm.registerAdapter(['local'], new TodoCapture())
+  registerSettingsBridge(root, { ns: 'prompt-tool', models: () => ({ available: true, providers: [] }) })
+  const assembly = createAgentAssembly(root, { moduleRoot, enabledModules: () => ['rewind'], warn: () => {} })
+  await assembly.settled()
+  const handle = await root.agents.create({ sessionId: 'pt27-owner', agentOptions: { provider: 'local', model: 'probe' } })
+  t.after(async () => { await assembly.dispose(); await handle.dispose(); await root.fiber.dispose(); rmSync(home, { recursive: true, force: true }) })
+  handle.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '待办回退' }] }))
+  await handle.agent.whenIdle()
+  assert.deepEqual(root.sessionProjections.snapshot(handle.agent.session).values.todos, original, JSON.stringify(handle.agent.session.snapshotEvents()))
+  const table = []; root.emit('webserver/index-inject', table, { principal: { kind: 'owner' } })
+  const request = { phase: 'preview', sessionId: handle.agent.id, mode: 'once', requestId: 'todo-1', credential: table.find(row => row.name === '__PROMPT_TOOL_REWIND__').value }
+  const preview = await post(handlers, request)
+  assert.equal(preview.status, 200, JSON.stringify(preview.payload))
+  const maintenance = handle.agent.runMaintenance
+  handle.agent.runMaintenance = task => maintenance.call(handle.agent, signal => {
+    handle.agent.cancel({ kind: 'user' })
+    return task(signal)
+  })
+  const cancelled = await post(handlers, { ...request, phase: 'commit', boundary: preview.payload.value.boundary })
+  handle.agent.runMaintenance = maintenance
+  assert.equal(cancelled.payload.value.targets[0].status, 'failed')
+  assert.equal(cancelled.payload.value.targets[0].markerId, undefined)
+  assert.deepEqual(root.sessionProjections.snapshot(handle.agent.session).values.todos, original, '取消维护不修改待办')
+  const fresh = await post(handlers, { ...request, requestId: 'todo-fresh' })
+  const commit = { ...request, requestId: 'todo-fresh', phase: 'commit', boundary: fresh.payload.value.boundary }
+  const append = handle.agent.session.append
+  handle.agent.session.append = function (type, ...args) {
+    if (type === 'todo/write') throw new Error('待办写入暂不可用')
+    return append.call(this, type, ...args)
+  }
+  const partial = await post(handlers, commit)
+  handle.agent.session.append = append
+  assert.equal(partial.payload.value.targets[0].status, 'failed')
+  assert.match(partial.payload.value.targets[0].message, /历史回退已提交/)
+  const markerId = partial.payload.value.targets[0].markerId
+  assert.ok(markerId)
+  assert.equal(handle.agent.session.snapshotEvents().filter(event => event.data?.id === markerId).length, 1)
+  assert.deepEqual(root.sessionProjections.snapshot(handle.agent.session).values.todos, original)
+  assert.deepEqual(await post(handlers, commit), partial)
+  const retry = { ...commit, phase: 'retry', requestId: 'todo-retry' }
+  const result = await post(handlers, retry)
+  assert.equal(result.payload.value.targets[0].status, 'committed', JSON.stringify(result.payload))
+  assert.equal(result.payload.value.targets[0].markerId, markerId)
+  assert.equal(handle.agent.session.snapshotEvents().filter(event => event.data?.id === markerId).length, 1, '待办重试不再写第二个回退标记')
+  assert.deepEqual(root.sessionProjections.snapshot(handle.agent.session).values.todos, expected)
+  const events = handle.agent.session.snapshotEvents()
+  assert.deepEqual(events.findLast(event => event.type === 'todo/write').data.todos, expected)
+  assert.deepEqual(await post(handlers, retry), result)
+  assert.deepEqual(handle.agent.session.snapshotEvents(), events)
+  const other = await root.agents.create({ sessionId: 'pt27-other', agentOptions: { provider: 'local', model: 'probe' } })
+  t.after(() => other.dispose())
+  other.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '另一会话' }] }))
+  await other.agent.whenIdle()
+  assert.deepEqual(root.sessionProjections.snapshot(other.agent.session).values.todos, original)
+  const replay = await root.agents.create({ sessionId: 'pt27-replay', seed: events, agentOptions: { provider: 'local', model: 'probe' } })
+  t.after(() => replay.dispose())
+  assert.deepEqual(root.sessionProjections.snapshot(replay.agent.session).values.todos, expected)
+  assert.equal(replay.agent.session.snapshotEvents().filter(event => event.type === 'todo/write').length, 2, '冷重放不补写')
+  definition.rules[1].enabled = false
+  writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify(definition))
+  await assembly.refresh('rewind')
+  assert.deepEqual(root.sessionProjections.snapshot(handle.agent.session).values.todos, expected, '关闭不逆转已写结果')
+  handle.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '关闭后新轮' }] }))
+  await handle.agent.whenIdle()
+  const offRequest = { ...request, requestId: 'todo-off' }
+  const offPreview = await post(handlers, offRequest)
+  const off = await post(handlers, { ...offRequest, phase: 'commit', boundary: offPreview.payload.value.boundary })
+  assert.equal(off.payload.value.targets[0].status, 'committed')
+  assert.deepEqual(root.sessionProjections.snapshot(handle.agent.session).values.todos, original, '关闭后保留官方清单')
+  assert.deepEqual(root.sessionProjections.snapshot(other.agent.session).values.todos, original, '非目标会话保持')
+  definition.rules[1].enabled = true
+  writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify(definition))
+  await assembly.refresh('rewind')
+  handle.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '待办部分失败轮' }] }))
+  await handle.agent.whenIdle()
+  const staleRequest = { ...request, requestId: 'todo-stale' }
+  const stalePreview = await post(handlers, staleRequest)
+  handle.agent.session.append = function (type, ...args) {
+    if (type === 'todo/write') throw new Error('待办暂不可写')
+    return append.call(this, type, ...args)
+  }
+  const stalePartial = await post(handlers, { ...staleRequest, phase: 'commit', boundary: stalePreview.payload.value.boundary })
+  handle.agent.session.append = append
+  assert.equal(stalePartial.payload.value.targets[0].status, 'failed')
+  handle.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '后来新轮' }] }))
+  await handle.agent.whenIdle()
+  const beforeStaleRetry = handle.agent.session.snapshotEvents()
+  const staleRetry = await post(handlers, { ...staleRequest, phase: 'retry', requestId: 'todo-stale-retry', boundary: stalePreview.payload.value.boundary })
+  assert.equal(staleRetry.status, 409)
+  assert.deepEqual(handle.agent.session.snapshotEvents(), beforeStaleRetry, '旧待办重试不触碰新轮')
+  assert.deepEqual(root.sessionProjections.snapshot(other.agent.session).values.todos, original, '旧待办重试不触碰其他目标')
+  await assembly.dispose()
+  assert.deepEqual(root.sessionProjections.snapshot(handle.agent.session).values.todos, original, '释放不逆转')
+  await handle.dispose()
+  const persisted = await root.sessionPersistence.open('pt27-owner', 'read')
+  try {
+    const durable = (await persisted.read(0)).events
+    assert.equal(durable.filter(event => event.data?.id === markerId).length, 1, '部分失败的已提交 marker 持久保留且重试未重复')
+    const writes = durable.filter(event => event.type === 'todo/write')
+    assert.deepEqual(writes[1].data.todos, expected)
+    assert.deepEqual(writes.at(-1).data.todos, original)
+  }
+  finally { await persisted.close() }
+})
+
 test('回退 bridge：真实 Agent 的重复提问按输入身份回退，durable 保全且后续 request 无空 marker', { timeout: 15000 }, async t => {
   const root = new Context(), handlers = new Map(), capture = new Capture()
   const home = mkdtempSync(join(tmpdir(), 'pt26-')), moduleRoot = join(home, 'modules'), moduleDir = join(moduleRoot, 'rewind')
@@ -151,9 +283,10 @@ test('回退上一轮沿真实子代理启动与官方目录固定主子目标�
   const root = new Context(), handlers = new Map(), home = mkdtempSync(join(tmpdir(), 'pt26-round-'))
   const moduleRoot = join(home, 'modules'), moduleDir = join(moduleRoot, 'rewind')
   mkdirSync(moduleDir, { recursive: true })
-  writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify({ id: 'rewind', modules: ['rule-engine'], rules: [{ id: 'rewind', then: [{ id: 'rewind', kind: 'host-control', capability: 'session-rewind', value: true }] }] }))
+  writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify({ id: 'rewind', modules: ['rule-engine'], rules: [{ id: 'rewind', then: ['session-rewind', 'session-rewind-todos'].map(capability => ({ id: capability, kind: 'host-control', capability, value: true })) }] }))
   const [Persistence, { default: Subagents }, Spawn, Tool] = await Promise.all([load('@deepseek-ai/dsh-session-persistence-jsonl'), load('@deepseek-ai/dsh-subagent'), import('@deepseek-ai/dsh-subagent-spawn-in-process'), import('@deepseek-ai/dsh-tool-subagent')])
   for (const plugin of [Llm, Sessions, Projections, Prompt, Tools, Native, Agents]) await root.plugin(plugin)
+  await root.plugin(await load('@deepseek-ai/dsh-tool-todo'), { allowParallelInProgress: true })
   await root.plugin(Persistence, { root: join(home, 'sessions'), compression: 'none' })
   await root.plugin(Loop, { agents: [] })
   root.provide('workingDirectory', { get: () => home, ensure: async () => home, set: async () => home })
@@ -164,6 +297,12 @@ test('回退上一轮沿真实子代理启动与官方目录固定主子目标�
   class RoundCapture extends Capture {
     async *stream(request) {
       if (request.sessionId !== 'round-parent') await childRelease.promise
+      if (request.sessionId !== 'round-parent' && !request.messages.some(message => message.role === 'tool')) {
+        yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+        yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'child-todo', name: 'todo_write', arguments: JSON.stringify({ todos: [{ content: '子任务', status: 'completed' }] }) } }
+        yield { type: 'finish', reason: { kind: 'tool-calls' } }
+        return
+      }
       if (request.sessionId === 'round-parent' && request.messages.some(message => message.content.some(block => block.text === '主轮二'))) { entered.resolve(); await release.promise }
       yield* super.stream(request)
     }
@@ -208,6 +347,7 @@ test('回退上一轮沿真实子代理启动与官方目录固定主子目标�
   assert.equal(preview.status, 200, JSON.stringify(preview.payload))
   child = root.agents.get(childId)
   assert.ok(child, '已完成子会话通过官方恢复为本次维护驻留')
+  assert.deepEqual(root.sessionProjections.snapshot(child.session).values.todos, [{ content: '子任务', status: 'completed' }])
   assert.equal(roundCapture.requests.length, requestsBeforePreview, '预览恢复不调用模型')
   assert.deepEqual(preview.payload.value.targets.map(target => target.sessionId), ['round-parent', childId])
   const before = [handle.agent, child].map(agent => agent.session.snapshotEvents())
@@ -231,6 +371,7 @@ test('回退上一轮沿真实子代理启动与官方目录固定主子目标�
   try {
     const persisted = await persistedChild.read(0)
     assert.ok(persisted.events.some(event => event.data?.id === retried.payload.value.targets[1].markerId), '释放维护驻留后官方持久层已刷盘回退标记')
+    assert.deepEqual(persisted.events.findLast(event => event.type === 'todo/write').data.todos, [{ content: '子任务', status: 'pending' }], '恢复后的已完成子代理沿同一官方持久 owner 更新待办')
   } finally { await persistedChild.close() }
   assert.deepEqual(handle.agent.session.deriveMessages().filter(message => message.source.kind === 'user').map(message => message.id), [old.id])
   for (const [index, agent] of [handle.agent, child].entries()) assert.deepEqual(agent.session.snapshotEvents().slice(0, before[index].length), before[index])

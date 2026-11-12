@@ -19,7 +19,7 @@ const render = action => renderElement(RuleStepsPanel, {
 const labels = html => [...html.matchAll(/aria-label="([^"]*)"/g)].map(match => match[1])
 
 test('请求身份、系统角色、Messages与会话回退能力卡独立展示保存版本诊断', () => {
-  for (const capability of ['oauth-identity-prefix', 'provider-system-role', 'messages-current-system', 'session-rewind']) {
+  for (const capability of ['oauth-identity-prefix', 'provider-system-role', 'messages-current-system', 'session-rewind', 'session-rewind-todos']) {
     const rule = { id: 'provider', enabled: true, then: [{ id: 'control', kind: 'host-control', capability, value: true }] }
     assert.ok(render(rule.then[0]).includes(t('triggers.option.' + capability)))
     const draft = getRulesDraft(createWorkspaceDrafts(), 'provider-module')

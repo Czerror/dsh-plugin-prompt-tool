@@ -6,8 +6,9 @@ import type { BridgeRuntime } from '../bridge-runtime.ts'
 import { rewindEnabled } from '../../../engine/rewind-control.mjs'
 import { isRewindMarker, rewindPlan } from '../../../engine/rewind-marker.mjs'
 import { historyEvents } from '../../../engine/history.mjs'
+import { rewindTodos } from '../../../engine/rewind-todo.mjs'
 
-type Plan = ReturnType<typeof rewindPlan> & { agent: Agent; runId?: string; mode: 'once' | 'round'; handle?: AgentHandle }
+type Plan = ReturnType<typeof rewindPlan> & { agent: Agent; runId?: string; mode: 'once' | 'round'; handle?: AgentHandle; committed?: RewindTargetResult }
 interface Run { id: string; parent: Agent; parentTurn: number; child: Agent; fromSeq: number; runId: string; endSeq?: number }
 interface Grant {
   principal: unknown
@@ -93,6 +94,10 @@ export function registerRewind(runtime: BridgeRuntime): (() => void)[] {
   const check = (plan: Plan, credential: string): Plan => {
     authorize(credential, plan.agent.id)
     if (local(plan.agent.id) !== plan.agent || plan.agent.session !== plan.session) throw new Error('目标会话所有者已改变')
+    if (plan.committed) {
+      if (historyEvents(plan.session).findLast(event => event.type === 'turn/start')?.seq !== plan.observedTurnSeq) throw new Error('会话已进入新轮，不能重试旧待办更新')
+      return plan
+    }
     const current = fixedPlan(plan.agent, plan.mode)
     if (current.turnSeq !== plan.turnSeq || current.observedTurnSeq !== plan.observedTurnSeq || current.inputId !== plan.inputId || current.inputSeq !== plan.inputSeq || current.lastInputSeq !== plan.lastInputSeq) throw new Error('会话已进入新输入或新轮，请重新回退')
     if (plan.runId !== undefined && runs.get(plan.agent.id)?.runId !== plan.runId) throw new Error('子代理执行身份已改变')
@@ -185,18 +190,21 @@ export function registerRewind(runtime: BridgeRuntime): (() => void)[] {
       const result = await plan.agent.runMaintenance(async signal => {
         signal.throwIfAborted()
         const current = check(plan, credential)
+        if (plan.committed) { rewindTodos(plan.agent); return plan.committed }
         const markerId = 'rewind-pt-' + randomUUID()
         const refs = current.refs
         plan.agent.session.append('user/message', { id: markerId as never, role: 'user', source: { kind: 'user' }, content: [] }, {
           surfaceOp: { op: 'replace', startSeq: refs[0] as never, endSeq: refs.at(-1) as never },
           sourceEventSeqs: refs as never,
         })
-        return { sessionId: plan.agent.id, status: 'committed' as const, markerId, sourceEventSeqs: refs, text: plan.text }
+        plan.committed = { sessionId: plan.agent.id, status: 'committed' as const, markerId, sourceEventSeqs: refs, text: plan.text }
+        rewindTodos(plan.agent)
+        return plan.committed
       })
       try { await plan.handle?.dispose(); plan.handle = undefined }
       catch (error) { return { ...result, message: '已提交回退，临时子会话释放失败：' + errorText(error) } }
       return result
-    } catch (error) { return { sessionId: plan.agent.id, status: 'failed', message: errorText(error) } }
+    } catch (error) { return { ...plan.committed, sessionId: plan.agent.id, status: 'failed', message: (plan.committed ? '历史回退已提交；待办更新未完成，可重试：' : '') + errorText(error) } }
   }
 
   releases.push(ctx.on('webserver/index-inject', (table, peer) => {

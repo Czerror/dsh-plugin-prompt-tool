@@ -73,6 +73,7 @@ export function RuleCard(props: {
     if (node.kind === 'host-control' && node.capability === 'current-system-snapshot') targets.add('host:current-system-snapshot')
     if (node.kind === 'host-control' && node.capability === 'message-shape-guards') targets.add('host:message-shape-guards')
     if (node.kind === 'host-control' && node.capability === 'session-rewind') targets.add('host:session-rewind')
+    if (node.kind === 'host-control' && node.capability === 'session-rewind-todos') targets.add('host:session-rewind-todos')
     if (node.kind === 'host-control' && (node.capability === 'oauth-identity-prefix' || node.capability === 'provider-system-role' || node.capability === 'messages-current-system')) targets.add('host:' + node.capability)
     if (node.kind === 'host-control' && ['repeat-tool-reminder', 'compaction-tool-result-pruner'].includes(String(node.capability))) targets.add(`host:${String(node.capability)}`)
     if (node.kind === 'request-params' && node.maxTokens !== undefined) targets.add('request:budget')

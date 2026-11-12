@@ -684,3 +684,11 @@ rules:
         kind: host-control
         capability: session-rewind
         value: true
+  - id: session-rewind-todos
+    name: 回退时重置已完成待办
+    enabled: false
+    then:
+      - id: todos
+        kind: host-control
+        capability: session-rewind-todos
+        value: true

@@ -1,5 +1,7 @@
 # 后端参数框架
 
+回退待办使用独立普通 `host-control / session-rewind-todos`，仅接受 `value: true` 且无次数预算，内置卡默认关闭。它不隐式启用会话回退；按当前目标 Agent 规则条件生效，复用既有 rewind bridge 的逐目标失败与重试载荷。待办正文不进入 module.yml 或 settings，持久 owner 仍为官方 Session 的 `todo/write`。
+
 会话回退使用普通 `host-control / session-rewind` 动作，仅接受 `value: true` 且不接受次数预算，内置卡默认关闭。资格沿当前 Agent 规则受众和条件求值；关闭只阻止后续回退，已提交标记仍按持久操作解释。新 bridge `rewind` 不接受模块主语，字段由 shared 契约统一定义，phase 为 `preview` / `commit` / `retry`，只接会话身份、模式、请求去重身份、页面凭据及固定边界，不接受任意事件范围或子目标列表。
 
 Messages 当前系统正文保存为普通 `host-control/messages-current-system`，仅接受 `value: true`，默认关闭，不接受次数预算或非默认时机。规则启停、受众与嵌套分支沿现有事务；不保存正文副本，不隐式开启 `current-system-snapshot`。依赖诊断沿 `host:messages-current-system`，已有用户模块不补卡或覆盖。实际接入范围见[引擎指南](engine-reuse.md)。

@@ -284,8 +284,8 @@ export function createRuleRuntime(ctx, options = {}) {
     }
     return frame
   }
-  const releaseRewind = options.agent === undefined ? undefined : registerRewindControl(options.agent, () => active
-    && [...records.values()].some(record => record.rewind.some(entry => actionMatches(entry, assemblyFrame({ agent: options.agent })))))
+  const releaseRewind = options.agent === undefined ? undefined : registerRewindControl(options.agent, capability => active
+    && [...records.values()].some(record => record.rewind.some(entry => entry.action.capability === capability && actionMatches(entry, assemblyFrame({ agent: options.agent })))))
   let layers
   const readLimitEntries = () => [...records.values()].flatMap(record => record.readLimits)
   const delegationLimitEntries = () => [...records.values()].flatMap(record => record.delegationLimits)
