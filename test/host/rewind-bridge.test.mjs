@@ -56,7 +56,8 @@ test('回退待办通过真实 bridge 与官方 todo owner 持久更新，重复
   const Todo = await load('@deepseek-ai/dsh-tool-todo'), Persistence = await load('@deepseek-ai/dsh-session-persistence-jsonl')
   for (const plugin of [Llm, Sessions, Projections, Prompt, Tools, Native, Agents]) await root.plugin(plugin)
   await root.plugin(Persistence, { root: join(home, 'sessions'), compression: 'none' })
-  await root.plugin(Todo, { allowParallelInProgress: true })
+  let todoOwner = root.plugin(Todo, { allowParallelInProgress: true })
+  await todoOwner
   await root.plugin(Loop, { agents: [] })
   root.provide('workingDirectory', { get: () => home, ensure: async () => home, set: async () => home })
   root.provide('webServer', { register({ path, handler }) { handlers.set(path, handler); return () => handlers.delete(path) } })
@@ -97,6 +98,21 @@ test('回退待办通过真实 bridge 与官方 todo owner 持久更新，重复
   assert.equal(cancelled.payload.value.targets[0].status, 'failed')
   assert.equal(cancelled.payload.value.targets[0].markerId, undefined)
   assert.deepEqual(root.sessionProjections.snapshot(handle.agent.session).values.todos, original, '取消维护不修改待办')
+  const ownerPreview = await post(handlers, { ...request, requestId: 'todo-owner' })
+  const beforeOwnerRelease = handle.agent.session.snapshotEvents()
+  await todoOwner.dispose()
+  assert.equal(root.sessionProjections.snapshot(handle.agent.session).values.todos, undefined, '真实 owner 释放移除官方投影 key')
+  const unavailable = await post(handlers, { ...request, requestId: 'todo-unavailable' })
+  assert.equal(unavailable.status, 409)
+  assert.match(unavailable.payload.message, /待办.*不可用/)
+  const ownerCommit = await post(handlers, { ...request, requestId: 'todo-owner', phase: 'commit', boundary: ownerPreview.payload.value.boundary })
+  assert.equal(ownerCommit.payload.value.targets[0].status, 'failed')
+  assert.equal(ownerCommit.payload.value.targets[0].markerId, undefined)
+  assert.match(ownerCommit.payload.value.targets[0].message, /待办.*不可用/)
+  assert.deepEqual(handle.agent.session.snapshotEvents(), beforeOwnerRelease, 'owner 缺失时历史 marker 与 todo 均零写入')
+  todoOwner = root.plugin(Todo, { allowParallelInProgress: true })
+  await todoOwner
+  assert.deepEqual(root.sessionProjections.snapshot(handle.agent.session).values.todos, original, 'owner 重挂从官方历史恢复同一清单')
   const fresh = await post(handlers, { ...request, requestId: 'todo-fresh' })
   const commit = { ...request, requestId: 'todo-fresh', phase: 'commit', boundary: fresh.payload.value.boundary }
   const append = handle.agent.session.append
@@ -139,9 +155,13 @@ test('回退待办通过真实 bridge 与官方 todo owner 持久更新，重复
   handle.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '关闭后新轮' }] }))
   await handle.agent.whenIdle()
   const offRequest = { ...request, requestId: 'todo-off' }
+  await todoOwner.dispose()
   const offPreview = await post(handlers, offRequest)
   const off = await post(handlers, { ...offRequest, phase: 'commit', boundary: offPreview.payload.value.boundary })
   assert.equal(off.payload.value.targets[0].status, 'committed')
+  assert.equal(root.sessionProjections.snapshot(handle.agent.session).values.todos, undefined, '规则关闭不要求 todo owner')
+  todoOwner = root.plugin(Todo, { allowParallelInProgress: true })
+  await todoOwner
   assert.deepEqual(root.sessionProjections.snapshot(handle.agent.session).values.todos, original, '关闭后保留官方清单')
   assert.deepEqual(root.sessionProjections.snapshot(other.agent.session).values.todos, original, '非目标会话保持')
   definition.rules[1].enabled = true
@@ -343,6 +363,7 @@ test('回退上一轮沿真实子代理启动与官方目录固定主子目标�
   const credential = table.find(row => row.name === '__PROMPT_TOOL_REWIND__').value
   const request = { phase: 'preview', sessionId: handle.agent.id, mode: 'round', requestId: 'round-1', credential }
   const requestsBeforePreview = roundCapture.requests.length
+  assert.equal(root.sessionProjections.snapshot(handle.agent.session).values.todos, null, '官方 owner 已注册但主会话暂无待办，仍允许正常回退')
   const preview = await post(handlers, request)
   assert.equal(preview.status, 200, JSON.stringify(preview.payload))
   child = root.agents.get(childId)

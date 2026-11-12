@@ -6,7 +6,7 @@ import type { BridgeRuntime } from '../bridge-runtime.ts'
 import { rewindEnabled } from '../../../engine/rewind-control.mjs'
 import { isRewindMarker, rewindPlan } from '../../../engine/rewind-marker.mjs'
 import { historyEvents } from '../../../engine/history.mjs'
-import { rewindTodos } from '../../../engine/rewind-todo.mjs'
+import { checkRewindTodos, rewindTodos } from '../../../engine/rewind-todo.mjs'
 
 type Plan = ReturnType<typeof rewindPlan> & { agent: Agent; runId?: string; mode: 'once' | 'round'; handle?: AgentHandle; committed?: RewindTargetResult }
 interface Run { id: string; parent: Agent; parentTurn: number; child: Agent; fromSeq: number; runId: string; endSeq?: number }
@@ -191,6 +191,7 @@ export function registerRewind(runtime: BridgeRuntime): (() => void)[] {
         signal.throwIfAborted()
         const current = check(plan, credential)
         if (plan.committed) { rewindTodos(plan.agent); return plan.committed }
+        checkRewindTodos(plan.agent)
         const markerId = 'rewind-pt-' + randomUUID()
         const refs = current.refs
         plan.agent.session.append('user/message', { id: markerId as never, role: 'user', source: { kind: 'user' }, content: [] }, {
@@ -229,7 +230,7 @@ export function registerRewind(runtime: BridgeRuntime): (() => void)[] {
         const agent = local(input.sessionId)
         if (tickets.size >= 256) throw new Error('当前页面回退请求过多，请等待旧边界到期')
         const plans = input.mode === 'round' ? await roundPlans(agent, input.credential) : [fixedPlan(agent)], boundary = randomUUID()
-        try { for (const plan of plans) check(plan, input.credential) }
+        try { for (const plan of plans) { check(plan, input.credential); checkRewindTodos(plan.agent) } }
         catch (error) { for (const plan of plans) await plan.handle?.dispose(); throw error }
         tickets.set(boundary, { request: input, credential: input.credential, plans, expires: Date.now() + TTL })
         tx.write(200, { ok: true, value: { sessionId: input.sessionId, boundary, targets: plans.map(plan => ({ sessionId: plan.agent.id, status: 'unchanged' })) } }); return
