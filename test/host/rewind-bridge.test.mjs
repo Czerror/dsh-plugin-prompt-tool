@@ -215,11 +215,15 @@ test('回退上一轮沿真实子代理启动与官方目录固定主子目标�
   child.runMaintenance = () => { throw new Error('子会话维护暂不可用') }
   const committed = await post(handlers, { ...request, phase: 'commit', boundary: preview.payload.value.boundary })
   assert.deepEqual(committed.payload.value.targets.map(target => target.status), ['committed', 'failed'], JSON.stringify(committed.payload))
+  assert.equal(committed.payload.value.targets[0].text, '主轮二\n\n同轮第二输入', '整轮按接受顺序回填全部真实用户原文，不含子代理或自动通知')
   const mainLength = handle.agent.session.snapshotEvents().length
   child.runMaintenance = maintenance
   const retry = { ...request, phase: 'retry', boundary: preview.payload.value.boundary, requestId: 'retry-child' }
   const retried = await post(handlers, retry)
   assert.deepEqual(retried.payload.value.targets.map(target => target.status), ['committed', 'committed'], JSON.stringify(retried.payload))
+  assert.equal(retried.payload.value.targets[0].text, '主轮二\n\n同轮第二输入', '部分失败重试保留已提交主轮的完整回填')
+  assert.ok(retried.payload.value.targets[1].text.startsWith('子轮输入'), '子会话回填自己的官方输入')
+  assert.equal(retried.payload.value.targets[1].text.includes('主轮二'), false, '子会话不混入父轮原文')
   assert.equal(handle.agent.session.snapshotEvents().length, mainLength, '已提交主会话绝不重复回退')
   assert.deepEqual(await post(handlers, retry), retried)
   assert.equal(root.agents.get(childId), undefined, '成功后释放本次恢复的子会话驻留')

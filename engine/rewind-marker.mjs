@@ -39,12 +39,14 @@ export function rewindPlan(session, mode = 'once', acceptsNotice = () => false) 
     if (!automatic) throw new Error('当前轮尚无可回退的已接受用户输入')
   }
   const lastInputSeq = input.seq
-  if (mode === 'round') input = visible.find(event => event.seq > turn.seq && event.type === 'user/message' && event.data?.source?.kind === 'user' && !isRewindMarker(event))
+  const inputs = mode === 'round' ? [...new Set(visible.filter(event => event.seq > turn.seq && event.seq <= lastInputSeq
+    && event.type === 'user/message' && event.data?.source?.kind === 'user' && !isRewindMarker(event)))] : [input]
+  input = inputs[0]
   const index = nodes.indexOf(input.seq)
   const refs = [...new Set(nodes.slice(index))]
   if (refs.length === 0 || refs.some(seq => seq < input.seq && !isRewindMarker(bySeq.get(seq)))) throw new Error('无法安全定位连续回退范围')
   return { session, turnSeq: turn.seq, observedTurnSeq: latest?.seq, lastInputSeq, turn: turn.data.turn, inputId: input.data.id, inputSeq: input.seq,
-    text: input.data.content.filter(block => block.type === 'text').map(block => block.text).join(''), refs }
+    text: inputs.map(event => event.data.content.filter(block => block.type === 'text').map(block => block.text).join('')).join('\n\n'), refs }
 }
 
 /** Keep raw loaded entries in the owner; replay and prepend interpret the same decisions. */
