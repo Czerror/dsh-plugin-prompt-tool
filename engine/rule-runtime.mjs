@@ -333,7 +333,7 @@ export function createRuleRuntime(ctx, options = {}) {
     for (const rule of source.rules) bindDelegationLimitsDependencies(rule, source.moduleId, delegationLimitEntries, options.onOutcome)
     for (const rule of source.rules) bindReadLimitsDependencies(rule, source.moduleId, readLimitEntries, options.onOutcome)
     for (const rule of source.rules) bindRepeatCompactionDependencies(rule, source.moduleId, (action, agent) => action.capability === 'compaction-tool-result-pruner'
-      ? { available: prunerRelease.status?.mounted === true && prunerRelease.status?.owner?.pruneSession === prunerRelease.status?.wrapper, reason: 'official toolResultPruner unavailable' }
+      ? { available: prunerRelease.available?.(agent) === true, reason: 'official toolResultPruner unavailable' }
       : repeatReminderStatus(agent), options.onOutcome)
     for (const rule of source.rules) bindResultTextDependencies(rule, source.moduleId, options.onOutcome)
     for (const rule of source.rules) {
@@ -669,7 +669,7 @@ export function createRuleRuntime(ctx, options = {}) {
         for (const entry of policies) if (entry.rule.enabled !== false && actionMatches(entry, policyFrame)) {
           if (entry.action.capability === 'repeat-tool-reminder') repeatSessions.add(session)
           if (entry.action.capability === 'compaction-tool-result-pruner') {
-            if (prunerRelease.status?.mounted === true) prunerBlockedSessions.add(session)
+            if (prunerRelease.available?.(policyFrame.subject?.agent ?? context?.agent ?? options.agent) === true) prunerBlockedSessions.add(session)
             else { try { options.onOutcome?.({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, actionId: entry.id, channel: 'host:compaction-tool-result-pruner', outcome: 'unavailable', identityOutcome: 'condition-unavailable', reason: 'official toolResultPruner injection unavailable' }) } catch {} }
           }
         }

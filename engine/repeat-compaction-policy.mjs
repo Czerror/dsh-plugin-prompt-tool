@@ -5,6 +5,8 @@
 
 import { Context, symbols } from '@deepseek-ai/cordis'
 import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
+import { createRequire } from 'node:module'
+import { resolveHostPackage } from './host-package.mjs'
 import { actionMatches } from './conditions/evaluation.mjs'
 
 const prunerStates = new WeakMap()
@@ -66,10 +68,16 @@ export function filterRepeatReminderDecision(decision, enabled) {
  */
 export function installPrunerGate(ctx, ownsSession) {
   if (!ctx || typeof ownsSession !== 'function') throw new TypeError('pruner gate requires a context and session predicate')
-  const status = { mounted: false, owner: undefined }
-  const fiber = ctx.inject(['toolResultPruner'], dependent => {
+  let official
+  try { official = createRequire(import.meta.url)(resolveHostPackage('@deepseek-ai/dsh-compaction-tool-result-pruner')).ToolResultPruner } catch {}
+  const mounts = new Map()
+  const sessionAgents = new WeakMap()
+  let active = true, refreshing = false
+  const reachable = (agent, fiber) => scopeTarget({}, scopeOf(agent?.ctx ?? ctx))[Context.filter](fiber.ctx)
+  const live = fiber => fiber.uid !== null && fiber.state === 2
+  const attach = (fiber, status) => fiber.ctx.inject(['toolResultPruner'], dependent => {
     const owner = dependent.get('toolResultPruner')?.[symbols.original] ?? dependent.get('toolResultPruner')
-    if (!owner || typeof owner.pruneSession !== 'function') return () => {}
+    if (!(owner instanceof official) || typeof owner.pruneSession !== 'function') return () => {}
     status.mounted = true; status.owner = owner
     let state = prunerStates.get(owner)
     if (!state) {
@@ -88,9 +96,10 @@ export function installPrunerGate(ctx, ownsSession) {
       prunerStates.set(owner, state)
     }
     status.wrapper = state.wrapper
-    state.entries.add(ownsSession)
+    const predicate = session => active && live(fiber) && sessionAgents.has(session) && reachable(sessionAgents.get(session), fiber) ? ownsSession(session) : undefined
+    state.entries.add(predicate)
     return () => {
-      state.entries.delete(ownsSession)
+      state.entries.delete(predicate)
       if (state.entries.size === 0 && owner.pruneSession === state.wrapper) {
         owner.pruneSession = state.original
         prunerStates.delete(owner)
@@ -98,7 +107,30 @@ export function installPrunerGate(ctx, ownsSession) {
       status.mounted = false; status.owner = undefined; status.wrapper = undefined
     }
   })
-  const dispose = () => fiber?.dispose?.()
-  dispose.status = status
+  const refresh = () => {
+    if (!active || refreshing) return
+    refreshing = true
+    try {
+      const fibers = new Set(official ? [...ctx.registry?.get(official)?.fibers ?? []].filter(live) : [])
+      for (const [fiber, mount] of mounts) if (!fibers.has(fiber)) { mount.gate.dispose(); mounts.delete(fiber) }
+      for (const fiber of fibers) if (!mounts.has(fiber)) {
+        const status = { mounted: false }
+        mounts.set(fiber, { status, gate: attach(fiber, status) })
+      }
+    } finally { refreshing = false }
+  }
+  const listeners = ['internal/plugin', 'internal/status'].map(event => ctx.on(event, refresh, { global: true }))
+  refresh()
+  const dispose = () => {
+    active = false
+    for (const off of listeners) off()
+    for (const { gate } of mounts.values()) gate.dispose()
+    mounts.clear()
+  }
+  dispose.available = agent => {
+    refresh()
+    if (agent?.session) sessionAgents.set(agent.session, agent)
+    return [...mounts].some(([fiber, { status }]) => live(fiber) && reachable(agent, fiber) && status.mounted)
+  }
   return dispose
 }

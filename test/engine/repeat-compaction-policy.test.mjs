@@ -69,8 +69,9 @@ test('compiled pruner policy handles conditions, late owners and disposal', asyn
   let runtime
   t.after(async () => { runtime?.dispose(); await root.fiber.dispose() })
   root.provide('tokenMeter', { estimateMessage: () => 1 })
-  const plugin = await root.plugin({ name: 'official-pruner-fixture', apply: ctx => { new ToolResultPruner(ctx, { thresholdChars: 50, headChars: 5, tailChars: 5 }); return () => {} } })
-  const owner = root.get('toolResultPruner')
+  const inner = root.isolate('toolResultPruner')
+  const plugin = await inner.plugin(ToolResultPruner, { thresholdChars: 50, headChars: 5, tailChars: 5 })
+  const owner = inner.get('toolResultPruner')
   const session = { id: 'runtime-session', header: {}, surface: { nodes: [1] }, eventAt: () => original,
     deriveEventMessage: event => event.data.message, append: () => ({ seq: 2 }) }
   const agent = { id: 'runtime-agent', session }
@@ -85,7 +86,18 @@ test('compiled pruner policy handles conditions, late owners and disposal', asyn
   runtime.replace([{ moduleId: 'runtime', rules: compileRules([{ id: 'pruner', enabled: true, then: [{ id: 'gate', kind: 'host-control', capability: 'compaction-tool-result-pruner', value: true }] }]) }])
   runtime.prepareAssembly({ agent })
   assert.deepEqual(owner.pruneSession(session), { pruned: [], charsRemoved: 0 })
+  const gated = owner.pruneSession
+  let thirdPartyCalls = 0
+  const thirdParty = function (...args) { thirdPartyCalls++; return Reflect.apply(gated, this, args) }
+  owner.pruneSession = thirdParty
+  runtime.prepareAssembly({ agent })
+  assert.deepEqual(owner.pruneSession(session), { pruned: [], charsRemoved: 0 })
+  runtime.replace([{ moduleId: 'runtime', rules: compileRules([{ id: 'pruner', enabled: false, then: [{ id: 'gate', kind: 'host-control', capability: 'compaction-tool-result-pruner', value: true }] }]) }])
+  runtime.prepareAssembly({ agent })
+  assert.equal(owner.pruneSession(session).pruned.length, 1, 'off restores the native isolated owner')
   runtime.dispose()
+  assert.equal(owner.pruneSession(session).pruned.length, 1, 'retained third-party wrapper cannot reactivate a disposed gate')
+  assert.equal(thirdPartyCalls, 3)
   await runtimePlugin.dispose()
   await plugin.dispose()
   let lateRuntime
@@ -96,13 +108,13 @@ test('compiled pruner policy handles conditions, late owners and disposal', asyn
   } })
   lateRuntime.prepareAssembly({ agent })
   assert.equal(root.get('toolResultPruner'), undefined)
-  const lateOfficial = await root.plugin({ name: 'late-official', apply: ctx => { new ToolResultPruner(ctx, { thresholdChars: 50, headChars: 5, tailChars: 5 }); return () => {} } })
+  const lateOfficial = await root.plugin(ToolResultPruner, { thresholdChars: 50, headChars: 5, tailChars: 5 })
   lateRuntime.prepareAssembly({ agent })
   assert.deepEqual(root.get('toolResultPruner').pruneSession(session), { pruned: [], charsRemoved: 0 })
   await lateOfficial.dispose()
   lateRuntime.prepareAssembly({ agent })
   assert.equal(root.get('toolResultPruner'), undefined)
-  const restoredOfficial = await root.plugin({ name: 'restored-official', apply: ctx => { new ToolResultPruner(ctx, { thresholdChars: 50, headChars: 5, tailChars: 5 }); return () => {} } })
+  const restoredOfficial = await root.plugin(ToolResultPruner, { thresholdChars: 50, headChars: 5, tailChars: 5 })
   lateRuntime.prepareAssembly({ agent })
   assert.deepEqual(root.get('toolResultPruner').pruneSession(session), { pruned: [], charsRemoved: 0 })
   lateRuntime.dispose()
@@ -113,7 +125,7 @@ test('compiled pruner policy handles conditions, late owners and disposal', asyn
 test('one shared official pruner isolates two production runtimes by session', async t => {
   const root = new Context(); root.provide('tokenMeter', { estimateMessage: () => 1 })
   t.after(async () => { await root.fiber.dispose() })
-  const plugin = await root.plugin({ name: 'official-pruner-fixture', apply: ctx => { new ToolResultPruner(ctx, { thresholdChars: 50, headChars: 5, tailChars: 5 }); return () => {} } })
+  const plugin = await root.plugin(ToolResultPruner, { thresholdChars: 50, headChars: 5, tailChars: 5 })
   const owner = root.get('toolResultPruner')
   const make = id => ({ id, header: {}, surface: { nodes: [1] }, eventAt: () => original, deriveEventMessage: event => event.data.message, append: () => ({ seq: 2 }) })
   const a = make('a'), b = make('b'), agentA = { id: 'a', session: a }, agentB = { id: 'b', session: b }
@@ -130,6 +142,37 @@ test('one shared official pruner isolates two production runtimes by session', a
   assert.equal(owner.pruneSession(b).pruned.length, 1)
   runtimeA.dispose(); assert.equal(owner.pruneSession(b).pruned.length, 1)
   await runtimes.dispose(); await scopeA.dispose(); await scopeB.dispose(); await plugin.dispose(); await root.fiber.dispose()
+})
+
+test('official isolated owners are gated only for their own Agent scope', async t => {
+  const root = new Context(); root.provide('tokenMeter', { estimateMessage: () => 1 })
+  t.after(async () => { await root.fiber.dispose() })
+  const make = id => ({ id, session: { id, header: {}, surface: { nodes: [1] }, eventAt: () => original,
+    deriveEventMessage: event => event.data.message, append: () => ({ seq: 2 }) } })
+  const a = make('scoped-a'), b = make('scoped-b')
+  const scopeA = createScope(root, a), scopeB = createScope(root, b); a.ctx = scopeA.ctx; b.ctx = scopeB.ctx
+  const innerA = a.ctx.isolate('toolResultPruner'), innerB = b.ctx.isolate('toolResultPruner')
+  const ownerA = await innerA.plugin(ToolResultPruner, { thresholdChars: 50, headChars: 5, tailChars: 5 })
+  const ownerB = await innerB.plugin(ToolResultPruner, { thresholdChars: 50, headChars: 5, tailChars: 5 })
+  const makeRules = () => compileRules([{ id: 'scoped', then: [{ id: 'gate', kind: 'host-control', capability: 'compaction-tool-result-pruner', value: true }] }])
+  const outcomes = []
+  const runtime = createRuleRuntime(a.ctx, { agent: a, externalAssembly: true, onOutcome: value => outcomes.push(value) })
+  const runtimeB = createRuleRuntime(b.ctx, { agent: b, externalAssembly: true })
+  t.after(() => { runtime.dispose(); runtimeB.dispose() })
+  runtime.replace([{ moduleId: 'scoped', rules: makeRules() }])
+  runtimeB.replace([{ moduleId: 'scoped', rules: makeRules() }])
+  await new Promise(resolve => setImmediate(resolve))
+  runtime.prepareAssembly({ agent: a }); runtimeB.prepareAssembly({ agent: b })
+  const prunerA = innerA.get('toolResultPruner'), prunerB = innerB.get('toolResultPruner')
+  assert.deepEqual(prunerA.pruneSession(a.session), { pruned: [], charsRemoved: 0 })
+  assert.deepEqual(prunerB.pruneSession(b.session), { pruned: [], charsRemoved: 0 })
+  assert.equal(prunerA.pruneSession(b.session).pruned.length, 1)
+  assert.equal(prunerB.pruneSession(a.session).pruned.length, 1)
+  await ownerA.dispose()
+  runtime.prepareAssembly({ agent: a })
+  assert.ok(outcomes.some(value => value.outcome === 'unavailable'), 'another Agent owner cannot supply readiness')
+  assert.throws(() => prunerA.pruneSession(a.session), /inactive context/, 'released owner reaches the official lifecycle rejection instead of an old gate')
+  runtime.dispose(); runtimeB.dispose(); await ownerB.dispose(); await scopeA.dispose(); await scopeB.dispose()
 })
 
 test('real assembly suppresses dependent body until the official repeat owner is mounted', async t => {

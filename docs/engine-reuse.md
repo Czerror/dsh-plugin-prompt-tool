@@ -1,5 +1,7 @@
 # 统一规则引擎复用指南
 
+`compaction-tool-result-pruner` 按宿主解析的官方构造器身份发现全部存活 Fiber，并在各 owner 自己的 Context 等待、门控原 Pruner；正式 standard 组合内层 isolate 不影响发现。就绪与停用资格按当前 Agent 的官方 scope 和真实 session 身份核对，其他 Agent 的 owner 不提供就绪。晚到或重挂后在后续正常装配重判，释放立即使旧门控失活；关闭规则恢复官方裁剪，第三方外层包装保留。不复制裁剪算法，也不修改预设。
+
 `host-control / session-rewind-todos` 独立默认关闭，按回退提交时真实 Agent 的规则判定。开启时预览及历史标记提交前核对当前作用域的官方 `todos` 投影；owner 未注册或释放时明确拒绝，正常暂无清单（null）允许，恢复后在下次正常请求重判，关闭时不依赖 todo owner。历史标记提交后，读取官方 `todos` standing-plan 投影（`turn/start` 后无清单即不写），仅将 completed 改为 pending，保持 in_progress、pending、正文与顺序；沿官方 Session 的 `todo/write` 全量事件持久化并更新同一投影，不建立第二状态库。历史重放只解释，不补写待办。标记已提交而待办写入失败时返回带 markerId 的失败目标，明确历史已提交；原边界重试只补待办，不重复回退，已进入新轮则拒绝。关闭、释放不逆转已写结果，后续不再更新。
 
 `host-control / session-rewind` 是默认关闭的会话回退资格。producer 固定实际 Agent、所属轮及已接受输入身份，经公开 `cancel(..., { keepInbox: true })` 与有界静止等待后，在 `runMaintenance` 内再次核边界，期间开始的新轮不能被迟到取消或重新选中。回退按当前 surface 的连续输入后缀写空用户 replacement，准确记录来源节点；durable 不改写，重复网络提交不多退一轮，新的明确点击可继续退更早输入。整轮包含本轮真实子代理完成后的已结束官方通知轮；已释放的子会话经官方恢复，在启动屏障内核验父身份、持久边界与空 inbox 后才维护，成功后释放临时驻留；未知通知来源或预览后新轮拒绝。
