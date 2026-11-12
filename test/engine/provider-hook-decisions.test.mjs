@@ -42,7 +42,9 @@ for (const kind of ['claude-code', 'codex']) test(`${kind} 官方四事件保留
   const agent = { id: kind, session, model: { current: () => ({ model: 'deepseek-flash' }) }, steer() { steers++ } }
   agent.ctx = createScope(root, agent).ctx
   const outcomes = []
-  const runtime = createRuleRuntime(agent.ctx, { agent, onOutcome: outcome => outcomes.push(outcome) })
+  let assemblyCtx
+  const assemblyScope = await agent.ctx.plugin({ name: 'prompt-tool-assembly', apply(ctx) { assemblyCtx = ctx } })
+  const runtime = createRuleRuntime(assemblyCtx, { agent, onOutcome: outcome => outcomes.push(outcome) })
   t.after(async () => { runtime.dispose(); await root.fiber.dispose(); await rm(dir, { recursive: true }) })
   const definition = parseDocument(await readFile(new URL('../../modules/limit-breaker/module.yml', import.meta.url), 'utf8')).toJS()
   const card = definition.rules.find(rule => rule.id === `${kind}-hook-decisions`)
@@ -192,7 +194,7 @@ for (const kind of ['claude-code', 'codex']) test(`${kind} 官方四事件保留
   await malformed.dispose()
   const restored = await root.plugin(await import(`@deepseek-ai/dsh-hooks-${kind}`), { configPath: path })
   assert.equal((await pre()).kind, 'enter')
-  runtime.dispose()
+  await assemblyScope.dispose()
   ask = false
   assert.equal((await pre()).kind, 'reject')
   await restored.dispose()

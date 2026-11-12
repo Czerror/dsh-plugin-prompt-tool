@@ -57,15 +57,15 @@ export function bindProviderHookDependencies(rule, moduleId, onOutcome) {
     return false
   })
 }
-providerHookDecisionsState.register = (ctx, resolve) => {
-  const entry = { ctx, resolve }
+providerHookDecisionsState.register = (ctx, agent, resolve) => {
+  const entry = { ctx, agent, resolve }
   integrations.add(entry)
   if (typeof ctx.effect === 'function') ctx.effect(() => () => integrations.delete(entry))
   return () => integrations.delete(entry)
 }
 providerHookDecisionsState.accept = (input, channel, result) => {
   for (const entry of integrations) {
-    if (entry.ctx !== input?.agent?.ctx) continue
+    if (entry.agent !== input?.agent || entry.ctx.root !== input?.agent?.ctx?.root) continue
     const plan = entry.resolve(input, channel, result)
     if (plan !== undefined) return plan
   }

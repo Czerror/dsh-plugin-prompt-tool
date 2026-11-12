@@ -585,7 +585,7 @@ export function createRuleRuntime(ctx, options = {}) {
     frame.requestBudgetReason = reason
     return frame.requestBudgetConflict
   }
-  releaseProviderHook = providerHookDecisionsState.register(ctx, (input, channel, result) => {
+  releaseProviderHook = providerHookDecisionsState.register(ctx, options.agent, (input, channel, result) => {
     const entries = [...records.values()].flatMap(record => record.providerHookDecisions)
     if (entries.length === 0 || input?.agent !== options.agent) return undefined
     const frame = ruleFrame(channel, [{ ...input, modelSelection: input.modelSelection ?? {} }, result].filter(value => value !== undefined), warnOnce, ctx, report)
