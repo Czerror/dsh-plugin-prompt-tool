@@ -181,6 +181,7 @@ rules:
           position: before-all
           role: user
           templateFile: ./assets/echo.md
+          dedupe: session
           params:
             constant: false
             keys: [ 压缩, 上下文满, 摘要, 找不回, 退化 ]
@@ -233,6 +234,7 @@ rules:
           position: before-all
           role: user
           templateFile: ./assets/ledger.md
+          dedupe: session
           params:
             constant: false
             keys: [ 账本, 未结, 承诺, 只追加 ]

@@ -9,6 +9,9 @@ import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+import { runPreStepBatch } from '../../engine/executor.mjs'
+import { createPreStepSource } from '../../engine/pre-step-source.mjs'
+import { PROMOTION, presetSourceId } from '../fixtures/pre-step.mjs'
 import { rulePromptConfigOptions } from '../../src/host/module-slices.ts'
 import { runModuleManifest } from '../../src/host/module-manifest.ts'
 import { MODULE_TOOL_CAPABILITIES, MODULE_TOOL_NAMES } from '../../src/shared/engine-capabilities.ts'
@@ -92,6 +95,63 @@ test('soul 模块：规则编译、模板存在与变量声明', () => {
   }
   assert.equal(MODULE_TOOL_CAPABILITIES[MODULE_TOOL_NAMES.manifest], 'module-manifest-tools')
   assert.equal(MODULE_TOOL_CAPABILITIES[MODULE_TOOL_NAMES.fileRead], 'module-file-tools')
+})
+
+test('Soul按需规则在可见上下文内只投递一次，压缩遮蔽后仍可重投', async () => {
+  const configs = compileRules(spec.rules.filter(rule => ['soul-echo', 'soul-ledger'].includes(rule.id)), {
+    moduleId: 'soul', promptConfigOptions: rulePromptConfigOptions(moduleDir),
+  }).flatMap(rule => rule.actions.map(action => action.compiledConfig))
+  const events = [{ type: 'user/message', seq: 0, data: {
+    id: 'task', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '处理压缩和账本承诺' }],
+  } }]
+  const nodes = [0]
+  const session = { id: 'soul-dedupe', header: { delegationDepth: 0 }, snapshotEvents: () => events, surface: { nodes } }
+  const source = createPreStepSource({ sourceId: presetSourceId('soul-dedupe'), ctx: {}, configs, promotion: PROMOTION })
+  const memo = new Map()
+  const run = (memoOverride = memo, agentSession = session) => runPreStepBatch({
+    ctx: {}, agent: { session: agentSession, options: { model: 'deepseek-chat' } },
+    decision: { kind: 'enter', messages: [{ id: 'pending', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '继续' }] }] },
+    sources: [source], memo: memoOverride, warnOnce: () => {},
+  })
+  const injected = result => result.messages.filter(message => ['soul-echo', 'soul-ledger'].includes(message.source?.ruleId))
+  const admit = message => {
+    const seq = events.length
+    events.push({ type: 'user/message', seq, data: message })
+    nodes.push(seq)
+  }
+  events[0].data.content = [{ type: 'text', text: '普通闲聊' }]
+  assert.deepEqual(injected(await run()), [], '未命中条件时两条按需规则都拒绝')
+  events[0].data.content = [{ type: 'text', text: '处理压缩和账本承诺' }]
+  const candidate = injected(await run())
+  assert.deepEqual(candidate.map(message => message.source.ruleId).sort(), ['soul-echo', 'soul-ledger'])
+  assert.deepEqual(injected(await run()).map(message => message.source.ruleId).sort(), ['soul-echo', 'soul-ledger'], '候选未接纳不占去重')
+  for (const message of candidate) admit(message)
+
+  assert.deepEqual(injected(await run()), [], '已入可见surface后立即去重')
+  assert.deepEqual(injected(await run(new Map())), [], '冷memo仍以可见历史为真值')
+
+  for (let step = 0; step < 20; step++) {
+    assert.deepEqual(injected(await run()), [], '历史关键词仍命中时，工具步骤不重复投递')
+    events.push({ type: 'tool/call', seq: events.length, data: {} })
+  }
+
+  nodes.length = 0
+  events.push({ type: 'compaction/end', seq: events.length, data: {} })
+  const summary = { id: 'summary', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '压缩后仍有账本承诺' }] }
+  const summarySeq = events.length
+  events.push({ type: 'user/message', seq: summarySeq, data: summary })
+  nodes.push(summarySeq)
+  const afterCompaction = injected(await run())
+  assert.deepEqual(afterCompaction.map(message => message.source.ruleId).sort(), ['soul-echo', 'soul-ledger'])
+  for (const message of afterCompaction) admit(message)
+  assert.deepEqual(injected(await run()), [], '压缩后重投一次后再次去重')
+
+  const childEvents = [{ type: 'user/message', seq: 0, data: {
+    id: 'child-task', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '处理压缩和账本承诺' }],
+  } }]
+  const child = { id: 'soul-dedupe-child', header: { delegationDepth: 1 }, snapshotEvents: () => childEvents, surface: { nodes: [0] } }
+  const childResult = await run(new Map(), child)
+  assert.deepEqual(injected(childResult).map(message => message.source.ruleId).sort(), ['soul-echo', 'soul-ledger'], '主子会话去重隔离')
 })
 
 test('soul 模块：manifest 的 next/check 只读，不建目录', () => {
