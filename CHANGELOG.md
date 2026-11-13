@@ -1,6 +1,13 @@
 # Changelog
 
-## [5.0.0] - 2026-11-06
+## [6.0.0] - 2026-11-14
+
+- **BREAKING｜三个内容模块移出仓库**：`modules/limit-breaker`、`modules/redteam`、`modules/unrestricted` 及其资产共 29 个文件删除，原样存档在本地知识库 `03_Knowledge/archived-modules/prompt-tool-20261114`（含逐文件 SHA-256 的 `manifest.csv`）。本插件从此只提供注入引擎：规则、条件、动作、插入点、组合、模块写盘与导入导出。
+- **外部内容插件契约固定**：角色与协议由外部模块提供，模块目录 id 必须是 `redteam`（`ROLE_MODULE_ID`），规则 id 为 `role-<role>`、`protocol-redteam`／`protocol-official`、`auto-delegation`。内容缺失时自动派工报 `AUTO_DELEGATION_DISABLED`，角色正文不投递并给出一次可见告警，不再把「启动成功」当成「角色已生效」。
+- **升级后果**：内置模块播种只补缺失、不删多余，已有 `$DSH_HOME/modules/{limit-breaker,redteam,unrestricted}` 会继续装配并投递；需要收紧时自行删除这三个目录。
+- **测试**：内容断言用例随内容删除（7 个文件，`web-result-sections` 保留两条引擎用例）；派工、epoch、重试、策略存储与总闸改为自带最小夹具；`module-seed` 移除三个模块的播种断言；清掉遗留的孤儿导入与丢失的文件末尾换行。test 1112 passed。
+
+-## [5.0.0] - 2026-11-06
 
 - **BREAKING｜技能管理整体移除**：工作台五页收敛为四页，删除全部 `/skill*` 桥端点、`src/host/skills-*.ts`、`src/shared/skills.ts`、`src/client/features/skills/` 与 TUI 的技能开关命令；`inject` 不再等待 `skills`，peer 依赖移除 `@deepseek-ai/dsh-skill-filesystem`。技能实体与调用策略仍由官方技能根及其 frontmatter 拥有，插件不再读写。
 - **保留**：包内 `skills/` 的启动补建移入 `src/host/skill-seed.ts`（仍只补缺失、不覆盖用户副本）；`engine/skill-search.mjs` 的 `skill_search`/`skill_load` 与 `skill-surface` 模块不变，按需发现能力不受影响。

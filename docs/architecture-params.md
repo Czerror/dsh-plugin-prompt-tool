@@ -38,7 +38,7 @@ process 规则另支持 `command-confine-passthrough: true`：每模块发布一
 | 外部来源事实 | 注入动作 params.source | 导入报告与导出元数据 |
 | 模块显示名称 | module.yml.name | 模块卡与编辑目标选择；不改变模块 ID 或目录 |
 
-核心破限模块的 `customTools` 当前包含一个 `http_fetch` 行，默认 `enabled: false`。模块总开关关闭时整组贡献撤回；模块开启后仍须把该工具行显式设为 `true` 才注册，关闭工具行会撤回注册并保留定义。它固定发起 GET，返回状态、成功标志和原始响应正文；这不是官方 `web_fetch` 的网页提取、来源引用或 provider 能力，不能按两者语义等价使用。`unrestricted` 的来源定义仍保持 `fetch: false`，核心模块不会隐式修改或打开它。
+模块的 `customTools` 是普通工具模板行（例如原核心破限模块的 `http_fetch`）：模块总开关关闭时整组贡献撤回；模块开启后仍须把该工具行显式设为 `true` 才注册，关闭工具行会撤回注册并保留定义。这类行不是官方工具能力，固定发起 GET 并返回状态、成功标志和原始响应正文，不能与官方 `web_fetch` 的网页提取、来源引用或 provider 能力按语义等价使用。`fetch` 来源开关默认关闭，工具行不隐式修改或打开它。工具行本身随内容模块移出，本仓库保留行定义、开关与注册撤回的契约。
 
 当前格式的决策见 [ADR-0013](adr/0013-native-context-module-state.md)。模块不注册为官方会话预设、不保存会话绑定，不通过 settings 携带规则正文或大文本。
 
@@ -74,9 +74,9 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 人设动作预算 `instructionsMaxBytes` 仍归module.yml普通规则，合法值为正安全整数。工作台直接复用RuleParameterFields数字原文、fields错误草稿、hasRuleFields保存阻断和原rule-drafts/CAS；切回继承清除此字段的原草稿，不创建独立预算保存。参考初值65536不限制用户采用其他合法值。
 
-委派参数同样保存在普通规则动作 `subagent-params`，当前只接受 `provider: spawn`、合法工具名 `tool` 与必填非负安全整数 `maxDepth`。0 表示明确禁止委派；空值、负数、小数与非数值均拒绝，撤回贡献通过关闭规则或删除动作表达。数字沿原 RuleParameterFields、fields/hasRuleFields、规则 CAS 与发布，不新增深度草稿或保存端点。`assembly.target.sections.replace` 的名称与完整正文沿原装配表单及规则事务编辑。内置 unrestricted 只补缺失定义，模块初始关闭、十条规则中九条默认开启（拒绝重试默认关闭），复制导出保留完整规则、两份内容资产与所选文本许可，已有用户副本不覆盖。
+委派参数同样保存在普通规则动作 `subagent-params`，当前只接受 `provider: spawn`、合法工具名 `tool` 与必填非负安全整数 `maxDepth`。0 表示明确禁止委派；空值、负数、小数与非数值均拒绝，撤回贡献通过关闭规则或删除动作表达。数字沿原 RuleParameterFields、fields/hasRuleFields、规则 CAS 与发布，不新增深度草稿或保存端点。`assembly.target.sections.replace` 的名称与完整正文沿原装配表单及规则事务编辑。内容模块（原 `unrestricted`）已移出本仓库；播种与复制导出仍按只补缺失、保留完整规则与内容资产、不覆盖用户副本的契约执行，见 [ADR-0015](adr/0015-builtin-module-seed-missing-only.md)。
 
-显式瞬时额度 `request-params.maxTokens` 与 `phase.maxPromoteSteps` 同样沿原数字原文草稿和规则事务保存，合法范围均为正安全整数。非法或未完成原文不发保存请求，折叠保留草稿。该额度与同动作的patch/unset.maxTokens及replace互斥；原有patch组合不迁移。`pre-step-filter.instructionHint` 是普通规则中的可编辑完整模板。内置redteam只补缺失定义，十五条规则中十三条默认开启（自动派工与红队协议默认关闭）；复制导出保留已保存数值、条件、正文和适用许可，不覆盖用户副本。请求额度运行接缝和指令字节预算分别取资格，详见[引擎指南](engine-reuse.md)。
+显式瞬时额度 `request-params.maxTokens` 与 `phase.maxPromoteSteps` 同样沿原数字原文草稿和规则事务保存，合法范围均为正安全整数。非法或未完成原文不发保存请求，折叠保留草稿。该额度与同动作的patch/unset.maxTokens及replace互斥；原有patch组合不迁移。`pre-step-filter.instructionHint` 是普通规则中的可编辑完整模板。内容模块（原 `redteam`）已移出本仓库，播种与复制导出仍按只补缺失、不覆盖用户副本的契约执行。请求额度运行接缝和指令字节预算分别取资格，详见[引擎指南](engine-reuse.md)。
 
 ### 规则事务与互斥
 

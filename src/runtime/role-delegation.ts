@@ -230,16 +230,22 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
   }
 
   /**
-   * 角色正文归 redteam 模块的 role-<role> 规则所有。规则缺失或被关闭时派工会得到一个
+   * 角色正文归外部内容模块的 role-<role> 规则所有。规则缺失或被关闭时派工会得到一个
    * 没有角色的子代理，因此在这里明确报不可用，而不是把「启动成功」当成「角色已生效」。
    */
+  let contentModuleMissing = false
   const assertContent = (role: string): void => {
     let rules: readonly { id: string; enabled?: boolean }[]
     try {
       rules = readModuleRules(join(options.moduleRoot, ROLE_MODULE_ID)).rules
     } catch {
-      // 内容模块根本不在（例如只有服务桩的环境）：不在派工层伪造阻断，
-      // 装配链本就投不出角色；能读到规则时才按启用状态判。
+      // 内容模块根本不在（内容模块已移出本仓库，外部内容插件未装时必然如此）：
+      // 装配链本就投不出角色，不在派工层伪造阻断；但要让人看见这次没有角色正文，
+      // 否则「启动成功」会被当成「角色已生效」。只警告一次，不给每次派工刷告警。
+      if (!contentModuleMissing) {
+        contentModuleMissing = true
+        warn(`prompt-tool: 未找到角色内容模块 ${ROLE_MODULE_ID}（角色正文由外部内容插件提供）：本次派工不投递 role-${role}`)
+      }
       return
     }
     const rule = rules.find(item => item.id === 'role-' + role)

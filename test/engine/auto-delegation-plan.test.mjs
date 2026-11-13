@@ -12,7 +12,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { pathToFileURL, fileURLToPath } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -22,7 +22,6 @@ import { createRoleDelegation, ROLE_MODULE_ID } from '../../src/runtime/role-del
 import { createAutoDelegation, AUTO_DELEGATION_RULE_ID } from '../../src/runtime/auto-delegation.ts'
 import { setModuleEnabled } from '../../src/host/config-store.ts'
 import { readModuleRules, editModuleRules } from '../../src/host/module-rules.ts'
-import { parse as parseYaml } from 'yaml'
 
 /**
  * 夹具自带最小资产与自动派工规则：红队内容模块已移出仓库（存档在本地知识库），

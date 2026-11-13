@@ -44,11 +44,11 @@ module.yml 支持 UI 保存与直接手改。rules/ 从完整定义分解，手�
 
 人设与其他规则共用规则草稿和保存事务；工具、变量与指令策略保留各自的保存边界。布局、无障碍、locale 和 typed bridge 规范见 [UI 框架](docs/ui-architecture.md)。
 
-破限／无限制／红队三个内容模块已移出本插件（存档在本地知识库 `03_Knowledge/archived-modules/prompt-tool-20261114`）。需要这些内容的用户改用外部内容插件提供的 `role-*`、`protocol-*`、`request-retry` 等规则；本仓库只保留注入引擎：规则、条件、动作、插入点、组合、模块写盘与导入导出。
+破限／无限制／红队三个内容模块已移出本插件（存档在本地知识库 `03_Knowledge/archived-modules/prompt-tool-20261114`），本仓库只保留注入引擎：规则、条件、动作、插入点、组合、模块写盘与导入导出。内容改由外部内容插件提供，口径固定：模块目录 id 必须是 `redteam`（`ROLE_MODULE_ID`），角色规则 id 为 `role-<role>`（`plan`／`recon`／`assess`／`vuln-scan`／`exploit`／`internal`），协议用 `protocol-redteam`／`protocol-official` 占 `capability-protocol` 互斥组，自动派工总开关用 `auto-delegation`。缺这些内容时自动派工报 `AUTO_DELEGATION_DISABLED`，角色正文不投递并给出一次可见告警，不把「启动成功」当成「角色已生效」。**升级提示**：播种只补缺失、不删多余，已安装的旧副本会继续装配投递，需要收紧时自行删除 `$DSH_HOME/modules` 下的 `limit-breaker`、`redteam`、`unrestricted` 三个目录。
 
 
 
-团队角色委派沿官方 Team 与官方 subagent 完成。启动前登记一次性 intent 与唯一 token，子会话在 `agent/created`（宿主 await，早于首个 assemble）消费并写入会话级角色事实；角色正文仍来自 `modules/redteam` 的 `role-*` 规则与 `assets/`，名称、描述与任务文本不授予角色。五个执行角色默认叶子（恒显式 `maxDepth: 1`，缺 `depthLimit` 即明确不可用而不启动），`plan` 只作用于真实根 Agent，派给子代理报 `ROLE_NOT_EXECUTABLE`。任务、依赖与版本由官方 Team 拥有，结果只在真实运行 `stopReason: completed`、有输出且归属匹配时标完成，一轮结束不等于任务完成；取消的启动不留可复用资格。关闭派工只撤回后续派工，不删官方任务、不中断其他来源。自动派工默认关闭、需显式开启，开启时选择红队协议，关闭时不自动切回普通协议。
+团队角色委派沿官方 Team 与官方 subagent 完成。启动前登记一次性 intent 与唯一 token，子会话在 `agent/created`（宿主 await，早于首个 assemble）消费并写入会话级角色事实；角色正文仍由外部内容模块的 `role-*` 规则与 `assets/` 提供，名称、描述与任务文本不授予角色。五个执行角色默认叶子（恒显式 `maxDepth: 1`，缺 `depthLimit` 即明确不可用而不启动），`plan` 只作用于真实根 Agent，派给子代理报 `ROLE_NOT_EXECUTABLE`。任务、依赖与版本由官方 Team 拥有，结果只在真实运行 `stopReason: completed`、有输出且归属匹配时标完成，一轮结束不等于任务完成；取消的启动不留可复用资格。关闭派工只撤回后续派工，不删官方任务、不中断其他来源。自动派工默认关闭、需显式开启，开启时选择红队协议，关闭时不自动切回普通协议。
 
 官方指令预算通过普通人设动作的 `instructionsMaxBytes` 编辑，沿既有数字草稿、规则保存与发布。启动时在官方入口前加载 `node --import dsh-plugin-prompt-tool/early <官方入口>`；指令字节预算只验证官方 `@deepseek-ai/dsh-agent-instructions@0.2.2-rc.2` 的指定发行指纹，瞬时请求额度另验证同版本agent-loop的指定指纹。缺早期入口、已缓存或产物失配时，对应预算及同分支依赖正文暂停，无关规则继续；官方原预算透传。代码及早期入口变更需用户重启DSH服务生效，不自动重启。
 

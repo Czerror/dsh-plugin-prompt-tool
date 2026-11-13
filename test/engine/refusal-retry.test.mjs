@@ -10,7 +10,7 @@ import { createRequire } from 'node:module'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL, fileURLToPath } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { createAgentAssembly } from '../../src/runtime/agent-assembly.ts'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
@@ -398,7 +398,7 @@ test('重试正文是独立模块资产：改资产并重挂后，后续原请�
 
 test('规则与资产走既有保存 / 复制 / 导出链：默认关闭，正文引用保留', async () => {
   const { moduleRoot } = isolatedHome('pt-retry-store-')
-  const { ensureModuleSeed, duplicateUserModule } = await import('../../src/host/module-catalog.ts')
+  const { duplicateUserModule } = await import('../../src/host/module-catalog.ts')
   const { moduleImportPreview, installModulePackage, expandModuleSource, exportModulePackage } = await import('../../src/host/module-package.ts')
   const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
   // 内容模块已移出仓库（存档在本地知识库）：本节自建最小模块，只验证保存/复制/导出链保留正文引用。

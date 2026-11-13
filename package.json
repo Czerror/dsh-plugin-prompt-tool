@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-prompt-tool",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "packageManager": "pnpm@11.28.5",
   "description": "DSH 插件：提示词工具，规范模型的思维链与回答内容，提供 Web UI 编辑 module.yml 与 AGENTS.md，并随包分发内置技能。",
   "license": "MIT",

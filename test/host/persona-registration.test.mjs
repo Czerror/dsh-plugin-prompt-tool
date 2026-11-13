@@ -132,14 +132,14 @@ test('真实插件总闸撤回身份贡献，重新开启保持已保存的规�
   const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
   const { setModuleEnabled, readStorageConfig } = await import('../../src/host/config-store.ts')
   // 内容模块已移出仓库（存档在本地知识库）：这里用最小夹具承载两条身份规则，验证的是总闸撤回行为。
-  writeModule('limit-breaker', [
+  writeModule('identity-fixture', [
     { id: 'default-preset-identity', enabled: false, then: [{ id: 'preset', kind: 'persona', stripDefaultIdentity: 'preset' }] },
     { id: 'default-harness-identity', enabled: false, then: [{ id: 'harness', kind: 'persona', stripDefaultIdentity: 'harness' }] },
   ])
-  const dir = join(moduleRoot, 'limit-breaker'), current = readModuleRules(dir)
+  const dir = join(moduleRoot, 'identity-fixture'), current = readModuleRules(dir)
   const identityRuleIds = ['default-preset-identity', 'default-harness-identity']
   editModuleRules(dir, { expectedRevisions: current.revisions, edits: current.rules.map(rule => ({ previousId: rule.id, rule: { ...rule, enabled: identityRuleIds.includes(rule.id) }, settingsChanged: true })) })
-  setModuleEnabled(moduleRoot, 'limit-breaker', true)
+  setModuleEnabled(moduleRoot, 'identity-fixture', true)
   let modulesEnabled = true
   const world = await personaWorld(t, () => [], { modulesEnabled: { get: () => modulesEnabled } })
   const prefix = 'You are a coding agent powered by the {{model}} model.\nFUNCTION'
@@ -147,7 +147,7 @@ test('真实插件总闸撤回身份贡献，重新开启保持已保存的规�
   assert.deepEqual(await world.texts(agent), ['', '\nFUNCTION', 'TAIL'])
   modulesEnabled = false; world.root.emit('loader/volatile-update'); await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(await world.texts(agent), [IDENTITY, prefix, 'TAIL'])
-  assert.equal(readStorageConfig(moduleRoot).source.enabled.includes('limit-breaker'), true)
+  assert.equal(readStorageConfig(moduleRoot).source.enabled.includes('identity-fixture'), true)
   assert.deepEqual(readModuleRules(dir).rules.filter(rule => rule.enabled === true).map(rule => rule.id), identityRuleIds)
   modulesEnabled = true; world.root.emit('loader/volatile-update'); await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(await world.texts(agent), ['', '\nFUNCTION', 'TAIL'])

@@ -463,3 +463,27 @@ test('intent 一次性且按父会话隔离：不同父各拿自己的角色，�
   await runA.activation.dispose().catch(() => {})
   await runB.activation.dispose().catch(() => {})
 })
+
+test('内容模块不在时派工不伪造内容：只告警一次，不把「启动成功」当成「角色已生效」', async () => {
+  const moduleRoot = join(tmpdir(), 'pt-no-content-module-' + Date.now())
+  assert.equal(existsSync(join(moduleRoot, 'redteam')), false, '夹具前提：模块根本不在')
+  const warns = []
+  const seen = []
+  const fakeActivation = { childId: 'fake-child', result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: 'ok' }] }), dispose: async () => {} }
+  const fakes = {
+    on: () => () => {},
+    events: { on: () => () => {} },
+    get: name => name === 'subagents'
+      ? { getProvider: () => ({ capabilities: { depthLimit: true } }), startActivation: async value => { seen.push(value); return fakeActivation } }
+      : name === 'agentTeams' ? { isEnabled: () => true, getTask: () => ({ id: 'task-1', revision: 1, status: 'pending' }) } : undefined,
+  }
+  const runtime = createRoleDelegation(fakes, { moduleRoot, warn: message => warns.push(String(message)) })
+  const parent = { id: 'fake-parent', session: { id: 'fake-parent', header: {}, append() {}, snapshotEvents: () => [] } }
+  const spec = { parent, role: 'recon', taskId: 'task-1', label: 'x', prompt: 'x', signal: new AbortController().signal }
+  await runtime.delegate({ ...spec })
+  await runtime.delegate({ ...spec })
+  assert.equal(seen.length, 2, '内容缺失不阻断派工：两次都真实发起启动')
+  assert.equal(warns.filter(message => message.includes('redteam')).length, 1, '缺内容只告警一次，不按每次派工刷屏')
+  assert.ok(warns.some(message => message.includes('role-recon')), '告警点名本次没有投递的角色')
+  runtime.dispose()
+})

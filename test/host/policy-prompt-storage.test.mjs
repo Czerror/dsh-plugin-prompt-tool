@@ -11,7 +11,7 @@ const { readModuleRules, editModuleRules } = await import('../../src/host/module
  * 模块定义夹具：原内容模块已移出仓库（存档在本地知识库）。本文件只验证替句保存的 CAS 与互斥事务，
  * 所以自带一份最小定义：一条同组替句规则 + 一对互斥旁路规则。
  */
-const policyDefinition = ['# USER COMMENT', 'id: limit-breaker', 'name: policy fixture', 'modules: [rule-engine]', 'rules:',
+const policyDefinition = ['# USER COMMENT', 'id: policy-fixture', 'name: policy fixture', 'modules: [rule-engine]', 'rules:',
   '  - id: approval-ask-guidance', '    enabled: true', '    then:',
   '      - id: ask', '        kind: assembly', '        target:', '          contexts:', '            replace:',
   '              - name: approval:policy', '                match: ORIGINAL', '                text: REPLACEMENT',
@@ -23,7 +23,7 @@ const policyDefinition = ['# USER COMMENT', 'id: limit-breaker', 'name: policy f
   '              - name: approval:policy', '                match: ORIGINAL', '                text: REPLACEMENT', ''].join('\n') + '\n'
 
 test('替句原文沿普通规则版本写盘，非法原文拒写且审批文案复用原互斥事务', () => {
-  const dir = join(moduleRoot, 'limit-breaker')
+  const dir = join(moduleRoot, 'policy-fixture')
   mkdirSync(dir, { recursive: true })
   const file = join(dir, 'module.yml')
   writeFileSync(file, policyDefinition)

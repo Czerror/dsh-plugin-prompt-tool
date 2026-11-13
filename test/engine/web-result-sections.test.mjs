@@ -1,15 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { parse } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
-import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import Tools from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import * as native from '@deepseek-ai/dsh-tool-executor-native'
 import { registerAction } from '../../engine/actions.mjs'
-import { compileRules } from '../../engine/rule-spec.mjs'
-import { createRuleRuntime } from '../../engine/rule-runtime.mjs'
 import '../../engine/result-text-early.mjs'
 
 const ptc = await import('@deepseek-ai/dsh-tool-executor-ptc')
