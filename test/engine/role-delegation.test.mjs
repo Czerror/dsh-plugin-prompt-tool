@@ -53,7 +53,7 @@ async function loadTeam() {
     const sourceRoot = existsSync(marker) ? JSON.parse(readFileSync(marker, 'utf8')).sourceRoot : undefined
     const entry = typeof sourceRoot === 'string' ? join(sourceRoot, 'packages', 'team', 'agent-team', 'lib', 'index.js') : undefined
     if (entry === undefined || !existsSync(entry)) {
-      throw new Error('官方 Team 包不可用：需要 node_modules/@deepseek-ai/dsh-agent-team 或 .scratch/harness/local.json 指向固定 rc.2 源码构建；原因：' + String(primary?.message ?? primary))
+      throw new Error('官方 Team 包不可用：package.json 的 devDependencies 应声明 @deepseek-ai/dsh-agent-team@0.2.2-rc.2（install 后由 lock 的 overrides 解析到固定构建）；也可用 .scratch/harness/local.json 指向固定 rc.2 源码构建；原因：' + String(primary?.message ?? primary))
     }
     return (await import(pathToFileURL(entry).href)).default
   }

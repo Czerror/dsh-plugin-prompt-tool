@@ -196,9 +196,9 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 执行适配复用官方 `tools/execute` waterfall 的真实调用上下文，调用期只代理 `subagents.startActivation`：工具名、spawn、真实 parent 和 sealed step 全部匹配才替换原请求的 maxDepth，其余调用透传。官方 0.2.2-rc.2 使用顶层 `spec.parent` 与 `spec.maxDepth`；适配按该契约核对真实 parent 并替换顶层深度，不兼容旧的嵌套请求形状。深度上下文与 refreshContext 使用同一已接受值；已有工具集合不读热更值，取消仍沿原管线，dispose 关闭步骤。没有第二套深度配置库，也不修改宿主默认深度或 provider。
 
-内置 `unrestricted` 的模块仍默认关闭，八条规则默认开启，各条可独立编辑或关闭。完整默认正文与 Boost 走 `assets/` 资产（`templateFile`），只作 `system-section` 投递：用户覆盖优先、包内缺失才回退、显式空正文不回退也不补正文；两份正文各自只注册一段，不删官方工具、环境或其他来源贡献。跨模块先后由 `configOrder` 决定——正文 100、Boost 200，协议规则须显式占用 100–200 之间的序号，否则会落到正文之前或 Boost 之后。人设和计划正文随普通 module.yml 保存；65536 是可编辑预算初值，仍须原 early 接缝；显式 spawn 深度初值为 1，子代理工具面沿 scope 条件排除 subagent_fork/workflow/ralph，不注册子预设。搜索工具面启用时使用已有 web_fetch 的 deny；需要抓取时用户先关闭该限制，再按实际已安装能力另行配置。模块不隐式启用核心破限规则，不补装官方工具、计划或压缩 owner；现有预设的外围参数继续由其原所有者控制。
+内置 `unrestricted` 的模块仍默认关闭，十条规则中九条默认开启（`request-retry` 默认关闭），各条可独立编辑或关闭。完整默认正文与 Boost 走 `assets/` 资产（`templateFile`），只作 `system-section` 投递：用户覆盖优先、包内缺失才回退、显式空正文不回退也不补正文；两份正文各自只注册一段，不删官方工具、环境或其他来源贡献。跨模块先后由 `configOrder` 决定——正文 100、Boost 200，协议规则须显式占用 100–200 之间的序号，否则会落到正文之前或 Boost 之后。人设和计划正文随普通 module.yml 保存；65536 是可编辑预算初值，仍须原 early 接缝；显式 spawn 深度初值为 1，子代理工具面沿 scope 条件排除 subagent_fork/workflow/ralph，不注册子预设。搜索工具面启用时使用已有 web_fetch 的 deny；需要抓取时用户先关闭该限制，再按实际已安装能力另行配置。模块不隐式启用核心破限规则，不补装官方工具、计划或压缩 owner；现有预设的外围参数继续由其原所有者控制。
 
-内置 `redteam`（红队模式内容）同样是默认关闭的普通模块，十三条规则均默认开启。独立指挥正文、官方指令字节预算、首轮请求额度、晋升后指令提示、spawn深度、子代理叶子工具面、外部平台说明与六角色内容可分别编辑。8192 是请求输出token初值，2 是可编辑晋升兜底步数，65536 是独立的指令字节预算；三者不混用。平台正文显式依赖当前十二个实际可执行的 redteam_* 工具，缺失只暂停此段；普通指挥正文继续。
+内置 `redteam`（红队模式内容）同样是默认关闭的普通模块，十五条规则中十三条默认开启（`auto-delegation` 与 `protocol-redteam` 默认关闭）。独立指挥正文、官方指令字节预算、首轮请求额度、晋升后指令提示、spawn深度、子代理叶子工具面、外部平台说明与六角色内容可分别编辑。8192 是请求输出token初值，2 是可编辑晋升兜底步数，65536 是独立的指令字节预算；三者不混用。平台正文显式依赖当前十二个实际可执行的 redteam_* 工具，缺失只暂停此段；普通指挥正文继续。
 
 六角色（plan／recon／assess／vuln-scan／exploit／internal）与六公共段（ENV／BIND／SCORE_RULES／DB_LOOKUP／EVIDENCE／HANDOFF）沿同一套资产与规则机制组合：角色正文在 `assets/roles/`，每个公共段在 `assets/common/` 只有一份文件，六条角色规则按声明序用 `templateFile` 引用它们，声明序即投递序，每段只投递一次。plan 组合 ENV→BIND 且只作用于主会话，其余角色的组合分别是 BIND→DB_LOOKUP→EVIDENCE→HANDOFF（recon／assess）与 BIND→SCORE_RULES→DB_LOOKUP→EVIDENCE→HANDOFF（vuln-scan／exploit／internal），并只作用于子代理。修改公共段只改那一份文件，引用它的角色预览与应用同步变化，未引用的角色保持；角色正文独立编辑，保存、复制与导出保留相对 `templateFile` 引用，不把公共段展开成多份副本。模块变量 `role` 为空表示未分配执行角色，此时六份组合都不投递；同一角色只生成一份，不默认叠加六份。真实子代理的角色身份绑定由团队派工另接，本模块不按 name／description 猜测角色，也不声称已启动子代理。score-rules／db-lookup／evidence 三段的动作带 `tool: redteam_preflight` 分支条件，缺工具只暂停这三段可执行说明，角色正文、BIND、HANDOFF 与完整资产仍可查看／导出；不虚构数据库、计分或工具成功。模块不创建这些工具、SQLite平台、计分、面板或自动角色注入，不通过工具同名推断这些额外能力；具体工具schema、并发限制及目标绑定仍归外部提供者。角色职责直接写进普通任务正文，不声明 redteamRole 标签自动生效。
 
@@ -564,7 +564,8 @@ runtime-context 的注册文本必须是同步 provider，不能只在 assemble 
 - **依赖串行、额度内并行**：调度只在前序官方任务 `completed` 后启动后序，`parallel` 默认 1，只对互不依赖的任务并行。官方 `ready` 只表示可认领——启动必须走真实 `delegate`，完成必须等 `settle`（`stopReason: completed` + 有输出 + `ownerId` 匹配 + 版本未陈旧）。`writeScopes` 只是官方冲突提示（`writeScopeWarnings`），不当锁或目录隔离。
 - **失败与取消不冒充完成**：派发失败（如角色内容规则被关 → `ROLE_CONTENT_UNAVAILABLE`）或结算抛错，结果记 `failed` 且官方任务保持 `pending`；依赖失败即阻断后序（`blocked`）。用户取消、来源释放或关闭后不再启动后续任务，未启动的记 `cancelled`，官方任务保留可续做。
 - **汇总只认匹配事实**：`AutoDelegationSummary.outcomes` 每项带 `taskId`／`childSession`／`runId`／`taskStatus`／`revision`，`completed` 只在全部子任务都有匹配完成时成立。需要继续工作时用 `handoff(parent, childSession, text, signal)`，`signal` 必填（官方 `sendMessage` 无条件读 `options.signal.throwIfAborted()`，缺失即抛 `ROLE_MESSAGE_SIGNAL_REQUIRED`）；它透传官方 `subagents.sendMessage`，不另建消息通道。
-- **入口**：宿主经 `AUTO_DELEGATION_SERVICE`（`prompt-tool/auto-delegation`）取到编排实例；`agent/created` 里 `assignRoot` 在规则开启时给真实根补上 plan，作为重挂后的恢复入口。
+- **入口与服务**：编排实例经 `ctx.provide('prompt-tool/auto-delegation')` 发布，目前没有消费它的事件或工具；规则开启时 `agent/created` 里的 `assignRoot` 给真实根补 plan，作为重挂后的恢复入口。模型直接调用官方 team／subagent 工具**不会**经过本编排，因此本批只交付 API 级派工闭环，模型侧工具入口尚未提供（评审 S1）。
+
 ## 自定义工具与宿主契约
 
 工具通过已安装 `@deepseek-ai/dsh-tools` 的 defineTool/官方转换器定义，使用真实 ToolExecution 的 agent、signal、调用身份；异步工作观察或转发 caller-owned signal。delegate 走 `ctx.tools.execute`，保留批准、拒绝和取消管线。

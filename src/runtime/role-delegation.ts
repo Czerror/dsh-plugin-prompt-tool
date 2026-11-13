@@ -8,7 +8,7 @@
  *   - 角色**内容**仍由 modules/redteam 的角色规则与资产提供（role 变量条件 + assets 正文），
  *     本文件只提供运行时事实，不复制正文。
  *
- * 两个必须在接入处显式处理的宿主事实（见 .scratch/prompt-response-parity/proofs/02-role-binding-proof.md）：
+ * 两个必须在接入处显式处理的宿主事实（由 02 技术证明在隔离环境实测得出，报告属本地作业区、不入库）：
  *   1. 取消的启动会留下可复用资格 → 一次性 intent + 唯一 token + 启动失败/取消立即释放；
  *   2. 叶子限制没有默认值 → 派工恒传 maxDepth，provider 不支持该能力时明确报不可用。
  */
@@ -302,6 +302,8 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
   }
 
   // 事件名由 subagent 包声明；本包不依赖其类型，只读它携带的运行身份。
+  // 这里用 events.on + 显式 offStart：本 service 的 ctx 不是装配 fiber，包 ctx.effect 会在释放期
+  // 与 dispose 重复解绑；订阅生命周期由 runtime.dispose() 统一收口。
   const offStart = ctx.events.on('subagent/start', (info: unknown) => {
     const run = info as { readonly id?: unknown; readonly runId?: unknown } | undefined
     const childId = text(run?.id)

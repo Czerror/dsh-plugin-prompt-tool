@@ -52,7 +52,7 @@ async function loadTeam() {
     const sourceRoot = existsSync(marker) ? JSON.parse(readFileSync(marker, 'utf8')).sourceRoot : undefined
     const entry = typeof sourceRoot === 'string' ? join(sourceRoot, 'packages', 'team', 'agent-team', 'lib', 'index.js') : undefined
     if (entry === undefined || !existsSync(entry)) {
-      throw new Error('官方 Team 包不可用：需要 node_modules/@deepseek-ai/dsh-agent-team 或 .scratch/harness/local.json 指向固定 rc.2 源码构建；原因：' + String(primary?.message ?? primary))
+      throw new Error('官方 Team 包不可用：package.json 的 devDependencies 应声明 @deepseek-ai/dsh-agent-team@0.2.2-rc.2（install 后由 lock 的 overrides 解析到固定构建）；也可用 .scratch/harness/local.json 指向固定 rc.2 源码构建；原因：' + String(primary?.message ?? primary))
     }
     return (await import(pathToFileURL(entry).href)).default
   }
@@ -393,6 +393,9 @@ test('并行额度与失败收口：独立任务按额度并行且 writeScopes �
   assert.equal(failing.outcomes[0].reason, 'ROLE_CONTENT_UNAVAILABLE', '失败原因是准确的不可用码')
   const failingTasks = h.tasks().filter(task => task.description.includes('plan-fail'))
   assert.deepEqual(failingTasks.map(task => task.status).sort(), ['pending', 'pending'], '官方任务保留，没有被伪造成完成或被删除')
+
+  // 运行结束但无产出证据的极端终态由 07 的 settle 契约定（no-evidence 不标完成）；
+  // 本夹具无法可靠构造「子代理结束却无 assistant 输出」而不让模型侧重试，故不在此伪造。
 })
 
 test('取消：不启动后续任务，不删除官方任务，不打断其他来源的成员', { timeout: 120000 }, async t => {

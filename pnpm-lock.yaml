@@ -461,6 +461,9 @@ importers:
       '@deepseek-ai/dsh-agent-loop':
         specifier: file:.scratch/harness/packages/deepseek-ai-dsh-agent-loop-0.2.2-rc.2.tgz
         version: file:.scratch/harness/packages/deepseek-ai-dsh-agent-loop-0.2.2-rc.2.tgz(b3e0b22b2bba77cef0467acc7436263f)
+      '@deepseek-ai/dsh-agent-team':
+        specifier: file:.scratch/harness/packages/deepseek-ai-dsh-agent-team-0.2.2-rc.2.tgz
+        version: file:.scratch/harness/packages/deepseek-ai-dsh-agent-team-0.2.2-rc.2.tgz(2f549a302cea233258ef076b15fbf0f0)
       '@deepseek-ai/dsh-api-remotes':
         specifier: file:.scratch/harness/packages/deepseek-ai-dsh-api-remotes-0.2.2-rc.2.tgz
         version: file:.scratch/harness/packages/deepseek-ai-dsh-api-remotes-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))(@deepseek-ai/dsh-scope@file:.scratch/harness/packages/deepseek-ai-dsh-scope-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9)))
@@ -764,6 +767,19 @@ packages:
       '@deepseek-ai/dsh-settings': 0.2.2-rc.2
       '@deepseek-ai/dsh-system-prompt': 0.2.2-rc.2
       '@deepseek-ai/dsh-tools': 0.2.2-rc.2
+      '@deepseek-ai/dsh-typert-protocol': 0.2.2-rc.2
+
+  '@deepseek-ai/dsh-agent-team@file:.scratch/harness/packages/deepseek-ai-dsh-agent-team-0.2.2-rc.2.tgz':
+    resolution: {integrity: sha512-WvJr23o51Nod40i34Zd6IylNrpVKUmLsRRzI9A/EFi3FUYAzSrP6egfEvGk2kPxHCbiGF/mNgU/4GLLUiQDfDQ==, tarball: file:.scratch/harness/packages/deepseek-ai-dsh-agent-team-0.2.2-rc.2.tgz}
+    version: 0.2.2-rc.2
+    peerDependencies:
+      '@deepseek-ai/cordis': ~4.1.0
+      '@deepseek-ai/dsh-agent': 0.2.2-rc.2
+      '@deepseek-ai/dsh-llm': 0.2.2-rc.2
+      '@deepseek-ai/dsh-session': 0.2.2-rc.2
+      '@deepseek-ai/dsh-session-persistence': 0.2.2-rc.2
+      '@deepseek-ai/dsh-session-projection': 0.2.2-rc.2
+      '@deepseek-ai/dsh-subagent': 0.2.2-rc.2
       '@deepseek-ai/dsh-typert-protocol': 0.2.2-rc.2
 
   '@deepseek-ai/dsh-agent@file:.scratch/harness/packages/deepseek-ai-dsh-agent-0.2.2-rc.2.tgz':
@@ -3209,6 +3225,20 @@ snapshots:
       - '@deepseek-ai/cordis-plugin-group'
       - '@deepseek-ai/dsh-home-paths'
       - '@deepseek-ai/dsh-launch-environment'
+
+  '@deepseek-ai/dsh-agent-team@file:.scratch/harness/packages/deepseek-ai-dsh-agent-team-0.2.2-rc.2.tgz(2f549a302cea233258ef076b15fbf0f0)':
+    dependencies:
+      '@deepseek-ai/cordis': file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9)
+      '@deepseek-ai/dsh-agent': file:.scratch/harness/packages/deepseek-ai-dsh-agent-0.2.2-rc.2.tgz(08dbe6c83c77f26614178ef0339f233b)
+      '@deepseek-ai/dsh-brand': file:.scratch/harness/packages/deepseek-ai-dsh-brand-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))
+      '@deepseek-ai/dsh-llm': file:.scratch/harness/packages/deepseek-ai-dsh-llm-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))(@deepseek-ai/dsh-error@file:.scratch/harness/packages/deepseek-ai-dsh-error-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9)))
+      '@deepseek-ai/dsh-session': file:.scratch/harness/packages/deepseek-ai-dsh-session-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))(@deepseek-ai/dsh-error@file:.scratch/harness/packages/deepseek-ai-dsh-error-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9)))(@deepseek-ai/dsh-scope@file:.scratch/harness/packages/deepseek-ai-dsh-scope-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9)))
+      '@deepseek-ai/dsh-session-persistence': file:.scratch/harness/packages/deepseek-ai-dsh-session-persistence-0.2.2-rc.2.tgz(beb6d246b2eb8fe0638dab811c6d8603)
+      '@deepseek-ai/dsh-session-projection': file:.scratch/harness/packages/deepseek-ai-dsh-session-projection-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))(@deepseek-ai/dsh-session@file:.scratch/harness/packages/deepseek-ai-dsh-session-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))(@deepseek-ai/dsh-error@file:.scratch/harness/packages/deepseek-ai-dsh-error-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9)))(@deepseek-ai/dsh-scope@file:.scratch/harness/packages/deepseek-ai-dsh-scope-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))))
+      '@deepseek-ai/dsh-subagent': file:.scratch/harness/packages/deepseek-ai-dsh-subagent-0.2.2-rc.2.tgz(9670b1d779296aa75ce3b4f9a4564857)
+      '@deepseek-ai/dsh-typert-protocol': file:.scratch/harness/packages/deepseek-ai-dsh-typert-protocol-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))
+      '@deepseek-ai/schemastery': file:.scratch/harness/packages/deepseek-ai-schemastery-3.19.0.tgz
+      zod: 4.6.6
 
   '@deepseek-ai/dsh-agent@file:.scratch/harness/packages/deepseek-ai-dsh-agent-0.2.2-rc.2.tgz(08dbe6c83c77f26614178ef0339f233b)':
     dependencies:

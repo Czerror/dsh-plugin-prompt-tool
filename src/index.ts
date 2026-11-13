@@ -91,7 +91,10 @@ export function apply(ctx: Context, configIn: Config): void {
   const refreshModuleRuntime = async (id: string): Promise<void> => {
     refreshModuleSlices(id)
     // 先同步协议再刷新：本次保存选中的红队协议要在同一次刷新后的请求里生效。
-    if (id === ROLE_MODULE_ID) autoDelegation?.syncRule()
+    // 同步失败不能掐断刷新：否则保存成功但装配不更新，桥会兜成「已保存未生效」。
+    if (id === ROLE_MODULE_ID) {
+      try { autoDelegation?.syncRule() } catch (error) { warn(ctx, `prompt-tool: 自动派工规则同步失败：${String((error as Error)?.message ?? error)}`) }
+    }
     await assembly?.refresh(id)
   }
 
