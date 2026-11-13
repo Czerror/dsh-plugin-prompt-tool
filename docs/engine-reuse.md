@@ -196,9 +196,11 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 
 执行适配复用官方 `tools/execute` waterfall 的真实调用上下文，调用期只代理 `subagents.startActivation`：工具名、spawn、真实 parent 和 sealed step 全部匹配才替换原请求的 maxDepth，其余调用透传。官方 0.2.2-rc.2 使用顶层 `spec.parent` 与 `spec.maxDepth`；适配按该契约核对真实 parent 并替换顶层深度，不兼容旧的嵌套请求形状。深度上下文与 refreshContext 使用同一已接受值；已有工具集合不读热更值，取消仍沿原管线，dispose 关闭步骤。没有第二套深度配置库，也不修改宿主默认深度或 provider。
 
-内置 `unrestricted` 的模块仍默认关闭，六条规则默认开启，各条可独立编辑或关闭。人设和计划正文随普通 module.yml 保存；65536 是可编辑预算初值，仍须原 early 接缝；显式 spawn 深度初值为 1，子代理工具面沿 scope 条件排除 subagent_fork/workflow/ralph，不注册子预设。搜索工具面启用时使用已有 web_fetch 的 deny；需要抓取时用户先关闭该限制，再按实际已安装能力另行配置。模块不隐式启用核心破限规则，不补装官方工具、计划或压缩 owner；现有预设的外围参数继续由其原所有者控制。
+内置 `unrestricted` 的模块仍默认关闭，八条规则默认开启，各条可独立编辑或关闭。完整默认正文与 Boost 走 `assets/` 资产（`templateFile`），只作 `system-section` 投递：用户覆盖优先、包内缺失才回退、显式空正文不回退也不补正文；两份正文各自只注册一段，不删官方工具、环境或其他来源贡献。跨模块先后由 `configOrder` 决定——正文 100、Boost 200，协议规则须显式占用 100–200 之间的序号，否则会落到正文之前或 Boost 之后。人设和计划正文随普通 module.yml 保存；65536 是可编辑预算初值，仍须原 early 接缝；显式 spawn 深度初值为 1，子代理工具面沿 scope 条件排除 subagent_fork/workflow/ralph，不注册子预设。搜索工具面启用时使用已有 web_fetch 的 deny；需要抓取时用户先关闭该限制，再按实际已安装能力另行配置。模块不隐式启用核心破限规则，不补装官方工具、计划或压缩 owner；现有预设的外围参数继续由其原所有者控制。
 
-内置 `redteam`（红队模式内容）同样是默认关闭的普通模块，七条规则均默认开启。独立指挥正文、官方指令字节预算、首轮请求额度、晋升后指令提示、spawn深度、子代理叶子工具面与外部平台说明可分别编辑。8192 是请求输出token初值，2 是可编辑晋升兜底步数，65536 是独立的指令字节预算；三者不混用。平台正文显式依赖当前十二个实际可执行的 redteam_* 工具，缺失只暂停此段；普通指挥正文继续。模块不创建这些工具、SQLite平台、计分、面板或自动角色注入，不通过工具同名推断这些额外能力；具体工具schema、并发限制及目标绑定仍归外部提供者。角色职责直接写进普通任务正文，不声明 redteamRole 标签自动生效。
+内置 `redteam`（红队模式内容）同样是默认关闭的普通模块，十三条规则均默认开启。独立指挥正文、官方指令字节预算、首轮请求额度、晋升后指令提示、spawn深度、子代理叶子工具面、外部平台说明与六角色内容可分别编辑。8192 是请求输出token初值，2 是可编辑晋升兜底步数，65536 是独立的指令字节预算；三者不混用。平台正文显式依赖当前十二个实际可执行的 redteam_* 工具，缺失只暂停此段；普通指挥正文继续。
+
+六角色（plan／recon／assess／vuln-scan／exploit／internal）与六公共段（ENV／BIND／SCORE_RULES／DB_LOOKUP／EVIDENCE／HANDOFF）沿同一套资产与规则机制组合：角色正文在 `assets/roles/`，每个公共段在 `assets/common/` 只有一份文件，六条角色规则按声明序用 `templateFile` 引用它们，声明序即投递序，每段只投递一次。plan 组合 ENV→BIND 且只作用于主会话，其余角色的组合分别是 BIND→DB_LOOKUP→EVIDENCE→HANDOFF（recon／assess）与 BIND→SCORE_RULES→DB_LOOKUP→EVIDENCE→HANDOFF（vuln-scan／exploit／internal），并只作用于子代理。修改公共段只改那一份文件，引用它的角色预览与应用同步变化，未引用的角色保持；角色正文独立编辑，保存、复制与导出保留相对 `templateFile` 引用，不把公共段展开成多份副本。模块变量 `role` 为空表示未分配执行角色，此时六份组合都不投递；同一角色只生成一份，不默认叠加六份。真实子代理的角色身份绑定由团队派工另接，本模块不按 name／description 猜测角色，也不声称已启动子代理。score-rules／db-lookup／evidence 三段的动作带 `tool: redteam_preflight` 分支条件，缺工具只暂停这三段可执行说明，角色正文、BIND、HANDOFF 与完整资产仍可查看／导出；不虚构数据库、计分或工具成功。模块不创建这些工具、SQLite平台、计分、面板或自动角色注入，不通过工具同名推断这些额外能力；具体工具schema、并发限制及目标绑定仍归外部提供者。角色职责直接写进普通任务正文，不声明 redteamRole 标签自动生效。
 
 普通 `request-params.maxTokens` 是正安全整数的瞬时额度贡献，不能与本动作的 `patch/unset.maxTokens` 或 `replace:true` 混用。原 `patch/unset` 的有序组合语义保持。当前真实Agent和请求目标上有效的显式额度同值共存、异值拒绝完整候选并保旧；运行事实翻转形成冲突时，全部冲突额度及其分支后代正文暂停，后续正常重判恢复。只有实际参与同一额度目标的正向phase条件才比较 `maxPromoteSteps`，不同值同样冲突；独立phase追踪器不建立全局互斥。
 
@@ -258,11 +260,14 @@ runtime 事实授权按真实 Agent 的有效规则来源校验；persona 动作
 | tool-visibility | system-prompt/assemble 下游：一份名单拥有工具目录、SDK 正文、执行闸与发现来源；受众使用 scope 条件 |
 | request-params | agent/request；patch/unset 按官方 LlmCallConfig 校验 |
 | stream-output | llm/stream；pass 透传或 replace 替换为 text，不修改请求 |
+| request-retry | llm/stream；有界拒绝前缀判定，命中后按配置正文至多真实重放一次 |
 | tool-gate | tools/pre-execute 的裁决：allow / deny / ask |
 | tool-result | tools/post-execute 的 accept / replace / block；edit-text 在真实结果内容出口编辑已验证片段 |
 | append-context | tools/post-execute 后追加上下文；续跑统一用 inject-text 的 turn-stop 层 |
 | pre-step-filter | 前置消息来源/插件过滤 |
 | inbox-prepend | inbox 通知补充上下文 |
+
+普通 `request-retry` 动作是默认关闭的有界拒绝重试：在 `llm/stream` 下游调用前缓冲开头约 400 个文本字符后判定，匹配范围最多前 600 个字符，遇到推理增量、工具调用或 `finish` 提前决定；块级正文与 `text-delta` 用同一份累积，同一 `index` 已有增量时不再并入块正文。命中后只透传首尝试已到手的 `usage`、结束上游，再以「原 `messages` 末尾追加一条 `user` 正文」发起一次真实 `llm.stream`；不改原 `messages` 元素、不写 durable 历史、不新增用户轮、不改 provider/model/工具目录/取消身份，输出块与 `replayState` 归第二次尝试。一次原始请求最多两次实际调用：首请求与重放请求的 `options` 都进同一 claim 集合，多来源命中共享一次额度，同值共存、异值告警并保留先到装配；第二次不再进入本能力，其自身失败直接冒泡，不叠加本来源的重试。正文优先取 `templateFile`（与 `inject-text` 同一模板解析与越界校验），缺模板时用 `text`；空正文挂载期拒绝。`authored` 目的（`options.purpose`）与已取消请求不重放。用量只沿官方出口，未取得时不补零；命中的首尝试 `finish` 走透传分支，不会与第二次混合。
 
 `assembly` 的 `target.sections.append` 按段名在已有系统段正文后追加一次渲染文本，保留原 `order`/`interpolate`，不设置 `complete`；同一装配内 `once` 去重，目标缺失只告警。追加文本走内置插值/动态宏（至少 `{{CWD}}`），模块持久变量不在该动作的插值域。旧 `workspaceLine` 可用「`phase` 条件 + 追加 persona 段 + `\n当前工作目录：{{CWD}}`」表达；旧 `phase1FirstCallInstruction` 用受控相位条件 + 追加目标段名表达，二者都不恢复旧参数键。append 与同一受众的已知 `complete` 显式互斥：装配准备期拒绝，不依赖官方 assemble 在 waterfall 后静默还原。任意第三方 `complete` 不可由本插件观察，仍会被官方还原丢弃；这是明确边界。
 
@@ -534,6 +539,19 @@ SELF 注入从同一来源模块事实读取 `soul-maintenance.budgetBytes`，�
 显式wake才在维护成功退出后发送一次非空followup；取消、关闭、卸载或失去成员资格使迟到结果失效。心跳不改变恢复额度。provider状态区分disabled、idle、running、ready、failed和cancelled；上下文runtime状态区分ready、running、success、no-op、failed、cancelled和disabled。依赖缺失在装配时明确报错，保留上一份有效贡献。SELF缺失通过动态注入标记可见。
 
 runtime-context 的注册文本必须是同步 provider，不能只在 assemble 钩子里改 accepted 文本：官方请求前还会用 `systemPrompt.refreshContext` 按注册 provider 重算 contexts，字符串占位会被重算回空。引擎为条件化 runtime-context 与 placeholder 注册读取 holder 的函数，优先按具体步骤分区，裸装配才按 Agent 分区。公开 refresh 适配根据 accepted assembly 对象身份投影原步骤，不依赖调用者提供 toolSet；刷新结果继续关联同一步骤。同 Agent 并发装配、主子 Agent 与旧步骤重试因此不互相覆盖正文。system-section 不参与该重算，其条件文本仍用官方占位标记。
+
+## 角色委派（官方 Team 单任务）
+
+`src/runtime/role-delegation.ts` 把**已校验的执行角色**绑到一次真实子代理启动上；它不复制角色正文，也不新建第二份任务或成员来源：
+
+- 官方 Team 拥有任务、依赖、归属与版本：`submitTask`／`settle` 只透传 `createTask`／`getTask`／`updateTask`，陈旧修订、未知任务与已终态任务保持官方错误码。
+- 官方 subagent 拥有成员、运行、消息与等待：委派走 `subagents.startActivation({ provider: 'spawn', delivery: 'caller', maxDepth: 1 })`，与模型侧工具同一入口。宿主没有默认叶子上限，`maxDepth` 必须由派工方显式给出；provider 未声明 `capabilities.depthLimit` 时 `availability()` 报 `ROLE_LEAF_LIMIT_UNAVAILABLE`，不伪称已施加。
+- 角色内容仍由模块 `role-<role>` 规则与 `assets/` 正文拥有。委派只在 `agent/created`（宿主 await，早于子 Agent 首个 assemble）里写入会话级运行时事实 `role`，经 `createModuleVariableAdapter` 的 `runtimeVariables` 通道按真实 child sessionId 覆盖 `effective`，因此首请求已经带着该角色组合与所选协议。
+- 只接受六个已校验角色的字面值；`plan` 是真实根会话的指挥角色（其内容规则受众为 main），派给子代理只会得到一个没有角色的静默启动，因此 `delegate` 报 `ROLE_NOT_EXECUTABLE`。名称、描述与任务文本永不授予角色。
+- 一次性 intent + 唯一 token：intent 在 `startActivation` **前**登记、在 `agent/created` 消费即删，启动抛错或取消立刻丢弃，取消的启动不会把角色留给下一个无关 child。
+- 认领在 created 窗口内发起（此时 child Agent 已由官方注册），`ownerId` 因此是真实子会话；`settle` 只在真实运行 `stopReason: 'completed'`、有 assistant 输出、且任务归属等于该 child 时标完成，陈旧 `expectedRevision` 保留官方 `TEAM_TASK_STALE_REVISION`。一轮结束不等于任务完成。
+- 恢复只认官方持久事实：child header 的 `parentSession` 与子会话自己的 `prompt-tool/role-binding` 事件交叉核验；`subagent/descriptor` 无角色字段、`runId` 不随恢复保留，重挂后按 header 与事件重建运行时事实，不按成员名猜角色。
+- `release()` 只撤回未消费 intent；`close()` 停止新派工但保留官方任务、已启动子会话与其他来源的工作。`selectCapabilityProtocol(moduleRoot, branch)` 是 05 留给派工的显式协议选择入口，关闭派工不自动切回普通协议。
 
 ## 自定义工具与宿主契约
 
