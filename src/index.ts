@@ -15,6 +15,10 @@ import { registerSoulStateTools } from './runtime/soul-state-tools.ts'
 import { installSoulRuntime } from './runtime/soul-runtime.ts'
 import { installSessionVariables } from './runtime/session-variables.ts'
 import { createRoleDelegation } from './runtime/role-delegation.ts'
+import { createAutoDelegation } from './runtime/auto-delegation.ts'
+import type { AutoDelegationRuntime } from './runtime/auto-delegation.ts'
+import { AUTO_DELEGATION_SERVICE } from './runtime/auto-delegation.ts'
+import { ROLE_MODULE_ID } from './runtime/role-delegation.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { installPersonaCapture } from './runtime/persona-registration.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
@@ -70,6 +74,8 @@ export function apply(ctx: Context, configIn: Config): void {
   const config = readConfig()
   /** 运行时配装通道的运行态：工具写入目标按它报告的「本 Agent 装了哪几层提示词」解析。 */
   let assembly: AgentAssemblyRuntime | undefined
+  /** 自动派工编排：规则保存后要同步协议选择，因此先声明再在 roleDelegation 之后创建。 */
+  let autoDelegation: AutoDelegationRuntime | undefined
   const modelsState = (): ModelDetection => detectModels(ctx)
   const getModelsState = (): ModelDetection => modelsState()
   // 运行态只保留部署设置；每次保存都从目标模块重读参数和正文。
@@ -84,6 +90,8 @@ export function apply(ctx: Context, configIn: Config): void {
   }
   const refreshModuleRuntime = async (id: string): Promise<void> => {
     refreshModuleSlices(id)
+    // 先同步协议再刷新：本次保存选中的红队协议要在同一次刷新后的请求里生效。
+    if (id === ROLE_MODULE_ID) autoDelegation?.syncRule()
     await assembly?.refresh(id)
   }
 
@@ -177,10 +185,22 @@ registerTuiCommand(
     moduleRoot: modulesDir(),
     warn: (message) => warn(ctx, message),
   })
+  // 自动派工：plan 会话拆任务→登记官方 Team→真实派发→等终态→按事实汇总。默认关闭，无常驻调度器。
+  const autoDelegationRuntime = createAutoDelegation({
+    delegation: roleDelegation,
+    moduleRoot: modulesDir(),
+    warn: (message) => warn(ctx, message),
+  })
+  autoDelegation = autoDelegationRuntime
+  ctx.provide(AUTO_DELEGATION_SERVICE, autoDelegationRuntime)
   ctx.effect(() => {
     // 宿主 await 该监听器，所以角色在子 Agent 首个 assemble 前已经可读。
-    const off = ctx.on('agent/created', async ({ agent }) => { await roleDelegation.bindCreated(agent) })
-    return () => { off(); roleDelegation.dispose() }
+    const off = ctx.on('agent/created', async ({ agent }) => {
+      // 规则开启时 plan 只给真实根会话；子会话在此直接跳过（不适用，不刷告警）。
+      autoDelegationRuntime.assignRoot(agent)
+      await roleDelegation.bindCreated(agent)
+    })
+    return () => { off(); autoDelegationRuntime.dispose(); roleDelegation.dispose() }
   }, 'prompt-tool role delegation')
   const soulRuntime = installSoulRuntime(ctx, moduleToolHost, id => assembly?.moduleIds(id) ?? [], sessionVariables)
   ctx.provide(toolServiceName('module-import-tools'), {

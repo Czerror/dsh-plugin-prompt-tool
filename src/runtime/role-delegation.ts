@@ -32,6 +32,9 @@ export const ROLE_BINDING_EVENT = 'prompt-tool/role-binding'
 /** 执行角色默认叶子；宿主没有默认上限，必须显式传。 */
 const LEAF_MAX_DEPTH = 1
 const PROVIDER = 'spawn'
+/** 官方认领窗口的重试：子会话 resident 归属注册晚于 agent/created，并发时窗口更宽。 */
+const CLAIM_ATTEMPTS = 8
+const CLAIM_RETRY_MS = 25
 
 export class RoleDelegationError extends Error {
   readonly code: string
@@ -274,16 +277,27 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
   }
 
   const claim = async (childId: string, taskId: string): Promise<void> => {
-    const team = teamOf()
-    const agent = agentsOf()?.get(childId)
-    if (team === undefined || agent === undefined) return
-    try {
-      // 官方任务：认领由子代理自己发起，owner 即真实 child session。
-      const task = team.getTask(agent, taskId)
-      if (task.status !== 'pending') return
-      await team.updateTask(agent, { taskId, expectedRevision: task.revision, action: 'claim' })
-    } catch (error) {
-      warn(`prompt-tool: 官方任务认领未完成（${taskId}）：${String((error as Error)?.message ?? error)}`)
+    // 官方只在子会话登记 resident 归属后才认它为 caller，而 agent/created 早于该登记；
+    // 并发派发时这个窗口会拉长，因此按次数重试，而不是把「认领失败」当成「任务没 owner」。
+    for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
+      try {
+        const team = teamOf()
+        const agent = agentsOf()?.get(childId)
+        if (team === undefined || agent === undefined) return
+        // 官方任务：认领由子代理自己发起，owner 即真实 child session。
+        const task = team.getTask(agent, taskId)
+        if (task.status !== 'pending') return
+        await team.updateTask(agent, { taskId, expectedRevision: task.revision, action: 'claim' })
+        return
+      } catch (error) {
+        if (attempt === CLAIM_ATTEMPTS - 1) {
+          warn(`prompt-tool: 官方任务认领未完成（${taskId}）：${String((error as Error)?.message ?? error)}`)
+          return
+        }
+        // 上下文已随插件/会话释放时不再重试，避免对已失效的官方服务继续写入。
+        if (/inactive context/.test(String((error as Error)?.message ?? ''))) return
+        await new Promise(resolve => setTimeout(resolve, CLAIM_RETRY_MS))
+      }
     }
   }
 
@@ -400,9 +414,10 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
         }
         // 先给装配链，再写持久事件：首请求必须已含角色正文。
         remember(session, { role: intent.role, taskId: intent.taskId, parentSession })
-        // 认领放在 created 窗口内：此时 child Agent 已由官方注册，owner 才是真实子会话。
-        // `subagent/start` 早于 delegate 登记 runs，在那里拿不到任务 id（实测 created 先于 start）。
-        await claim(session.id, intent.taskId)
+        // 认领不在这里 await：官方在 created 派发**settle 之后**才登记 child 的 resident 归属，
+        // 而 created 派发是串行的——await 会同时挡住归属登记和后一个子会话的 created。
+        // claim 自带重试，等在归属窗口内认领到同一次真实子会话。
+        void claim(session.id, intent.taskId)
       } catch (error) {
         warn(`prompt-tool: 角色绑定未完成：${String((error as Error)?.message ?? error)}`)
       }
@@ -474,7 +489,12 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
       if (subagents?.sendMessage === undefined) {
         throw new RoleDelegationError('ROLE_MESSAGE_UNAVAILABLE', 'subagents 服务不支持 sendMessage：官方消息交接不可用')
       }
-      return await subagents.sendMessage(sender, targetId, [{ type: 'text', text }], signal === undefined ? {} : { signal })
+      // 官方 sendMessage 直接读 options.signal.throwIfAborted()：缺 signal 会变成宿主 TypeError，
+      // 也不会真正取消；这里明确拒绝，让调用方补一次真实取消身份。
+      if (signal === undefined || typeof (signal as AbortSignal).throwIfAborted !== 'function') {
+        throw new RoleDelegationError('ROLE_MESSAGE_SIGNAL_REQUIRED', '官方 sendMessage 需要 AbortSignal：缺 signal 时明确拒绝，不伪造取消身份')
+      }
+      return await subagents.sendMessage(sender, targetId, [{ type: 'text', text }], { signal })
     },
 
     revokeRole(target) {

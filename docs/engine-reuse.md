@@ -553,6 +553,18 @@ runtime-context 的注册文本必须是同步 provider，不能只在 assemble 
 - 恢复只认官方持久事实：child header 的 `parentSession` 与子会话自己的 `prompt-tool/role-binding` 事件交叉核验；`subagent/descriptor` 无角色字段、`runId` 不随恢复保留，重挂后按 header 与事件重建运行时事实，不按成员名猜角色。
 - `release()` 只撤回未消费 intent；`close()` 停止新派工但保留官方任务、已启动子会话与其他来源的工作。`selectCapabilityProtocol(moduleRoot, branch)` 是 05 留给派工的显式协议选择入口，关闭派工不自动切回普通协议。
 
+## 自动派工编排（官方 Team 多任务）
+
+`src/runtime/auto-delegation.ts` 把「一次计划」跑成官方事实：plan 会话给出已授权目标的自包含子任务，编排负责登记官方任务与依赖、真实派发、等待匹配终态并汇总。它复用 07 的 `RoleDelegationRuntime`，不新建任务表、成员库、消息队列或常驻调度器。
+
+- **总开关是模块规则**：`modules/redteam` 的 `auto-delegation` 规则默认 `enabled: false`（规格 34）。关闭时 `run`／`enable` 报 `AUTO_DELEGATION_DISABLED` 且不登记任务；用户经既有规则编辑保存后，运行时下一次调用即按新值判定——不缓存、不重启。规则打开时它只向 main 受众投递运行纪律，不代替任何实际调用。
+- **开启事务只做两件事**：经 05 的既有跨模块互斥 `selectCapabilityProtocol(moduleRoot, 'redteam')` 选红队协议，再给真实根会话授 `plan`（`assignRootRole` 拒绝子会话，报 `ROLE_PARENT_REQUIRED`）。团队开关仍由官方管理；关闭（`disable`）只撤回本来源的 plan 角色与未消费资格，不擅自重开普通协议、不删任务、不动已启动子任务。
+- **任务书自包含**：`planned` 的六段（目标范围／输入／已知事实／预期产出／验收依据／实际可用工具）缺一段即 `AUTO_BRIEF_INCOMPLETE`，因为子代理不继承父对话。正文只由这六段渲染，不追加计划外内容；角色正文仍由 `role-<role>` 规则与 `assets/` 提供，在子代理首请求投递。
+- **官方登记唯一**：`submitTask` 透传 `createTask`（含 `blockedBy`／`writeScopes`）；任务描述首行写稳定标记 `[auto-plan:<planId>/<key>]`，恢复或重挂时用 `listTasks` 读回同一标记的任务复用，**不重复创建**；`status: completed` 或已被其他来源认领的任务**不重复派发**，只按官方视图汇报（`reason: official-status`）。
+- **依赖串行、额度内并行**：调度只在前序官方任务 `completed` 后启动后序，`parallel` 默认 1，只对互不依赖的任务并行。官方 `ready` 只表示可认领——启动必须走真实 `delegate`，完成必须等 `settle`（`stopReason: completed` + 有输出 + `ownerId` 匹配 + 版本未陈旧）。`writeScopes` 只是官方冲突提示（`writeScopeWarnings`），不当锁或目录隔离。
+- **失败与取消不冒充完成**：派发失败（如角色内容规则被关 → `ROLE_CONTENT_UNAVAILABLE`）或结算抛错，结果记 `failed` 且官方任务保持 `pending`；依赖失败即阻断后序（`blocked`）。用户取消、来源释放或关闭后不再启动后续任务，未启动的记 `cancelled`，官方任务保留可续做。
+- **汇总只认匹配事实**：`AutoDelegationSummary.outcomes` 每项带 `taskId`／`childSession`／`runId`／`taskStatus`／`revision`，`completed` 只在全部子任务都有匹配完成时成立。需要继续工作时用 `handoff(parent, childSession, text)`，它透传官方 `subagents.sendMessage`，不另建消息通道。
+- **入口**：宿主经 `AUTO_DELEGATION_SERVICE`（`prompt-tool/auto-delegation`）取到编排实例；`agent/created` 里 `assignRoot` 在规则开启时给真实根补上 plan，作为重挂后的恢复入口。
 ## 自定义工具与宿主契约
 
 工具通过已安装 `@deepseek-ai/dsh-tools` 的 defineTool/官方转换器定义，使用真实 ToolExecution 的 agent、signal、调用身份；异步工作观察或转发 caller-owned signal。delegate 走 `ctx.tools.execute`，保留批准、拒绝和取消管线。
