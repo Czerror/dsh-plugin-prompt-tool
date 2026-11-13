@@ -288,6 +288,36 @@ test('叶子限制真实生效：派工恒显式传 maxDepth，缺 depthLimit �
   await run.activation.dispose().catch(() => {})
 })
 
+test('结果回收只认真实运行与归属：无 assistant 输出与归属不匹配都不标完成', { timeout: 60000 }, async t => {
+  // 07-7 / 08-5 的两条分支：no-evidence 与 owner-mismatch（此前只被指向一个从未入库的 host 测试）。
+  const h = await mount(t, { roles: ['recon'] })
+  const task = await h.submit()
+  const initial = h.root.agentTeams.getTask(h.parent, task.id).status
+
+  // ①运行结束但没有任何 assistant 输出：没有成果可回收。
+  const empty = await h.runtime.settle({
+    role: 'recon', taskId: task.id, childId: 'child-without-output',
+    result: Promise.resolve({ stopReason: 'completed', output: [] }),
+    activation: { dispose: async () => {} },
+  }, { caller: h.parent })
+  assert.equal(empty.completed, false, '无证据不标完成')
+  assert.equal(empty.reason, 'no-evidence')
+  assert.equal(h.root.agentTeams.getTask(h.parent, task.id).status, initial, '无证据不写任务状态')
+
+  // ②真实运行完成，但官方任务的归属是别的 child：这次成果不被认领。
+  const run = await h.runtime.delegate({ ...spec(h), role: 'recon', taskId: task.id })
+  assert.equal((await run.result).stopReason, 'completed')
+  assert.equal(h.root.agentTeams.getTask(h.parent, task.id).ownerId, run.childId, '真实任务归属真实 child')
+  const foreign = await h.runtime.settle({
+    ...run,
+    childId: 'not-the-owner',
+    result: Promise.resolve({ stopReason: 'completed', output: [{ type: 'text', text: 'ok' }] }),
+  }, { caller: h.parent })
+  assert.equal(foreign.completed, false, '归属不匹配不标完成')
+  assert.equal(foreign.reason, 'owner-mismatch')
+  assert.equal(h.root.agentTeams.getTask(h.parent, task.id).status, 'in_progress', '归属不匹配时任务保持官方未结语态')
+})
+
 test('取消与释放：取消的启动不留可复用资格，关闭后不再接受新派工且不打断已启动子任务', { timeout: 60000 }, async t => {
   const h = await mount(t, { roles: ['recon', 'exploit'] })
   const task = await h.submit()

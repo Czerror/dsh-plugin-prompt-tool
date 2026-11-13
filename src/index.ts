@@ -16,6 +16,7 @@ import { installSoulRuntime } from './runtime/soul-runtime.ts'
 import { installSessionVariables } from './runtime/session-variables.ts'
 import { createRoleDelegation } from './runtime/role-delegation.ts'
 import { createAutoDelegation } from './runtime/auto-delegation.ts'
+import { registerAutoDelegationTools } from './runtime/auto-delegation-tools.ts'
 import type { AutoDelegationRuntime } from './runtime/auto-delegation.ts'
 import { AUTO_DELEGATION_SERVICE } from './runtime/auto-delegation.ts'
 import { ROLE_MODULE_ID } from './runtime/role-delegation.ts'
@@ -196,6 +197,8 @@ registerTuiCommand(
   })
   autoDelegation = autoDelegationRuntime
   ctx.provide(AUTO_DELEGATION_SERVICE, autoDelegationRuntime)
+  // 唯一产品入口：规则开启时真实根会话可调用，工具内部跑完整派工流程；关闭时拒绝。
+  const offAutoDelegationTool = registerAutoDelegationTools(ctx, { runtime: autoDelegationRuntime })
   ctx.effect(() => {
     // 宿主 await 该监听器，所以角色在子 Agent 首个 assemble 前已经可读。
     const off = ctx.on('agent/created', async ({ agent }) => {
@@ -203,7 +206,7 @@ registerTuiCommand(
       autoDelegationRuntime.assignRoot(agent)
       await roleDelegation.bindCreated(agent)
     })
-    return () => { off(); autoDelegationRuntime.dispose(); roleDelegation.dispose() }
+    return () => { off(); offAutoDelegationTool(); autoDelegationRuntime.dispose(); roleDelegation.dispose() }
   }, 'prompt-tool role delegation')
   const soulRuntime = installSoulRuntime(ctx, moduleToolHost, id => assembly?.moduleIds(id) ?? [], sessionVariables)
   ctx.provide(toolServiceName('module-import-tools'), {

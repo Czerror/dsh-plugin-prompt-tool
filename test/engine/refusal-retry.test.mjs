@@ -15,7 +15,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createAgentAssembly } from '../../src/runtime/agent-assembly.ts'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
-const { refusalMatchIndex } = await import('../../engine/refusal-retry.mjs')
+const { refusalMatchIndex, refusalRetryStream } = await import('../../engine/refusal-retry.mjs')
 const { compileRules } = await import('../../engine/rule-spec.mjs')
 const { rulePromptConfigOptions } = await import('../../src/host/module-slices.ts')
 
@@ -71,6 +71,7 @@ async function world(t, { attempts, rules, assetText = RETRY_TEXT }) {
   writeRules(rules)
 
   const calls = []
+  const toolRuns = []
   const order = []
   class Scripted extends LlmAdapter {
     async resolveModel(provider, id) { return { provider, id, name: id } }
@@ -101,7 +102,7 @@ async function world(t, { attempts, rules, assetText = RETRY_TEXT }) {
     description: 'PROBE TOOL',
     parameters: { type: 'object', properties: {} },
     output: { schema: { type: 'string' }, render: () => [{ type: 'text', text: 'R' }] },
-    execute: () => 'R',
+    execute: () => { toolRuns.push(1); return 'R' },
   })
   const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => ['retry'] })
   await runtime.settled()
@@ -125,7 +126,7 @@ async function world(t, { attempts, rules, assetText = RETRY_TEXT }) {
     agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }))
     await deadline(agent.whenIdle(), 'agent idle timed out')
   }
-  return { root, runtime, handle, agent, adapter, calls, order, send, dispose, events: () => agent.session.snapshotEvents(), writeRules, moduleDir }
+  return { root, runtime, handle, agent, adapter, calls, toolRuns, order, send, dispose, events: () => agent.session.snapshotEvents(), writeRules, moduleDir }
 }
 
 test('检测判据：字面拒绝命中，引用、讨论、长正常正文与第 1439 字符处的拒绝不命中', () => {
@@ -250,6 +251,27 @@ test('正常回答、推理先行、工具调用与显式关闭都不触发重�
   }
 })
 
+test('拒绝句后紧跟工具调用：判定为在工作，不重放，已产生的工具调用照常投递并执行', async t => {
+  // spec 21：出现工具调用即结束检测，已投递的工具调用不得回放；重放会把整条调用丢掉。
+  const w = await world(t, {
+    rules: [retryRule()],
+    attempts: [async function* () {
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text: 'I cannot help with that.' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'I cannot help with that.' } }
+      yield { type: 'block-start', index: 1, blockType: 'tool-call' }
+      yield { type: 'tool-call-delta', index: 1, id: 'call-1', name: 'ProbeTool', argumentsDelta: '{}' }
+      yield { type: 'block-end', index: 1, block: { type: 'tool-call', id: 'call-1', name: 'ProbeTool', arguments: '{}' } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }, reply('DONE AFTER TOOL')],
+  })
+  await w.send('U')
+  assert.equal(w.toolRuns.length, 1, '工具调用被投递并真的执行了一次')
+  assert.deepEqual(w.calls.map(call => call.messages.some(message => message.text === RETRY_TEXT)), [false, false],
+    '首请求与工具结果后的请求都没有被重放')
+  assert.equal(w.calls.length, 2, '工具结果后的请求由官方推进，本能力不额外插入')
+})
+
 test('多来源共享一次额度：同值共存只重放一次，异值保留先到装配', async t => {
   {
     const w = await world(t, {
@@ -276,6 +298,33 @@ test('多来源共享一次额度：同值共存只重放一次，异值保留�
     assert.equal(w.calls[1].messages.at(-1).text, RETRY_TEXT, '保留先到的有效装配')
     assert.equal(w.calls[1].messages.some(message => message.text === '另一份重试正文'), false)
   }
+})
+
+test('消费者提前退出：结束上游迭代器，不发起重放也没有迟到调用', async () => {
+  // spec 23：消费者手动退出 async iterator 也结束上游；这正是 06 曾推到票 10 的那条保护。
+  let firstClosed = false
+  let retries = 0
+  const first = (async function* () {
+    try {
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'text-delta', index: 0, text: 'Here is a normal answer that keeps going.' }
+      yield { type: 'text-delta', index: 0, text: ' It has a second chunk.' }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    } finally { firstClosed = true }
+  })()
+  const stream = refusalRetryStream({
+    options: {},
+    first,
+    retryStream: async function* () { retries += 1; yield { type: 'text-delta', index: 0, text: 'MUST NOT BE CALLED' } },
+    warnOnce: () => {},
+  })
+  let seen = 0
+  for await (const chunk of stream) {
+    if (chunk.type === 'text-delta' && (seen += 1) === 1) break
+  }
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(firstClosed, true, '消费者退出后上游迭代器被结束')
+  assert.equal(retries, 0, '提前退出不发起重放，也没有迟到调用')
 })
 
 test('取消落在「已判定、未发起第二次」的窗口内不再发起重放，上游被关闭', async t => {

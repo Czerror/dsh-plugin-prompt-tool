@@ -564,7 +564,7 @@ runtime-context 的注册文本必须是同步 provider，不能只在 assemble 
 - **依赖串行、额度内并行**：调度只在前序官方任务 `completed` 后启动后序，`parallel` 默认 1，只对互不依赖的任务并行。官方 `ready` 只表示可认领——启动必须走真实 `delegate`，完成必须等 `settle`（`stopReason: completed` + 有输出 + `ownerId` 匹配 + 版本未陈旧）。`writeScopes` 只是官方冲突提示（`writeScopeWarnings`），不当锁或目录隔离。
 - **失败与取消不冒充完成**：派发失败（如角色内容规则被关 → `ROLE_CONTENT_UNAVAILABLE`）或结算抛错，结果记 `failed` 且官方任务保持 `pending`；依赖失败即阻断后序（`blocked`）。用户取消、来源释放或关闭后不再启动后续任务，未启动的记 `cancelled`，官方任务保留可续做。
 - **汇总只认匹配事实**：`AutoDelegationSummary.outcomes` 每项带 `taskId`／`childSession`／`runId`／`taskStatus`／`revision`，`completed` 只在全部子任务都有匹配完成时成立。需要继续工作时用 `handoff(parent, childSession, text, signal)`，`signal` 必填（官方 `sendMessage` 无条件读 `options.signal.throwIfAborted()`，缺失即抛 `ROLE_MESSAGE_SIGNAL_REQUIRED`）；它透传官方 `subagents.sendMessage`，不另建消息通道。
-- **入口与服务**：编排实例经 `ctx.provide('prompt-tool/auto-delegation')` 发布，目前没有消费它的事件或工具；规则开启时 `agent/created` 里的 `assignRoot` 给真实根补 plan，作为重挂后的恢复入口。模型直接调用官方 team／subagent 工具**不会**经过本编排，因此本批只交付 API 级派工闭环，模型侧工具入口尚未提供（评审 S1）。
+- **入口与服务**：编排实例经 `ctx.provide('prompt-tool/auto-delegation')` 发布，模型侧入口是同名工具 `auto_delegate_plan`（`src/runtime/auto-delegation-tools.ts`）：只接受真实根会话调用，规则关闭时明确拒绝且零登记零启动，入参是整份计划（六段任务书缺项报 `AUTO_BRIEF_INCOMPLETE`），返回每项的 `taskId`／`childSession`／`runId`／`taskStatus` 与失败原因。规则开启时 `agent/created` 里的 `assignRoot` 给真实根补 plan，作为重挂后的恢复入口。官方 team／subagent 工具本身不经过本编排，角色正文只由本工具派出的子代理携带。
 
 ## 自定义工具与宿主契约
 

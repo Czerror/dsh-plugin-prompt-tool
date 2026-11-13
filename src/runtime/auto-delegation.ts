@@ -215,6 +215,8 @@ export function createAutoDelegation(options: AutoDelegationOptions): AutoDelega
 
     async run(request) {
       assertEnabled('运行计划')
+      // 派工前确保协议与纪律同步：规则开启即选红队协议（幂等），关闭派工时不切回普通协议。
+      this.syncRule()
       const available = delegation.availability(request.parent)
       if (!available.ok) throw new AutoDelegationError(available.code, available.message)
       const { parent, planId, subtasks, signal } = request

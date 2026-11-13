@@ -189,6 +189,10 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
   const roleFacts = new Map<string, RoleFact>()
   const runIds = new Map<string, string>()
   const claimed = new Set<string>()
+  /** 在途认领：created 侧异步发起，结算前必须等它落地，避免「认领尚未生效就进入结算」。 */
+  const claiming = new Map<string, Promise<void>>()
+  /** 同一父会话的启动闸门：created 的到达顺序决定谁领走队首 intent，启动不能并发。 */
+  const starting = new Map<string, Promise<void>>()
   let closed = false
 
   const subagentsOf = (): HostSubagents | undefined => ctx.get('subagents') as HostSubagents | undefined
@@ -301,6 +305,15 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
     }
   }
 
+  /** 等 created 侧把本次 child 的角色事实落地：启动返回时它可能还没被派发到。 */
+  const boundOnce = async (childId: string): Promise<void> => {
+    if (childId === '') return
+    for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
+      if (roleFacts.has(childId)) return
+      await new Promise(resolve => setTimeout(resolve, CLAIM_RETRY_MS))
+    }
+  }
+
   // 事件名由 subagent 包声明；本包不依赖其类型，只读它携带的运行身份。
   // 这里用 events.on + 显式 offStart：本 service 的 ctx 不是装配 fiber，包 ctx.effect 会在释放期
   // 与 dispose 重复解绑；订阅生命周期由 runtime.dispose() 统一收口。
@@ -367,8 +380,15 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
       const queue = intents.get(session.id) ?? []
       queue.push({ role, taskId, token })
       intents.set(session.id, queue)
+      // 队首 intent 由 created 的到达顺序领走：并发启动会让两个 child 交叉领到对方的任务，
+      // 认领落在 A 的任务上、结算读的是 B 的任务，两边都报 owner-mismatch。
+      // 因此同一父会话的启动串行，并且等到本次 child 的角色事实落地再放行下一次。
+      const previous = starting.get(session.id) ?? Promise.resolve()
+      let releaseStart: () => void = () => {}
+      starting.set(session.id, new Promise<void>(resolve => { releaseStart = resolve }))
       let activation: Awaited<ReturnType<HostSubagents['startActivation']>>
       try {
+        await previous
         activation = await subagentsOf()!.startActivation({
           provider: PROVIDER,
           label: request.label,
@@ -379,10 +399,14 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
           // 五执行角色默认叶子：宿主无默认值，必须显式给。
           maxDepth: LEAF_MAX_DEPTH,
         })
+        // created 派发可能略晚于 startActivation 返回：等本次 child 消费掉自己那条 intent 再放行。
+        await boundOnce(text(activation.childId) ?? '')
       } catch (error) {
         // 启动失败/取消：立即释放这次资格，绝不留可被下一个无关 child 领走的 intent。
         dropIntent(token)
         throw error
+      } finally {
+        releaseStart()
       }
       const childId = text(activation.childId) ?? ''
       if (!runs.has(childId)) runs.set(childId, { role, taskId, parentSession: session.id })
@@ -418,8 +442,10 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
         remember(session, { role: intent.role, taskId: intent.taskId, parentSession })
         // 认领不在这里 await：官方在 created 派发**settle 之后**才登记 child 的 resident 归属，
         // 而 created 派发是串行的——await 会同时挡住归属登记和后一个子会话的 created。
-        // claim 自带重试，等在归属窗口内认领到同一次真实子会话。
-        void claim(session.id, intent.taskId)
+        // claim 自带重试，等在归属窗口内认领到同一次真实子会话；在途 Promise 留给 settle 前 await。
+        const pending = claim(session.id, intent.taskId)
+        claiming.set(session.id, pending)
+        void pending.finally(() => { if (claiming.get(session.id) === pending) claiming.delete(session.id) })
       } catch (error) {
         warn(`prompt-tool: 角色绑定未完成：${String((error as Error)?.message ?? error)}`)
       }
@@ -436,6 +462,8 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
       const parentSession = roleFacts.get(run.childId)?.parentSession ?? runs.get(run.childId)?.parentSession
       const caller = options.caller ?? (parentSession === undefined ? undefined : agentsOf()?.get(parentSession))
       if (caller === undefined) return { ...missing, reason: 'caller-unavailable' }
+      // 本次认领可能仍在重试窗口里：等它落地再按官方视图复核归属，不把「还没认领」读成「不是我的任务」。
+      await claiming.get(run.childId)
       const task = team.getTask(caller, run.taskId)
       // 结果必须匹配真实运行：任务归属不是这次启动的 child 就不认领这次成果。
       if (task.ownerId !== run.childId) return { ...missing, reason: 'owner-mismatch' }
@@ -511,6 +539,8 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
       roleFacts.clear()
       runIds.clear()
       claimed.clear()
+      claiming.clear()
+      starting.clear()
       offStart()
     },
   }

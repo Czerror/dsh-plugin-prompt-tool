@@ -2,7 +2,8 @@
  * 有界拒绝识别与单次请求重放（`request-retry` 动作的运行时）。
  *
  * 已批边界（spec 15）：缓冲开头约 400 个文本字符后决策，匹配范围最多前 600 个字符；
- * 遇到推理增量、工具调用或 finish 提前决定。块级正文与增量级 `text-delta` 用同一份累积，
+ * 遇到推理增量、工具调用或 finish 提前决定；提前决定意味着模型已经在干活，此后不再判重放
+ * （spec 21：出现工具调用即结束检测，已投递的工具调用不得回放）。块级正文与增量级 `text-delta` 用同一份累积，
  * 同一 index 已有增量时不再并入块正文，避免重复计数。
  *
  * 一次原始请求最多两次实际调用：首请求 options 与重放 options 都进入同一 claim 集合，
@@ -94,6 +95,7 @@ export async function* refusalRetryStream({ options, first, retryStream, warnOnc
   }
   try {
     let finish
+    let sawWork = false
     while (true) {
       const step = await iterator.next()
       if (step.done) break
@@ -101,12 +103,13 @@ export async function* refusalRetryStream({ options, first, retryStream, warnOnc
       buffered.push(chunk)
       accumulate(chunk, parts)
       if (chunk?.type === 'finish') { finish = chunk; break }
-      if (decidesEarly(chunk)) break
+      if (decidesEarly(chunk)) { sawWork = true; break }
       if (textOf(parts).length >= RETRY_DECISION_CHARS) break
     }
     const head = textOf(parts)
     // 整段就一句拒绝也算命中；只有正常 stop 收尾才重放，error / aborted / 截断沿官方链返回。
-    const hit = (finish === undefined || finish.reason?.kind === 'stop') && looksLikeRefusal(head)
+    // 已出现推理或工具调用时 opened window 里那段文字不算空转拒绝：重放会丢掉已产生的调用。
+    const hit = !sawWork && (finish === undefined || finish.reason?.kind === 'stop') && looksLikeRefusal(head)
     if (!hit) {
       for (const chunk of buffered) yield chunk
       while (true) {
@@ -123,6 +126,8 @@ export async function* refusalRetryStream({ options, first, retryStream, warnOnc
     warnOnce('request-retry: refusal matched in the opening window, replaying once')
     yield* retryStream()
   } finally {
+    // 消费者提前 break/throw 时手动迭代不会自动关闭上游，必须在 finally 里收口：
+    // spec 23 要求手动退出 async iterator 也结束上游，不得留下迟到的第二次调用。
     await close()
   }
 }

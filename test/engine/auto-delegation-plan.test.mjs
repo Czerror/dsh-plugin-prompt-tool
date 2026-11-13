@@ -160,13 +160,16 @@ async function mount(t, { auto = true, roles = ['recon'], teamEnabled = true } =
 
   const root = new Context()
   const capture = new Capture()
-  const runtime = createRoleDelegation(root, { moduleRoot, warn: () => {} })
-  const auto_delegation = createAutoDelegation({ delegation: runtime, moduleRoot, warn: () => {} })
+  // 告警进数组而不是丢弃：失败时能看见「认领未完成」「绑定未完成」这类真实原因。
+  const warnings = []
+  const warn = message => warnings.push(String(message))
+  const runtime = createRoleDelegation(root, { moduleRoot, warn })
+  const auto_delegation = createAutoDelegation({ delegation: runtime, moduleRoot, warn })
   const assembly = createAgentAssembly(root, {
     moduleRoot,
     enabledModules: () => [ROLE_MODULE_ID],
     runtimeVariables: (id, sessionId) => runtime.roleFactsOf(id, sessionId),
-    warn: () => {},
+    warn,
   })
   const off = root.on('agent/created', async ({ agent }) => {
     auto_delegation.assignRoot(agent)
@@ -207,7 +210,7 @@ async function mount(t, { auto = true, roles = ['recon'], teamEnabled = true } =
     await waitFor(() => capture.requests.filter(request => request.sessionId === capture.parentId).length > before, '根会话下一个请求')
   }
   const tasks = () => root.agentTeams.listTasks(handle.agent)
-  return { home, moduleRoot, moduleDir, root, capture, runtime, auto: auto_delegation, assembly, parent: handle.agent, handle, childText, parentText, turn, tasks }
+  return { home, moduleRoot, moduleDir, root, capture, runtime, auto: auto_delegation, assembly, warnings, parent: handle.agent, handle, childText, parentText, turn, tasks }
 }
 
 test('串行依赖：官方任务与 blockedBy 先登记，依赖完成前不启动后序，任务书自包含，汇总只认真实运行结果', { timeout: 120000 }, async t => {
@@ -366,7 +369,12 @@ test('并行额度与失败收口：独立任务按额度并行且 writeScopes �
   assert.deepEqual(views.map(task => task.ownerId), [...h.capture.children], 'writeScopes 警告没有阻止任何一次派发')
   h.capture.releaseAll()
   const both = await parallel
-  assert.equal(both.completed, true)
+  // 断言下沉到逐项状态与原因：失败时自带 owner-mismatch / no-evidence / stopReason:*，不用猜。
+  assert.deepEqual(both.outcomes.map(item => [item.key, item.state, item.reason ?? '']),
+    [['a', 'completed', ''], ['b', 'completed', '']],
+    '并行两项都按真实运行结果完成；装配与认警告警：' + h.warnings.join(' / ')
+      + '；任务归属：' + views.map(task => task.id + '@' + String(task.ownerId)).join(', ')
+      + '；本次运行：' + both.outcomes.map(item => item.key + '#' + item.taskId + '>' + String(item.childSession)).join(', '))
 
   // 默认额度 1：同形状的独立任务一次只启动一个。
   // 重新按住子会话：否则第一个独立任务会在 150ms 观察窗内自行完成，测的就不是额度而是速度。

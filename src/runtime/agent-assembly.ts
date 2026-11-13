@@ -902,12 +902,14 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   }, 'prompt-tool assembly runtime')
   // 启动时已存在的 Agent 也要补装；`agents` 服务缺失时（极简/嵌入运行时）静默跳过，
   // 新增 Agent 仍由 `agent/created` 兜住——构造期绝不因缺服务而抛。
-  try {
-    for (const agent of ctx.agents.list()) {
-      void serial(() => install(agent)).catch(warn)
+  const roster = ctx.get('agents')
+  if (roster !== undefined) {
+    try {
+      for (const agent of roster.list()) void serial(() => install(agent)).catch(warn)
+    } catch (error) {
+      // 只有「服务在但列举本身失败」才是配装失败；缺服务保持静默跳过。
+      warn(error)
     }
-  } catch (error) {
-    warn(error)
   }
   publication.schedule()
   return {

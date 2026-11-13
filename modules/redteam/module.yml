@@ -20,7 +20,7 @@ id: redteam
 name: 红队模式内容
 version: 1.0.0
 engineCompat: '>=0.4.2'
-description: 独立指挥正文与首轮请求额度；工具、角色自动装配和演练台不由本模块提供。平台说明只在明确依赖的真实工具可执行时投递，核心策略另行启用。
+description: 独立指挥正文与首轮请求额度；工具、角色自动装配和演练台不由本模块提供。平台动作依赖 redteam_preflight 等外部演练平台工具，缺失时该段不投递（对应规则名以"平台动作（依赖 redteam_preflight，缺工具不投递）"标注），核心策略另行启用。
 modules: [rule-engine]
 variables:
   # 角色内容选择：留空表示未分配执行角色，六份角色组合都不投递。
@@ -38,11 +38,17 @@ configOrder:
   platform-guidance: 60
   auto-delegation: 65
   role-plan: 70
+  role-plan-platform: 71
   role-recon: 80
+  role-recon-platform: 81
   role-assess: 90
+  role-assess-platform: 91
   role-vuln-scan: 100
+  role-vuln-scan-platform: 101
   role-exploit: 110
+  role-exploit-platform: 111
   role-internal: 120
+  role-internal-platform: 121
   protocol-redteam: 150
 rules:
   - id: mode-persona
@@ -296,6 +302,28 @@ rules:
           position: before-all
           dedupe: session
           templateFile: ./assets/common/bind.md
+  - id: role-plan-platform
+    name: 角色内容：plan（红队指挥）· 平台动作（依赖 redteam_preflight，缺工具不投递）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: main
+        - variable:
+            key: role
+            op: eq
+            value: plan
+        - tool:
+            name: redteam_preflight
+    then:
+      - id: platform
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/plan.platform.md
   - id: role-recon
     name: 角色内容：recon（信息收集）
     enabled: true
@@ -348,6 +376,28 @@ rules:
           position: before-all
           dedupe: session
           templateFile: ./assets/common/handoff.md
+  - id: role-recon-platform
+    name: 角色内容：recon（信息收集）· 平台动作（依赖 redteam_preflight，缺工具不投递）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: subagent
+        - variable:
+            key: role
+            op: eq
+            value: recon
+        - tool:
+            name: redteam_preflight
+    then:
+      - id: platform
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/recon.platform.md
   - id: role-assess
     name: 角色内容：assess（资产梳理）
     enabled: true
@@ -400,6 +450,28 @@ rules:
           position: before-all
           dedupe: session
           templateFile: ./assets/common/handoff.md
+  - id: role-assess-platform
+    name: 角色内容：assess（资产梳理）· 平台动作（依赖 redteam_preflight，缺工具不投递）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: subagent
+        - variable:
+            key: role
+            op: eq
+            value: assess
+        - tool:
+            name: redteam_preflight
+    then:
+      - id: platform
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/assess.platform.md
   - id: role-vuln-scan
     name: 角色内容：vuln-scan（漏洞发现）
     enabled: true
@@ -459,6 +531,28 @@ rules:
           position: before-all
           dedupe: session
           templateFile: ./assets/common/handoff.md
+  - id: role-vuln-scan-platform
+    name: 角色内容：vuln-scan（漏洞发现）· 平台动作（依赖 redteam_preflight，缺工具不投递）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: subagent
+        - variable:
+            key: role
+            op: eq
+            value: vuln-scan
+        - tool:
+            name: redteam_preflight
+    then:
+      - id: platform
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/vuln-scan.platform.md
   - id: role-exploit
     name: 角色内容：exploit（漏洞利用）
     enabled: true
@@ -518,6 +612,28 @@ rules:
           position: before-all
           dedupe: session
           templateFile: ./assets/common/handoff.md
+  - id: role-exploit-platform
+    name: 角色内容：exploit（漏洞利用）· 平台动作（依赖 redteam_preflight，缺工具不投递）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: subagent
+        - variable:
+            key: role
+            op: eq
+            value: exploit
+        - tool:
+            name: redteam_preflight
+    then:
+      - id: platform
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/exploit.platform.md
   - id: role-internal
     name: 角色内容：internal（内网评估）
     enabled: true
@@ -577,3 +693,25 @@ rules:
           position: before-all
           dedupe: session
           templateFile: ./assets/common/handoff.md
+  - id: role-internal-platform
+    name: 角色内容：internal（内网评估）· 平台动作（依赖 redteam_preflight，缺工具不投递）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: subagent
+        - variable:
+            key: role
+            op: eq
+            value: internal
+        - tool:
+            name: redteam_preflight
+    then:
+      - id: platform
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/internal.platform.md
