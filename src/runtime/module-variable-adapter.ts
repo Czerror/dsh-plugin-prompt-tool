@@ -50,10 +50,12 @@ export function createModuleVariableAdapter(moduleRoot: string, options: Variabl
       }
       if (!state.enabled || !context.agent) return { ...state, assertCurrent }
       // 运行时事实不是第二份配置：它只覆盖同名键，未定义时不改变任何既有读取结果。
-      const runtime = options.runtimeVariables?.(id, sessionId!)
+      const runtime = sessionId === undefined ? undefined : options.runtimeVariables?.(id, sessionId)
       if (!owner) return runtime === undefined ? { ...state, assertCurrent }
         : { ...state, effective: { ...state.effective, ...runtime }, assertCurrent }
-      const session = owner.read(join(moduleRoot, id), sessionId!)
+      if (sessionId === undefined) return runtime === undefined ? { ...state, assertCurrent }
+        : { ...state, effective: { ...state.effective, ...runtime }, assertCurrent }
+      const session = owner.read(join(moduleRoot, id), sessionId)
       return { ...state, session: session.variables, effective: { ...state.effective, ...session.variables, ...runtime },
         revisions: { ...state.revisions, session: session.revision }, assertCurrent }
     },

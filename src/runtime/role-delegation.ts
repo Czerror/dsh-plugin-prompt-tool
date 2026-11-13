@@ -300,7 +300,9 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
         }
         // 上下文已随插件/会话释放时不再重试，避免对已失效的官方服务继续写入。
         if (/inactive context/.test(String((error as Error)?.message ?? ''))) return
+        // 释放后不再对官方任务写 claim：在途重试必须能被 closed 打断（S-04）。
         await new Promise(resolve => setTimeout(resolve, CLAIM_RETRY_MS))
+        if (closed) return
       }
     }
   }
@@ -311,6 +313,7 @@ export function createRoleDelegation(ctx: Context, options: RoleDelegationOption
     for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt += 1) {
       if (roleFacts.has(childId)) return
       await new Promise(resolve => setTimeout(resolve, CLAIM_RETRY_MS))
+      if (closed) return
     }
   }
 
@@ -555,5 +558,8 @@ export function selectCapabilityProtocol(moduleRoot: string, branch: 'redteam' |
     ? [ROLE_MODULE_ID, 'protocol-redteam'] as const
     : ['unrestricted', 'protocol-official'] as const
   const directory = join(moduleRoot, moduleId)
-  editModuleRules(directory, { expectedRevisions: readModuleRules(directory).revisions, activateRuleId: ruleId })
+  const snapshot = readModuleRules(directory)
+  // 已选中即幂等短路：否则每次保存模块都会再写一次 module.yml，让客户端拿到的 revision 落后一格（S-03）。
+  if (snapshot.rules.find(rule => rule.id === ruleId)?.enabled === true) return
+  editModuleRules(directory, { expectedRevisions: snapshot.revisions, activateRuleId: ruleId })
 }
