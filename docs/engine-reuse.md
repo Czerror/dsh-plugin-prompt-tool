@@ -563,7 +563,7 @@ runtime-context 的注册文本必须是同步 provider，不能只在 assemble 
 - **官方登记唯一**：`submitTask` 透传 `createTask`（含 `blockedBy`／`writeScopes`）；任务描述首行写稳定标记 `[auto-plan:<planId>/<key>]`，恢复或重挂时用 `listTasks` 读回同一标记的任务复用，**不重复创建**；`status: completed` 或已被其他来源认领的任务**不重复派发**，只按官方视图汇报（`reason: official-status`）。
 - **依赖串行、额度内并行**：调度只在前序官方任务 `completed` 后启动后序，`parallel` 默认 1，只对互不依赖的任务并行。官方 `ready` 只表示可认领——启动必须走真实 `delegate`，完成必须等 `settle`（`stopReason: completed` + 有输出 + `ownerId` 匹配 + 版本未陈旧）。`writeScopes` 只是官方冲突提示（`writeScopeWarnings`），不当锁或目录隔离。
 - **失败与取消不冒充完成**：派发失败（如角色内容规则被关 → `ROLE_CONTENT_UNAVAILABLE`）或结算抛错，结果记 `failed` 且官方任务保持 `pending`；依赖失败即阻断后序（`blocked`）。用户取消、来源释放或关闭后不再启动后续任务，未启动的记 `cancelled`，官方任务保留可续做。
-- **汇总只认匹配事实**：`AutoDelegationSummary.outcomes` 每项带 `taskId`／`childSession`／`runId`／`taskStatus`／`revision`，`completed` 只在全部子任务都有匹配完成时成立。需要继续工作时用 `handoff(parent, childSession, text)`，它透传官方 `subagents.sendMessage`，不另建消息通道。
+- **汇总只认匹配事实**：`AutoDelegationSummary.outcomes` 每项带 `taskId`／`childSession`／`runId`／`taskStatus`／`revision`，`completed` 只在全部子任务都有匹配完成时成立。需要继续工作时用 `handoff(parent, childSession, text, signal)`，`signal` 必填（官方 `sendMessage` 无条件读 `options.signal.throwIfAborted()`，缺失即抛 `ROLE_MESSAGE_SIGNAL_REQUIRED`）；它透传官方 `subagents.sendMessage`，不另建消息通道。
 - **入口**：宿主经 `AUTO_DELEGATION_SERVICE`（`prompt-tool/auto-delegation`）取到编排实例；`agent/created` 里 `assignRoot` 在规则开启时给真实根补上 plan，作为重挂后的恢复入口。
 ## 自定义工具与宿主契约
 
