@@ -7,11 +7,26 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 const { moduleRoot } = isolatedHome('pt-policy-prompt-storage-')
 const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
 
+/**
+ * 模块定义夹具：原内容模块已移出仓库（存档在本地知识库）。本文件只验证替句保存的 CAS 与互斥事务，
+ * 所以自带一份最小定义：一条同组替句规则 + 一对互斥旁路规则。
+ */
+const policyDefinition = ['# USER COMMENT', 'id: limit-breaker', 'name: policy fixture', 'modules: [rule-engine]', 'rules:',
+  '  - id: approval-ask-guidance', '    enabled: true', '    then:',
+  '      - id: ask', '        kind: assembly', '        target:', '          contexts:', '            replace:',
+  '              - name: approval:policy', '                match: ORIGINAL', '                text: REPLACEMENT',
+  '  - id: approval-never-guidance', '    enabled: true', '    group: approval-never-guidance', '    exclusive: true', '    then:',
+  '      - id: never', '        kind: assembly', '        target:', '          contexts:', '            replace:',
+  '              - name: approval:policy', '                match: ORIGINAL', '                text: REPLACEMENT',
+  '  - id: approval-never-bypass-guidance', '    enabled: false', '    group: approval-never-guidance', '    exclusive: true', '    then:',
+  '      - id: bypass', '        kind: assembly', '        target:', '          contexts:', '            replace:',
+  '              - name: approval:policy', '                match: ORIGINAL', '                text: REPLACEMENT', ''].join('\n') + '\n'
+
 test('替句原文沿普通规则版本写盘，非法原文拒写且审批文案复用原互斥事务', () => {
   const dir = join(moduleRoot, 'limit-breaker')
   mkdirSync(dir, { recursive: true })
   const file = join(dir, 'module.yml')
-  writeFileSync(file, '# USER COMMENT\n' + readFileSync(new URL('../../modules/limit-breaker/module.yml', import.meta.url), 'utf8'))
+  writeFileSync(file, policyDefinition)
   const initial = readModuleRules(dir)
   const current = initial.rules.find(rule => rule.id === 'approval-ask-guidance')
   const changed = structuredClone(current)

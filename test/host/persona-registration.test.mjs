@@ -129,10 +129,13 @@ test('默认身份读取当前具名provider，重复贡献幂等且已释放own
 })
 
 test('真实插件总闸撤回身份贡献，重新开启保持已保存的规则选择', async t => {
-  const { ensureModuleSeed } = await import('../../src/host/module-catalog.ts')
   const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
   const { setModuleEnabled, readStorageConfig } = await import('../../src/host/config-store.ts')
-  ensureModuleSeed(moduleRoot)
+  // 内容模块已移出仓库（存档在本地知识库）：这里用最小夹具承载两条身份规则，验证的是总闸撤回行为。
+  writeModule('limit-breaker', [
+    { id: 'default-preset-identity', enabled: false, then: [{ id: 'preset', kind: 'persona', stripDefaultIdentity: 'preset' }] },
+    { id: 'default-harness-identity', enabled: false, then: [{ id: 'harness', kind: 'persona', stripDefaultIdentity: 'harness' }] },
+  ])
   const dir = join(moduleRoot, 'limit-breaker'), current = readModuleRules(dir)
   const identityRuleIds = ['default-preset-identity', 'default-harness-identity']
   editModuleRules(dir, { expectedRevisions: current.revisions, edits: current.rules.map(rule => ({ previousId: rule.id, rule: { ...rule, enabled: identityRuleIds.includes(rule.id) }, settingsChanged: true })) })

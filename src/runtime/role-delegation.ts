@@ -5,7 +5,7 @@
  * 唯一权威（不新建第二份）：
  *   - 官方 Team 拥有任务、依赖、归属与版本（createTask/getTask/updateTask 一律透传官方语义）；
  *   - 官方 subagent 拥有成员、运行、消息与等待（startActivation 与模型侧工具同一入口）；
- *   - 角色**内容**仍由 modules/redteam 的角色规则与资产提供（role 变量条件 + assets 正文），
+ *   - 角色**内容**由外部内容插件提供的角色规则与资产提供（role 变量条件 + assets 正文），
  *     本文件只提供运行时事实，不复制正文。
  *
  * 两个必须在接入处显式处理的宿主事实（由 02 技术证明在隔离环境实测得出，报告属本地作业区、不入库）：
@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { editModuleRules, readModuleRules } from '../host/module-rules.ts'
 
-/** 指挥角色与五执行角色；与 modules/redteam 的 role-* 规则一一对应（测试守门）。 */
+/** 指挥角色与五执行角色；与外部内容插件的 role-* 规则一一对应（测试守门）。 */
 export const DELEGATION_ROLES = ['plan', 'recon', 'assess', 'vuln-scan', 'exploit', 'internal'] as const
 export type DelegationRole = (typeof DELEGATION_ROLES)[number]
 /**

@@ -44,11 +44,9 @@ module.yml 支持 UI 保存与直接手改。rules/ 从完整定义分解，手�
 
 人设与其他规则共用规则草稿和保存事务；工具、变量与指令策略保留各自的保存边界。布局、无障碍、locale 和 typed bridge 规范见 [UI 框架](docs/ui-architecture.md)。
 
-核心破限模块（`limit-breaker`）是普通内置模块，规则默认开启（互斥的 `approval-never-bypass-guidance` 默认关闭），模块仍不自动启用。首次仅补缺失定义，保留已有用户副本与规则选择。规则的人设动作可分别接管准确的预设默认身份句和 Harness 默认身份句，保留自定义身份、工具、环境和功能正文；规则卡区分启用意图与最近装配观测，未验证不显示成功。关闭规则、模块或总闸只撤回后续贡献，不修改宿主声明或已有历史。
+破限／无限制／红队三个内容模块已移出本插件（存档在本地知识库 `03_Knowledge/archived-modules/prompt-tool-20261114`）。需要这些内容的用户改用外部内容插件提供的 `role-*`、`protocol-*`、`request-retry` 等规则；本仓库只保留注入引擎：规则、条件、动作、插入点、组合、模块写盘与导入导出。
 
-无限制模式（`unrestricted`）是独立普通模块，十条规则中九条默认开启（拒绝重试默认关闭），模块仍不自动启用。可分别编辑人设、官方计划模式正文与完整默认正文、Boost、指令预算、spawn 委派深度与子代理工具面；正文与 Boost 是模块 `assets/` 里的资产，用户覆盖优先、包内缺失才回退，显式空正文不回退，两份内容各投递一次且正文在 Boost 之前。普通协议（`protocol-official`）与红队协议同处跨模块互斥组 `capability-protocol`，普通默认选中，每次请求最多一份，顺序由 `configOrder` 固定为正文（100）→ 协议（150）→ Boost（200）。沿用户当前预设运行，不隐式启用核心破限规则。工具仍由现有预设提供，名称不代表改变实际权限；预算需要已验证的早期入口。搜索工具面开启时排除已有 web_fetch，使用抓取前需显式关闭该限制。支持范围与运行依赖见[引擎指南](docs/engine-reuse.md)。
 
-红队模式内容（`redteam`）提供独立可编辑的指挥正文、首轮请求额度、晋升后指令提示与六角色组合与红队协议，十五条规则中十三条默认开启（红队协议与自动派工默认关闭）。请求额度8192 tokens、晋升兜底2步及指令预算65536 bytes均可沿原数字草稿编辑；瞬时请求额度需要同一early入口对官方agent-loop指定发行指纹的支持，关闭后后续请求恢复原预算。六角色正文在模块 `assets/roles/`，六公共段各自只有一份内容（`assets/common/`），角色规则按声明序引用它们组成一份组合：plan 为 ENV→BIND，recon／assess 为 BIND→DB_LOOKUP→EVIDENCE→HANDOFF，vuln-scan／exploit／internal 在 BIND 后加入 SCORE_RULES；同一角色只投递一份，未选择角色时一份都不投递。公共段只有一处正文，改它会影响所有引用角色。红队协议（`protocol-redteam`）在规则内按真实主子受众二选一：主会话投主协议、子代理投子协议，身份不可解析时一份都不投。平台说明与 score-rules／db-lookup／evidence 三段明确依赖实际工具，缺工具只暂停相关说明；本模块不安装扫描器，不提供来源演练台、SQLite平台、计分、自动角色注入或自动演练流程。主子和压缩重判沿现有规则机制，详见[引擎指南](docs/engine-reuse.md)。
 
 团队角色委派沿官方 Team 与官方 subagent 完成。启动前登记一次性 intent 与唯一 token，子会话在 `agent/created`（宿主 await，早于首个 assemble）消费并写入会话级角色事实；角色正文仍来自 `modules/redteam` 的 `role-*` 规则与 `assets/`，名称、描述与任务文本不授予角色。五个执行角色默认叶子（恒显式 `maxDepth: 1`，缺 `depthLimit` 即明确不可用而不启动），`plan` 只作用于真实根 Agent，派给子代理报 `ROLE_NOT_EXECUTABLE`。任务、依赖与版本由官方 Team 拥有，结果只在真实运行 `stopReason: completed`、有输出且归属匹配时标完成，一轮结束不等于任务完成；取消的启动不留可复用资格。关闭派工只撤回后续派工，不删官方任务、不中断其他来源。自动派工默认关闭、需显式开启，开启时选择红队协议，关闭时不自动切回普通协议。
 

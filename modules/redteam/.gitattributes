@@ -1,2 +1,0 @@
-# 角色与公共段正文是精确来源值，EOF 保留来源的两个换行；不要把空白检查当作内容错误。
-assets/** whitespace=-blank-at-eof

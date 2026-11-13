@@ -403,7 +403,7 @@ Soul 的 `soul-echo` 与 `soul-ledger` 按需规则显式使用 `dedupe: session
 
 同规则结构分支中显式关联的装配正文，在实际装配toolSet缺少所需真实结果owner时局部暂停；无关规则继续。结果条件仍在结果出口求值，不在装配期提前消费；条件或受众未命中不误报依赖不可用。依赖恢复后按正常后续装配重判，暂停期间关闭的规则不重开、不重放旧调用。运行观测沿 `tool:results` 报告，保存配置不代表能力已就绪。
 
-内置limit-breaker的Web引用包装、Web身份、Web功能、沙箱结果、交付物引用与PTC沙箱说明六条规则均默认开启。Web身份与功能使用显式原文字面候选及channelOrder 10/20处理重叠；候选缺失或歧义保持原段，重复应用不重复改写。交付物规则只删除指定禁止句，保留路径引用说明。身份、功能与交付物装配动作不依赖early；Web引用正文与结果包装同分支，受上述结果owner依赖约束。CLI没有目标Web段时保持原文。文案转换不改变实际权限，不注册或调用交付工具。真实CLI/Web与桌面组合验收另行统一执行，不能用确定性回归代替。
+limit-breaker 的 Web 引用包装、Web 身份、Web 功能、沙箱结果、交付物引用与 PTC 沙箱说明六条规则随内容模块移出本插件；本文只保留这些动作与条件的引擎契约，内容由外部插件提供。
 
 ## 工具与参数说明
 
@@ -559,7 +559,7 @@ runtime-context 的注册文本必须是同步 provider，不能只在 assemble 
 
 `src/runtime/auto-delegation.ts` 把「一次计划」跑成官方事实：plan 会话给出已授权目标的自包含子任务，编排负责登记官方任务与依赖、真实派发、等待匹配终态并汇总。它复用 07 的 `RoleDelegationRuntime`，不新建任务表、成员库、消息队列或常驻调度器。
 
-- **总开关是模块规则**：`modules/redteam` 的 `auto-delegation` 规则默认 `enabled: false`（规格 34）。关闭时 `run`／`enable` 报 `AUTO_DELEGATION_DISABLED` 且不登记任务；用户经既有规则编辑保存后，运行时下一次调用即按新值判定——不缓存、不重启。规则打开时它只向 main 受众投递运行纪律，不代替任何实际调用。
+- **总开关是模块规则**：外部内容插件提供的 `auto-delegation` 规则默认 `enabled: false`（规格 34）。关闭时 `run`／`enable` 报 `AUTO_DELEGATION_DISABLED` 且不登记任务；用户经既有规则编辑保存后，运行时下一次调用即按新值判定——不缓存、不重启。规则打开时它只向 main 受众投递运行纪律，不代替任何实际调用。
 - **开启事务只做两件事**：经 05 的既有跨模块互斥 `selectCapabilityProtocol(moduleRoot, 'redteam')` 选红队协议，再给真实根会话授 `plan`（`assignRootRole` 拒绝子会话，报 `ROLE_PARENT_REQUIRED`）。团队开关仍由官方管理；关闭（`disable`）只撤回本来源的 plan 角色与未消费资格，不擅自重开普通协议、不删任务、不动已启动子任务。
 - **任务书自包含**：`planned` 的六段（目标范围／输入／已知事实／预期产出／验收依据／实际可用工具）缺一段即 `AUTO_BRIEF_INCOMPLETE`，因为子代理不继承父对话。正文只由这六段渲染，不追加计划外内容；角色正文仍由 `role-<role>` 规则与 `assets/` 提供，在子代理首请求投递。
 - **官方登记唯一**：`submitTask` 透传 `createTask`（含 `blockedBy`／`writeScopes`）；任务描述首行写稳定标记 `[auto-plan:<planId>/<key>]`，恢复或重挂时用 `listTasks` 读回同一标记的任务复用，**不重复创建**；`status: completed` 或已被其他来源认领的任务**不重复派发**，只按官方视图汇报（`reason: official-status`）。

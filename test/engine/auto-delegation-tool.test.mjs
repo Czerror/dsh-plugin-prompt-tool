@@ -12,8 +12,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { pathToFileURL, fileURLToPath } from 'node:url'
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
 import { createAgentAssembly } from '../../src/runtime/agent-assembly.ts'
@@ -23,9 +23,36 @@ import { AUTO_DELEGATION_TOOL_NAME, registerAutoDelegationTools } from '../../sr
 import { setModuleEnabled } from '../../src/host/config-store.ts'
 import { parse as parseYaml } from 'yaml'
 
-const PACKAGE_MODULE = new URL('../../modules/redteam/', import.meta.url)
-const PACKAGE_DIR = fileURLToPath(PACKAGE_MODULE)
-const asset = (...parts) => readFileSync(new URL(parts.join('/'), PACKAGE_MODULE), 'utf8').trimEnd()
+/**
+ * 夹具自带最小资产与自动派工规则：红队内容模块已移出仓库（存档在本地知识库），
+ * 测试不再依赖产品内容，只保留「角色正文 / 公共段 / 协议 / 派工纪律」的可观察断言。
+ */
+const FIXTURE_ASSETS = {
+  'roles/plan.md': 'FIXTURE-ROLE-PLAN',
+  'roles/recon.md': 'FIXTURE-ROLE-RECON',
+  'roles/assess.md': 'FIXTURE-ROLE-ASSESS',
+  'roles/vuln-scan.md': 'FIXTURE-ROLE-VULN-SCAN',
+  'roles/exploit.md': 'FIXTURE-ROLE-EXPLOIT',
+  'roles/internal.md': 'FIXTURE-ROLE-INTERNAL',
+  'common/env.md': 'FIXTURE-COMMON-ENV',
+  'common/bind.md': 'FIXTURE-COMMON-BIND',
+  'common/handoff.md': 'FIXTURE-COMMON-HANDOFF',
+  'protocols/redteam-lead.md': 'FIXTURE-PROTOCOL-LEAD',
+  'protocols/redteam-child.md': 'FIXTURE-PROTOCOL-CHILD',
+}
+const asset = (...parts) => FIXTURE_ASSETS[parts.filter(part => part !== 'assets').join('/')]
+const FIXTURE_AUTO_RULE = {
+  id: 'auto-delegation', name: '自动派工纪律', enabled: false, layer: 'pre-step',
+  then: [{ id: 'discipline', kind: 'inject-text',
+    config: { layer: 'pre-step', position: 'before-all', dedupe: 'session', text: '## 自动派工运行纪律\nFIXTURE-AUTO-DELEGATION-DISCIPLINE' } }],
+}
+const writeAssets = moduleDir => {
+  for (const [relative, text] of Object.entries(FIXTURE_ASSETS)) {
+    const file = join(moduleDir, 'assets', relative)
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, text)
+  }
+}
 const roleBody = role => asset('assets', 'roles', role + '.md')
 const protocolBody = file => asset('assets', 'protocols', file + '.md')
 
@@ -84,11 +111,7 @@ const protocolRule = () => ({
   ],
 })
 /** 包内真实定义的自动派工规则（默认 enabled=false），夹具只改开关值。 */
-const packageAutoRule = () => {
-  const rule = parseYaml(readFileSync(join(PACKAGE_DIR, 'module.yml'), 'utf8')).rules.find(item => item.id === AUTO_DELEGATION_RULE_ID)
-  assert.ok(rule, '包内必须有自动派工规则')
-  return JSON.parse(JSON.stringify(rule))
-}
+const packageAutoRule = () => JSON.parse(JSON.stringify(FIXTURE_AUTO_RULE))
 
 /** 可控 adapter：记录真实请求；可挂住子会话首请求，用于观察存活的真实子代理。 */
 class Capture extends LlmAdapter {
@@ -137,7 +160,8 @@ const subtask = (key, role, extra = {}) => ({ key, role, subject: 'literal subje
 async function mount(t, { auto = true, roles = ['recon'], teamEnabled = true } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'pt-auto-tool-'))
   const moduleRoot = join(home, 'modules'), moduleDir = join(moduleRoot, ROLE_MODULE_ID)
-  cpSync(PACKAGE_MODULE, moduleDir, { recursive: true })
+  mkdirSync(moduleDir, { recursive: true })
+  writeAssets(moduleDir)
   const ids = [...roles, AUTO_DELEGATION_RULE_ID, 'protocol-redteam']
   writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify({
     id: ROLE_MODULE_ID, name: 'auto delegation tool fixture', version: '1.0.0', engineCompat: '>=0.4.2',

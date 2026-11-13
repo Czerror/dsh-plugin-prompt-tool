@@ -401,16 +401,22 @@ test('规则与资产走既有保存 / 复制 / 导出链：默认关闭，正�
   const { ensureModuleSeed, duplicateUserModule } = await import('../../src/host/module-catalog.ts')
   const { moduleImportPreview, installModulePackage, expandModuleSource, exportModulePackage } = await import('../../src/host/module-package.ts')
   const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
-  const retryAsset = fileURLToPath(new URL('../../modules/unrestricted/assets/retry-nudge.md', import.meta.url))
-  ensureModuleSeed(moduleRoot)
+  // 内容模块已移出仓库（存档在本地知识库）：本节自建最小模块，只验证保存/复制/导出链保留正文引用。
   const dir = join(moduleRoot, 'unrestricted')
+  mkdirSync(join(dir, 'assets'), { recursive: true })
+  writeFileSync(join(dir, 'assets', 'retry-nudge.md'), 'FIXTURE-RETRY-NUDGE-BODY')
+  writeFileSync(join(dir, 'module.yml'), JSON.stringify({
+    id: 'unrestricted', name: 'retry fixture', version: '1.0.0', engineCompat: '>=0.4.2', modules: ['rule-engine'],
+    rules: [{ id: 'request-retry', enabled: false, then: [{ id: 'retry', kind: 'request-retry', templateFile: './assets/retry-nudge.md' }] }],
+  }))
+  const retryAsset = join(dir, 'assets', 'retry-nudge.md')
   const initial = readModuleRules(dir)
   const retry = initial.rules.find(rule => rule.id === 'request-retry')
   assert.ok(retry, '补种包含 request-retry 规则')
   assert.equal(retry.enabled, false, '默认关闭')
   assert.equal(retry.then[0].kind, 'request-retry')
   assert.equal(retry.then[0].templateFile, './assets/retry-nudge.md', '正文由模块资产提供')
-  // 种子目录只补 module.yml（资产留在包内），所以这里只核对包内源文件存在。
+  // 夹具目录自带资产：这里核对正文文件真实存在且非空。
   assert.ok(readFileSync(retryAsset).length > 0)
 
   editModuleRules(dir, { expectedRevisions: initial.revisions, edits: [{ previousId: 'request-retry', rule: { ...retry, enabled: true }, settingsChanged: true }] })

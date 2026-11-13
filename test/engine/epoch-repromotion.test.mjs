@@ -18,9 +18,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { parse as parseYaml } from 'yaml'
@@ -30,7 +30,37 @@ import {
 } from '../../engine/context-provenance.mjs'
 import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
 
-const REPO_MODULE = fileURLToPath(new URL('../../modules/unrestricted/', import.meta.url))
+/**
+ * 夹具模块：内容模块已移出仓库（存档在本地知识库），这里只写出本票需要的四条规则与资产，
+ * 资产首行仍用独立字面锚点，断言落在「投递几次、什么顺序」上，不依赖产品正文。
+ */
+function writeModuleDefinition(moduleDir) {
+  const assets = {
+    'default-prompt.md': BODY_START + '\nFIXTURE-BODY',
+    'boost.md': BOOST_START + '\nFIXTURE-BOOST',
+    'protocols/official.md': PROTO_START + '\nFIXTURE-PROTOCOL',
+    'retry-nudge.md': 'FIXTURE-RETRY-NUDGE',
+  }
+  for (const [relative, text] of Object.entries(assets)) {
+    const file = join(moduleDir, 'assets', relative)
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, text)
+  }
+  writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify({
+    id: 'unrestricted', name: 'epoch fixture', version: '1.0.0', engineCompat: '>=0.4.2',
+    modules: ['rule-engine'],
+    configOrder: { 'default-prompt': 100, 'protocol-official': 150, boost: 200 },
+    rules: [
+      { id: 'default-prompt', enabled: true, then: [{ id: 'prompt', kind: 'inject-text',
+        config: { layer: 'system-section', order: 100, templateFile: './assets/default-prompt.md' } }] },
+      { id: 'protocol-official', enabled: true, then: [{ id: 'protocol', kind: 'inject-text',
+        config: { layer: 'system-section', order: 150, templateFile: './assets/protocols/official.md' } }] },
+      { id: 'boost', enabled: true, then: [{ id: 'boost', kind: 'inject-text',
+        config: { layer: 'system-section', order: 200, templateFile: './assets/boost.md' } }] },
+      { id: 'request-retry', enabled: false, then: [{ id: 'retry', kind: 'request-retry', templateFile: './assets/retry-nudge.md' }] },
+    ],
+  }))
+}
 /** 独立字面锚点：正文／Boost／协议来自包内资产的既有首行，epoch 与角色段是本夹具自己的名字。 */
 const BODY_START = '<|im_start|>system:<project_instructions>'
 const BOOST_START = '<dsh_boost scope="system" priority="override">'
@@ -82,7 +112,7 @@ const refusalStream = function* () {
 }
 
 /**
- * 模块定义：真实 modules/unrestricted 的副本 + 四条夹具规则。
+ * 模块定义：本文件自写的夹具模块 + 四条夹具规则。
  *  - epoch-before / epoch-after：既有 phase.compacted 判据（engine/conditions/phase.mjs），
  *    分别只在「从未成功压缩」与「已成功压缩」时投递，压缩推进 epoch 时二者必须互换；
  *  - role-body / role-common：pre-step 层的角色内容（另一插入点，dedupe: session）——
@@ -118,8 +148,8 @@ async function world(t) {
   const home = mkdtempSync(join(tmpdir(), 'pt-epoch-'))
   const moduleRoot = join(home, 'modules'), moduleDir = join(moduleRoot, 'unrestricted')
   mkdirSync(moduleRoot, { recursive: true })
-  // 派生切片不进夹具：包内目录可能带着上一次保存留下的 rules/，复制进去只会制造失配噪声。
-  cpSync(REPO_MODULE, moduleDir, { recursive: true, filter: source => !/[\\/]rules([\\/]|$)/.test(source) })
+  mkdirSync(moduleRoot, { recursive: true })
+  writeModuleDefinition(moduleDir)
   patchModule(moduleDir)
 
   const calls = []

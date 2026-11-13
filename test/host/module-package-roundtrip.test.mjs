@@ -179,30 +179,6 @@ test('模块私有 data/ 不随包导出；覆盖安装旧数据优先，包内�
   assert.equal(readFileSync(join(moduleRoot, 'data-keep', 'data', 'new.txt'), 'utf8'), 'PACKAGED NEW', '包内只补缺失')
 })
 
-test('无限制模式完整定义经导入导出回读，规则与许可保持且不带研究资产', async () => {
-  const definition = readFileSync(join(packageModulesDir(), 'unrestricted', 'module.yml'), 'utf8')
-  const original = parse(definition)
-  const installed = await install([{ path: 'module.yml', content: definition }], 'unrestricted-copy')
-  const exported = await exportModulePackage(moduleRoot, { id: installed.id, mode: 'zip' })
-  const files = await expandModuleSource([{ path: 'module.zip', content: exported.content, encoding: 'base64' }])
-  // 真值源＝规格内容清单：完整默认正文与 Boost 是模块自己的产品资产，改名复制时按既有
-  // 资产规则补齐并逐字节一致；研究快照与解码器仍不随包。逐个点名而不锁全量清单——
-  // 同批其他内容票还会往同一模块加资产，穷举列表会把无关票锁死。
-  const paths = files.map(file => file.path)
-  assert.ok(paths.includes('module.yml'))
-  for (const asset of ['assets/default-prompt.md', 'assets/boost.md']) {
-    assert.ok(paths.includes(asset), asset + ' 应随复制补齐')
-    assert.deepEqual(decodeAssetFile(files.find(file => file.path === asset)), readFileSync(join(packageModulesDir(), 'unrestricted', asset)))
-  }
-  assert.deepEqual(paths.filter(path => !path.startsWith('assets/') && path !== 'module.yml'), [], '研究快照与解码器不随包')
-  const text = decodeAssetFile(files.find(file => file.path === 'module.yml')).toString('utf8')
-  const restored = parse(text)
-  assert.deepEqual(restored.rules, original.rules)
-  assert.deepEqual(restored.modules, ['rule-engine'])
-  assert.match(text, /Copyright \(c\) 2026 小杨/)
-  assert.match(text, /Permission is hereby granted/)
-})
-
 test('内置定义包无资产也能安装导出，另存补齐资产并保留用户覆盖', async () => {
   const definition = readFileSync(join(packageModulesDir(), 'soul', 'module.yml'), 'utf8')
   const files = [{ path: 'module.yml', content: definition }]

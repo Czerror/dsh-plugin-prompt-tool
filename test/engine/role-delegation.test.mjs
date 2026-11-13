@@ -13,8 +13,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Context } from '@deepseek-ai/cordis'
 import { createAgentAssembly } from '../../src/runtime/agent-assembly.ts'
@@ -22,11 +22,34 @@ import { createRoleDelegation, ROLE_BINDING_EVENT, selectCapabilityProtocol } fr
 import { setModuleEnabled } from '../../src/host/config-store.ts'
 import { readModuleRules, editModuleRules } from '../../src/host/module-rules.ts'
 
-const PACKAGE_MODULE = new URL('../../modules/redteam/', import.meta.url)
-const asset = (...parts) => readFileSync(new URL(parts.join('/'), PACKAGE_MODULE), 'utf8').trimEnd()
-const roleBody = role => asset('assets', 'roles', role + '.md')
-const commonBody = key => asset('assets', 'common', key + '.md')
-const protocolBody = file => asset('assets', 'protocols', file + '.md')
+/**
+ * 夹具自带最小资产：红队内容模块已移出仓库（存档在本地知识库），测试不再依赖产品内容，
+ * 但保留「角色正文 / 公共段 / 协议各自一次」的可观察断言。
+ */
+const FIXTURE_ASSETS = {
+  'roles/plan.md': 'FIXTURE-ROLE-PLAN',
+  'roles/recon.md': 'FIXTURE-ROLE-RECON',
+  'roles/assess.md': 'FIXTURE-ROLE-ASSESS',
+  'roles/vuln-scan.md': 'FIXTURE-ROLE-VULN-SCAN',
+  'roles/exploit.md': 'FIXTURE-ROLE-EXPLOIT',
+  'roles/internal.md': 'FIXTURE-ROLE-INTERNAL',
+  'common/env.md': 'FIXTURE-COMMON-ENV',
+  'common/bind.md': 'FIXTURE-COMMON-BIND',
+  'common/handoff.md': 'FIXTURE-COMMON-HANDOFF',
+  'protocols/redteam-lead.md': 'FIXTURE-PROTOCOL-LEAD',
+  'protocols/redteam-child.md': 'FIXTURE-PROTOCOL-CHILD',
+}
+const asset = (...parts) => FIXTURE_ASSETS[parts.filter(part => part !== 'assets').join('/')]
+const roleBody = role => asset('roles', role + '.md')
+const commonBody = key => asset('common', key + '.md')
+const protocolBody = file => asset('protocols', file + '.md')
+const writeAssets = moduleDir => {
+  for (const [relative, text] of Object.entries(FIXTURE_ASSETS)) {
+    const file = join(moduleDir, 'assets', relative)
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, text)
+  }
+}
 
 const require = createRequire(import.meta.url)
 const peer = createRequire(require.resolve('@deepseek-ai/dsh-agent-loop'))
@@ -121,7 +144,8 @@ const requestText = request => request.messages.map(messageText).join('\n---\n')
 async function mount(t, { teamEnabled = true, hold = false, roles = ['recon'] } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'pt-role-delegation-'))
   const moduleRoot = join(home, 'modules'), moduleDir = join(moduleRoot, 'redteam')
-  cpSync(PACKAGE_MODULE, moduleDir, { recursive: true })
+  mkdirSync(moduleDir, { recursive: true })
+  writeAssets(moduleDir)
   writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify({
     id: 'redteam', name: 'role delegation fixture', version: '1.0.0', engineCompat: '>=0.4.2',
     modules: ['rule-engine'], variables: { role: '' },

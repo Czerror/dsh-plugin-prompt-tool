@@ -5,7 +5,7 @@
  * 事实只有一份，本文件不建第二套：
  *   - 任务、依赖、版本、ready 与 writeScopes 归官方 Team（createTask/getTask/listTasks/updateTask）；
  *   - 成员、运行、消息与等待归官方 subagent（delegate 与 handoff 都走官方入口）；
- *   - 角色内容归 modules/redteam 的 role-* 规则，总开关是本模块的 auto-delegation 规则。
+ *   - 角色内容归外部内容插件的 role-* 规则，总开关是本模块的 auto-delegation 规则。
  *
  * 默认关闭（规格 34）：规则 enabled=false 时 run/enable 都明确不可用。没有常驻调度器，
  * 一次 run() 驱动一次计划；官方 ready、模式变化或一次返回都不冒充已经启动或完成。
