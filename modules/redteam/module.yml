@@ -14,12 +14,35 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+# 角色与公共段正文同属此来源（Purge 2026 小杨 MIT 与红队上游 Jueze-2019 MIT），
+# 内容以模块资产分发，保留上述版权与许可，不静默剥离归属。
 id: redteam
 name: 红队模式内容
 version: 1.0.0
 engineCompat: '>=0.4.2'
 description: 独立指挥正文与首轮请求额度；工具、角色自动装配和演练台不由本模块提供。平台说明只在明确依赖的真实工具可执行时投递，核心策略另行启用。
 modules: [rule-engine]
+variables:
+  # 角色内容选择：留空表示未分配执行角色，六份角色组合都不投递。
+  # 真实子代理的角色身份绑定由团队派工另接；这里只决定投递哪一份内容组合。
+  role: ''
+# 规则序号是跨模块投递顺序的唯一来源（正文 100 → 协议 150 → Boost 200）。显式写全，
+# 新增规则不再靠声明位置挤占区间。
+configOrder:
+  mode-persona: 0
+  instruction-budget: 10
+  bootstrap-budget: 20
+  instruction-hint: 30
+  spawn-depth: 40
+  child-tool-surface: 50
+  platform-guidance: 60
+  role-plan: 70
+  role-recon: 80
+  role-assess: 90
+  role-vuln-scan: 100
+  role-exploit: 110
+  role-internal: 120
+  protocol-redteam: 150
 rules:
   - id: mode-persona
     name: 红队指挥正文
@@ -173,3 +196,355 @@ rules:
             和 redteam_sessions 的真实数据，说明阶段、已确认成果、资源、证据、下一步和资源缺口。
             得分只使用工具返回的真实数字；如实区分“已拿到”与“待验证”，不编造平台能力、页面或记录。
             本模块不提供来源演练台、环境适配页、SQLite事实库、自动角色注入或自动执行流程。
+
+  # 能力协议：普通与红队二选一，强制经跨模块显式互斥组 capability-protocol 选择
+  # （另一成员是 modules/unrestricted 的 protocol-official，普通协议默认选中）。
+  # 红队内部不另设开关：按真实 Agent 的主/子受众二选一，身份不可解析时两份都不投递；
+  # 不按预设名、显示名或用户正文猜身份。显式启用本规则的调用方只做一件事：
+  # readModuleRules(dir) → editModuleRules(dir, { expectedRevisions, activateRuleId: 'protocol-redteam' })。
+  - id: protocol-redteam
+    name: 能力协议（红队）
+    enabled: false
+    group: capability-protocol
+    groupScope: cross-module
+    exclusive: true
+    then:
+      - if:
+          scope:
+            audience: main
+        then:
+          - id: lead
+            kind: inject-text
+            config:
+              layer: system-section
+              order: 150
+              templateFile: ./assets/protocols/redteam-lead.md
+      - if:
+          scope:
+            audience: subagent
+        then:
+          - id: child
+            kind: inject-text
+            config:
+              layer: system-section
+              order: 150
+              templateFile: ./assets/protocols/redteam-child.md
+
+  # 六角色内容：正文在 assets/roles/，公共段在 assets/common/（每段只有一份内容，被多个角色引用）。
+  # 组合顺序由动作声明序固定；role 变量为空（未分配执行角色）时六份都不命中，同一角色只投递一份。
+  # score-rules / db-lookup / evidence 依赖来源演练平台工具，缺工具时这三段暂停，其余正文保留。
+  - id: role-plan
+    name: 角色内容：plan（红队指挥）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: main
+        - variable:
+            key: role
+            op: eq
+            value: plan
+    then:
+      - id: body
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/plan.md
+      - id: env
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/env.md
+      - id: bind
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/bind.md
+  - id: role-recon
+    name: 角色内容：recon（信息收集）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: subagent
+        - variable:
+            key: role
+            op: eq
+            value: recon
+    then:
+      - id: body
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/recon.md
+      - id: bind
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/bind.md
+      - if:
+          tool:
+            name: redteam_preflight
+        then:
+          - id: db-lookup
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/db-lookup.md
+          - id: evidence
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/evidence.md
+      - id: handoff
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/handoff.md
+  - id: role-assess
+    name: 角色内容：assess（资产梳理）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: subagent
+        - variable:
+            key: role
+            op: eq
+            value: assess
+    then:
+      - id: body
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/assess.md
+      - id: bind
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/bind.md
+      - if:
+          tool:
+            name: redteam_preflight
+        then:
+          - id: db-lookup
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/db-lookup.md
+          - id: evidence
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/evidence.md
+      - id: handoff
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/handoff.md
+  - id: role-vuln-scan
+    name: 角色内容：vuln-scan（漏洞发现）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: subagent
+        - variable:
+            key: role
+            op: eq
+            value: vuln-scan
+    then:
+      - id: body
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/vuln-scan.md
+      - id: bind
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/bind.md
+      - if:
+          tool:
+            name: redteam_preflight
+        then:
+          - id: score-rules
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/score-rules.md
+          - id: db-lookup
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/db-lookup.md
+          - id: evidence
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/evidence.md
+      - id: handoff
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/handoff.md
+  - id: role-exploit
+    name: 角色内容：exploit（漏洞利用）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: subagent
+        - variable:
+            key: role
+            op: eq
+            value: exploit
+    then:
+      - id: body
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/exploit.md
+      - id: bind
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/bind.md
+      - if:
+          tool:
+            name: redteam_preflight
+        then:
+          - id: score-rules
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/score-rules.md
+          - id: db-lookup
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/db-lookup.md
+          - id: evidence
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/evidence.md
+      - id: handoff
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/handoff.md
+  - id: role-internal
+    name: 角色内容：internal（内网评估）
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - scope:
+            audience: subagent
+        - variable:
+            key: role
+            op: eq
+            value: internal
+    then:
+      - id: body
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/roles/internal.md
+      - id: bind
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/bind.md
+      - if:
+          tool:
+            name: redteam_preflight
+        then:
+          - id: score-rules
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/score-rules.md
+          - id: db-lookup
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/db-lookup.md
+          - id: evidence
+            kind: inject-text
+            config:
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              templateFile: ./assets/common/evidence.md
+      - id: handoff
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          templateFile: ./assets/common/handoff.md
