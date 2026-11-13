@@ -14,6 +14,7 @@ import { registerSoulLedgerTools } from './runtime/soul-ledger-tools.ts'
 import { registerSoulStateTools } from './runtime/soul-state-tools.ts'
 import { installSoulRuntime } from './runtime/soul-runtime.ts'
 import { installSessionVariables } from './runtime/session-variables.ts'
+import { createRoleDelegation } from './runtime/role-delegation.ts'
 import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { installPersonaCapture } from './runtime/persona-registration.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
@@ -170,6 +171,17 @@ registerTuiCommand(
     rebuild: (id) => refreshModuleRuntime(id),
   }
   const sessionVariables = installSessionVariables(ctx)
+  // 角色委派：官方 Team 拥有任务/依赖/版本，官方 subagent 拥有成员/运行；
+  // 本服务只把已校验角色绑到一次真实启动上，角色正文仍由 redteam 模块规则提供。
+  const roleDelegation = createRoleDelegation(ctx, {
+    moduleRoot: modulesDir(),
+    warn: (message) => warn(ctx, message),
+  })
+  ctx.effect(() => {
+    // 宿主 await 该监听器，所以角色在子 Agent 首个 assemble 前已经可读。
+    const off = ctx.on('agent/created', async ({ agent }) => { await roleDelegation.bindCreated(agent) })
+    return () => { off(); roleDelegation.dispose() }
+  }, 'prompt-tool role delegation')
   const soulRuntime = installSoulRuntime(ctx, moduleToolHost, id => assembly?.moduleIds(id) ?? [], sessionVariables)
   ctx.provide(toolServiceName('module-import-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleImportTools(scopeCtx, { ...moduleToolHost, rebuild: async id => { await assembly?.refresh(id) } }),
@@ -231,6 +243,7 @@ registerTuiCommand(
       const mounted = createAgentAssembly(actx, {
         moduleRoot: modulesDir(),
         sessionVariables,
+        runtimeVariables: (moduleId, sessionId) => roleDelegation.roleFactsOf(moduleId, sessionId),
         enabledModules: () => runtime.modulesEnabled
           ? enabledModuleIds(modulesDir())
           : [],

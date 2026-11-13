@@ -17,7 +17,10 @@ const PRESETS_DIR = join(storageRootOf(home), 'modules')
 test('核心破限模块沿普通补种与启用表，默认规则开启且已有用户选择不覆盖', async () => {
   const { readModuleRules, editModuleRules } = await import('../../src/host/module-rules.ts')
   const { readStorageConfig, setModuleEnabled } = await import('../../src/host/config-store.ts')
-  const root = tempDir('pt-identity-seed-')
+  // 存储根 = modules 的父目录：config.yml 必须落在本次临时目录内，否则会写到系统临时根，
+  // 让下一次运行的「补种不自动启用」断言读到上次残留而随机失败。
+  const root = join(tempDir('pt-identity-seed-'), 'modules')
+  mkdirSync(root, { recursive: true })
   ensureModuleSeed(root)
   const dir = join(root, 'limit-breaker')
   const definition = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))

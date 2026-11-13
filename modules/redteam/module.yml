@@ -36,6 +36,7 @@ configOrder:
   spawn-depth: 40
   child-tool-surface: 50
   platform-guidance: 60
+  auto-delegation: 65
   role-plan: 70
   role-recon: 80
   role-assess: 90
@@ -233,6 +234,34 @@ rules:
   # 六角色内容：正文在 assets/roles/，公共段在 assets/common/（每段只有一份内容，被多个角色引用）。
   # 组合顺序由动作声明序固定；role 变量为空（未分配执行角色）时六份都不命中，同一角色只投递一份。
   # score-rules / db-lookup / evidence 依赖来源演练平台工具，缺工具时这三段暂停，其余正文保留。
+  # 自动派工：默认关闭（规格 34——它会新增子任务，不沿用内容卡默认开启的语义）。
+  # 打开后 plan 会话围绕用户已授权的目标拆解自包含子任务：官方 Team 记录任务与依赖，
+  # 官方 subagent 真实启动并等待终态，再由 plan 按匹配结果汇总。本规则只投递运行纪律：
+  # 不建任务表、成员库或常驻调度器，也不代替任何实际调用。
+  - id: auto-delegation
+    name: 自动派工（plan 会话）
+    enabled: false
+    layer: pre-step
+    if:
+      scope:
+        audience: main
+    then:
+      - id: discipline
+        kind: inject-text
+        config:
+          layer: pre-step
+          position: before-all
+          dedupe: session
+          text: |
+            ## 自动派工运行纪律
+            本规则开启表示围绕用户已授权的目标工作：拆解子任务、登记官方 Team 任务与依赖、真实启动并等待结果、按事实汇总。
+            任务书写明目标范围、输入、已知事实、预期产出、验收依据和实际可用工具；子代理不继承本对话，缺一项就无法独立执行。
+            只做用户已授权的范围，不替用户扩大目标；角色正文不等于新增工具或授权。
+            有依赖的任务按依赖顺序串行，只有依赖已完成且互不依赖时才并行。官方任务就绪只表示可以被认领，
+            不表示已经开工或已经完成；需要成员工作时用官方启动或消息交接，并等待匹配的运行终态。表达同一任务时使用最新任务版本。
+            汇总只引用匹配任务、版本与运行身份的实际结果；失败、取消和无证据的结果不计成功。
+            同一批文件范围只作为冲突提示，不是锁也不是目录隔离。
+            用户取消、Team 关闭或来源释放后不再启动后续任务；不删除官方任务，也不停止其他来源的成员。
   - id: role-plan
     name: 角色内容：plan（红队指挥）
     enabled: true

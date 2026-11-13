@@ -95,6 +95,8 @@ export interface AgentAssemblyRuntime {
 
 export interface AgentAssemblyOptions {
   sessionVariables?: () => SessionVariableOwner | undefined
+  /** 装配期运行时事实（角色委派写入的 role 等）；与会话变量同源按会话隔离。 */
+  runtimeVariables?: (moduleId: string, sessionId: string) => Record<string, string> | undefined
   moduleRoot: string
   /**
    * 参与装配的模块 id 列表（= 存储根 `config.yml` 启用表）。
@@ -346,6 +348,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const variableStore = createModuleVariableAdapter(options.moduleRoot, {
     sessionVariables: options.sessionVariables,
     runtimeValue: (id, key, agent, signal) => soulRuntimeValueOf(ctx, id, key, agent, signal),
+    runtimeVariables: options.runtimeVariables,
   })
   const manifestCheck = ctx.get(MANIFEST_CHECK_SERVICE)
   const recoveryState = createGenerationRecoveryState(join(dirname(options.moduleRoot), 'generation-recovery'))

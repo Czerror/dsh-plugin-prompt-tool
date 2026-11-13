@@ -13,6 +13,8 @@ export interface VariableEvaluationContext { agent?: unknown; signal?: AbortSign
 export interface VariableRuntimeOptions {
   sessionVariables?: () => SessionVariableOwner | undefined
   runtimeValue?: (id: string, key: string, agent: Agent, signal?: AbortSignal) => string | undefined
+  /** 装配期运行时事实（例如角色委派写入的 role）；按会话覆盖 effective，不写盘。 */
+  runtimeVariables?: (id: string, sessionId: string) => Record<string, string> | undefined
 }
 type VariableEdit = Omit<ModuleVariablesEdit, 'scope' | 'expectedRevisions'> & {
   scope: 'global' | 'module' | 'session'
@@ -38,16 +40,21 @@ export function createModuleVariableAdapter(moduleRoot: string, options: Variabl
       context.signal?.throwIfAborted()
       const state = readModuleVariables(join(moduleRoot, id), { runtime: true })
       const owner = options.sessionVariables?.()
-      const sessionId = context.agent && owner ? sessionOf(context) : undefined
+      // 运行时事实与持久会话变量都按真实 Agent 身份取；没有 Agent 时两者都不读。
+      const sessionId = context.agent ? sessionOf(context) : undefined
       const assertCurrent = (current: VariableEvaluationContext = {}) => {
         current.signal?.throwIfAborted()
         const dir = assertModuleSnapshotSource(moduleRoot, id)
         if (!readModuleVariables(dir, { runtime: true }).enabled) throw new ModuleWriteError('变量求值已关闭')
         if (owner && sessionId !== undefined && (options.sessionVariables?.() !== owner || sessionOf(current) !== sessionId)) throw new ModuleWriteError('会话变量来源或身份已变化')
       }
-      if (!state.enabled || !context.agent || !owner) return { ...state, assertCurrent }
+      if (!state.enabled || !context.agent) return { ...state, assertCurrent }
+      // 运行时事实不是第二份配置：它只覆盖同名键，未定义时不改变任何既有读取结果。
+      const runtime = options.runtimeVariables?.(id, sessionId!)
+      if (!owner) return runtime === undefined ? { ...state, assertCurrent }
+        : { ...state, effective: { ...state.effective, ...runtime }, assertCurrent }
       const session = owner.read(join(moduleRoot, id), sessionId!)
-      return { ...state, session: session.variables, effective: { ...state.effective, ...session.variables },
+      return { ...state, session: session.variables, effective: { ...state.effective, ...session.variables, ...runtime },
         revisions: { ...state.revisions, session: session.revision }, assertCurrent }
     },
     readRuntime: (id: string, key: string, context: VariableEvaluationContext = {}) => {
