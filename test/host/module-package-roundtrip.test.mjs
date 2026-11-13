@@ -185,8 +185,17 @@ test('无限制模式完整定义经导入导出回读，规则与许可保持�
   const installed = await install([{ path: 'module.yml', content: definition }], 'unrestricted-copy')
   const exported = await exportModulePackage(moduleRoot, { id: installed.id, mode: 'zip' })
   const files = await expandModuleSource([{ path: 'module.zip', content: exported.content, encoding: 'base64' }])
-  assert.deepEqual(files.map(file => file.path), ['module.yml'])
-  const text = decodeAssetFile(files[0]).toString('utf8')
+  // 真值源＝规格内容清单：完整默认正文与 Boost 是模块自己的产品资产，改名复制时按既有
+  // 资产规则补齐并逐字节一致；研究快照与解码器仍不随包。逐个点名而不锁全量清单——
+  // 同批其他内容票还会往同一模块加资产，穷举列表会把无关票锁死。
+  const paths = files.map(file => file.path)
+  assert.ok(paths.includes('module.yml'))
+  for (const asset of ['assets/default-prompt.md', 'assets/boost.md']) {
+    assert.ok(paths.includes(asset), asset + ' 应随复制补齐')
+    assert.deepEqual(decodeAssetFile(files.find(file => file.path === asset)), readFileSync(join(packageModulesDir(), 'unrestricted', asset)))
+  }
+  assert.deepEqual(paths.filter(path => !path.startsWith('assets/') && path !== 'module.yml'), [], '研究快照与解码器不随包')
+  const text = decodeAssetFile(files.find(file => file.path === 'module.yml')).toString('utf8')
   const restored = parse(text)
   assert.deepEqual(restored.rules, original.rules)
   assert.deepEqual(restored.modules, ['rule-engine'])

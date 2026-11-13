@@ -9,6 +9,7 @@ import { prepareToolResult } from './tool-result.mjs'
 import { prepareAppendContext } from './append-context.mjs'
 import { prepareRequestParams } from './request-params.mjs'
 import { prepareStreamOutput } from './stream-output.mjs'
+import { prepareRequestRetry } from './request-retry.mjs'
 import { prepareInboxPrepend } from './inbox-prepend.mjs'
 import { preparePreStepFilter } from './pre-step-filter.mjs'
 import { prepareInstructionPolicy } from './instruction-policy.mjs'
@@ -40,6 +41,7 @@ const PREPARERS = {
   'append-context': prepareAppendContext,
   'request-params': prepareRequestParams,
   'stream-output': prepareStreamOutput,
+  'request-retry': prepareRequestRetry,
   'inbox-prepend': prepareInboxPrepend,
   'pre-step-filter': preparePreStepFilter,
   'instruction-policy': prepareInstructionPolicy,

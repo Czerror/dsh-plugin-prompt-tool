@@ -81,7 +81,12 @@ test('无限制模式是普通独立模块，规则默认开启，编辑与复�
   const definition = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
   assert.equal(definition.name, '无限制模式')
   assert.deepEqual(definition.modules, ['rule-engine'])
-  assert.ok(definition.rules.every(rule => rule.enabled === true))
+  // 必须默认开启的规则逐条列举：内容卡默认开启，但会新增模型调用的重试规则不沿用该语义（规格 34）。
+  for (const id of ['mode-persona', 'instruction-budget', 'plan-guidance', 'spawn-depth', 'child-tool-surface',
+    'search-only-surface', 'default-prompt', 'boost']) {
+    assert.equal(definition.rules.find(rule => rule.id === id)?.enabled, true, id + ' 必须默认开启')
+  }
+  assert.equal(definition.rules.find(rule => rule.id === 'request-retry').enabled, false, '有界拒绝重试默认关闭')
   assert.equal(readStorageConfig(root).source.enabled.includes('unrestricted'), false)
   const initial = readModuleRules(dir)
   const depth = initial.rules.find(rule => rule.id === 'spawn-depth')
@@ -108,7 +113,14 @@ test('红队模式沿普通补种、数字规则保存和复制，默认开启�
   const definition = parseYaml(readFileSync(join(dir, 'module.yml'), 'utf8'))
   assert.equal(definition.name, '红队模式内容')
   assert.deepEqual(definition.modules, ['rule-engine'])
-  assert.ok(definition.rules.every(rule => rule.enabled === true))
+  // 必须默认开启的规则逐条列举；协议选择与角色内容由各自显式开关/变量决定，不在这里放宽。
+  for (const id of ['mode-persona', 'instruction-budget', 'bootstrap-budget', 'instruction-hint', 'spawn-depth',
+    'child-tool-surface', 'platform-guidance']) {
+    assert.equal(definition.rules.find(rule => rule.id === id)?.enabled, true, id + ' 必须默认开启')
+  }
+  for (const id of ['role-plan', 'role-recon', 'role-assess', 'role-vuln-scan', 'role-exploit', 'role-internal']) {
+    assert.equal(definition.rules.find(rule => rule.id === id)?.enabled, true, id + ' 角色内容默认可用（未分配角色时不投递）')
+  }
   assert.equal(readStorageConfig(root).source.enabled.includes('redteam'), false)
   const initial = readModuleRules(dir)
   const budget = initial.rules.find(rule => rule.id === 'bootstrap-budget')

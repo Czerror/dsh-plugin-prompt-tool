@@ -15,7 +15,7 @@ export function channelBinder(ctx, kind, plugin, prepend) {
   }
 }
 
-const ON_REGISTERED_KINDS = new Set(['assembly', 'tool-gate', 'tool-result', 'append-context', 'request-params', 'stream-output', 'inbox-prepend', 'pre-step-filter', 'instruction-policy', 'tool-visibility'])
+const ON_REGISTERED_KINDS = new Set(['assembly', 'tool-gate', 'tool-result', 'append-context', 'request-params', 'stream-output', 'request-retry', 'inbox-prepend', 'pre-step-filter', 'instruction-policy', 'tool-visibility'])
 
 /** 编辑目录与注册校验共用支持面；不另给客户端维护一份名单。 */
 export const actionSupportsWhen = (kind) => ON_REGISTERED_KINDS.has(kind)
@@ -41,6 +41,7 @@ export function actionExecutionPoint(action) {
   if (action.kind === 'tool-result') return { channel: 'tools/post-execute', phase: 'before-next' }
   if (action.kind === 'append-context') return { channel: 'tools/post-execute', phase: 'after-next' }
   if (action.kind === 'stream-output') return { channel: 'llm/stream', phase: 'before-next' }
+  if (action.kind === 'request-retry') return { channel: 'llm/stream', phase: 'before-next' }
   if (action.kind === 'inject-text') {
     // 层→注册点由 schema 的 LAYER_DEFINITIONS 派生（`INJECTION_CHANNELS`），不在此另写层表。
     const layer = action.config?.layer

@@ -20,7 +20,8 @@ function filesUnder(dir, match) {
 }
 
 const IMPORT_RE = /import\s*\{([^}]*)\}\s*from\s*['"](\.[^'"]+\.mjs)['"]/g
-const EXPORT_DECL_RE = /export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/g
+// \`function*\` 也是导出声明：生成器导出（如 refusal-retry 的流包装）不能漏判。
+const EXPORT_DECL_RE = /export\s+(?:async\s+)?(?:function\s*\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/g
 const EXPORT_LIST_RE = /export\s*\{([^}]*)\}/g
 
 function exportedNames(text) {

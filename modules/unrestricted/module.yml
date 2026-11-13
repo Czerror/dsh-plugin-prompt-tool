@@ -20,6 +20,20 @@ version: 1.0.0
 engineCompat: '>=0.4.2'
 description: 独立模式内容；人设、计划正文与委派规则作用于当前预设。工具和实际权限仍由原提供者拥有，核心策略另行显式启用。
 modules: [rule-engine]
+# 规则序号就是跨模块的投递先后：正文（100）→ 协议（100–200 之间）→ Boost（200）。
+# 协议规则在别的模块里声明，必须显式占用这个区间之间的序号。
+configOrder:
+  mode-persona: 0
+  instruction-budget: 10
+  plan-guidance: 20
+  spawn-depth: 30
+  child-tool-surface: 40
+  search-only-surface: 50
+  default-prompt: 100
+  protocol-official: 150
+  boost: 200
+  # 重试只改后续真实请求的追加正文，不参与正文/协议/Boost 的投递先后。
+  request-retry: 300
 rules:
   - id: mode-persona
     name: 模式人设
@@ -91,3 +105,47 @@ rules:
       - id: no-fetch
         kind: tool-visibility
         deny: [web_fetch]
+  - id: default-prompt
+    name: 完整默认正文
+    enabled: true
+    then:
+      - id: prompt
+        kind: inject-text
+        config:
+          layer: system-section
+          order: 100
+          templateFile: ./assets/default-prompt.md
+  # 普通能力协议：默认选中。普通与红队（modules/redteam 的 protocol-redteam）是同一个
+  # 跨模块显式互斥组 capability-protocol 的两名成员；启用另一方由规则事务显式关闭本方，
+  # 关闭本方不会自动恢复另一方。红队侧按真实主子受众再二选一。
+  - id: protocol-official
+    name: 能力协议（普通）
+    enabled: true
+    group: capability-protocol
+    groupScope: cross-module
+    exclusive: true
+    then:
+      - id: protocol
+        kind: inject-text
+        config:
+          layer: system-section
+          order: 150
+          templateFile: ./assets/protocols/official.md
+  - id: boost
+    name: Boost 正文
+    enabled: true
+    then:
+      - id: boost
+        kind: inject-text
+        config:
+          layer: system-section
+          order: 200
+          templateFile: ./assets/boost.md
+  # 默认关闭：开启后一次原始请求最多两次实际调用（spec 34）。正文独立于默认正文与 Boost。
+  - id: request-retry
+    name: 有界拒绝重试
+    enabled: false
+    then:
+      - id: retry
+        kind: request-retry
+        templateFile: ./assets/retry-nudge.md

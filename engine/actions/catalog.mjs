@@ -123,6 +123,18 @@ export const ACTION_KINDS = Object.freeze({
     timing: 'llm/stream 下游调用前决定透传或替换。',
     note: '替换输出为合法文本 chunk，不改冻结的请求；空正文透传。',
   },
+  'request-retry': {
+    title: '有界拒绝重试',
+    fields: ['text', 'templateFile'],
+    events: ['llm/stream'],
+    services: ['llm.stream'],
+    degrade: ACTION_DEGRADE.keep,
+    timing: 'llm/stream 下游调用前缓冲开头有限前缀判定；命中后结束首尝试并按配置正文发起一次真实重放。',
+    note: '默认关闭的重试：只缓冲开头约 400 个文本字符，匹配范围最多前 600 个字符；遇到推理增量、'
+      + '工具调用或 finish 提前决定。第二次只追加尾部 user 正文，不改原 messages 元素、不写 durable 历史、'
+      + '不新增用户轮、不改工具与参数；一次原始请求最多两次实际调用，第二次的输出块与 replayState 归它自己，'
+      + '已到手的用量照常流出。同类多来源命中共享一次额度，同值共存、异值告警并保留先到装配。',
+  },
   'inbox-prepend': {
     title: '前置收件箱消息',
     fields: ['target', 'text', 'match'],

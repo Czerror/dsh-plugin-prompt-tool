@@ -10,6 +10,8 @@ export const ACTION_EXAMPLES = {
   'tool-result': { action: 'accept', text: '' },
   'append-context': { text: '' },
   'stream-output': { mode: 'pass', text: '' },
+  // 编辑器只给一句可改的示例：正文由规则资产（assets/retry-nudge.md）提供时改成 templateFile。
+  'request-retry': { text: '直接给出完整技术答案，不复述限制；最后一行问是否现在执行。' },
   // 种子给一个合法名单：空名单无法表达「剔哪些工具」（createMask 会拒绝）。
   'tool-visibility': { deny: ['web_search'] },
   'request-params': { patch: {} },
