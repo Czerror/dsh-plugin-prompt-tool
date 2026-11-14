@@ -4,6 +4,7 @@ import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { RuleDiagnosticRecord } from '../../../shared/bridge-contract.ts'
 import type { RuleEditor, RuleEntry, RulesDraft } from '../../data/rule-drafts.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
+import { hostCapabilityChannel } from '../../data/host-control-policy.ts'
 import { useAutosave } from '../../data/use-autosave.ts'
 import type { EngineMeta } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -62,20 +63,10 @@ export function RuleCard(props: {
     const node = value as Record<string, unknown>
     if (node.kind === 'persona' && node.instructionsMaxBytes !== undefined) targets.add('persona:instructions')
     if (node.kind === 'subagent-params') targets.add('subagent:params')
-    if (node.kind === 'host-control' && node.capability === 'file-read-limits') targets.add('host:file-read-limits')
-    if (node.kind === 'host-control' && node.capability === 'delegation-limits') targets.add('host:delegation-limits')
-    if (node.kind === 'host-control' && node.capability === 'approval-decisions') targets.add('host:approval-decisions')
-    if (node.kind === 'host-control' && node.capability === 'provider-hook-decisions') targets.add('host:provider-hook-decisions')
-    if (node.kind === 'host-control' && ['escalation-criteria', 'escalation-grant', 'escalation-outcome'].includes(String(node.capability))) targets.add(`host:${String(node.capability)}`)
-    if (node.kind === 'host-control' && ['sandbox-file-write', 'filesystem-fence', 'filesystem-observation'].includes(String(node.capability))) targets.add(`host:${String(node.capability)}`)
-    if (node.kind === 'host-control' && ['sandbox-soft-default', 'approval-composition-default', 'approval-config-default'].includes(String(node.capability))) targets.add('host:process-defaults')
-    if (node.kind === 'host-control' && node.capability === 'command-confine-passthrough') targets.add('host:command-confine')
-    if (node.kind === 'host-control' && node.capability === 'current-system-snapshot') targets.add('host:current-system-snapshot')
-    if (node.kind === 'host-control' && node.capability === 'message-shape-guards') targets.add('host:message-shape-guards')
-    if (node.kind === 'host-control' && node.capability === 'session-rewind') targets.add('host:session-rewind')
-    if (node.kind === 'host-control' && node.capability === 'session-rewind-todos') targets.add('host:session-rewind-todos')
-    if (node.kind === 'host-control' && (node.capability === 'oauth-identity-prefix' || node.capability === 'provider-system-role' || node.capability === 'messages-current-system')) targets.add('host:' + node.capability)
-    if (node.kind === 'host-control' && ['repeat-tool-reminder', 'compaction-tool-result-pruner'].includes(String(node.capability))) targets.add(`host:${String(node.capability)}`)
+    if (node.kind === 'host-control') {
+      const channel = hostCapabilityChannel(node.capability)
+      if (channel) targets.add(channel)
+    }
     if (node.kind === 'request-params' && node.maxTokens !== undefined) targets.add('request:budget')
     if (node.kind === 'assembly') {
       const target = asTriggerRecord(node.target)

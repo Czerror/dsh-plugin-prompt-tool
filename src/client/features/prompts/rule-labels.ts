@@ -1,5 +1,6 @@
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import { TRIGGERS_ZH } from '../../locales-triggers.ts'
+import { hostCapabilityOptions } from '../../data/host-control-policy.ts'
 
 /** 规则协议名只作未知扩展的兜底；已知选项以本地化名称呈现。 */
 export function triggerLabel(t: PromptToolTranslate, name: string): string {
@@ -8,7 +9,6 @@ export function triggerLabel(t: PromptToolTranslate, name: string): string {
 }
 
 const FIELD_OPTIONS: Record<string, Record<string, readonly string[]>> = {
-  'host-control': { capability: ['file-read-limits', 'delegation-limits', 'approval-decisions', 'provider-hook-decisions', 'escalation-criteria', 'escalation-grant', 'escalation-outcome', 'sandbox-soft-default', 'approval-composition-default', 'approval-config-default', 'command-confine-passthrough', 'sandbox-file-write', 'filesystem-fence', 'filesystem-observation', 'repeat-tool-reminder', 'compaction-tool-result-pruner', 'current-system-snapshot', 'message-shape-guards', 'oauth-identity-prefix', 'provider-system-role', 'messages-current-system', 'session-rewind', 'session-rewind-todos'] },
   'tool-gate': { decision: ['allow', 'deny', 'ask'] },
   'tool-result': { action: ['accept', 'replace', 'block', 'edit-text'] },
   'stream-output': { mode: ['pass', 'replace'] },
@@ -24,6 +24,7 @@ const FIELD_OPTIONS: Record<string, Record<string, readonly string[]>> = {
 
 /** 仅有限枚举使用选择器，协议值与自由文本保持原样。 */
 export function ruleFieldOptions(t: PromptToolTranslate, kind: string, field: string): { value: string; label: string }[] | undefined {
+  if (kind === 'host-control' && field === 'capability') return hostCapabilityOptions(t)
   const values = field === 'waterfallPosition' ? ['default', 'outermost'] : FIELD_OPTIONS[kind]?.[field]
   return values?.map(value => ({ value, label: field === 'waterfallPosition' ? triggerLabel(t, value)
     : t(`triggers.option.${kind === 'count' && field === 'of' && value === 'turn' ? 'turn-count' : value}` as PromptToolLocaleKey) }))

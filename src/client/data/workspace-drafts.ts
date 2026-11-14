@@ -8,6 +8,9 @@ export interface FieldDraft {
   error: string
 }
 
+/** 清掉某个字段前缀下的原始草稿（含嵌套键）。 */
+export const cleared = <T,>(fields: Map<string, T>, prefix: string): void => { for (const key of fields.keys()) if (key === prefix || key.startsWith(prefix + ':')) fields.delete(key) }
+
 /** 工具草稿的形状：`tools`／`saved` 的元素与 `ToolsEditorDraft.fields` 的键都按它算。 */
 export type ToolDraft = Record<string, unknown>
 

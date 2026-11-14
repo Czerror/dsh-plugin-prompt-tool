@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import type { RuleCondition, RuleEditorMeta } from '../../../shared/rules.ts'
-import type { FieldDraft } from '../../data/workspace-drafts.ts'
+import { cleared, type FieldDraft } from '../../data/workspace-drafts.ts'
+import { changeHostCapability } from '../../data/host-control-policy.ts'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../../locales.ts'
 import type { EngineMeta } from '../../prompt-tool-types.ts'
 import { FormField } from '../../ui/FormField.tsx'
@@ -21,8 +22,7 @@ export interface FieldContext { t: PromptToolTranslate; fields: Map<string, Fiel
 const FIELD_LABELS: Record<string, PromptToolLocaleKey> = { layer: 'form.layer.label', strategy: 'form.strategy.label', position: 'form.position.label', audience: 'form.audience.label', modelScope: 'form.modelScope.label', subject: 'form.subject.label', mergeMode: 'form.merge.label', dedupe: 'form.dedupe.label', promotion: 'form.promotion.label', configKind: 'form.kind.label', role: 'form.role.label', fill: 'form.fill.label', order: 'form.order.label',
   // 动作字段：tool-gate 的 `decision` 与 tool-result 的 `action` 是动作类型名之外的两份含义，不能借 triggerLabel。
   action: 'rules.actionField.action', decision: 'rules.actionField.decision' }
-/** 清掉某个字段前缀下的原始草稿（含嵌套键）。 */
-export const cleared = <T,>(fields: Map<string, T>, prefix: string): void => { for (const key of fields.keys()) if (key === prefix || key.startsWith(prefix + ':')) fields.delete(key) }
+export { cleared } from '../../data/workspace-drafts.ts'
 function moveConditionDrafts<T>(fields: Map<string, T>, from: string, to: string): void {
   const values = [...fields].filter(([key]) => key === from || key.startsWith(from + ':'))
   cleared(fields, from)
@@ -52,16 +52,12 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     const value = readLimitField || delegationLimitField ? props.value[key] : mergedValue
     const fieldKey = props.fieldKey + ':' + key, label = readLimitField ? t(key === 'maxLineLength' ? 'triggers.label.readMaxLineLength' : key === 'maxBytes' ? 'triggers.label.readMaxBytes' : 'triggers.label.readLimit') : props.value.kind === 'host-control' && key === 'value' ? t('triggers.label.readLimitsValue') : props.value.kind === 'request-params' && key === 'maxTokens' ? t('triggers.label.requestBudget') : props.value.kind === 'subagent-params' && key === 'tool' ? t('triggers.label.delegationTool') : props.value.kind === 'subagent-params' && key === 'provider' ? t('triggers.label.delegationProvider') : key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
     const patch = (next: unknown): void => {
+      if (key === 'capability' && props.value.kind === 'host-control') {
+        props.onChange(changeHostCapability(props.value, next, props))
+        return
+      }
       const updated = { ...props.value }
       if (next === undefined) delete updated[key]; else updated[key] = next
-      if (key === 'capability' && props.value.kind === 'host-control' && next !== props.value.capability) {
-        updated.value = ['escalation-criteria', 'escalation-grant', 'escalation-outcome', 'command-confine-passthrough', 'sandbox-file-write', 'filesystem-fence', 'filesystem-observation', 'repeat-tool-reminder', 'compaction-tool-result-pruner', 'current-system-snapshot', 'message-shape-guards', 'oauth-identity-prefix', 'provider-system-role', 'messages-current-system', 'session-rewind', 'session-rewind-todos'].includes(String(next)) ? true : next === 'sandbox-soft-default' ? 'danger-full-access'
-          : next === 'approval-composition-default' || next === 'approval-config-default' ? 'never'
-            : next === 'approval-decisions' ? { autoGrant: false, autoReviewPassthrough: false, toolAskAllow: false }
-              : next === 'provider-hook-decisions' ? { 'claude-code': true }
-              : next === 'delegation-limits' ? { maxDepth: 10, askTimeout: 300 } : { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 }
-        cleared(props.fields, props.fieldKey + ':value')
-      }
       if (key === 'action' && props.value.kind === 'tool-result') {
         if (next === 'edit-text') {
           delete updated.text

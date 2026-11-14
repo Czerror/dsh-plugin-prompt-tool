@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
 import { createRuleEditor, getRulesDraft, ruleEdits, rulesDirty } from '../../src/client/data/rule-drafts.ts'
+import { changeHostCapability } from '../../src/client/data/host-control-policy.ts'
 
 const meta = { predicates: [], composites: ['all', 'any', 'not', 'notAny'], actions: [], waterfallPositions: ['default'] }
 const alpha = { id: 'alpha', enabled: true, group: 'mode', exclusive: true, then: [{ id: 'alpha-text', kind: 'inject-text', config: { id: 'text', text: 'Alpha', layer: 'pre-step', future: { keep: 42 } } }] }
@@ -17,6 +18,46 @@ function harness(request, enqueue = async (_moduleId, task) => task()) {
   })
   return { draft, editor, calls, switchModule: () => { current = false } }
 }
+
+test('rules bridge: 能力切换只清理值子树，无关非法输入阻止提交，修正后保存完整动作', async () => {
+  const action = { id: 'control', kind: 'host-control', capability: 'file-read-limits', value: { limit: 20000 }, future: { keep: 42 } }
+  const rule = { id: 'control-rule', if: { scope: { audience: 'main' } }, then: [action] }
+  const h = harness(async body => ({ ok: true, value: snapshot(body.edits ? [body.edits[0].rule] : [rule], body.edits ? 'saved' : 'baseline') }))
+  await h.editor.load()
+  const entry = h.draft.entries[0], fieldKey = entry.key + ':then:0'
+  const invalid = { source: '', text: '{', error: '未完成 JSON' }
+  for (const key of [fieldKey + ':value', fieldKey + ':value:limit', fieldKey + ':valueExtra', fieldKey + ':future', entry.key + ':then:1:value', 'other:then:0:value']) h.draft.fields.set(key, invalid)
+  const next = changeHostCapability(entry.value.then[0], 'session-rewind', { fields: h.draft.fields, fieldKey })
+  h.editor.patch(entry.key, { ...entry.value, then: [next] })
+  assert.deepEqual([...h.draft.fields.keys()], [fieldKey + ':valueExtra', fieldKey + ':future', entry.key + ':then:1:value', 'other:then:0:value'])
+  assert.equal(await h.editor.submit(), false)
+  assert.equal(h.calls.length, 1, '无关非法草稿不能被能力切换绕过')
+  h.draft.fields.clear()
+  assert.equal(await h.editor.submit(), true)
+  assert.deepEqual(h.calls[1], { expectedModuleId: 'module-a', expectedRevisions: { rules: { 'control-rule': 'baseline' } }, edits: [{ previousId: 'control-rule', rule: { ...rule, then: [{ ...action, capability: 'session-rewind', value: true }] }, settingsChanged: false }] })
+})
+
+test('rules bridge: 同能力保留输入，未知能力兜底与对象初值保持独立', async () => {
+  const action = { id: 'control', kind: 'host-control', capability: 'future-control', value: { custom: 7 } }
+  const rule = { id: 'future-rule', then: [action] }
+  const h = harness(async body => ({ ok: true, value: snapshot(body.edits ? [body.edits[0].rule] : [rule]) }))
+  await h.editor.load()
+  const entry = h.draft.entries[0], fieldKey = entry.key + ':then:0'
+  const raw = { source: '{}', text: '{', error: '未完成 JSON' }
+  h.draft.fields.set(fieldKey + ':value', raw)
+  const same = changeHostCapability(entry.value.then[0], 'future-control', { fields: h.draft.fields, fieldKey })
+  assert.deepEqual(same, action)
+  assert.equal(h.draft.fields.get(fieldKey + ':value'), raw)
+  const next = changeHostCapability(same, 'another-future', { fields: h.draft.fields, fieldKey })
+  assert.deepEqual(next.value, { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 })
+  const other = changeHostCapability(action, 'delegation-limits', { fields: new Map(), fieldKey: 'other' })
+  const independent = changeHostCapability(action, 'delegation-limits', { fields: new Map(), fieldKey: 'third' })
+  other.value.maxDepth = 1
+  assert.deepEqual(independent.value, { maxDepth: 10, askTimeout: 300 })
+  h.editor.patch(entry.key, { ...entry.value, then: [next] })
+  assert.equal(await h.editor.submit(), true)
+  assert.deepEqual(h.calls[1].edits[0].rule.then[0], { ...action, capability: 'another-future', value: { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 } })
+})
 
 test('rules bridge: rename/delete use previous identity and CAS; unknown payload and action IDs survive', async () => {
   const next = { ...structuredClone(alpha), id: 'renamed-alpha', name: 'renamed' }
