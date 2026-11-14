@@ -18,7 +18,7 @@
 
 Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 对象，选择 `claude-code: true` / `codex: true`；两张内置卡默认开启。依赖诊断使用 `host:provider-hook-decisions`，运行与恢复契约见 [引擎复用](engine-reuse.md)。
 
-规则卡头部七个字段横向紧凑左对齐，列宽由内容决定，不按剩余空间均分；字段名称统一一行、对应控件统一一行，窄容器内横向滚动。移除常驻机制长说明，不可用原因复用状态文字上的说明浮窗并支持键盘聚焦。宿主能力下拉提供“会话回退”（`session-rewind`），切换使用布尔 `value: true`，保存版本诊断沿 `host:session-rewind` 展示。
+规则卡头部七个字段紧凑左对齐，列宽由内容决定，不按剩余空间均分；每个字段保持标签一行、控件一行。宽容器横向排列，760px及以下按字段整体自然换行，手机端不依赖横向滚动。移除常驻机制长说明，不可用原因复用状态文字上的说明浮窗并支持键盘聚焦。宿主能力下拉提供“会话回退”（`session-rewind`），切换使用布尔 `value: true`，保存版本诊断沿 `host:session-rewind` 展示。
 
 升级动作编辑沿现有规则卡：`escalation-criteria`、`escalation-grant`、`escalation-outcome` 均使用布尔 value，分别显示当前能力诊断；开启意图不等于真实 caller 就绪，运行契约见 [引擎复用](engine-reuse.md)。
 

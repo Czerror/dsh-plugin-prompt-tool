@@ -101,6 +101,11 @@
   .workspace [data-drop-before], .workspace [data-drop-after] { outline: 2px solid Highlight; }
 }
 
+@container rule-editor (max-width: 760px) {
+  .headerFields { display: flex; flex-wrap: wrap; overflow-x: visible; }
+  .headerFields > * { flex: 0 1 auto; max-width: 100%; }
+}
+
 @container rule-editor (max-width: 480px) {
   .conditionChild { padding-inline-start: 8px; }
   .stepBody { padding-inline-start: 8px; }
