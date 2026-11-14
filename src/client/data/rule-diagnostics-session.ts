@@ -1,4 +1,4 @@
-import type { RuleDiagnosticRecord } from '../../shared/bridge-contract.ts'
+import type { RuleDiagnosticRecord, ContextActivationDiagnosticRecord } from '../../shared/bridge-contract.ts'
 import { bridgeCall } from './bridge-client.ts'
 import { countEnabledConfigs } from '../../shared/module-config-order.ts'
 
@@ -11,12 +11,13 @@ export interface RuleDiagnosticsSnapshot {
   records: RuleDiagnosticRecord[]
   diagnosedAt?: number
   error?: string
+  context?: { sessionId: string; records: ContextActivationDiagnosticRecord[]; truncated: boolean; diagnosedAt?: number; error?: string }
 }
 
 export interface RuleDiagnosticsSession {
   subscribe(listener: () => void): () => void
   getSnapshot(): RuleDiagnosticsSnapshot
-  run(): Promise<boolean>
+  run(sessionId?: string): Promise<boolean>
   invalidate(): void
   dispose(): void
 }
@@ -35,13 +36,21 @@ export function createRuleDiagnosticsSession(): RuleDiagnosticsSession {
     snapshot = next
     listeners.forEach(listener => listener())
   }
-  const run = (): Promise<boolean> => {
+  const run = (sessionId?: string): Promise<boolean> => {
     if (disposed) return Promise.resolve(false)
     if (busy !== undefined) return busy
     const requestGeneration = generation
     publish({ ...snapshot, busy: true, status: 'running', error: undefined })
-    busy = bridgeCall('ruleDiagnostics').then(result => {
+    const ruleRead = bridgeCall('ruleDiagnostics')
+    const contextRead = sessionId === undefined ? Promise.resolve(undefined) : bridgeCall('contextActivationDiagnostics', { sessionId })
+    busy = Promise.all([ruleRead, contextRead]).then(([result, contextResult]) => {
       if (disposed || requestGeneration !== generation) return false
+      if (sessionId !== undefined && contextResult !== undefined) {
+        const previous = snapshot.context?.sessionId === sessionId ? snapshot.context : undefined
+        publish({ ...snapshot, context: contextResult.ok
+          ? { sessionId, records: Array.isArray(contextResult.value.records) ? contextResult.value.records : [], truncated: contextResult.value.truncated === true, diagnosedAt: Date.now() }
+          : { sessionId, records: previous?.records ?? [], truncated: previous?.truncated ?? false, diagnosedAt: previous?.diagnosedAt, error: contextResult.message ?? '诊断失败' } })
+      }
       if (!result.ok) {
         publish({ ...snapshot, status: 'error', error: result.message ?? '诊断失败' })
         return false
@@ -55,8 +64,9 @@ export function createRuleDiagnosticsSession(): RuleDiagnosticsSession {
         configs: result.value.configs === undefined ? undefined : countEnabledConfigs(result.value.configs.entries),
         records,
         diagnosedAt: Date.now(),
+        context: snapshot.context,
       })
-      return true
+      return contextResult === undefined || contextResult.ok
     }).catch(error => {
       if (!disposed && requestGeneration === generation) publish({ ...snapshot, status: 'error', error: error instanceof Error ? error.message : String(error) })
       return false

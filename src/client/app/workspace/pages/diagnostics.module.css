@@ -1,0 +1,12 @@
+.card { container: diagnostics / inline-size; margin-bottom: 16px; padding: 14px 16px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.header h2 { margin: 0; font: 600 14px/22px system-ui, sans-serif; }
+.header p { margin: 2px 0 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; }
+.groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.groups > section { min-width: 0; }
+.groups h3 { margin: 0 0 8px; font: 600 13px/20px system-ui, sans-serif; }
+.groups p { margin: 6px 0; }
+.groups ul { padding-left: 18px; overflow-wrap: anywhere; }
+.groups summary { cursor: pointer; color: var(--dsw-alias-label-secondary); }
+.groups summary:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 3px; }
+@container diagnostics (max-width: 560px) { .groups { grid-template-columns: minmax(0, 1fr); gap: 12px; } .groups > section + section { padding-top: 12px; border-top: 1px solid var(--dsw-alias-border-l2); } }

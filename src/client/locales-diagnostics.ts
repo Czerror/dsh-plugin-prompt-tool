@@ -1,4 +1,10 @@
 export const DIAGNOSTIC_ZH = {
+  'diagnostics.title': '诊断概览',
+  'diagnostics.hint': '按需检查规则与当前会话的上下文激活结果。',
+  'diagnostics.rules': '规则与配置',
+  'diagnostics.context': '上下文激活',
+  'diagnostics.noSession': '选择会话后可诊断上下文激活。',
+  'diagnostics.details': '查看记录（{count}）',
   'diagnostics.run': '诊断一次',
   'diagnostics.running': '诊断中…',
   'diagnostics.never': '尚未诊断',
@@ -13,6 +19,12 @@ export const DIAGNOSTIC_ZH = {
 } as const
 
 export const DIAGNOSTIC_EN: Record<keyof typeof DIAGNOSTIC_ZH, string> = {
+  'diagnostics.title': 'Diagnostic overview',
+  'diagnostics.hint': 'Check rules and context activation for the current session on demand.',
+  'diagnostics.rules': 'Rules and configuration',
+  'diagnostics.context': 'Context activation',
+  'diagnostics.noSession': 'Select a session to diagnose context activation.',
+  'diagnostics.details': 'View records ({count})',
   'diagnostics.run': 'Run diagnostics once',
   'diagnostics.running': 'Diagnosing…',
   'diagnostics.never': 'Not diagnosed yet',
