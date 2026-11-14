@@ -1,6 +1,6 @@
 import type { UiConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
-import { visibleRewindEntries } from '../../../engine/rewind-marker.mjs'
+import { isRewindMarker, visibleRewindEntries } from '../../../engine/rewind-marker.mjs'
 
 type Entry = ReturnType<SessionBinding['eventSource']['getSnapshot']>['entries'][number]
 const ready = new WeakSet<object>()
@@ -17,6 +17,7 @@ interface Owner {
   replaceWindow(entries: readonly Entry[], hasMore: boolean): unknown
   append(entry: Entry): unknown
   prepend(entries: readonly Entry[], hasMore: boolean): unknown
+  settleAssistant(attemptId: string, entry?: Entry): unknown
   flush(): boolean
 }
 
@@ -39,17 +40,32 @@ export function installRewindConversation(service: UiConversation, resolve: (id:
         || !['replaceWindow', 'append', 'prepend'].every(key => typeof prototype[key] === 'function' && !Object.hasOwn(owner, key))
         || owner.replaceWindow.length !== 2 || owner.append.length !== 1 || owner.prepend.length !== 2
         || typeof owner.flush !== 'function'
+        || typeof owner.settleAssistant !== 'function' || Object.hasOwn(owner, 'settleAssistant')
         || registryOwner(registries.eventDefinitions) !== registryOwner(service.events)
         || registryOwner(registries.viewDefinitions) !== registryOwner(service.views)
         || registryOwner(registries.groupDefinitions) !== registryOwner(service.groups)) {
         return result
       }
       owners.add(view)
-      const replace = owner.replaceWindow, append = owner.append, prepend = owner.prepend
+      const replace = owner.replaceWindow, append = owner.append, prepend = owner.prepend, settle = owner.settleAssistant
       let window = session.eventSource.getSnapshot()
       let entries = new Map<number, Entry>(window.entries.map((entry: Entry) => [entry.event.seq, entry]))
       let hasMore = window.hasMore
-      const replay = (): unknown => replace.call(owner, visibleRewindEntries([...entries.values()]), hasMore)
+      let lastSeq = -Infinity, replayTail = false
+      const refreshTail = (): void => {
+        lastSeq = -Infinity
+        let markerSeq = -Infinity, turnSeq = -Infinity
+        for (const { event } of entries.values()) {
+          lastSeq = Math.max(lastSeq, event.seq)
+          if (isRewindMarker(event)) markerSeq = Math.max(markerSeq, event.seq)
+          if (event.type === 'turn/start') turnSeq = Math.max(turnSeq, event.seq)
+        }
+        replayTail = markerSeq !== -Infinity && markerSeq > turnSeq
+      }
+      const replay = (): unknown => {
+        refreshTail()
+        return replace.call(owner, visibleRewindEntries([...entries.values()]), hasMore)
+      }
       const replaceWindow: Owner['replaceWindow'] = (next, more) => {
         if (!active) return replace.call(owner, next, more)
         entries = new Map(next.map(entry => [entry.event.seq, entry])); hasMore = more
@@ -57,8 +73,14 @@ export function installRewindConversation(service: UiConversation, resolve: (id:
       }
       const appendEntry: Owner['append'] = entry => {
         if (!active) return append.call(owner, entry)
+        if (entries.has(entry.event.seq)) return 'none'
+        const ordered = entry.event.seq > lastSeq
         entries.set(entry.event.seq, entry)
-        return replay()
+        if (!ordered || isRewindMarker(entry.event)) return replay()
+        lastSeq = entry.event.seq
+        // A same-turn continuation can restore boundaries hidden by the marker; a new Turn cannot.
+        if (entry.event.type === 'turn/start') replayTail = false
+        return replayTail ? replay() : append.call(owner, entry)
       }
       const prependEntries: Owner['prepend'] = (next, more) => {
         if (!active) return prepend.call(owner, next, more)
@@ -66,11 +88,21 @@ export function installRewindConversation(service: UiConversation, resolve: (id:
         hasMore = more
         return replay()
       }
-      owner.replaceWindow = replaceWindow; owner.append = appendEntry; owner.prepend = prependEntries
+      const settleAssistant: Owner['settleAssistant'] = (attemptId, entry) => {
+        if (!active) return settle.call(owner, attemptId, entry)
+        for (const [seq, candidate] of entries) {
+          if (candidate.type === 'transient' && candidate.event.data.attemptId === attemptId) entries.delete(seq)
+        }
+        if (entry !== undefined) entries.set(entry.event.seq, entry)
+        refreshTail()
+        return replayTail ? replay() : settle.call(owner, attemptId, entry)
+      }
+      owner.replaceWindow = replaceWindow; owner.append = appendEntry; owner.prepend = prependEntries; owner.settleAssistant = settleAssistant
       releases.push(() => {
-        if (owner.replaceWindow === replaceWindow) owner.replaceWindow = replace
-        if (owner.append === appendEntry) owner.append = append
-        if (owner.prepend === prependEntries) owner.prepend = prepend
+        if (owner.replaceWindow === replaceWindow) Reflect.deleteProperty(owner, 'replaceWindow')
+        if (owner.append === appendEntry) Reflect.deleteProperty(owner, 'append')
+        if (owner.prepend === prependEntries) Reflect.deleteProperty(owner, 'prepend')
+        if (owner.settleAssistant === settleAssistant) Reflect.deleteProperty(owner, 'settleAssistant')
       })
       window = session.eventSource.getSnapshot()
       replaceWindow(window.entries, window.hasMore)

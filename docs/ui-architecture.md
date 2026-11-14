@@ -6,6 +6,8 @@
 
 空白且未修改的草稿通过 `captureInsertion` / `insertText` 版本校验回填，随后持久化，不自动提交。新草稿、引用、附件、会话切换或提交锁定时保留原草稿，提供只读回退文本；历史已提交而回填失败分别报告。回退槽由 `app/register-rewind.tsx` 持有接线和瞬时结果 owner；迟到文本、失败与重试凭据按原会话保存并通知重挂视图，回到原会话即可取回，插件释放清空，不写持久草稿库。提交响应丢失或失败目标重试后首次确认成功仍保留文本；同一标记已回填则不重复插入。Conversation 适配只包装公开 binding snapshot 实际返回的 assembler 实例，核对构造身份、原型方法与实例可扩展性；已有第三方实例覆盖不接管。即时 append、替窗重放和向前分页统一解释标记，原事件源保持。插件卸载后的环境不支持完整回退展示，需恢复解释器，不能把卸载当历史撤销。
 
+回退适配的普通按序追加沿原生增量路径，保持宿主的帧调度与历史节点身份；回退标记、乱序、替窗、分页及标记后同轮续写才进行必要的过滤重放，新一轮恢复增量。回复结算同步清除同次尝试的瞬时缓存，防止后续回放复活已结算片段；释放时移除本插件的方法覆盖，保留后来第三方的覆盖。
+
 宿主能力卡提供“Messages 当前系统正文”（Messages current system body），选择 `messages-current-system` 后使用布尔 `value: true`。它沿普通规则草稿、保存版本与 `host:messages-current-system` 诊断展示，默认开启，独立于每步当前系统正文开关；不新增正文编辑入口。实际效果及 early 重启要求见[引擎指南](engine-reuse.md)。
 
 宿主能力卡提供独立的“移除 OAuth 自动身份首段”（Remove automatic OAuth identity prefix）与“按原生服务域名映射系统角色”（Map system role by native provider hostname），分别选择 `oauth-identity-prefix`、`provider-system-role` 并使用布尔 `value: true`。沿普通规则草稿、版本保存、受众与分支编辑；卡片只展示当前保存版本对应 `host:<capability>` 的必要 owner 缺失原因。开启表示选择意图，实际接入范围与 early 重启要求见[引擎指南](engine-reuse.md)。
