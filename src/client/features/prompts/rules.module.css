@@ -6,7 +6,8 @@
 .headerActions .row { flex-wrap: nowrap; gap: 4px; }
 .body { container: rule-editor / inline-size; display: flex; flex-direction: column; gap: 16px; padding: 0; min-width: 0; border-top: 0; }
 .fields { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; min-width: 0; }
-.headerFields { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(6rem, 1fr) max-content max-content minmax(6rem, 1fr) max-content max-content; align-items: start; gap: 12px; min-width: 0; overflow-x: auto; padding-bottom: 4px; }
+.headerFields { display: grid; grid-template-columns: repeat(7, max-content); justify-content: start; justify-items: start; align-items: start; gap: 12px; min-width: 0; overflow-x: auto; padding-bottom: 4px; text-align: start; }
+.headerFields > * > span:first-child { white-space: nowrap; }
 .fields > * { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .fields > .full, .fields > .parameterGroup { flex-basis: 100%; }
 .full, .parameterGroup { min-width: 0; width: 100%; }

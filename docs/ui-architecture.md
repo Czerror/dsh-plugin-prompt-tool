@@ -18,7 +18,7 @@
 
 Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 对象，选择 `claude-code: true` / `codex: true`；两张内置卡默认开启。依赖诊断使用 `host:provider-hook-decisions`，运行与恢复契约见 [引擎复用](engine-reuse.md)。
 
-规则卡头部七个字段横向排列，字段名称统一一行、对应控件统一一行，窄容器内横向滚动；移除常驻机制长说明，不可用原因复用状态文字上的说明浮窗并支持键盘聚焦。宿主能力下拉提供“会话回退”（`session-rewind`），切换使用布尔 `value: true`，保存版本诊断沿 `host:session-rewind` 展示。
+规则卡头部七个字段横向紧凑左对齐，列宽由内容决定，不按剩余空间均分；字段名称统一一行、对应控件统一一行，窄容器内横向滚动。移除常驻机制长说明，不可用原因复用状态文字上的说明浮窗并支持键盘聚焦。宿主能力下拉提供“会话回退”（`session-rewind`），切换使用布尔 `value: true`，保存版本诊断沿 `host:session-rewind` 展示。
 
 升级动作编辑沿现有规则卡：`escalation-criteria`、`escalation-grant`、`escalation-outcome` 均使用布尔 value，分别显示当前能力诊断；开启意图不等于真实 caller 就绪，运行契约见 [引擎复用](engine-reuse.md)。
 
@@ -292,7 +292,7 @@ slot 使用 ctx.slots.inject() 等待声明，再调用 ctx.slots.register()。�
 - 右侧工作台使用官方 tab 注册，读取 `useTabInfo().tab.visible`，不能用 signal 未中止或组件仍挂载替代可见性。
 - NativeWorkspace 将宿主可见性与 document 可见性合并，隐藏时卸载编辑视图；草稿与保存应答保留在独立数据 owner 中。
 - 同一会话的三个入口共享所选页、筛选、展开和滚动状态；业务正文不写 localStorage，刷新或卸载后不承诺恢复未保存正文。
-- 关闭入口或切页不自动诊断。只有模块页“诊断一次”动作发起一次请求，在途不叠发、不补刷、不自动重试。
+- 关闭入口或切页不自动诊断。模块页顶部一张诊断概览卡提供唯一“诊断一次”动作：规则诊断与当前会话上下文诊断各请求一次；无会话只读规则，并提示上下文不可用。在途不叠发、不补刷、不自动重试。
 
 ### 4.4 宿主能力采用面
 
@@ -312,7 +312,7 @@ slot 使用 ctx.slots.inject() 等待声明，再调用 ctx.slots.register()。�
           ├─ 工具预览
           └─ 模块
 
-模块运行总闸与手动诊断位于模块页，不另设 settings tab。`app/workspace/pages/ModulesWorkspacePage` 组合模块管理与上下文激活诊断，feature 之间不互相导入。数据 store 由 WorkspaceStoreOwner 独立持有，PromptWorkspace 消费其快照；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
+模块运行总闸与手动诊断位于模块页，不另设 settings tab。`app/workspace/pages/ModulesWorkspacePage` 在模块列表前组合统一诊断卡，规则摘要和上下文激活摘要宽屏双栏、窄容器单列；成功时间、空态、错误、截断提示与折叠详情都在卡内。feature 之间不互相导入。数据 store 由 WorkspaceStoreOwner 独立持有，PromptWorkspace 消费其快照；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
 
 模块的目录物化、复制、删除和参数由本插件维护；模块不进入官方 `agentPresets` 注册表，编辑目标不驱动官方会话预设切换。工具预览仍可只读官方 roster；默认值 `selectedDefault` / `defaultId` 不参与模块设置。
 
@@ -414,7 +414,7 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 模板创建目标与发布结果 | template-rule-writer + rule-drafts | 目标意图归视图，显式 moduleId 写入、声明与结果接纳归数据侧；不依赖 owner/readback。共享草稿保存完整成功响应和发布状态，离页只抑制提示／展开，不丢已提交事实；未启用目标的状态仍仅存工作台会话，启用后沿既有 refreshOnly 重试 |
 | 保存队列、revision、草稿版本 | save-queue + store | 独立数据 owner 生命周期，视图卸载不取消已发起保存 |
-| 手动诊断快照 | rule-diagnostics-session | 仅模块页按钮调用既有诊断接口；同连接共享 busy、结果与成功时间，重复点击不排队。配置或连接变化只标失效，失败保留旧成功结果；缺少 configs 明确不可用，dropped 非零时显示未保留记录数量。无计时器、打开刷新或自动重试。运行统计沿原全仓口径；释放和连接重置后旧响应不得标成当前有效结果。 |
+| 手动诊断快照 | rule-diagnostics-session | 仅模块页统一按钮调用既有两类诊断接口；同连接共享 busy、结果与成功时间，重复点击不排队。规则统计沿全仓口径，上下文快照按请求的 sessionId 展示，失败不继承另一会话结果。配置或连接变化只标失效，失败保留同目标旧成功结果；缺少 configs 明确不可用，dropped 非零时显示未保留记录数量。无计时器、打开刷新或自动重试；释放和连接重置后旧响应不得标成当前有效结果。 |
 | 大文本和导入原文件 | 文件通道/bridge | 不进入 settings descriptor |
 
 不新增 React Context 来广播整个 store。页面通过 usePromptToolFields selector 订阅窄切片，叶子组件接收显式值与 callback。
@@ -708,7 +708,7 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 
 展开指令卡后，「本层设置」提供**一个全局**的 `instructionHint`（指令路径提示）开关——指令卡是全局段、不属于任何模块，该开关写存储根 `config.yml` 的 `layerSettings`（`/param-overrides` 不带主语头）。`injectionPointSlots.renderInstructionSettings` 只装配既有 `EngineParamField`（`global` 主语），不依赖普通 pre-step 规则卡存在、也不随启用模块数量变化。有效值的优先级是**模块显式键 ＞ 全局键 ＞ 引擎默认**（存在即覆盖，`false` 也算显式），判据与合并只在 `src/host/module-params.ts#resolveModuleParams` 一处；模块总闸关闭或全局值尚未读回时禁用。指令正文仍只允许原文件正文编辑，普通注入参数继续锁定，文件级启停仍写独立策略。
 
-上下文激活是提示词策略筛选，不承载引擎设置。`ContextActivationDiagnosticsCard` 集中在模块页，仅其专用手动按钮请求上下文激活诊断；挂载、筛选或普通“诊断一次”按钮都不触发该请求，避免一次点击产生两个诊断 HTTP 调用。自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。配置卡及设置内容可随筛选和折叠卸载，未保存资产与字段草稿由既有共享草稿池保留；工具读取与创建由页面所有者承载，保存失败保留原输入。
+上下文激活是提示词策略筛选，不承载引擎设置。`ContextActivationDiagnosticsCard` 只呈现模块页顶部统一诊断卡中的上下文分区，不再持有请求或单独刷新按钮；统一手动动作按真实会话读取一次，挂载、筛选与切页均不请求。自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。配置卡及设置内容可随筛选和折叠卸载，未保存资产与字段草稿由既有共享草稿池保留；工具读取与创建由页面所有者承载，保存失败保留原输入。
 
 搜索统一覆盖「中文名 + 技术键」，且只影响展示：规则按自身定义及层设置匹配，真实层装配通过既有 `matchesEditorGroup` 与分组标题判定设置匹配，匹配时保留同层承载实例，展开后隐藏未命中的组。没有实例的层不会因为设置命中而生成卡片。批量启停作用于当前可见规则集合；旧快捷参数的 `fieldSources` 不再锁定规则或排除其编辑能力。清空搜索恢复原列表，不创建配置或保存。
 
