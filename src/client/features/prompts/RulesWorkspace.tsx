@@ -136,10 +136,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     }
     for (const editor of new Set(entries.map(row => row.editor))) void editor.submit()
   }
-  const orderPeers = (entry: ModuleConfigOrderEntry): ModuleConfigOrderEntry[] => {
-    const visible = order.snapshot?.entries.filter(item => entries.some(row => row.identity === configIdentityKey(item))) ?? []
-    return visible.filter(item => sameConfigPosition(entry, item))
-  }
+  const visibleIdentities = new Set(entries.map(row => row.identity))
+  const visibleOrder = order.snapshot?.entries.filter(item => visibleIdentities.has(configIdentityKey(item))) ?? []
+  const orderPeers = (entry: ModuleConfigOrderEntry): ModuleConfigOrderEntry[] => visibleOrder.filter(item => sameConfigPosition(entry, item))
   /** 同层同位置只有这一张卡时没有可交换的 peer。 */
   const slotPinned = (entry: ModuleConfigOrderEntry): boolean => orderPeers(entry).length <= 1
   const moveButtons = (entry: ModuleConfigOrderEntry): ReactNode => {

@@ -35,7 +35,7 @@ const isCatalog = (event: { type: string }): boolean => event.type === 'subagent
 export function registerRewind(runtime: BridgeRuntime): (() => void)[] {
   const ctx = runtime.agentScope
   const grants = new Map<string, Grant>(), tickets = new Map<string, Ticket>(), locks = new Map<string, string>()
-  const sessions = new WeakSet<object>()
+  const sessions = new Map<Agent['session'], { owners: Set<Agent>; release: () => void }>()
   const runs = new Map<string, Run>()
   const releases: (() => void)[] = []
   let active = true
@@ -48,27 +48,36 @@ export function registerRewind(runtime: BridgeRuntime): (() => void)[] {
   }, 60_000)
   sweep.unref()
   releases.push(() => clearInterval(sweep))
-  const attach = (session: Agent['session']): void => {
-    if (sessions.has(session)) return
-    sessions.add(session)
+  const attach = (agent: Agent): void => {
+    const session = agent.session
+    const previous = sessions.get(session)
+    if (previous) { previous.owners.add(agent); return }
     const original = session.deriveEventMessage
     const messages = session.deriveMessages
+    const markers = new Set<string>()
+    let scanned = 0
+    let mounted = true
     const interpret: typeof original = function (this: Agent['session'], event) {
-      if (!active) return original.call(this, event)
+      if (!active || !mounted) return original.call(this, event)
       if (isRewindMarker(event)) return null
       return original.call(this, event)
     }
     session.deriveEventMessage = interpret
     const derive: typeof messages = function (this: Agent['session']) {
-      if (!active) return messages.call(this)
-      const markers = new Set(historyEvents(this).filter(isRewindMarker).map(event => (event.data as { id: string }).id))
-      return messages.call(this).filter(message => !markers.has(message.id))
+      if (!active || !mounted) return messages.call(this)
+      for (const event of this.snapshotEvents(scanned as Parameters<Agent['session']['snapshotEvents']>[0])) {
+        if (isRewindMarker(event)) markers.add((event.data as { id: string }).id)
+        scanned++
+      }
+      const result = messages.call(this)
+      return markers.size === 0 ? result : result.filter(message => !markers.has(message.id))
     }
     session.deriveMessages = derive
-    releases.push(() => {
+    sessions.set(session, { owners: new Set([agent]), release: () => {
+      mounted = false
       if (session.deriveEventMessage === interpret) session.deriveEventMessage = original
       if (session.deriveMessages === derive) session.deriveMessages = messages
-    })
+    } })
   }
   const authorize = (credential: string, sessionId: string): void => {
     const grant = grants.get(credential)
@@ -81,7 +90,7 @@ export function registerRewind(runtime: BridgeRuntime): (() => void)[] {
   const local = (id: string): Agent => {
     const agent = ctx.agents.get(id as Agent['id'])
     if (!agent) throw new Error('目标不是当前可操作的本地会话')
-    attach(agent.session)
+    attach(agent)
     return agent
   }
   const fixedPlan = (agent: Agent, mode: 'once' | 'round' = 'once'): Plan => {
@@ -137,7 +146,7 @@ export function registerRewind(runtime: BridgeRuntime): (() => void)[] {
             if (restored.inbox.nextStep.length > 0 || restored.inbox.nextTurn.length > 0) throw new Error('子代理存在待执行输入，不能自动恢复回退')
           } })
           child = handle.agent
-          attach(child.session)
+          attach(child)
         } else if (child !== run.child) throw new Error('子代理所有者已改变')
         let plan: Plan
         try {
@@ -160,9 +169,14 @@ export function registerRewind(runtime: BridgeRuntime): (() => void)[] {
     }
   }
 
-  releases.push(ctx.on('agent/created', ({ agent }) => { attach(agent.session); return undefined }))
-  for (const agent of ctx.agents.list()) attach(agent.session)
+  releases.push(ctx.on('agent/created', ({ agent }) => { attach(agent); return undefined }))
+  for (const agent of ctx.agents.list()) attach(agent)
   releases.push(ctx.on('agent/disposed', ({ agent }) => {
+    const attached = sessions.get(agent.session)
+    if (attached?.owners.delete(agent) && attached.owners.size === 0) {
+      attached.release()
+      sessions.delete(agent.session)
+    }
     for (const [id, run] of runs) {
       if (run.child === agent) run.endSeq = historyEvents(agent.session).at(-1)?.seq
       if (run.parent === agent && agent.session.header.origin !== 'subagent') runs.delete(id)
@@ -290,6 +304,8 @@ export function registerRewind(runtime: BridgeRuntime): (() => void)[] {
     for (const ticket of tickets.values()) for (const plan of ticket.plans) void plan.handle?.dispose().catch(error => ctx.logger.warn('回退临时子会话释放失败：' + errorText(error)))
     tickets.clear()
     runs.clear()
+    for (const session of sessions.values()) session.release()
+    sessions.clear()
     for (const release of releases.reverse()) release()
   }]
 }

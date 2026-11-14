@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createAgentAssembly } from '../../src/runtime/agent-assembly.ts'
 import { registerSettingsBridge } from '../../src/runtime/settings-bridge.ts'
+import { registerRewind } from '../../src/runtime/routes/rewind.ts'
 import { BRIDGE_ENDPOINTS } from '../../src/shared/bridge-contract.ts'
 
 const require = createRequire(import.meta.url)
@@ -17,6 +18,29 @@ const [{ default: Llm, LlmAdapter, createUserMessage }, { default: Agents }, { d
   load('@deepseek-ai/dsh-llm'), load('@deepseek-ai/dsh-agent'), load('@deepseek-ai/dsh-system-prompt'),
   load('@deepseek-ai/dsh-session'), load('@deepseek-ai/dsh-session-projection'), load('@deepseek-ai/dsh-agent-loop'), load('@deepseek-ai/dsh-tools'), load('@deepseek-ai/dsh-tool-executor-native'),
 ])
+
+test('回退会话适配随最后一个 Agent 释放，重挂不覆盖第三方方法', async () => {
+  const { Session } = await load('@deepseek-ai/dsh-session')
+  const session = Session.create('rewind-lifecycle'), original = session.deriveMessages
+  const handlers = new Map()
+  const ctx = { agents: { list: () => [] }, on(name, handler) { handlers.set(name, handler); return () => {} }, get() {}, logger: { warn() {} } }
+  const disposers = registerRewind({ agentScope: ctx, registerAgentRoute: () => () => {} })
+  try {
+    const first = { session }, second = { session }
+    handlers.get('agent/created')({ agent: first })
+    const wrapped = session.deriveMessages
+    handlers.get('agent/created')({ agent: second })
+    handlers.get('agent/disposed')({ agent: first })
+    assert.equal(session.deriveMessages, wrapped, '同一 Session 仍有所有者时保留适配')
+    handlers.get('agent/disposed')({ agent: second })
+    assert.equal(session.deriveMessages, original, '最后一个所有者释放即恢复方法')
+    handlers.get('agent/created')({ agent: first })
+    const thirdParty = () => []
+    session.deriveMessages = thirdParty
+    handlers.get('agent/disposed')({ agent: first })
+    assert.equal(session.deriveMessages, thirdParty, '不覆盖后来安装的第三方方法')
+  } finally { for (const dispose of disposers) dispose() }
+})
 class Capture extends LlmAdapter {
   requests = []
   hold = false

@@ -25,7 +25,7 @@ interface Owner {
 export function installRewindConversation(service: UiConversation, resolve: (id: string) => SessionBinding | undefined): () => void {
   const originalBinding = service.binding
   let active = true
-  const owners = new WeakSet<object>(), releases: (() => void)[] = []
+  const owners = new WeakSet<object>(), releases = new Set<() => unknown>()
   const binding: typeof originalBinding = function (this: UiConversation, source) {
     const result = originalBinding.call(this, source)
     if (!active) return result
@@ -98,17 +98,21 @@ export function installRewindConversation(service: UiConversation, resolve: (id:
         return replayTail ? replay() : settle.call(owner, attemptId, entry)
       }
       owner.replaceWindow = replaceWindow; owner.append = appendEntry; owner.prepend = prependEntries; owner.settleAssistant = settleAssistant
-      releases.push(() => {
+      const release = session.ctx.effect(() => () => {
         if (owner.replaceWindow === replaceWindow) Reflect.deleteProperty(owner, 'replaceWindow')
         if (owner.append === appendEntry) Reflect.deleteProperty(owner, 'append')
         if (owner.prepend === prependEntries) Reflect.deleteProperty(owner, 'prepend')
         if (owner.settleAssistant === settleAssistant) Reflect.deleteProperty(owner, 'settleAssistant')
+        entries.clear()
+        owners.delete(view)
+        ready.delete(view)
+        releases.delete(release)
       })
+      releases.add(release)
       window = session.eventSource.getSnapshot()
       replaceWindow(window.entries, window.hasMore)
       owner.flush()
       ready.add(view)
-      releases.push(() => { ready.delete(view) })
     }
     return result
   }
@@ -116,6 +120,6 @@ export function installRewindConversation(service: UiConversation, resolve: (id:
   return () => {
     active = false
     if (service.binding === binding) service.binding = originalBinding
-    for (const release of releases.reverse()) release()
+    for (const release of [...releases].reverse()) release()
   }
 }

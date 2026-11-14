@@ -154,17 +154,20 @@ export function createCountPredicate(options = {}) {
   predicate.kind = 'count'
   predicate.observe = (session, event) => {
     if (session?.id === undefined) return
+    const entry = state.get(session.id)
+    if (entry === undefined) return
     // 失效条件必须与它读的视图一致：只有消息类信号按可见上下文计数，压缩复位对
     // log-only 信号（重建读 `historyEvents`）不改变任何结果，白白触发一次重建。
     const flagged = SURFACE_MESSAGE_TYPES.has(signal.type)
     // 成功压缩换掉了可见历史，而条目按**全部** durable 事件累加过（含被遮蔽的），无法反演
     // → 整体清条目、下次求值重建（宿主没暴露 `replaceGeneration` 时这是唯一的复位信号）。
     if (flagged && isSuccessfulCompactionEnd(event)) { state.delete(session.id); return }
+    const type = event?.type
+    if (type !== signal.type && (per !== 'turn' || type !== TURN_EVENT)) return
     // 视图受限时重建路径读 `currentEvents`，那里没有 `turn/start` 这类 log-only 事件；
     // 增量若照单全收就会靠它推进当前轮，同一会话两种结论（「冷启动 == 增量」失效）。
-    if (flagged && viewRestricted(session) && !SURFACE_MESSAGE_TYPES.has(event?.type)) return
-    const entry = state.get(session.id)
-    if (entry !== undefined) applyEvent(entry, event)
+    if (flagged && type === TURN_EVENT && viewRestricted(session)) return
+    applyEvent(entry, event)
   }
   return predicate
 }

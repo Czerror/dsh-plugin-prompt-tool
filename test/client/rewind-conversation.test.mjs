@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { installRewindConversation } from '../../src/client/data/rewind-conversation.ts'
+import { Context } from '@deepseek-ai/cordis'
 
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
@@ -70,12 +71,12 @@ function fixture(initial) {
   const groups = { entries: () => [], forTarget: () => undefined }
   const owner = new ConversationNodeAssembler(events, views, groups)
   owner.activateTarget('probe')
-  const session = { sessionId: 's', eventSource: { getSnapshot: () => ({ entries: initial, hasMore: false }) } }
+  const session = { sessionId: 's', ctx: new Context(), eventSource: { getSnapshot: () => ({ entries: initial, hasMore: false }) } }
   const binding = { snapshot: { getSnapshot: () => ({ views: owner }) } }
   const service = { events, views, groups, binding: () => binding }
   const dispose = installRewindConversation(service, () => session)
   service.binding('s')
-  return { owner, dispose, starts: () => starts, values: () => owner.snapshot('probe') }
+  return { owner, session, service, dispose, starts: () => starts, values: () => owner.snapshot('probe') }
 }
 
 test('回退适配保留真实assembler的增量流式发布节奏，不重放既有消息', () => {
@@ -120,4 +121,24 @@ test('回复结算后回退重放不复活瞬时chunk，释放恢复原有方法
   assert.deepEqual(f.values(), [])
   f.dispose()
   for (const name of ['append', 'prepend', 'replaceWindow', 'settleAssistant']) assert.equal(Object.hasOwn(f.owner, name), false)
+})
+
+test('会话作用域释放独立撤销回退适配，重挂可重新接管且保留后来覆盖', async t => {
+  const f = fixture([at(1, 'assistant/message')])
+  t.after(() => f.dispose())
+  await f.session.ctx.fiber.dispose()
+  for (const name of ['append', 'prepend', 'replaceWindow', 'settleAssistant']) assert.equal(Object.hasOwn(f.owner, name), false)
+  f.session.ctx = new Context()
+  t.after(() => f.session.ctx.fiber.dispose())
+  f.service.binding('s')
+  const cut = marker(2)
+  cut.event.surfaceOp = { op: 'replace', startSeq: 1, endSeq: 1 }; cut.event.sourceEventSeqs = [1]
+  f.owner.append(cut); f.owner.flush()
+  assert.deepEqual(f.values(), [])
+  const thirdParty = () => 'none'
+  f.owner.append = thirdParty
+  await f.session.ctx.fiber.dispose()
+  f.dispose()
+  assert.equal(f.owner.append, thirdParty)
+  for (const name of ['prepend', 'replaceWindow', 'settleAssistant']) assert.equal(Object.hasOwn(f.owner, name), false)
 })
