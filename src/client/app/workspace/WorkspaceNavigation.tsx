@@ -4,7 +4,7 @@ import type { PromptToolTranslate } from '../../locales.ts'
 import { WORKSPACE_PAGE_IDS, WORKSPACE_PAGES, type WorkspacePage } from './workspace-pages.ts'
 import css from './PromptWorkspace.module.css'
 
-export function WorkspaceNavigation(props: { page: WorkspacePage; onChange: (page: WorkspacePage) => void; t: PromptToolTranslate }): ReactNode {
+export function WorkspaceNavigation(props: { id?: string; page: WorkspacePage; onChange: (page: WorkspacePage) => void; t: PromptToolTranslate }): ReactNode {
   const navRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     navRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -17,12 +17,12 @@ export function WorkspaceNavigation(props: { page: WorkspacePage; onChange: (pag
           return (
             <button
               key={item.id}
-              id={`pt-workspace-tab-${item.id}`}
+              id={`${props.id ?? 'pt-workspace'}-tab-${item.id}`}
               type="button"
               role="tab"
               tabIndex={active ? 0 : -1}
               aria-selected={active}
-              aria-controls={`pt-workspace-panel-${item.id}`}
+              aria-controls={`${props.id ?? 'pt-workspace'}-panel-${item.id}`}
               data-active={active ? '' : undefined}
               onClick={() => props.onChange(item.id)}
               onKeyDown={tabKeyHandler(WORKSPACE_PAGE_IDS, props.page, props.onChange)}

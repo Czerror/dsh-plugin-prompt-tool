@@ -1,7 +1,6 @@
 import clsx from 'clsx'
-import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import type { DraftsPort, ModuleFactsPort, NoticePort } from '../../data/store-ports.ts'
-import { useRuleDiagnostics } from '../../data/use-rule-diagnostics.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
 import { WORKSPACE_PAGES, type WorkspacePage } from './workspace-pages.ts'
@@ -20,22 +19,17 @@ export function WorkspaceFrame(props: {
   scrollPositions?: Map<string, number>
   focusPage?: number
   contentReady?: boolean
-  onClose: () => void
   children: ReactNode
 }): ReactNode {
   const { store, t } = props
+  const id = useId()
   useSyncExternalStore(store.subscribeDrafts, store.getDraftRevision, store.getDraftRevision)
   const canvasRef = useRef<HTMLElement>(null)
   const restoredKey = useRef<string>()
   const lastFocusPage = useRef(props.focusPage)
   const scrollKey = props.scrollKey ?? props.page
-  // 状态栏报全仓口径：已启用模块里的配置启用/总条数（服务端统计），模块启用/总数（模块列表）。
-  // 重载键只由「模块 + 启用位」组成：启停模块（启用表变了）重算计数，切模块或编辑规则不重算。
-  const summary = useRuleDiagnostics(store.meta.layers.length > 0, (store.meta.modules ?? []).map(module => `${module.id}:${module.enabled === true ? 1 : 0}`).join(','))
   const modules = store.meta.modules ?? []
   const modulesEnabled = modules.filter(module => module.enabled === true).length
-  // 条件因缺事实无法判定的规则数；>0 才在状态栏出现，空态不占位。
-  const unavailableCount = summary.unavailableCount
   // 角色库与工具面拥有独立请求，不能以全局配置数量判定它们的加载/空态。
   const usesBootstrap = props.page !== 'modules' && props.page !== 'tools'
   const loadingInitial = usesBootstrap && store.loading && store.meta.layers.length === 0
@@ -91,19 +85,13 @@ export function WorkspaceFrame(props: {
         )}
         <div className={css.statusCluster}>
           <StatusDot tone={store.loading ? 'neutral' : 'success'} />
-          {/* 只有首次读取才用文字顶替计数：重载（切模块、启停模块）期间计数照旧显示，加载由圆点变灰表达。
-              两个计数都是全仓口径：规则 = 已启用模块里的配置卡（X 启用 / Y 总数），模块 = 启用 / 全部。 */}
           <span>{loadingInitial
             ? t('app.loading')
-            : summary.configs.total > 0
-              ? `${t('app.statusRules', summary.configs)} · ${t('app.statusModules', { enabled: modulesEnabled, total: modules.length })}`
-              : t('app.statusModules', { enabled: modulesEnabled, total: modules.length })}
-            {unavailableCount > 0 ? ` · ${t('app.statusUnavailable', { count: unavailableCount })}` : ''}</span>
+            : t('app.statusModules', { enabled: modulesEnabled, total: modules.length })}</span>
         </div>
-        <Button shape="pill" variant="outline" className={css.backButton} onClick={props.onClose}>{t('app.backToChat')}</Button>
       </header>
 
-      <WorkspaceNavigation page={props.page} onChange={(page) => {
+      <WorkspaceNavigation id={id} page={props.page} onChange={(page) => {
         if (canvasRef.current !== null && restoredKey.current === scrollKey) props.scrollPositions?.set(scrollKey, canvasRef.current.scrollTop)
         props.onPageChange(page)
       }} t={t} />
@@ -116,9 +104,9 @@ export function WorkspaceFrame(props: {
           return (
             <div
               key={item.id}
-              id={`pt-workspace-panel-${item.id}`}
+              id={`${id}-panel-${item.id}`}
               role="tabpanel"
-              aria-labelledby={`pt-workspace-tab-${item.id}`}
+              aria-labelledby={`${id}-tab-${item.id}`}
               tabIndex={active ? 0 : undefined}
               hidden={!active}
             >

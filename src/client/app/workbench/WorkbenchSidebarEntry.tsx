@@ -1,22 +1,11 @@
-import { useEffect, useRef } from 'react'
-import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import { workbenchHostConventions } from './workbench-host-conventions.ts'
+type WorkbenchSidebarEntryProps = Pick<PropsRuntime<'sidebar.panellist'>, 'size'>
 
-type WorkbenchSidebarEntryProps = Pick<PropsRuntime<'sidebar.panellist'>, 'size'> & InjectFace<{ open: () => void }>
-
-/**
- * 侧栏导航入口的图标组件：渲染图标，并在 effect 里让 adapter 把行点击接到 open。
- *
- * 宿主行结构与事件名归 `workbench-host-conventions.ts`；本组件只提供图标 ref 与 open，
- * 不解释「图标位于哪个宿主按钮内」。
- */
-export function WorkbenchSidebarEntry({ size, open }: WorkbenchSidebarEntryProps) {
-  const ref = useRef<SVGSVGElement>(null)
-  useEffect(() => workbenchHostConventions.interceptSidebarRow(ref.current, open), [open])
+/** 左侧导航入口图标；行选择由宿主 sidebar.panellist 负责。 */
+export function WorkbenchSidebarEntry({ size }: WorkbenchSidebarEntryProps) {
   return (
     <svg
-      ref={ref}
       width={size}
       height={size}
       viewBox="0 0 16 16"

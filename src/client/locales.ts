@@ -13,6 +13,7 @@ import { PROMPTS_EN, PROMPTS_ZH } from './locales-prompts.ts'
 import { CARDS_EN, CARDS_ZH } from './locales-cards.ts'
 import { TRIGGERS_EN, TRIGGERS_ZH } from './locales-triggers.ts'
 import { RULES_EN, RULES_ZH } from './locales-rules.ts'
+import { DIAGNOSTIC_EN, DIAGNOSTIC_ZH } from './locales-diagnostics.ts'
 import { PROMPT_TOOL_NS } from '../shared/namespace.ts'
 
 /** 官方 locale 服务注册用的命名空间（与 settings 共用同一字面量真源）。 */
@@ -177,6 +178,7 @@ export type PromptToolLocaleKey =
   | keyof typeof CARDS_ZH
   | keyof typeof TRIGGERS_ZH
   | keyof typeof RULES_ZH
+  | keyof typeof DIAGNOSTIC_ZH
 
 const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'rewind.label': 'Rewind sent messages',
@@ -323,8 +325,8 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'moduleSwitcher.notice.enableFailed': 'Failed to toggle the module enable state: {reason}',
 }
 
-const ZH: Record<PromptToolLocaleKey, string> = { ...ZH_CORE, ...PARAMS_ZH, ...PROMPTS_ZH, ...CARDS_ZH, ...TRIGGERS_ZH, ...RULES_ZH }
-const EN: Record<PromptToolLocaleKey, string> = { ...EN_CORE, ...PARAMS_EN, ...PROMPTS_EN, ...CARDS_EN, ...TRIGGERS_EN, ...RULES_EN }
+const ZH: Record<PromptToolLocaleKey, string> = { ...ZH_CORE, ...PARAMS_ZH, ...PROMPTS_ZH, ...CARDS_ZH, ...TRIGGERS_ZH, ...RULES_ZH, ...DIAGNOSTIC_ZH }
+const EN: Record<PromptToolLocaleKey, string> = { ...EN_CORE, ...PARAMS_EN, ...PROMPTS_EN, ...CARDS_EN, ...TRIGGERS_EN, ...RULES_EN, ...DIAGNOSTIC_EN }
 
 /** 官方 locale 服务的最小使用面（便于 node:test 用 mock 覆盖注册/释放）。 */
 export interface PromptToolLocaleRegistry {

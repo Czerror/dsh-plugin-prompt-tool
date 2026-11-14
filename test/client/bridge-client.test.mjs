@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { bridgeCall, bridgeUpload } from '../../src/client/data/bridge-client.ts'
+import { bridgeCall, bridgeUpload, subscribeConfigurationChanges } from '../../src/client/data/bridge-client.ts'
 import { BRIDGE_ENDPOINTS, EDIT_TARGET_HEADER, SETTINGS_BRIDGE_PREFIX } from '../../src/shared/bridge-contract.ts'
 
 /** 记录请求并以给定响应应答；finally 恢复 fetch，避免用例间互相污染。 */
@@ -16,6 +16,30 @@ async function withFetch(handler, run) {
 
 const okResponse = () => new Response(JSON.stringify({ ok: true, value: {} }), { status: 200 })
 const subjectOf = (call) => call.init.headers[EDIT_TARGET_HEADER]
+
+test('配置变化通知只在成功写入后发送，读取与导入预览不发送', async () => {
+  let count = 0
+  const dispose = subscribeConfigurationChanges(() => { count += 1 })
+  try {
+    await withFetch(okResponse, async () => {
+      await bridgeCall('rules', undefined, 'm')
+      await bridgeCall('ruleDiagnostics')
+      await bridgeCall('importModulePackage', { preview: true })
+      assert.equal(count, 0)
+      await bridgeCall('moduleEnable', { id: 'm', enabled: true })
+      assert.equal(count, 1)
+      await bridgeCall('rules', { refreshOnly: true }, 'm')
+      assert.equal(count, 2)
+    })
+    await withFetch(() => new Response(JSON.stringify({ ok: false, message: '拒绝' })), async () => {
+      await bridgeCall('moduleEnable', { id: 'm', enabled: true })
+      assert.equal(count, 2)
+    })
+    dispose()
+    await withFetch(okResponse, () => bridgeCall('moduleEnable', { id: 'm', enabled: false }))
+    assert.equal(count, 2)
+  } finally { dispose() }
+})
 
 test('typed bridge client：endpoint key 决定路径并序列化请求体', async () => {
   await withFetch(okResponse, async (calls) => {

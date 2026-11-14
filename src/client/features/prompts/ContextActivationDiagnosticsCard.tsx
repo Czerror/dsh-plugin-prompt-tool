@@ -1,6 +1,6 @@
 /** 上下文激活诊断卡（只读）：读取当前会话最近一次选择记录，解释候选/入选/已注入与真实拒绝原因。
- *  只在用户点击或挂载时读取一次，不触发求值、抽样或时间窗推进。 */
-import { memo, useCallback, useEffect, useState, type ReactNode } from 'react'
+ *  只在用户点击时读取一次，不触发求值、抽样或时间窗推进。 */
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { HostApiPort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -17,26 +17,38 @@ export const ContextActivationDiagnosticsCard = memo(function ContextActivationD
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(false)
+  const [diagnosedAt, setDiagnosedAt] = useState<number>()
+  const busy = useRef(false)
+  const generation = useRef(0)
+  const sessionId = store.api.currentSessionId()
+  useEffect(() => {
+    generation.current += 1
+    setRecords([]); setTruncated(false); setError(undefined); setDiagnosedAt(undefined); setLoading(false)
+    return () => { generation.current += 1 }
+  }, [sessionId])
 
   const refresh = useCallback(async (): Promise<void> => {
-    const sessionId = store.api.currentSessionId()
+    if (busy.current || sessionId === undefined) return
+    busy.current = true
+    const requestGeneration = generation.current
     setLoading(true)
     try {
-      const res = await bridgeCall('contextActivationDiagnostics', sessionId === undefined ? {} : { sessionId })
+      const res = await bridgeCall('contextActivationDiagnostics', { sessionId })
+      if (requestGeneration !== generation.current || store.api.currentSessionId() !== sessionId) return
       if (res.ok) {
         // 防御畸形载荷：只认数组记录，避免异常响应把整页渲染打断。
         setRecords(Array.isArray(res.value.records) ? res.value.records : [])
         setTruncated(res.value.truncated === true)
         setError(undefined)
+        setDiagnosedAt(Date.now())
       } else {
         setError(res.message ?? 'settings bridge unavailable')
       }
     } finally {
-      setLoading(false)
+      busy.current = false
+      if (requestGeneration === generation.current) setLoading(false)
     }
-  }, [store])
-
-  useEffect(() => { void refresh() }, [refresh])
+  }, [store, sessionId])
 
   return (
     <div className={ui.section}>
@@ -45,12 +57,14 @@ export const ContextActivationDiagnosticsCard = memo(function ContextActivationD
           <h2>{t('worldBookDiag.title')}</h2>
           <p>{t('worldBookDiag.hint')}</p>
         </div>
-        <Button shape="pill" variant="outline" size="md" disabled={loading} onClick={() => void refresh()}>
+        <Button shape="pill" variant="outline" size="md" disabled={loading || sessionId === undefined} onClick={() => void refresh()}>
           {t('worldBookDiag.refresh')}
         </Button>
       </div>
       {error !== undefined && <p>{t('worldBookDiag.failed', { reason: error })}</p>}
-      {error === undefined && records.length === 0 && <p>{t('worldBookDiag.empty')}</p>}
+      {diagnosedAt === undefined && error === undefined && <p>{t('diagnostics.never')}</p>}
+      {diagnosedAt !== undefined && <p>{t('diagnostics.ready', { time: new Date(diagnosedAt).toLocaleString() })}</p>}
+      {diagnosedAt !== undefined && error === undefined && records.length === 0 && <p>{t('worldBookDiag.empty')}</p>}
       {records.length > 0 && (
         <ul>
           {records.map((record, index) => (

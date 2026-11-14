@@ -12,6 +12,10 @@ function fakeSlots() {
   const registrations = []
   const unregisters = []
   const ctx = {
+    inject: (_services, callback) => {
+      const dispose = callback({ ...ctx, sidebarRightTabs: { register: () => () => { unregisters.push('tab-type') } } })
+      return { dispose }
+    },
     slots: {
       inject: (_name, callback) => callback(),
       register: (options, component) => {
@@ -23,22 +27,34 @@ function fakeSlots() {
   return { ctx, registrations, unregisters }
 }
 
-test('侧栏入口：只注册 sidebar.panellist，行点击直接打开抽屉（无 main 面板）', () => {
+test('原生入口：三面注册、会话绑定、右侧真实可见性与释放', () => {
   const fake = fakeSlots()
-  const face = { controller: {}, api: { marker: 'api' }, settings: { marker: 'settings' }, t: key => `t:${key}` }
+  const renders = []
+  const face = { t: key => `t:${key}`, renderWorkspace: props => { renders.push(props); return null } }
   const dispose = registerWorkbenchSlots(fake.ctx, face)
 
   const names = fake.registrations.map(entry => entry.options.name).sort()
-  assert.deepEqual(names, ['shell.overlay', 'sidebar.panellist'])
+  assert.deepEqual(names, ['conversation.view', 'main', 'sidebar.panellist', 'sidebar.right.pane.tab', 'sidebar.right.pane.tab.title'])
   const icon = fake.registrations.find(entry => entry.options.name === 'sidebar.panellist')
   assert.equal(icon.options.id, WORKBENCH_ENTRY_ID)
   assert.equal(icon.options.locale, 'prompt-tool')
   assert.equal(icon.options.label(), 't:app.title')
-  // 入口行为依赖注入的 open 回调（§12.1 允许这一项）。
-  assert.equal(typeof icon.options.inject().open, 'function')
+  const main = fake.registrations.find(entry => entry.options.name === 'main')
+  assert.equal(main.options.key, icon.options.id)
+  main.component({})
+  fake.registrations.find(entry => entry.options.name === 'conversation.view').component({ sessionId: 'session-a' })
+  const right = fake.registrations.find(entry => entry.options.name === 'sidebar.right.pane.tab')
+  right.component({ sessionId: 'session-b', useTabInfo: () => ({ tab: { visible: false } }) })
+  right.component({ sessionId: 'session-b', useTabInfo: () => ({ tab: { visible: true } }) })
+  assert.deepEqual(renders, [
+    { placement: 'main', visible: true },
+    { sessionId: 'session-a', placement: 'conversation', visible: true },
+    { sessionId: 'session-b', placement: 'sidebar', visible: false },
+    { sessionId: 'session-b', placement: 'sidebar', visible: true },
+  ])
 
   dispose()
-  assert.deepEqual([...fake.unregisters].sort(), ['shell.overlay', 'sidebar.panellist'])
+  assert.deepEqual([...fake.unregisters].sort(), [...names, 'tab-type'].sort())
 })
 
 test('侧栏入口图标：只画尺寸内的装饰图形，标签与可访问名归侧栏', () => {

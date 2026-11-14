@@ -83,14 +83,10 @@ Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 
     src/client/
     ├─ app/
     │  ├─ workbench/
-    │  │  ├─ FloatingTrigger.tsx
-    │  │  ├─ Workbench.module.css
-    │  │  ├─ WorkbenchOverlay.tsx
-    │  │  ├─ floating-trigger-position.ts
+    │  │  ├─ NativeWorkspace.tsx
+    │  │  ├─ native-workspace-state.ts
     │  │  ├─ register-workbench.tsx
-    │  │  ├─ workbench-face.ts
-    │  │  ├─ workbench-host-conventions.ts
-    │  │  └─ workspace-controller.ts
+    │  │  └─ WorkbenchSidebarEntry.tsx
     │  └─ workspace/
     │     ├─ PromptWorkspace.module.css
     │     ├─ PromptWorkspace.tsx
@@ -99,6 +95,7 @@ Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 
     │     ├─ pages/
     │     │  ├─ AudiencePage.tsx
     │     │  ├─ InjectionPointsPanel.tsx
+    │     │  ├─ ModulesWorkspacePage.tsx
     │     │  └─ layer-settings.module.css
     │     ├─ workspace-browse-state.ts
     │     └─ workspace-pages.ts
@@ -138,7 +135,9 @@ Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 
     │  ├─ use-module-config-order.ts
     │  ├─ use-prompt-tool-fields.ts
     │  ├─ use-prompt-tool-store.ts
-    │  ├─ use-rule-diagnostics.ts
+    │  ├─ rule-diagnostics-session.ts
+    │  ├─ WorkspaceStoreOwner.tsx
+    │  ├─ workspace-state.ts
     │  ├─ use-rule-editor.ts
     │  └─ workspace-drafts.ts
     ├─ features/
@@ -258,62 +257,60 @@ CSS 构建模块只收集样式数据；`styles.ts` 在入口 `ctx.effect` 中�
 2. 连接世代重建：`ctx.on('connection/reset')` 触发一次 `bridgeCall('models', { refresh: true })`，让宿主重连后丢弃陈旧的模型目录缓存；失败静默，不阻塞启动。
 3. prompt-tool ConfigForms transport：`configForms.get('prompt-tool')` 复用标准部署设置的镜像与写入队列；`mutate` 返回 false 必须显示保存失败，不推进保存基线。
 4. PromptToolHostApi，提供目录选择、打开路径与当前会话模型等宿主适配。`currentSessionId()` 经 `session-id-source.ts` 读 `ctx.uiSession.adapter.current` 的作用域绑定；当前会话模型经 `session-model-face` 读取并通过官方 `selectModel` 写回。官方会话预设投影与模块主语分离：模块主语由每次读写自己声明，不存在「切换模块」这个动作，因此不调用官方预设切换，也不订阅预设跟随。
-5. PromptToolWorkbenchFace：controller / api / settings / `t`。
-6. registerWorkbenchSlots(ctx, face)，唯一负责入口槽位的注册：`shell.overlay` 悬浮入口，以及左侧栏 `sidebar.panellist` 导航入口（行点击直接打开抽屉，不注册 `main`）。宿主行拦截与 `dsh-panel-activate` 面板互斥由 `app/workbench/workbench-host-conventions.ts` 的 adapter 拥有；slot 注册仍是入口本身。
+5. 创建唯一工作台数据 owner、可见入口状态与手动诊断 owner；数据组件只返回 null，不生成 DOM，未打开工作台时不读取完整编辑数据。
+6. registerWorkbenchSlots(ctx, face) 注册左侧主面板、右侧工作台和会话分页；face 只提供翻译与工作台渲染函数。主入口另外通过 `shell.overlay` 挂载无 DOM 的数据 owner，该槽不提供悬浮 UI。
 
-入口不直接导入页面、bridge endpoint 或业务卡片；宿主业务能力先扩展 data/host-api.ts 或 shared 契约。非官方宿主 DOM/事件约定（侧栏行结构、`dsh-panel-activate`）归 app/workbench/workbench-host-conventions.ts 的 adapter，不进入 host-api。
+入口不直接导入业务卡片；宿主业务能力由 data/host-api.ts 适配。导航交给官方槽位，不拦截宿主 DOM 点击或使用跨插件私有面板事件。
 
 ### 4.2 Slot 契约
 
 | 官方注册面 | id / key | 位置 | owner | 作用 |
 |---|---|---|---|---|
-| shell.overlay | prompt-tool-workbench | order 50 | WorkbenchOverlay | 可拖动悬浮触发器 + body portal 抽屉 |
-| sidebar.panellist | prompt-tool | order 60 | WorkbenchSidebarEntry | 左侧栏导航入口（官方 Global panel entries，与「插件」「自动化任务」「记忆系统」同一列表）；行点击直接打开抽屉 |
+| main + sidebar.panellist | prompt-tool | 侧栏 order 60 | register-workbench | 左侧原生导航与完整主面板成对注册 |
+| conversation.view | prompt-tool-workbench | order 20 | register-workbench | 当前会话的提示词工具分页 |
+| sidebar.right.pane.tab / .title | prompt-tool | keyed | register-workbench | sidebarRightTabs 注册的右侧工作台及标题 |
+| shell.overlay | prompt-tool-data | 无可见内容 | NativeWorkspaceData | 唯一插件级数据 owner；不渲染 DOM、图标或抽屉 |
 
-slot 使用 ctx.slots.inject() 等待官方槽位声明，再调用 ctx.slots.register()；注册随注入声明生命周期由 Cordis 回收（register-workbench.tsx 的组合 disposer 目前未使用）。左侧栏入口只注册 `sidebar.panellist`，**不注册同 key 的 `main`**：行点击由 `app/workbench/workbench-host-conventions.ts` 的 adapter 在冒泡阶段截获并打开抽屉，不会调用 `selectPanel`。代价是拦截失效（宿主行结构变化）时点击会触发 `selectPanel` 抛 `main panel "prompt-tool" is not registered`——这是有意保留的单一实现，不加重定向兜底。不要改变 id 或 inject face 的形状。宿主设置面板的 `settings.plugins.tab` 分区已移除：模块运行总闸只在工作台模块页设置（`modules.globalSwitch`）。
+slot 使用 ctx.slots.inject() 等待声明，再调用 ctx.slots.register()。右侧服务通过 ctx.inject 动态等待，其注册与释放归注入上下文；晚到不阻塞另外两个入口。左侧导航与 main 使用同 key，由宿主选择主面板。模块运行总闸只在工作台模块页设置，不另设 settings tab。
 
-悬浮入口声明 `locale: PROMPT_TOOL_NS`：slot 组件由此取得 typed `t` seat，并明确依赖官方 renderer 的 locale face。组件在渲染时取当前语言，不缓存模块级文案。
+入口声明 `locale: PROMPT_TOOL_NS`，组件在渲染时取当前语言，不缓存模块级文案。
 
 ### 4.2.1 文案归属（locale）
 
 - 用户可见文案统一归 `prompt-tool` 命名空间：zh 常量是唯一事实源，键类型由它派生，en 用 `Record<Key, string>` 强制键集一致；`register` 用官方类型化形式一次注册两种语言。文本量大的 feature 按 `locales.ts` / `locales-params.ts` / `locales-prompts.ts` / `locales-cards.ts` 分区，注册时在 `locales.ts` 合并成同一命名空间，不注册第二套框架。
-- 组件树很深，不逐层重建 i18n 上下文：入口组件用注入的 `t`，`PromptToolWorkbenchFace.t` 作为同一 bind 结果的稳定引用向下传递（页面与卡片按需加 `t` prop）。
+- 组件树很深，不逐层重建 i18n 上下文：入口组件用注入的 `t`，同一 bind 结果以稳定引用向下传递（页面与卡片按需加 `t` prop）。
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
-- 已迁移：工作台外壳与悬浮入口、左侧栏入口（label 经 locale thunk）、四页外壳、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、规则与人设区、模块页的素材区、自定义工具卡、导入预览卡。用户定义的规则与模块名称保持原值，不作为词条翻译。
+- 已迁移：工作台外壳、三个原生入口（label 经 locale thunk）、四页外壳、手动诊断、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、规则与人设区、模块页的素材区、自定义工具卡、导入预览卡。用户定义的规则与模块名称保持原值，不作为词条翻译。
 - 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。
 
 ### 4.3 入口与关闭行为
 
-- 左侧栏 `sidebar.panellist` 是官方 Global panel entries 的导航入口：**行点击由 `app/workbench/workbench-host-conventions.ts` 的 adapter 在冒泡到 React 根之前用原生监听拦截**，直接打开常驻抽屉，不触发 `selectPanel`/对话卸载（官方切 main 会整树卸载对话，本机单次观测约 2–3s）。不注册 `main` 面板；拦截依赖「图标位于行 button 内」，结构变化时 `closest('button')` 取不到，点击会由宿主 `selectPanel` 抛错（已知边界，不再做重定向兜底）。跨插件面板互斥（`taskboard`/`ssh` 的 `dsh-panel-activate`）也归同一 adapter。工作台实例只有抽屉里那一份，返回只是关闭抽屉，不切换 main、不重建对话或工作台。
-- `shell.overlay` 注册可拖动悬浮触发器：位置是纯客户端界面偏好（localStorage，`floating-trigger-position.ts`），窗口尺寸变化时按实际按钮尺寸夹回可见区；不读宿主 DOM 几何。
-- 拖动与单击以 4px 位移阈值区分：拖动结束吞掉尾随 click，单击与键盘仍开合；触发器打开 body portal 抽屉，抽屉与触发器分别用 fixed + z-index 1000 / 1100 置顶，不被宿主「对话/轨迹」顶部导航栏遮挡。
-- 关闭支持 Escape、点击背板与按钮切换，焦点在触发器与抽屉之间转移；抽屉打开时触发 PromptWorkspace.store.load()，关闭保留实例状态。
-- 官方右侧栏（`@deepseek-ai/dsh-client-ui-sidebar-right`）实测不适合本项目：已移除 tab type / keyed body 两段注册、`PromptToolTab` 与 `sidebarRightTabs` inject。
-- 插件不持久化工作台开关：悬浮抽屉开关是内存态，刷新回落。
+- 左侧栏由宿主选择同 key 的主面板；会话分页使用槽位传入的真实 sessionId。
+- 右侧工作台使用官方 tab 注册，读取 `useTabInfo().tab.visible`，不能用 signal 未中止或组件仍挂载替代可见性。
+- NativeWorkspace 将宿主可见性与 document 可见性合并，隐藏时卸载编辑视图；草稿与保存应答保留在独立数据 owner 中。
+- 同一会话的三个入口共享所选页、筛选、展开和滚动状态；业务正文不写 localStorage，刷新或卸载后不承诺恢复未保存正文。
+- 关闭入口或切页不自动诊断。只有模块页“诊断一次”动作发起一次请求，在途不叠发、不补刷、不自动重试。
 
-### 4.4 0.1.5 新能力采用面
+### 4.4 宿主能力采用面
 
-- 采用：shell.overlay 可拖动悬浮入口；Switch 与状态徽章由插件实现。
+- 采用：main、sidebar.panellist、conversation.view 和官方右侧工作台；Switch 与状态徽章由插件实现。
 - 已满足、无需接入：`host-open-in-app`。`PromptToolHostApi.openPath` 走 `remote.session.openWorkspacePath`，其契约就是宿主交给原生打开器；官方 `ui-open-in-app` 客户端包不提供跨插件服务，只是会话头部的分割按钮。
 - 不适用：`ctx.workspaceFiles` 只覆盖 workspace 根，插件的读写路径域是 DSH_HOME（模块）。
-- 不采用：官方右侧栏（`ui-sidebar-right`）实测不适合本项目，已移除（决策见 §4.3）；`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已在抽屉内就地编辑这些文件，重复呈现没有收益。
+- 不采用：`client-resources` 资源 tab 需要自建 provider 与第二个 tab 类型，而工作台已可就地编辑这些文件，重复呈现没有收益。
 
 ## 5. 工作台与页面信息架构
 
 ### 5.1 可见入口
 
-    悬浮入口（shell.overlay 可拖动触发器，位置存插件 localStorage）
-      └─ 完整工作台（body portal 抽屉）
+    左侧主面板 / 右侧工作台 / 会话分页
+      └─ 共享工作台内容与草稿
           ├─ 主会话
           ├─ 子代理
           ├─ 工具预览
           └─ 模块
 
-    左侧栏入口（sidebar.panellist「提示词工具」）
-      └─ 同一悬浮抽屉（行点击直接打开，无 main 切换、无第二份工作台）
-
-模块运行总闸位于模块页，不另设 settings tab。完整工作台由 PromptWorkspace 创建 store、保存当前页，并在打开时触发一次 load；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
+模块运行总闸与手动诊断位于模块页，不另设 settings tab。`app/workspace/pages/ModulesWorkspacePage` 组合模块管理与上下文激活诊断，feature 之间不互相导入。数据 store 由 WorkspaceStoreOwner 独立持有，PromptWorkspace 消费其快照；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
 
 模块的目录物化、复制、删除和参数由本插件维护；模块不进入官方 `agentPresets` 注册表，编辑目标不驱动官方会话预设切换。工具预览仍可只读官方 roster；默认值 `selectedDefault` / `defaultId` 不参与模块设置。
 
@@ -396,9 +393,9 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 | 状态 | Owner | 生命周期/规则 |
 |---|---|---|
-| 工作台抽屉开关 | workspace-controller | 工作台实例内存态；刷新回落 |
-| 当前顶层页 | PromptWorkspace | 工作台挂载期；不写 URL 或 localStorage |
-| fields、meta、catalog | usePromptToolStore | 工作台挂载期；打开时重新同步 |
+| 可见入口与会话绑定 | native-workspace-state | 只登记实际可见入口，隐藏右侧 tab 不改变操作会话 |
+| 当前顶层页与浏览状态 | native-workspace-state | 同会话跨入口共享；不写 URL 或 localStorage |
+| fields、meta、catalog | WorkspaceStoreOwner + usePromptToolStore | 一个插件级 store，非每会话一份；视图卸载保留，有效入口恢复时同步。模块草稿共用，指令正文仍按原 contextId 隔离；浏览状态按会话保存 |
 | 模块运行总闸 | 官方 ConfigForms | 规范键 modulesEnabled；关闭卸载贡献，不清盘 |
 | 当前会话模型 | session-model-face | 官方 sessions projection 生命周期 |
 | 模块编辑目标 | 每次调用声明（bridge 请求头） | 不是客户端会话状态；读与写都由 `x-module-id` 定位目录，写端点另用载荷 `expectedModuleId` 做一致性校验（不选路径），缺声明即无目标，不写部署设置、不决定启用集合 |
@@ -414,8 +411,8 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 | 导入预览与提交阶段 | use-import-preview-flow | 每次 `run()` 独立生命周期；卸载结束等待、不悬挂 Promise |
 | 创建意图、菜单、删除/导入确认、拖拽 | 对应 feature | 仍随页面卸载失效；不恢复或重放危险操作 |
 | 模板创建目标与发布结果 | template-rule-writer + rule-drafts | 目标意图归视图，显式 moduleId 写入、声明与结果接纳归数据侧；不依赖 owner/readback。共享草稿保存完整成功响应和发布状态，离页只抑制提示／展开，不丢已提交事实；未启用目标的状态仍仅存工作台会话，启用后沿既有 refreshOnly 重试 |
-| 保存队列、revision、草稿版本 | save-queue + store | 工作台挂载期 |
-| 规则判定计数与配置计数（状态栏「X/Y 规则 · A/B 模块 · N 不可用」） | `/rule-diagnostics` 只读端点 + 局部 hook | 数据就绪后读一次；`revision`（模块 + 启用位）变化时重读，否则启停模块后计数停在旧值。**只有首次读取（模块列表尚未回来）才用「读取中」顶替计数**：重载期间计数照旧显示、加载由状态点变灰表达——切模块或启停模块不该让计数消失。规则数 = 已启用模块里启用/全部配置卡（同一次响应顺带下发的 `configs`，读取失败则整段缺席、只留模块段），模块数 = `meta.modules` 的启用/全部；判定计数按「模块+规则+通道」聚合，取每个动作的最终判定（不按动作拆分），身份上限 512，超出只累加已有身份并把丢弃次数作为 `dropped` 下发（该字段保留给外部消费者与后续 UI，当前工作台不渲染）；账本随装配实例持有，`/rule-diagnostics` 只读当前实例，无实例/已释放时回空库，不串账；该段读取失败按 0 处理（不显示） |
+| 保存队列、revision、草稿版本 | save-queue + store | 独立数据 owner 生命周期，视图卸载不取消已发起保存 |
+| 手动诊断快照 | rule-diagnostics-session | 仅模块页按钮调用既有诊断接口；同连接共享 busy、结果与成功时间，重复点击不排队。配置或连接变化只标失效，失败保留旧成功结果；缺少 configs 明确不可用，dropped 非零时显示未保留记录数量。无计时器、打开刷新或自动重试。运行统计沿原全仓口径；释放和连接重置后旧响应不得标成当前有效结果。 |
 | 大文本和导入原文件 | 文件通道/bridge | 不进入 settings descriptor |
 
 不新增 React Context 来广播整个 store。页面通过 usePromptToolFields selector 订阅窄切片，叶子组件接收显式值与 callback。
@@ -430,8 +427,8 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 ### 6.2 首屏读取与更新
 
-    打开悬浮工作台抽屉
-      -> PromptWorkspace.store.load()
+    打开任一原生工作台入口
+      -> 激活独立 WorkspaceStoreOwner 并按需 store.load()
       -> bridgeCall("bootstrap") 聚合 descriptor、meta、变量和 promptConfigs
       -> fieldsFromView() 合并 value/base 与 moduleParams
       -> useRuleEditor() 去重读取 /rules，建立正文、settings、variables 的 revisions 基线
@@ -465,7 +462,7 @@ use-prompt-tool-store.ts 是唯一工作台 facade，负责把 ConfigForms mirro
 
 **消费方的依赖面按「端口」声明**：端口定义在 `src/client/data/store-ports.ts`（按域切：模块事实、草稿池、参数、变量、指令文件、规则编辑、模块动作、通知、模型、宿主面），每个端口对应一组同源成员。组件 props、内部 helper 参数与 hook 包装写**端口交叉**（如 `store: ModuleFactsPort & DraftsPort`），不再对 `PromptToolStore` 做 `Pick`——「这张卡需要哪些面」由端口名回答，测试桩也按端口写。判别力仍是单向的：`typecheck` 抓得住"少给端口"或"端口的成员没实现"，抓不住"多要一个端口"，所以只取实际用到的端口靠逐处核对。新增卡片时先在 `store-ports.ts` 找端口，找不到再考虑新端口（而不是回退到 Pick 大接口）。
 
-**切页与退出时保存**：`store.persistBeforeLeave()` 在切页（`PromptWorkspace.changePage`）与退出工作台（`onClose`）时调用，只覆盖 store 能触及的两个域——**全局开关与指令文件**。**规则草稿不在此列**：它的保存入口是各模块的 rule editor 实例（组件层按 moduleId 现建），store 拿不到；它按 moduleId 留在内存里、不会因离开而丢，且有自己的显式保存。失败只提示一次并保留脏标记，**不阻断**离开。Escape/backdrop 只是收起抽屉、不等于收工，不触发保存。
+**切页与离开时保存**：`store.persistBeforeLeave()` 只覆盖全局开关与指令文件；规则草稿由各模块 rule editor 负责并保留原有保存入口。视图卸载后草稿和已发起保存仍由数据 owner 持有，失败保留输入和恢复入口，不以卸载丢弃用户编辑。
 
 可独立测试的逻辑放在以下模块：
 
@@ -709,7 +706,7 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 
 展开指令卡后，「本层设置」提供**一个全局**的 `instructionHint`（指令路径提示）开关——指令卡是全局段、不属于任何模块，该开关写存储根 `config.yml` 的 `layerSettings`（`/param-overrides` 不带主语头）。`injectionPointSlots.renderInstructionSettings` 只装配既有 `EngineParamField`（`global` 主语），不依赖普通 pre-step 规则卡存在、也不随启用模块数量变化。有效值的优先级是**模块显式键 ＞ 全局键 ＞ 引擎默认**（存在即覆盖，`false` 也算显式），判据与合并只在 `src/host/module-params.ts#resolveModuleParams` 一处；模块总闸关闭或全局值尚未读回时禁用。指令正文仍只允许原文件正文编辑，普通注入参数继续锁定，文件级启停仍写独立策略。
 
-上下文激活是提示词策略筛选，不承载引擎设置（只读诊断卡只在 `context-activation` 视图显示）；自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。配置卡及设置内容可随筛选和折叠卸载，未保存资产与字段草稿由既有共享草稿池保留；工具读取与创建由页面所有者承载，保存失败保留原输入。
+上下文激活是提示词策略筛选，不承载引擎设置。`ContextActivationDiagnosticsCard` 集中在模块页，仅其专用手动按钮请求上下文激活诊断；挂载、筛选或普通“诊断一次”按钮都不触发该请求，避免一次点击产生两个诊断 HTTP 调用。自定义工具编辑器按 `custom-tools` 编辑组归位到 tool-pipeline 层。配置卡及设置内容可随筛选和折叠卸载，未保存资产与字段草稿由既有共享草稿池保留；工具读取与创建由页面所有者承载，保存失败保留原输入。
 
 搜索统一覆盖「中文名 + 技术键」，且只影响展示：规则按自身定义及层设置匹配，真实层装配通过既有 `matchesEditorGroup` 与分组标题判定设置匹配，匹配时保留同层承载实例，展开后隐藏未命中的组。没有实例的层不会因为设置命中而生成卡片。批量启停作用于当前可见规则集合；旧快捷参数的 `fieldSources` 不再锁定规则或排除其编辑能力。清空搜索恢复原列表，不创建配置或保存。
 
@@ -748,12 +745,12 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 ### 9.3 Dialog、表单与排序
 
 - DialogSurface/TemplatePicker 使用 body portal、backdrop、Escape、首控件聚焦、Tab/Shift+Tab 循环、关闭后焦点恢复、role=dialog 和 aria-modal。
-- 工作台抽屉（shell.overlay，role=dialog + aria-modal）在抽屉内提供首尾 Tab 循环，复用 dialog-focus 的 `FOCUSABLE` / `nextDialogFocusIndex`；焦点位于 body portal 弹窗内时由弹窗自身循环接管，抽屉不拦截。
+- 工作台是宿主原生页面，不声明模态语义或圈住整页焦点；必要的业务弹窗仍由共享 DialogSurface 管理焦点循环。
 - 弹窗只操作自己的 ref，不查询宿主页面结构。
 - 数值输入在提交点解析，草稿期保留字符串，避免输入中间态跳动。
 - 提示词排序同时提供 pointer drag 与上移/下移键盘替代；边界按钮有明确 aria-label。
 - reduced-motion 下关闭平移和过渡；focus-visible 必须清晰。
-- 外层抽屉和工作台壳使用overflow: clip；程序化定位只滚动canvas，不能把页头和导航滚出固定面板。
+- 工作台壳限制内容溢出，程序化定位只滚动 canvas；窄侧栏按容器宽度使用单列与自然换行。
 
 ### 9.4 模块参数命名与说明
 
@@ -766,7 +763,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 - 字段错误、只读警告、保存状态和空状态不是帮助说明，继续就地显示，不藏入 Tooltip。
 - 系统提示段动作保留显式参数；`RuleSteps` 的 persona 动作由 `features/prompts/ModulePersonaCard.tsx` 呈现受控字段，只修改所属规则草稿，沿 `/rules` 事务保存。prefix/suffix 分别支持省略与显式空串，complete/includeRuntimeContext 保留省略、false、true 三态；受众可选主会话、子代理或两者。没有独立正文、来源下拉或版本 owner。字段按内容宽度排列，窄容器自然换行。
 
-默认身份接管复用人设动作的 `stripDefaultIdentity` 字段与规则卡：启用意图来自规则定义，可用性来自既有 `/rule-diagnostics` 的真实装配观测。开启工作台时定时刷新，复用最新优先请求序号，不持久化观测；只接纳当前目标、已保存版本且无正文草稿变化的结果。成功来源发布及释放使旧身份观测失效，启停哈希回环也需重判；按动作和真实 Agent 记录，正常未选分支不抵消有效成功，实际失败保持可见。关闭和未经验证不显示成功，匹配失效不冒充条件缺事实计数；中英文同步。
+默认身份接管复用人设动作的 `stripDefaultIdentity` 字段与规则卡：启用意图来自规则定义，可用性来自模块页手动取得的 `/rule-diagnostics` 装配观测快照，不在打开工作台时自动刷新。观测不持久化，显示最近成功时间；只接纳当前目标、已保存版本且无正文草稿变化的结果。成功来源发布及释放使旧身份观测失效，启停哈希回环也需重判；按动作和真实 Agent 记录，正常未选分支不抵消有效成功，实际失败保持可见。关闭和未经验证不显示成功，匹配失效不冒充条件缺事实计数；中英文同步。
 
 结果片段沿 `RuleParameterFields` 的 `tool-result/action: edit-text` 编辑，`edits` 使用原JSON字段；装配替句的候选数组沿 `RuleSurfaceFields` 使用JSON字段，保留逗号、换行及空替文，不转成标签列表。切到edit-text清理互斥的顶层text及草稿，初始match/text留空；切回其它模式清理edits及草稿，accept不补造text，replace/block沿原空正文编辑。非法或未完成JSON继续留在同一fields池并阻止保存，不影响读取额度的实际值、继承空值与Tooltip。结果规则的 `tool:results` 诊断复用RuleCard当前目标与已保存definitionRevision过滤；旧版本或未保存草稿不显示为当前成功。界面开关表示启用意图，不保证early或真实结果owner就绪；浏览器与CLI/Web真实验收另行统一执行。
 
@@ -776,7 +773,6 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 
 样式使用 CSS Modules 和 DSH 语义 token，当前 owner 为：
 
-    app/workbench/Workbench.module.css
     app/workspace/PromptWorkspace.module.css
     ui/controls.module.css
     ui/HintTooltip.module.css
@@ -796,9 +792,9 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 
 - 组件移动时同步移动其独占 selector；共享 selector 必须对应稳定的真实共享形态。
 - 主题颜色只使用 `--dsw-alias-*`；普通控件圆角复用官方 `--dsw-radius-*`，字体、间距和动效由插件共享层持有，不复制宿主静态色板，不写 :root 主题。窗口 chrome 避让继续消费官方布局公开的 `--dsh-*` 几何变量，不读取宿主 DOM。
-- 整条窗口标题栏由宿主持有：抽屉层与模态遮罩通过 `--dsh-frame-chrome-top` 从标题栏下沿开始绘制，抽屉阴影裁剪在该层内；内容不再重复累加标题栏高度。全屏时该值归零，Web 未定义时回退 0，安全区和 macOS 行内避让保留。
+- 整条窗口标题栏和面板几何由宿主持有，原生工作台填充槽位，不自建覆盖聊天区的抽屉。业务模态遮罩继续消费 `--dsh-frame-chrome-top`，内容不重复累加标题栏高度。
 - feature CSS 不选择宿主 class、id 或页面结构。
-- 中性平面边框使用 0.5px；高层浮层用 alias 颜色组合自有阴影。悬浮入口抽屉/触发器使用 body portal 的 1000 / 1100 层级，不叠加无意义的中性 border。
+- 中性平面边框使用 0.5px；必要的业务浮层用 alias 颜色组合自有阴影，不叠加无意义的中性 border。
 - 圆形和胶囊与 corner-shape: round 配对。
 - 动画提供 prefers-reduced-motion 分支；不新增组件专用全局滚动条规则。
 - 页面级垂直节奏只有一档：主会话根容器 `.page`（features/prompts）与子代理根容器 `.section`（ui/controls）同为 12px；工具栏到首张卡之间不插入空的公共配置或模块列表容器，避免空 flex 子项叠加间距。
@@ -829,7 +825,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 | 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层写/删键/空层回收与优先级）、`test/host/skill-seed.test.mjs`（内置技能只补缺失、不覆盖用户副本）、`test/client/instruction-editor.test.mjs`（指令文件逐文件保存结果、在途会话变化、策略 revision 乐观并发） |
 | bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/publication-state.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（固定卡接线、请求主语与渲染链路，含 layer-cards、instruction-cards） |
 | 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs` |
-| UI slot / 入口注册 | `test/client/workbench-sidebar-entry.test.mjs`、`test/client/workbench-host-conventions.test.mjs`（槽位注册与释放）、`test/host/entry-surface.test.mjs`（发布导出与真实依赖门）、`test/host/tui-settings-section.test.mjs`（字段与disposer）；`test/client/rule-facts.test.mjs` 覆盖受众可见性这一渲染入口行为，不锁具体data-*形态 |
+| UI slot / 入口注册 | `test/client/workbench-sidebar-entry.test.mjs` 覆盖三面注册、会话、可见性及释放；`test/host/entry-surface.test.mjs` 覆盖发布导出与依赖门；`test/host/tui-settings-section.test.mjs` 覆盖字段与 disposer；`test/client/rule-facts.test.mjs` 覆盖受众可见性，不锁内部 data-* 形态 |
 
 **安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。
 

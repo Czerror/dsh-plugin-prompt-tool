@@ -25,7 +25,6 @@ import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleCard } from './RuleCard.tsx'
-import { useRuleDiagnostics } from '../../data/use-rule-diagnostics.ts'
 import { useTemplateCreate } from './useTemplatePicker.tsx'
 import { TemplateTargetPicker } from '../../ui/TemplatePicker.tsx'
 import type { ModuleCreateItem } from '../modules/EngineModuleList.tsx'
@@ -72,7 +71,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const owners = useModuleRuleEditors(store, ownerIds)
   ownersRef.current = owners
   const revisions = JSON.stringify(owners.map(owner => [owner.moduleId, owner.draft.revisions?.settings]))
-  const diagnostics = useRuleDiagnostics(ownerIds.length > 0, revisions)
   const [discard, setDiscard] = useState<string>()
   const dragId = useRef<string>()
   /** 拖拽落点：身份键 + 指针是否落在卡片上半区（半高判据，恢复 41ce6b36 的原始设计）。 */
@@ -240,7 +238,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
           }}>
           <RuleCard t={t} entry={entry} draft={draft} editor={editor} meta={store.meta} source={id} moduleId={id} disabled={readOnly(id)} expanded={expanded === key} onToggle={() => toggle(key)} onDuplicate={() => duplicate(row, entry.value)}
             expandedRows={store.editorDrafts.expanded}
-            diagnostics={diagnostics.records}
             headerActions={orderEntry && <><HintTooltip label={slotPinned(orderEntry) ? t('rules.orderPinnedHint') : t('card.dragHint')}><button type="button" className={ui.dragHandle} disabled={sortDisabled || !!query} draggable={!sortDisabled && !query} aria-label={t('card.dragHint')} aria-keyshortcuts="ArrowUp ArrowDown"
               onDragStart={event => { dragId.current = configIdentityKey(orderEntry); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dragId.current) }} onDragEnd={() => { dragId.current = undefined }}
               onKeyDown={event => { if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return; event.preventDefault(); const peers = orderPeers(orderEntry), index = peers.findIndex(item => configIdentityKey(item) === configIdentityKey(orderEntry)); const target = peers[index + (event.key === 'ArrowUp' ? -1 : 1)]; if (target) void saveOrder(configIdentityKey(orderEntry), configIdentityKey(target), event.key === 'ArrowUp') }}>⋮⋮</button></HintTooltip>{moveButtons(orderEntry)}</>}

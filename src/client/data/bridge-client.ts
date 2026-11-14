@@ -12,6 +12,8 @@ import {
   postBridge,
   uploadBridge,
 } from './bridge-transport.ts'
+import { configurationChanged } from './bridge-mutations.ts'
+export { subscribeConfigurationChanges } from './bridge-mutations.ts'
 
 /** 对外名与契约保持一致，不新增第二套语义。 */
 export type BridgeKey = BridgeEndpointKey
@@ -45,7 +47,10 @@ export function bridgeCall<K extends BridgeKey>(endpoint: K, ...args: [unknown?,
     return Promise.resolve(missingSubject)
   }
   // 顶层附加字段按端点填（`BridgeExtrasOf`）：transport 自己不认端点，只把它们透传上来。
-  return postBridge<BridgeValueMap[K], BridgeExtrasOf<K>>(BRIDGE_ENDPOINTS[endpoint], body, blank ? undefined : subject)
+  return postBridge<BridgeValueMap[K], BridgeExtrasOf<K>>(BRIDGE_ENDPOINTS[endpoint], body, blank ? undefined : subject).then(result => {
+    if (result.ok || 'persisted' in result && result.persisted === true) configurationChanged(endpoint, body)
+    return result
+  })
 }
 
 export function bridgeUpload(file: Blob, fileName: string): Promise<BridgeResponse<'assetUpload'>> {

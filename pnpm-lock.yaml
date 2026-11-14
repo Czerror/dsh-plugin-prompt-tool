@@ -494,6 +494,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-sidebar-0.2.2-rc.2.tgz
         version: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-sidebar-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))
+      '@deepseek-ai/dsh-client-ui-sidebar-right':
+        specifier: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-sidebar-right-0.2.2-rc.2.tgz
+        version: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-sidebar-right-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-slots-0.2.2-rc.2.tgz
         version: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-slots-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))
@@ -943,6 +946,12 @@ packages:
 
   '@deepseek-ai/dsh-client-ui-settings@file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-settings-0.2.2-rc.2.tgz':
     resolution: {integrity: sha512-fPRBtKj8ubGqrMx7jDYvSQZrMLqPOCLxQbE+fgHjvm4aneo8ZwcXO8GkmriCHVm9ueMV/w57Qkvvf3vqYsW4SQ==, tarball: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-settings-0.2.2-rc.2.tgz}
+    version: 0.2.2-rc.2
+    peerDependencies:
+      '@deepseek-ai/cordis': ~4.1.0
+
+  '@deepseek-ai/dsh-client-ui-sidebar-right@file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-sidebar-right-0.2.2-rc.2.tgz':
+    resolution: {integrity: sha512-lcLTu6JCE6d389PBmuZ0cTyTG37xcmC6CaF3eBG50LvHrRrn0UOrjdCwV/08afoDXY6QMx1m8Jlj6zo43PVrjQ==, tarball: file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-sidebar-right-0.2.2-rc.2.tgz}
     version: 0.2.2-rc.2
     peerDependencies:
       '@deepseek-ai/cordis': ~4.1.0
@@ -3411,6 +3420,10 @@ snapshots:
     dependencies:
       '@deepseek-ai/cordis': file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9)
       '@deepseek-ai/schemastery': file:.scratch/harness/packages/deepseek-ai-schemastery-3.19.0.tgz
+
+  '@deepseek-ai/dsh-client-ui-sidebar-right@file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-sidebar-right-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))':
+    dependencies:
+      '@deepseek-ai/cordis': file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9)
 
   '@deepseek-ai/dsh-client-ui-sidebar@file:.scratch/harness/packages/deepseek-ai-dsh-client-ui-sidebar-0.2.2-rc.2.tgz(@deepseek-ai/cordis@file:.scratch/harness/packages/deepseek-ai-cordis-4.1.0.tgz(node-addon-require-builtin@0.1.9))':
     dependencies:

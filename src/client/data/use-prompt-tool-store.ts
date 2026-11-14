@@ -106,7 +106,9 @@ function waitForScope(scope: ConfigForm<Record<string, unknown>>): Promise<Confi
   })
 }
 
-export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport): PromptToolStore {
+export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport, active = true): PromptToolStore {
+  const activeRef = useRef(active)
+  activeRef.current = active
   const editorDrafts = useRef(createWorkspaceDrafts()).current
   const [modelCatalog, setModelCatalog] = useState<Record<string, string[]>>({})
   const [modelReasoning, setModelReasoning] = useState<Record<string, ModelReasoningView>>({})
@@ -195,6 +197,9 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const moduleSaveQueueRef = useRef(createSerialTaskQueue())
   const loadSeqRef = useRef(0)
   const metaSeqRef = useRef(0)
+  const loadInFlightRef = useRef(new Map<string | undefined, Promise<Fields>>())
+  const loadedSessionRef = useRef<string | undefined>()
+  const hasLoadedRef = useRef(false)
   /** 用户草稿版本：patch 时递增。load 应答返回时若版本变化，跳过覆盖，避免
    *  保存后的静默刷新吞掉用户在读取期间的编辑。 */
   const draftVersionRef = useRef(0)
@@ -323,11 +328,16 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   }, [])
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
+    if (!activeRef.current) return fieldsRef.current
+    const sessionKey = api.currentSessionId()
+    const existing = loadInFlightRef.current.get(sessionKey)
+    if (existing !== undefined) return existing
+    const operation = (async (): Promise<Fields> => {
     // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
     const seq = ++loadSeqRef.current
     const metaSeq = ++metaSeqRef.current
     const draftVersion = draftVersionRef.current
-    const sessionId = api.currentSessionId()
+    const sessionId = sessionKey
     // silent：保存后静默刷新（不闪 loading、避免重渲染风暴与滚动跳动）；失败仍报错。
     if (!options?.silent) setLoading(true)
     try {
@@ -393,6 +403,8 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       })[0]
       if (pendingPublication) showNotice('error', pendingPublication)
       else clearNotice()
+      loadedSessionRef.current = sessionId
+      hasLoadedRef.current = true
       return fieldsRef.current
     } catch (error) {
       if (seq === loadSeqRef.current && sessionId === api.currentSessionId() && draftVersionRef.current === draftVersion) showNotice('error', '读取失败：' + errorMessage(error))
@@ -400,18 +412,29 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     } finally {
       if (seq === loadSeqRef.current && !options?.silent) setLoading(false)
     }
+    })()
+    loadInFlightRef.current.set(sessionKey, operation)
+    try { return await operation } finally { loadInFlightRef.current.delete(sessionKey) }
   }, [api, applyView, assembledModule, clearNotice, editorDrafts, publishDrafts, settings, showNotice, variablesDraftFor])
 
   // 挂载即后台拉取模型目录（不阻塞工作台首屏；10min 缓存兜底重复打开）。
   useEffect(() => {
+    if (!active) return
     void loadModels()
-  }, [loadModels])
+  }, [active, loadModels])
 
   // 会话 id 晚于工作台首次打开就绪时（页面加载、会话恢复）补一次加载。
   // ui-session 的作用域绑定要等主视图 retain 该会话之后才有值（官方 publishMain
   // 以 retainedBy.mainView > 0 为准），否则首屏会一直停在「只有全局文件」的范围，
   // 直到用户关掉工作台重开。
-  useEffect(() => api.subscribeSessionChange(() => { void load() }), [api, load])
+  useEffect(() => {
+    if (!active) return
+    return api.subscribeSessionChange(() => {
+      const sessionId = api.currentSessionId()
+      if (!hasLoadedRef.current) return
+      if (sessionId !== loadedSessionRef.current) void load()
+    })
+  }, [active, api, load])
 
   // 目录就绪后补查当前会话与宿主默认路由的推理档位。
   // 只查这几条可见路由：不遍历整个目录，也不把目录当授权白名单。

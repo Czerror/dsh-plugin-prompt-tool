@@ -1,4 +1,4 @@
-/* 工作台只有 canvas 一个主滚动根；页面响应以抽屉内容宽度为准。 */
+/* 工作台只有 canvas 一个主滚动根；页面响应以宿主容器宽度为准。 */
 .shell {
   container: workspace / inline-size;
   box-sizing: border-box;
@@ -31,8 +31,6 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
-  /* 标题栏让位只做一次，由 Workbench .drawerLayer 的 inset 负责。
-     这里不重复叠加标题栏高度；总高 40px 与官方会话头对齐。 */
   padding: 6px 16px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
@@ -48,11 +46,6 @@
 /* 计数块与通知各自独立：既不被通知挤压，也不参与伸缩（加载点变灰单独表达加载中）。 */
 .statusCluster { display: flex; min-width: 0; flex: none; align-items: center; gap: 8px; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 .statusCluster > span:last-child { overflow-wrap: anywhere; }
-
-.backButton {
-  flex: none;
-  margin-left: auto;
-}
 
 .topNavigation { display: flex; min-width: 0; flex: 0 0 auto; padding: 0 16px; background: var(--dsw-alias-bg-base); }
 .nav { display: flex; min-width: 0; flex: 1; align-items: stretch; gap: 4px; overflow-x: auto; overscroll-behavior-inline: contain; border-bottom: 0.5px solid var(--dsw-alias-border-l2); padding: 4px 2px; }
@@ -71,6 +64,14 @@
   .topNavigation { padding-inline: 12px; }
   .nav button { padding-inline: 10px; }
   .canvas > div { padding: 14px 12px 16px; }
+}
+
+@container workspace (max-width: 460px) {
+  .brand { flex-basis: 100%; }
+  .nav { flex-wrap: wrap; gap: 2px; }
+  .nav button { flex: 1 1 auto; justify-content: center; padding-inline: 8px; }
+  .canvas > div { padding-inline: 10px; }
+  .mastheadNotice { flex-basis: 100%; white-space: normal; }
 }
 
 @media (pointer: coarse) {

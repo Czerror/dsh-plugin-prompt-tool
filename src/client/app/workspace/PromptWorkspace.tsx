@@ -1,30 +1,29 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
-import { usePromptToolStore, type PromptToolSettingsTransport } from '../../data/use-prompt-tool-store.ts'
-import type { PromptToolWorkspaceController } from '../workbench/workspace-controller.ts'
-import { ModulesPage } from '../../features/modules/ModulesPage.tsx'
+import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
+import type { WorkspaceViewState } from '../workbench/native-workspace-state.ts'
+import type { RuleDiagnosticsSession } from '../../data/rule-diagnostics-session.ts'
+import { ModulesWorkspacePage } from './pages/ModulesWorkspacePage.tsx'
 import { ToolsPreviewPage } from '../../features/tools/ToolsPreviewPage.tsx'
 import { AudiencePage } from './pages/AudiencePage.tsx'
 import { WorkspaceFrame } from './WorkspaceFrame.tsx'
 import type { WorkspacePage } from './workspace-pages.ts'
-import { configPageBrowse, createWorkspaceBrowseState } from './workspace-browse-state.ts'
+import { configPageBrowse } from './workspace-browse-state.ts'
 
 export interface PromptWorkspaceProps {
-  api: PromptToolHostApi
-  settings: PromptToolSettingsTransport
-  /** 悬浮入口抽屉的开关。 */
-  controller: PromptToolWorkspaceController
+  store: PromptToolStore
+  sessionId?: string
+  view: WorkspaceViewState
+  diagnostics: RuleDiagnosticsSession
   /** 命名空间翻译函数（调用时读当前语言）。 */
   t: PromptToolTranslate
-  onClose: () => void
 }
 
 export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const { t } = props
-  const store = usePromptToolStore(props.api, props.settings)
-  const [page, setPage] = useState<WorkspacePage>('features')
-  const browse = useRef(createWorkspaceBrowseState()).current
+  const { store, view } = props
+  const page = useSyncExternalStore(view.subscribe, view.getSnapshot, view.getSnapshot)
+  const browse = view.browse
   const [focusPage, setFocusPage] = useState(0)
   const [readyPage, setReadyPage] = useState<WorkspacePage>()
   const changePage = (target: WorkspacePage): void => {
@@ -34,7 +33,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       // rule editor 自己负责）。不 await、不阻断：失败由入口自己提示，草稿仍在内存里。
       void store.persistBeforeLeave()
     }
-    setPage(target)
+    view.select(target)
   }
   const markReady = useCallback(() => setReadyPage(page), [page])
   const navigate = (target: WorkspacePage): void => {
@@ -43,23 +42,20 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   }
   // 页面与滚动 key 只认页面 id：主语由每张卡自报，页面不再随任何模块重挂。
   const scrollKey = page
-  const open = useSyncExternalStore(
-    props.controller.subscribe,
-    props.controller.getSnapshot,
-    props.controller.getSnapshot,
-  ).open
-
   useEffect(() => {
-    if (open) void store.load()
-  }, [open, store.load])
+    void store.load()
+  }, [props.sessionId, store.load])
+  const latestStore = useRef(store)
+  latestStore.current = store
+  useEffect(() => () => { void latestStore.current.persistBeforeLeave() }, [])
 
   const content = page === 'features'
     ? <AudiencePage store={store} audience="main" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
     : page === 'subagent'
       ? <AudiencePage store={store} audience="subagent" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
       : page === 'tools'
-        ? <ToolsPreviewPage api={props.api} presetId={props.api.sessionPreset.snapshot()} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
-        : <ModulesPage store={store} t={t} onReady={markReady} />
+        ? <ToolsPreviewPage api={store.api} presetId={store.api.sessionPreset.snapshot()} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
+        : <ModulesWorkspacePage store={store} diagnostics={props.diagnostics} t={t} onReady={markReady} />
 
   return (
     <WorkspaceFrame
@@ -71,7 +67,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       scrollPositions={browse.scroll}
       focusPage={focusPage}
       contentReady={page !== 'modules' && page !== 'tools' || readyPage === page}
-      onClose={() => { void store.persistBeforeLeave(); props.onClose() }}
     >
       {content}
     </WorkspaceFrame>
