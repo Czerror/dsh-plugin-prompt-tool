@@ -1,190 +1,197 @@
 # 模块参考
 
-由 `SKILL.md` 的指针进入：挑条件、挑动作、查层字段、查模块名与参数时读它。
+按任务读取对应章节。路径均相对实际插件包根；技能复制目录不等于包根。包内契约优先于本摘要，查一个问题只展开对应文件。
 
-权威来源是源码：`engine/rule-spec.mjs`、`engine/conditions/`、`engine/actions/catalog.mjs`、
-`engine/schema.mjs` 都在**插件包内**；参数表的源头是 `src/shared/engine-params.ts`（只有源码仓库里有，
-装态对应 `lib/` 的编译产物）。本文件是摘要，**冲突时以源码为准**。
+## 契约入口
 
-**这些路径相对插件包根，不在本技能目录下。** 技能随包分发、装在 `$DSH_HOME/skills/dsh-module/`，
-而 `engine/`、`modules/`、`templates/` 在插件包里。包名 `dsh-plugin-prompt-tool`，定位用环境变量
-`$env:DSH_PROFILE_DIR`（bash 里读 `$DSH_PROFILE_DIR`）——包就在它的 `node_modules/` 下。读包内文件用
-**文件读取工具**：Desktop 部署下包可能落在 `app.asar` 里，shell、glob、grep、node 都打不开它。
-找不到包时用本摘要说明边界；需要确认未列出的能力时读取实际安装契约，不猜测支持。
+| 要确认的事实 | 随包入口 |
+|---|---|
+| 条件名称与字段 | `engine/conditions/index.mjs` 的 `PREDICATE_FACTORIES`，再读对应条件文件 |
+| 执行点能取得的事实 | `engine/conditions/subject.mjs` 的 `CHANNELS`、`channelTextSubjects`、`channelFactSubjects` |
+| 动作字段、执行点、降级 | `engine/actions/catalog.mjs` 的 `ACTION_KINDS`；最小形状见 `engine/actions/examples.mjs` |
+| 注入层、策略、字段矩阵 | `engine/schema.mjs` 的 `getEngineMeta()`，或运行实例的 bridge `/meta` |
+| 规则候选校验 | `engine/rule-spec.mjs` 的 `compileRules`；运行中用规则工具的 `validateOnly` |
+| 宿主控制的作用域与值 | `engine/host-control-catalog.mjs` 及它引用的 validator |
+| 能力行与行级默认配置 | `engine/compositions/source/local/`；模块实例见 `modules/` |
+| 共享参数的键、类型与磁盘归属 | 工作台参数信息；离线只读检索 `lib/index.mjs` 中的 `ENGINE_PARAM_DEFINITIONS` |
+| 声明样例 | `templates/`（通常是一条规则，合入 rules）；自定义工具见 `templates/tools/` |
 
-## 一、条件谓词（`if` 里能写什么）
+源码 checkout 的参数权威文件为 `src/shared/engine-params.ts`。npm 包不包含 `src/`、`docs/`、根 `module.yml` 或开发 `scripts/`；安装环境按上表查，读取编译产物只用于核对，不编辑它。无法读取包或运行契约时，报告缺项，不猜未列出的能力。
 
-`if` 是**单键节点**：要么组合算子，要么一个谓词。缺省即无条件。
+## 条件与事实
 
-组合算子：`all` / `any`（非空数组）、`not`（单节点）、`notAny`（非空数组）。
+`if` 是单键节点：一个谓词，或 `all/any/notAny` 的非空数组、`not` 的单节点。省略 if 才表示无条件。只有严格 true 执行 then，已知 false 才走 else；必要事实不可用时两支都不执行。
 
-| 谓词 | 字段 | 语义与边界 |
-|---|---|---|
-| `text` | `keys` / `secondaryKeys`，或单独 `minChars` / `maxChars`（含端点的非负安全整数）；`logic`（any/all/not/notAny）；`mode`（scan/prefix）；`caseSensitive`；`wholeWords`；`useRegex`；`wordBoundary`；`subject` | 关键词与长度同时声明时取交集，minChars 不得大于 maxChars；userMessage 读取本批全部真实用户文本。动作级条件必须声明本通道可用的 subject；缺事实不执行 |
-| `phase` | `promoted`（缺省 `true`＝只匹配已晋升；`false`；`'ignore'` 必须同时写 `compacted`）；`compacted`；`promoteOn`（`either`/`tool-call`/`assistant-message`）；`includeSubagents`（缺省 false＝子代理视为已晋升）；`promoteGate` + `reasoningPattern`/`reasoningNegativePattern`/`reasoningFlags`；`maxPromoteSteps`；`promoteAfterFirstResponse` | 晋升相位。**单个节点表达不了「两个相位都命中」**，用 `any` 拼 `{promoted: true}` 与 `{compacted: true, promoted: false}` |
-| `source` | `kind` / `plugin`（字符串或字符串数组，两个都写是**合取**）；`caseSensitive`（缺省 true）；`match`（`exact` 缺省 / `prefix`） | 消息来源。列举多值要析取时用 `any` 显式写两支 |
-| `count` | `of`（`tool-call`/`tool-result`/`assistant-message`/`assistant-chars`/`user-message`/`turn`）；`per`（`session` 缺省 / `turn`）；`min` / `max` / `every`（**至少写一个**，否则恒真）；`includeCurrent`；`delegated` | 消息类信号按可见历史；tool-call/turn 按完整日志，冷启动按相同视图重建 |
-| `names` | `allow` / `deny`；`caseSensitive`（缺省 true） | 名称名单：工具名（工具通道）、子代理 provider（`subagent/start`、`subagent/end`） |
-| `session` | `type`（事件类型，如 `user/message`）；`present`（缺省 `false`＝该事件还没有）；`delegated` | 会话态。判「首轮」用 `{type: user/message, present: false}` |
-| `preset` | `presetId` | 当前**挂载**的官方会话预设；取不到时返回 `UNAVAILABLE`（不乐观放行） |
-| `scope` | `audience`（`main`/`subagent`）；`modelScope`（`all` 缺省 / `pro` / `flash`） | 动态受众与模型范围条件；persona 的可选 audience 另限定动作目标 |
-| `anchor` | `subject`（userMessage/assistantReasoning/assistantText/toolResult，缺省 assistantReasoning）；`keys`；scan 模式可选既有匹配选项；`after: { action: seed }`；可选正整数 `fallbackAfter` | 当前可见已结算消息确认；缺省 prefix 只按 keys 作 ASCII 忽略大小写的字面前缀匹配，显式 secondaryKeys/caseSensitive/wholeWords/useRegex/logic/wordBoundary 一律拒绝，需这些选项时用 scan。关联只看同规则动作实际投递后的输出；第 N 个含所选内容块的完整输出仍未命中时兜底，中断模型消息不计，省略持续等待 |
+| 谓词 | 选型与易错处 |
+|---|---|
+| `text` | keys 关键词或 minChars/maxChars 长度；两者同时声明时取交集，subject 必须在执行点可用；pre-step 的 userMessage 读取本批真实用户文本 |
+| `phase` | 晋升/压缩相位；promoted 缺省 true，`'ignore'` 必须同时声明 compacted；“已晋升或已压缩”用 any 两支 |
+| `source` | kind/plugin 同时写为合取；精确或前缀匹配，支持字符串数组 |
+| `count` | of/per/min/max/every；至少约束一个计数边界。消息类计数看可见历史，tool-call/turn 看完整日志 |
+| `names` | 工具通道的工具名，子代理事件的 provider 名；allow/deny 与大小写选项见条件实现 |
+| `session` | 指定事件 type 是否 present；缺省 false 表示该事件尚不存在，不等于“首条真实用户消息已接纳且只注入一次” |
+| `preset` | 当前挂载的官方 presetId，无法查询为 UNAVAILABLE |
+| `scope` | audience: main/subagent；modelScope: all/pro/flash |
+| `anchor` | 匹配已接纳、当前可见的结算输出；after.action 关联本规则实际投递，详见下文 |
+| `variable` | key、op、value、scope；scope 缺省 effective，另有 session/module/global/runtime；eq/ne/in/数字比较/present/absent，value 用字符串或字符串数组 |
+| `tool` | `{ name: 工具名 }` 查询本步骤真实可执行工具及依赖；缺失为 UNAVAILABLE，不能用 not 推断“工具不存在” |
+| `manifest` | `{ ok: true/false }` 查询来源模块清单 checks；缺清单/读取器或损坏为 UNAVAILABLE |
+| `soul` | `{ pending: true }` 查询当前来源模块的到期事项；需要绑定真实会话与提醒事实 |
 
-拿不到必要事实时谓词返回 `UNAVAILABLE`：只有严格 `true` 才执行；`any` 遇已知 `true`、`all` 遇已知
-`false` 仍可决断。
+按执行点选事实：
 
-## 二、动作（`then` / `else` 里能写什么）
+- pre-step 有本批真实用户文本；按子代理任务内容分档，在此组合 `scope.audience: subagent`。
+- tools/pre-execute 有工具名与参数；post-execute 另有结果。
+- system-section/runtime-context 在 assembly 判定，能沿真实 Agent 查询会话、模型、变量等事实；没有当前用户文本、工具名或 source。当前输入文本匹配应放 pre-step。
+- llm/stream 本身没有文本 subject；可按真实 Agent/sessionId 查询会话事实。
+- subagent/start/end 有 provider/id/local 等事件事实，没有任务正文；文本用 subagentInfo。
 
-`then` 是非空数组；每个动作要有唯一非空 `id` 与合法 `kind`。动作级分支写成 `{ if, then, else }`
-节点嵌在数组里，可嵌套。else 必须有对应 if；必要事实未知时两支都不执行。
+`dedupe: session` 按当前模型可见上下文去重，压缩或替换后可能再次注入。它与可见消息计数均不承诺“整段会话终身仅一次”；按需求验收压缩、恢复和多次 assembly。
 
-| 动作 | 执行点 | 主要字段 | 失败时 |
-|---|---|---|---|
-| `inject-text` | 由 config.layer 决定（**六层可注入**，agent-request/llm-stream/tool-pipeline 只作展示归属） | layer、strategy（static/placeholder/context-activation）、position、dedupe、mergeMode、role、order、text/texts、params、templateFile、configKind | 空正文不生成投递；变量赋值模板另按显式求值事务处理 |
-| `persona` | 原官方 assemble 前准备 | audience（main/subagent；省略两类）、prefix/suffix、complete/includeRuntimeContext；支持动态 if/else | 全失配或事实不可用回官方；配置/求值/注册错误保最后有效组 |
-| `assembly` | `system-prompt/assemble` 下游 | `target.sections`（`add`/`remove` **或** `keep`）、`target.contexts`（`add`/`remove` **或** `clear`，二者互斥——并存编译期拒绝）；`target.tools` 已移除 | 返回未改动的装配 |
-| `tool-visibility` | system-prompt/assemble 下游 | allow 与/或 deny（先保留再剔除）、requireMatch（仅 allow；名单全缺才放宽）、discovery（{ kind }；tool/key 可选，只作断言）；受众归 scope，提示归普通注入动作 | 呈现面失败保留原装配；执行闸失败留痕，不静默放行 |
-| `tool-gate` | tools/pre-execute | decision（allow/deny/ask）、reason；工具名归 names 条件 | 一律放行——裁决 bug 不卡死调用 |
-| `tool-result` | tools/post-execute | action（accept/replace/block）、text（仅 replace/block）；工具名归 names 条件 | 一律接受——结果处理 bug 不把调用变成失败 |
-| `append-context` | tools/post-execute | text；续跑用 inject-text 的 turn-stop 层 | 保持原结果 |
-| `request-params` | `agent/request` 下游 | `patch`（浅合并）、`unset`（`{键: 期望值}`）、`replace`（整体替换） | 保持原请求配置 |
-| `stream-output` | llm/stream | mode（pass 缺省 / replace）、text（替代正文） | 保持原流 |
-| `inbox-prepend` | `agent/inbox/inserted`（emit，无 next） | `target`（`next-turn` 缺省 / `next-step`）、`text` | 不命中即什么都不做 |
-| `pre-step-filter` | `agent/pre-step` 下游 | `sources` **或** `keepKinds`（互斥，未声明即不过滤）、`blockPlugins`（正交，空＝关闭） | 异常时保留全部消息 |
+## 动作与执行点
 
-通用规则：
+字段白名单与可运行例子以契约入口为准；表中只列选择依据。
 
-- 名单类参数（allow/deny/sources）写成逗号分隔字符串或字符串数组都接受。
-- 工具可见面的 `allow` 与 `deny` 可以同时给：对齐官方 `ToolRestriction`，先按 `allow` 保留、再按 `deny` 剔除。
-- `maxPerTurn`（正整数）用在 `assembly` / `tool-gate` / `tool-result` / `append-context` / `request-params` /
-  `inbox-prepend` / `pre-step-filter` 上；它数的是「本动作本轮生效几次」，
-  与 `count` 谓词（数持久事件）是两回事。
-- inject-text 的 `complete` 与 `suppressRuntimeContext` 是固定注册效果，仍拒绝动态条件；persona 的布尔选项在原官方 assemble 前随条件候选准备。
+| 动作 | 用途与边界 |
+|---|---|
+| `inject-text` | 在六个注入层投递正文；config.layer 决定位置，空正文不投递 |
+| `persona` | 原官方 assemble 前准备人设与选项；见人设与变量 |
+| `assembly` | assemble 下游调整 sections/contexts；tools 改用 tool-visibility；keep 与 add/remove、clear 与 add/remove 各自互斥 |
+| `tool-visibility` | 同时控制工具呈现和执行面；allow 后再 deny，允许同时声明 |
+| `tool-gate` | tools/pre-execute 的 allow/deny/ask；reason 属于此动作；工具名用 names 条件 |
+| `tool-result` | tools/post-execute 的 accept/replace/block；另有 edits，具体结构读实现 |
+| `append-context` | 工具结果后追加上下文；续跑用 turn-stop 注入 |
+| `request-params` | agent/request 下游改 patch/unset/replace；unset 需期望值，replace:true 需 provider/model；专用 maxTokens 有 early 依赖 |
+| `request-retry` | llm/stream 检测拒绝前缀后最多重放一次，text/templateFile 给第二次尾部 user 正文；不是网络重试或备用模型切换 |
+| `stream-output` | llm/stream 的 pass/replace，替代 text 不改请求 |
+| `inbox-prepend` | 收件箱前置消息，target 为 next-turn/next-step |
+| `pre-step-filter` | sources 或 keepKinds 互斥；blockPlugins 正交；instructionHint 只处理可靠识别的官方指令 |
+| `instruction-policy` | 当前 Agent 的 fileIds 关闭贡献与 intro；不改持久策略或原指令文件，不提供强制开启 |
+| `host-control` | capability/value 选择宿主额度、审批、文件、请求投影等控制；先查作用域与依赖 |
+| `subagent-params` | provider: spawn、明确 tool 与 maxDepth；仅约束所选委派入口 |
 
-### 禁用或收窄某个工具
+动作分支是数组中的 `{ if, then, else }` 节点，不把 if 写进带 kind 的动作。通用排序与 `maxPerTurn` 是否可用，由规则编译器检查；maxPerTurn 计本动作本轮生效次数，count 计事件。
 
-工具的装配面由**会话原有预设**与各模块共同决定，所以「禁用」必须同时落到呈现与执行两层——只做一层会留下可见痕迹：
+### 工具可见面
 
-```yaml
-rules:
-  - id: no-web
-    then:
-      - id: hide-web
-        kind: tool-visibility
-        deny: [web_search, web_fetch]
-        reason: 本模块不开放联网工具
-```
-
-一份 deny 名单同时裁装配目录、tools:sdk 正文，并在 agent scope 注册执行闸——会话原有预设装的行也归它裁决，经 run_code 的子调用同样被拒。要让禁用只作用于子代理，在规则或分支写 if.scope.audience: subagent；不设受众条件则两者都执行。
-
-要收窄，用同一动作的 allow 白名单（范例见 modules/tool-surface/module.yml），并按需声明 discovery：
+禁用工具的一条完整规则：
 
 ```yaml
-- id: narrow
-  kind: tool-visibility
-  allow: [pwsh, read, write, edit, glob, grep, todo_write, skill_search, skill_load, tool_search, bash]
-  discovery: { kind: tools }
-  requireMatch: true
+id: no-web
+then:
+  - id: hide-web
+    kind: tool-visibility
+    deny: [web_search, web_fetch]
 ```
 
-声明 discovery 的模块必须在 modules 里列出对应适配器行（tools → tool-search），缺行在装配准备期失败。discovery 在首次装配时按 agent 解析适配器，并从持久 tool/call 与 PTC tool/ptc-dispatch 参数回收解锁名（只做加法、跨压缩保留）；工具由适配器行注册，discovery.tool/key 可选、只作断言。提示用同规则普通 inject-text 组合 count（user-message，max: 1）与 session 去重，采用 strategy: placeholder、fill: tool-catalog、params: { action: narrow }。只读 RESIDENT_TOOLS 是引用动作 allow 去 deny、再按当前可见面过滤后的逗号名单（观测不到工具面时回落声明名单；观测到工具面但一个常驻名都不在时跳过提示），DISCOVERY_TOOL 是当前 Agent 的发现适配器工具名；模块 text 控制提示正文，保留自动名单而不复制声明。requireMatch 只在名单里的名字**一个都不存在**时放弃裁剪、暴露完整目录（fail-open）；缺一两个提供方只是少一个常驻工具，收窄照常生效，替换提供方（如 dsh-ops 的 `ops_*` 全量）登记进 allow：随包模块与部署层副本同口径，缺席名字惰性。解锁名不参与放宽判定。allow 的执行面由 guard 兜底，不调用 restrict——restrict 的 allow 只收继承面名字，而全局 schemas 视图会漏预设/祖先层工具，局部 allow 反而会把它们裁掉；deny 才用 restrict + guard。PTC 下 tools 数组只有保留传输 `run_code`，实际可见面是 `tools:sdk` 正文；`run_code` 不写进 allow 也保留，且不参与 requireMatch，因此原生收窄声明可以直接与 PTC 共存。
+一份声明裁目录、PTC 的 tools:sdk 正文与执行闸。仅限子代理时，加规则条件 `if: { scope: { audience: subagent } }`。
 
-tool-catalog 引用目标必须有 allow；仅支持普通只读插值，`templateEvaluation: true` 拒绝。未知动作引用保存前拒绝，发现适配器不可用则跳过提示并告警。
+收窄用 allow，可选 `requireMatch: true`：仅当常驻名单一个也未出现在当前工具面时放宽，部分缺席照常收窄；解锁名不参与放宽判定。按需发现用 `discovery: { kind: tools }`，模块同时声明 `tool-search` 能力行。discovery 的 tool/key 只是断言，实际工具名由适配器决定。
 
-## 三、九层与字段
+提示用普通注入的 `strategy: placeholder`、`fill: tool-catalog`、`params: { action: 可见面动作id }`；目标须有 allow。只读变量 RESIDENT_TOOLS/DISCOVERY_TOOL 来自实际目录，不复制名单，不开启 templateEvaluation。PTC 保留传输工具 run_code，不必加入 allow。
 
-层是官方扩展点，彼此独立，没有跨层运行顺序。规则顶层 layer 是动作未声明 config.layer 时的缺省及展示归属；
-动作显式声明 config.layer 时优先使用动作值（工具、装配、请求类动作自带执行点）。
+### 宿主控制
 
-层字段矩阵（`position` / `dedupe` / `promotion` / `audience` / `modelScope` / `merge` / `order` / `role` / `placeholder`；config 里写 `mergeMode`）由 `/meta` 的 `layerFieldPolicies` 下发，根 `module.yml` 也由同一份 `engine/schema.mjs` 生成；本文不再抄写，避免第三份副本漂移。
+从 `engine/host-control-catalog.mjs` 查 capability 的 scope，再读对应校验器。Agent 规则使用当前真实步骤；process 能力要求规则 `executionScope: process`，不能附 Agent 条件，只影响其声明的后续进程行为。
 
-| 层 | 官方入口 | 可用策略 | 层内 `params` |
-|---|---|---|---|
-| `pre-step` | `agent/pre-step` 消息批 | static/placeholder/context-activation | — |
-| `system-section` | `ctx.systemPrompt.section` | `static` | `sectionName` `complete` `suppressRuntimeContext` |
-| `runtime-context` | `ctx.systemPrompt.context` | `static` `placeholder` | `contextName` |
-| `agent-request` | `agent/request` | — | request-params 动作的 patch/unset/replace |
-| `llm-stream` | `llm/stream` | — | stream-output 动作的 mode/text |
-| `tool-pipeline` | 仅展示归属（**无注入通道**） | — | 工具链的裁决 / 结果处理 / 追加上下文改用 `tool-gate` / `tool-result` / `append-context` 动作 |
-| `turn-stop` | `agent/turn-stopping` | `static` | — |
-| `subagent-start` | `subagent/start` | `static` | — |
-| `subagent-end` | `subagent/end` | `static` | `action`（`observe`/`inject-main`） |
+审批自动决定、文件写入、升级、沙箱软默认等会改变权限边界；按用户授权选择具体 value，不由名称猜开关含义。依赖验证失败或能力不可用时查看诊断与受影响分支，不能通过写 YAML 绕过真实 owner。
 
-三条边界：
+`persona.instructionsMaxBytes`、`request-params.maxTokens` 及部分 host-control 依赖官方入口前的 `dsh-plugin-prompt-tool/early` 与发行指纹。具体依赖看能力实现及运行诊断；编译通过不证明 early 已生效。缺接缝时受影响声明暂停，不自行改宿主或重启。
 
-1. 层字段以 `/meta` 的 `layerFieldPolicies` 为准：`position`/`role`/`promotion` 在 `pre-step`，`dedupe` 另支持 `turn-stop` 的 none/session。
-2. 声明式 `config.subject`/`config.match` 已删除；live 条件在规则 `if` 里写 `text.subject` / `anchor.subject`，
-   可选值见 `/meta` 的 `subjects`。按任务内容分档放在 `pre-step`——`subagent/start` 的事件里只有
-   provider 与 id，没有任务文本。
-3. system-section、runtime-context 的普通文本贡献支持规则级 if 和嵌套 `{ if, then, else }`，
-   每次 assembly 在条件文本贡献通道按当前事实求值，不动态重注册段；if.scope.audience 是常见写法。
-   inject-text 的 complete / suppressRuntimeContext 属固定注册效果，仍拒绝动态条件分支；persona 动作支持动态条件并在原 assemble 前提交，complete 表示同 scope 唯一 system 段。
+## 注入层
 
-策略 × 层：static 在六个可注入层；placeholder 在 pre-step、runtime-context；
-context-activation 在 pre-step。分类与正文用通用条件和分支组合（模板15），动态内容策略使用既有 resolver。
+九层相互独立；规则 layer 只提供缺省与展示归属，动作显式 config.layer 优先。字段矩阵读 `getEngineMeta().layerFieldPolicies`。
+
+| 层 | 通道/可用策略 |
+|---|---|
+| pre-step | agent/pre-step：static、placeholder、context-activation |
+| system-section | systemPrompt.section：static |
+| runtime-context | systemPrompt.context：static、placeholder |
+| agent-request | request-params 等专用动作，无 inject-text |
+| llm-stream | stream-output/request-retry，无 inject-text |
+| tool-pipeline | 工具动作展示归属，无 inject-text |
+| turn-stop | agent/turn-stopping：static |
+| subagent-start | subagent/start：static |
+| subagent-end | subagent/end：static；params.action 为 observe/inject-main |
+
+position/role/promotion 属 pre-step；dedupe 另支持 turn-stop 的 none/session。普通 system-section/runtime-context 文本可动态判条件；inject-text 的 complete/suppressRuntimeContext 是固定注册效果，动态分支仍拒绝，动态人设选项用 persona。
 
 ### 确认后注入
 
-先用普通 `inject-text` 动作投递自定义锚句，再在嵌套分支写 `if: { anchor: { keys: [已确认], after: { action: seed } } }`，then 使用另一个普通注入动作声明正文与位置。完整示例见包内 `templates/16-custom-fallback.yml`，运行边界见 [引擎指南](../../docs/engine-reuse.md#字词句确认与动作关联)。不要把等待条件放在锚句动作的父级，否则锚句也无法投递。
+同规则先用普通 inject-text 投递锚句，再用分支 `anchor.after.action` 引用该动作；等待条件只包后续正文，不能包住锚句本身。完整样例在 `templates/16-custom-fallback.yml`。
 
-`after.action` 仅引用同规则 separate 模式的 pre-step/runtime-context/turn-stop 注入动作；缺引用、自引用、循环、投递身份歧义、system-section 与 merged 目标在编译时拒绝。未实际接纳或已不再可见的起点返回 UNAVAILABLE，旧输出和 fork 继承不算当前会话的新投递。当前可见上下文变化后重判；默认等下次正常请求，显式 turn-stop 续跑仍受预算和取消信号约束。
+关联目标须为 separate 模式的 pre-step/runtime-context/turn-stop 注入；缺引用、自引用、循环、投递身份歧义、system-section/merged 目标拒绝。未接纳或不再可见的起点为 UNAVAILABLE；旧输出与 fork 继承不算当前会话的新投递。
 
-直接匹配当前 pre-step 用户消息用 `text.subject: userMessage`（模板14）；`anchor.subject: userMessage` 看已接纳历史。确认词只写条件，正文只写动作；source.summary 是用户元数据，不生成动态确认/兜底说明。旧 first-turn-anchor、anchor-notice 策略与专属参数已移除，不保留兼容入口，也不自动修改用户模块。
+anchor 默认 prefix 按 ASCII 忽略大小写的字面前缀匹配；正则、副键等需显式 scan。可选 fallbackAfter 为正整数，计含所选内容块的完整输出，中断不计。默认等下次正常请求，显式 turn-stop 续跑仍受预算与取消约束。匹配本批用户正文用 text.userMessage；anchor.userMessage 看已接纳历史。
 
-## 四、能力、参数与数据所有权
+## 参数与宿主控制
 
-能力目录以包内 engine/compositions/source/local 的实际文件为准；模块工具统一为 module-file-tools、module-import-tools、module-manifest-tools、module-rule-tools、module-variable-tools。
+共享模型/能力参数由 ENGINE_PARAM_DEFINITIONS 登记，storageLayer 决定 `layerSettings.<层>.params`，不按 UI 所在层猜路径。数值参数沿当前 schema 的字符串表示；变量空串与参数空值不能混为一谈。
 
-**模块装配清单**（固定 `assets/manifest.yml`，由 `module_manifest` 解释，工具不认业务字段）：
+主/子模型路由与采样在装配期生成受众限定 request-params，未配置继承宿主。PTC、Git Bash、指令提示、自定义工具批准使用同一目录。moduleConfigs 仍是合法行级配置；已声明共享参数优先，不能借行配置绕过批准。
 
-```yaml
-dirs:
-  - data/10-宪章
-files:
-  - from: assets/templates/agents-template.md
-    to: data/AGENTS.md
-checks:
-  - path: data/02-soul.jsonl
-    kind: jsonl
-    maxBytes: 8388608
-```
+能力行从 `engine/compositions/source/local/` 选择，官方工具、规划、压缩与普通委派沿用会话预设。递归深度有 subagent-params；它不等于全局改写所有子代理入口。
 
-- `dirs` / `files.to` / `checks.path` 只允许 `data/`；`files.from` 只允许 `assets/`（必须存在，单文件 ≤ 1 MiB）。
-- `checks.kind` ∈ `file`/`text`/`json`/`jsonl`；`maxBytes` 缺省 1 MiB。
-- `action`：`next` 返回第一条缺失（`ok` = 是否已完成），`check` 返回全部检查结果（`ok` = 是否全部通过），`apply` 建目录并只落缺失文件（不覆盖、不删除）。
-- 未知键、未知 kind、越界路径与链接都 fail loud。官方工具、规划、压缩与普通委派由会话原有预设提供，空模块不自动获得这些能力。
+present-as 在真实主/子 Agent scope 挂载官方 native/PTC 执行器；依赖缺失明确不可用，同 scope 冲突由官方拒绝。PTC 用官方 `process.cwd()` 与当前工具面的 `tools.bash`/`tools.pwsh`；默认 Node/per-call 环境初始为空，不假设有等价 env 对象。
 
-共享参数由 `ENGINE_PARAM_DEFINITIONS` 唯一登记，`storageLayer` 决定磁盘路径：主/子模型各有路由与采样键，另含 PTC 呈现（presentAsEnabled、ptcMainMode、ptcSubagentMode）、Git Bash（toolGitBashEnabled、路径、超时、输出上限）、指令提示（instructionHint 及 promoteOn/includeSubagents/模板）和工具批准（customToolRequireApproval）；完整键、options 与默认值以源码为准，不在摘要抄数量。模型卡在装配期合成 request-params 规则；未配置继承宿主。子代理递归深度归官方 `subagent.maxDepth`，插件不提供。
+## 工具与数据所有权
 
-- persona 动作：普通规则拥有 prefix/suffix/complete/includeRuntimeContext 与可选 audience。命中动作按既有规则序分别拼接非空片段，两个换行分隔；全省略才继承，显式空串阻止继承但不清其它片段。布尔显式值冲突整组保旧；失配/事实不可用回官方，错误保最后有效组。includeRuntimeContext:true 只撤本插件抑制，祖先 scope 抑制保持。
-- variables：模块持久值，覆盖同安装 global；运行时 session 域按来源模块＋真实会话持久隔离，裸引用依次取 session→module→global。空串保留，删键才回落。工作台只编辑 module/global；普通规则手动建立变量，ST 导入自动登记缺失裸引用为空占位，不自动转成 session。
-- customTools：shell/http/delegate/fs/ask-user，定义见包内 templates/tools。delegate 走官方工具管线。
-- moduleConfigs：已声明共享参数优先于行级配置，不能绕过工具批准。
-- configOrder：模块内规则id→非负序号，排序不修改正文和启停。
+所有模块工具显式传 `moduleId`；UI 当前编辑模块不替代调用主语。工具只访问模块存储根下既有模块。`expectedModuleId` 是 bridge 一致性检查，不是模型工具参数；实际参数与版本字段以当前工具 schema 为准。
 
-### PTC 呈现与程序环境
+| modules 能力 | 工具/用途 |
+|---|---|
+| module-rule-tools | module_rules_read / module_rules_edit：完整规则与版本事务 |
+| module-variable-tools | module_variables：global/module/session 的 list/get/set/delete |
+| module-file-tools | module_file_read / module_file_append：memory.md、assets/ 只读、data/ 受限追加 |
+| module-manifest-tools | module_manifest：assets/manifest.yml 的 next/check/apply |
+| module-import-tools | module_import：预览、选择、候选提交 |
+| soul-ledger | soul_ledger / soul_state：账本及真实会话状态 |
+| retrieval | module_search / module_open：授权来源检索、引用与读取 |
+| tool-config-engine | customTools：shell/http/delegate/fs/ask-user，沿官方批准与取消管线 |
 
-`present-as` 在真实 Agent scope 挂载官方 native/PTC 执行器，按真实主/子身份选择模式并等待导入与初始化。PTC 通过动态注入等待运行时，native 不依赖它；同 scope 冲突由官方拒绝。执行器卸载、模块禁用或运行时撤回后，新批次明确不可用，已接受批次按原执行器排空；显式重挂有效执行器后恢复。未启用该能力的 Agent 继续由宿主提供执行器。
+变量先 list/get 取版本再写；set 必须显式字符串，空串有效，delete 才回落。global 影响同安装所有模块；session 只操作真实当前会话，带 revisions.session 等待持久化。
 
-程序当前工作目录用官方 `process.cwd()`，shell 操作用当前工具面提供的 `tools.bash(...)` / `tools.pwsh(...)`。默认 Node/per-call 程序环境初始为空，OS 启动环境与宿主嵌套 shell 收集的安全环境属于不同层；官方不提供等价 `env` 对象。现有用户模块由用户自行调整，内置种子只补缺失，不覆盖用户副本。
+通用文件工具不覆盖文件；`data/02-soul.jsonl` 与旧 `data/02-墨.jsonl` 的追加必须走 soul_ledger。账本作者、时间和关闭权限由真实会话决定，不通过通用 append 绕过。
 
-## 五、上下文激活与模板
+manifest 的 dirs、files.to、checks.path 限 data/，files.from 限已有 assets/ 单文件；checks.kind 为 file/text/json/jsonl。next 找首个缺失，check 汇总检查，apply 只建目录和缺失文件，不覆盖删除；未知字段、越界或链接拒绝。
 
-`context-activation` 只在 pre-step 使用。`params.activation.scan` 必须为 batch 或 history；历史只扫描模型可见的真实对话，排除插件/指令/工具回执。`scanDepth:0` 不扫描聊天、变量和递归正文，常驻例外。
+内置 assets 按完整 moduleId 逐文件查找：用户覆盖优先，缺失才读包内同名模块；空文件是覆盖，错误或链接不回退。memory.md/data/ 无包内回退。改名复制或另存由正式流程补齐资产，不从名称后缀猜来源。私有记忆与数据不因规则保存、模块关闭或升级而清理。
 
-匹配共有字段：keys、secondaryKeys、constant、caseSensitive、wholeWords、useRegex、wordBoundary、selectiveLogic。词边界 unicode 为原生字母数字边界，ascii-token 为 ST 单词 ASCII/多词子串规则。副键先开启 activation.selective；P=主键命中数，S=副键命中数，N=原副键项数：
+## 人设与变量
 
-| 具名逻辑 | 条件 |
+persona 支持 prefix/suffix、complete/includeRuntimeContext、audience、stripDefaultIdentity、instructionsMaxBytes。命中正文按规则和动作顺序分别拼接；字段全省略才继承，显式空串阻止该字段继承，不清其它片段。布尔显式值或指令预算冲突拒绝整组并保旧；全失配/事实不可用回官方，配置/求值/注册错误保最后有效组。includeRuntimeContext:true 只撤本插件抑制。
+
+stripDefaultIdentity 为 preset/harness，只针对已识别的对应身份正文。instructionsMaxBytes 是正安全整数，依赖见宿主控制。正文与选项归普通规则，不保存顶层 persona 或 personaSources。
+
+裸变量依次取 session→module→global。普通规则手动建立变量；ST 导入才自动登记缺失裸引用为空占位。工作台只编辑 module/global；session 由官方 storageDomain 按来源模块＋真实会话隔离持久化，不随 fork 复制。
+
+赋值模板显式 `params.templateEvaluation: true`，使用 module/global/session 的 set/get/add/inc/dec；单卡只写一个持久域，实际读取域都参与 CAS。session setter 仅在可等待的规则执行和模型工具提交，人设同步出口只读 session。runtime 是只读事实，扫描、预览、SELF 只读。发布重试不重放赋值，不承诺跨进程崩溃 exactly-once。
+
+## 上下文激活
+
+context-activation 只在 pre-step；`params.activation.scan` 显式 batch/history，历史只扫描模型可见的真实对话。scanDepth:0 不扫描聊天、变量或递归正文，常驻项例外。
+
+keys/secondaryKeys、constant、匹配选项与副键逻辑由 activation 拥有；副键先开启 selective，未开或无副键只要求主键命中，空主键不自动常驻。P/S 为主/副键命中数，N 为原副键项数（求值为空仍占一项）：
+
+| selectiveLogic | 条件 |
 |---|---|
 | AND_ANY | P>0 且 S>0 |
 | NOT_ALL | P>0 且 S<N |
 | NOT_ANY | P>0 且 S=0 |
 | AND_ALL | P>0 且 S=N |
 
-未开 selective 或无副键只要求 P>0；空主键不自动常驻。求值为空的副键仍占一项。activation 还拥有 scanVariables、概率、selectionGroup、评分、sticky/cooldown/delay、递归排除与延迟层级；它的候选组与规则 group/exclusive 不同。模块递归用 contextActivationRecursive，默认 false，池跨模块共享。
+wordBoundary 的 unicode 是原生字母数字边界，ascii-token 是 ST 单词 ASCII/多词子串规则。概率、selectionGroup、评分、sticky/cooldown/delay 与递归约束查 `engine/context-activation.mjs`；候选组与规则 group/exclusive 分开。模块递归由 contextActivationRecursive 开启，默认 false，池跨模块共享。
 
-原生模板显式设置 params.templateEvaluation:true。module/global/session 的 set/get/add/inc/dec 在暂存变更集求值；同卡读到先前写入，单卡只写一个持久域，所有实际读取域都参与 CAS。session 唯一 owner 使用官方 storageDomain，同步读快照、异步写等待持久化；主/子会话隔离，不用内存表替代。session 赋值只在可等待的规则执行和模型工具中提交，人设同步出口只读 session、拒绝其 setter。runtime 是只读权威事实，SELF、扫描与预览只读。真实执行提交后跨出口和重挂不重放；跨进程崩溃不保证 exactly-once。
+## 导入与旧格式
 
-## 六、退役输入的显式转换
+ST 预设、PNG/JSON 角色卡和世界书优先走工作台或 module_import。先预览并完成选择，提交原始 files 与返回的两份预览凭据；来源、目标或凭据过期就重新预览。默认另存且不自动启用，报告与生成后的 enabled 一起检查。转换不执行 STscript 或任意来源代码，不支持的宏/控制明确报告。
 
-旧 world-book/stWorldBook/stWorldBookRecursive/stMacros/stSource、动作 config.variables、全部顶层 persona、config.yml.personaSources 和旧工具能力不作为运行兼容面；读取根明确拒绝，用户手工重建人设规则并移除旧字段，插件不自动迁移。重新导入标准 ST 或按 SKILL.md 的转换步骤改写；保留原件和私有记忆，不能靠删来源标记绕过分享保护。旧 API 别名不等于新工具授权。
+显式转换旧内部模块时，先保留授权范围内的备份与未知资产，然后逐项转换：
+
+1. world-book/stWorldBook 执行字段改为 context-activation，明确 scan 和具名副键逻辑；来源与不可等价项保留在 source.original。
+2. stMacros 与 set/get/add/inc/decvar 按 parser 语义转为 module/global 操作；动作 config.variables 提升到顶层 variables，同名冲突先解决，ST 局部变量不自动变成 session。
+3. 顶层 persona 与 config.yml.personaSources 改为普通 persona 规则，保留省略/空串/false 与受众语义，核对新规则启停及排序。
+4. 旧能力对照当前目录替换，保留未改分支和参数；memory.md、私有数据与来源证明保持。旧私有标记不能只删除后导出。
+5. 在隔离候选中校验、读回并检查不等价报告，再按授权提交；失败保留原定义。
+
+插件不自动迁移上述退役输入；当前合法的 moduleConfigs 不能整段当成旧格式删除。种子只补缺失，不覆盖已有模块或技能副本。

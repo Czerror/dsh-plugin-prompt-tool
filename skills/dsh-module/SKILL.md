@@ -1,40 +1,38 @@
 ---
 name: dsh-module
-description: 新建、修改、审查 DSH Prompt Tool 模块，或把规则、人设、工具和 SillyTavern 来源转成原生 module.yml；也用于排查启用后未注入、将旧内部上下文/会话变量格式显式转换为原生规则。模块由插件在各 Agent scope 装配，与官方会话预设分开。
+description: 使用时机：新建、修改或审查 DSH Prompt Tool 的 module.yml，排查模块启用后未生效，导入 SillyTavern 预设、角色卡或世界书，或显式转换旧模块格式。
 ---
 
 # DSH 模块
 
-先确定任务是创建、编辑、审查、导入还是旧格式转换。只读审查不授予修复；用户已经授权的修改直接完成，不额外请求确认。涉及安装、启用新能力、覆盖用户文件或重启服务，遵守会话已有授权和项目边界。
+模块在真实 Agent scope 中贡献规则与能力，官方会话预设仍由宿主拥有。先确定任务是创建、编辑、审查、导入还是旧格式转换；只读审查只交付发现，修改按已有授权执行。
 
-路径基于实际 `$DSH_HOME`。模块定义为 `.prompt-tool/modules/<id>/module.yml`，启用集合在 `.prompt-tool/config.yml`。包内 `engine/`、`templates/`、`modules/` 相对插件包根，不相对本技能目录；可通过已加载插件位置或实际安装信息定位，不猜默认 profile。
+## 1. 定位目标与契约
 
-## 1. 读取目标与所有者
+确认运行实例的实际 `DSH_HOME` 和插件安装根。定义在 `$DSH_HOME/.prompt-tool/modules/<id>/module.yml`，启用集合在 `.prompt-tool/config.yml`。读取完整定义及本次涉及的资产；目录名与 id 必须一致。
 
-读取完整 module.yml 与有关资产，确认目录名和 id 一致，保留用户已有修改。不要编辑 `rules/`：它是完整定义的校验投影，手改会被恢复。
+本技能可能被复制到 `$DSH_HOME/skills/dsh-module/`；下文 `engine/`、`templates/`、`modules/` 都相对**插件包根**。从已加载插件位置或安装信息定位，不能按技能目录或默认 profile 推算。随包技能只补缺失，已有用户副本要在授权范围内比对更新。
 
-| 内容 | 写入位置 |
+按任务读取 [reference.md](reference.md) 对应章节：
+
+| 任务 | 章节 |
 |---|---|
-| 条件、动作、正文、规则启停 | rules |
-| 共享模型/能力参数 | layerSettings 的登记层 |
-| 持久模块变量 | 顶层 variables |
-| 全局变量 | 同一 DSH_HOME 的插件 variables.yml，经变量 owner 读写 |
-| 会话变量 | 官方 storageDomain，按来源模块＋真实会话隔离，经 session owner 异步写入 |
-| 人设正文/选项 | rules 中的 persona 动作，与普通规则共用条件、启停、排序和 CAS |
-| 自定义工具 | customTools；普通子代理委派由官方预设提供 |
-| 模块私有文件 | memory.md、assets/（只读）、data/（只追加），经 module_file_read/append 显式读写；装配清单走 module_manifest |
-| 用户指令文件 | 原文件与独立指令策略，独立授权通道 |
+| 选择条件、动作、注入位置，诊断未命中 | 条件与事实、动作与执行点、注入层 |
+| 模型/PTC/批准参数、委派深度、宿主能力 | 参数与宿主控制 |
+| 编辑规则、变量、文件、Soul 或检索 | 工具与数据所有权 |
+| 人设、模板赋值、关键词激活 | 人设与变量、上下文激活 |
+| ST 导入或旧定义转换 | 导入与旧格式 |
 
-完成判据：每处改动都有单一 owner，工具操作目标与 UI 编辑模块不混淆。
+完成判据：目标实例、模块身份、原始定义和所需契约均已定位；资料缺失时明确未确认项。
 
-## 2. 创建最小规则
+## 2. 构造最小候选
+
+新模块从一条关闭的规则起步，确认启用授权后再激活：
 
 ```yaml
 id: my-module
 name: 我的模块
-version: 1.0.0
 modules: [rule-engine]
-variables: {}
 rules:
   - id: project-rules
     enabled: false
@@ -42,78 +40,44 @@ rules:
       - id: inject
         kind: inject-text
         config:
-          layer: system-section
+          layer: pre-step
           strategy: static
-          text: |-
-            按用户确认的项目约束执行。
+          position: after-user
+          dedupe: session
+          text: 按用户确认的项目约束执行。
 ```
 
-一条规则有独立总开关；动作 id 在整条规则的 then/else/嵌套树内唯一。if 缺省为无条件，else 必须有对应 if。条件未知时不能以“否定”为由放行。规则级 layer 是动作缺省层与展示归属，不是全局执行阶段。
+编辑已有模块时保留未知字段、注释、资产与完整分支树，只改变任务要求的内容：
 
-条件、动作和字段选择查 [reference.md](reference.md)。工具或请求类动作有自身执行点；tool-pipeline 没有 inject-text 通道。普通文本空白保持空，不补未经请求的默认正文。
+- 条件、动作、正文、人设与启停归 `rules`；`rules/` 是派生投影，编辑完整 `module.yml` 或规则工具。
+- 共享参数归登记的 `layerSettings`；行级配置归 `moduleConfigs`；变量归顶层 `variables` 或专用变量工具。
+- `customTools` 只声明需要的自定义工具；官方工具与普通委派沿用会话预设。
+- `memory.md`、`data/` 由各自文件/账本工具拥有；用户 AGENTS.md、CLAUDE.md 及独立指令策略走授权通道，正文留在原文件。
 
-完成判据：完整候选通过唯一 compileRules 校验，规则启停、受众、层、位置和次数符合请求。静态可解析不等于模型实际收到。
+`if` 是单键节点；用 `all/any/not/notAny` 组合。动作 id 在整条规则的 then/else/嵌套树内唯一；else 必须对应 if。缺事实为 `UNAVAILABLE`，不是 false，取反也不放行。规则的 layer 是注入动作缺省层与展示归属，不建立跨层执行顺序。
 
-## 3. 变量、人设和上下文激活
+完成判据：每处修改有明确所有者，条件能取得所选执行点的事实，能力与受众均限于请求范围。
 
-普通规则引用的变量需手动建立；不要扫描正文偷偷登记。运行时裸引用按 session→module→global 取值；空字符串是有效值，删除覆盖才回落。工作台和 bridge 仍只编辑 module/global，不提供任意他人会话入口。动作 config.variables 已退役。
+## 3. 校验并提交
 
-需要赋值才声明 `params.templateEvaluation: true`，使用 module/global/session 的 set/get/add/inc/dec。一张模板可读多域但只写一个持久域，实际读取域参与版本校验；session 写由异步规则和模型工具等待官方 owner 持久化。扫描、预览和 SELF 只读，runtime 是只读权威事实；禁止用内存 session 表或执行重挂伪装持久事务。
+已有规则优先用 `module_rules_read({ moduleId })` 取得完整树、版本和当前目录；向 `module_rules_edit` 提交完整规则候选及 `expectedRevisions`，先用 `validateOnly: true` 校验。工具参数以实际 schema 为准。
 
-人设使用 kind:persona 动作，支持普通 if/then/else；audience 可为 main/subagent，省略覆盖两类。所有启用模块的命中动作按现有规则排序分别拼接 prefix/suffix；字段全省略才继承，显式空串阻止继承但不清除其它规则正文。complete/includeRuntimeContext 显式值冲突拒绝候选并保旧；完全失配或事实不可用回官方。人设卡复用规则事务，不保存顶层正文或来源选择。includeRuntimeContext:true 只撤本插件抑制，不能强开祖先 scope 上下文。正文可读 session/runtime，session setter 仍拒绝。
+离线核对规则可用包内 `engine/rule-spec.mjs` 的 `compileRules(module.rules, { moduleId: module.id })`；它只校验规则数组，不验证完整模块、资产可读性或运行依赖。有模板文件时还需按该函数的 `promptConfigOptions` 提供实际模块根。完整模块走工作台或导入候选校验。
 
-上下文激活使用 `strategy: context-activation`、`params.activation.scan: batch|history`。关键词、候选组和副键约束的语义查 reference；启停与受众仍归规则。记忆不自动生成常驻规则。
+保存时保留正文与启停的独立版本：关闭规则标记 `settingsChanged`，显式启用用 `activateRuleId`，整规则删除用 `rule: null`。版本冲突先重读，不重放旧写入。
 
-完成判据：变量来源和空值语义明确，人设继承可表达，激活字段无需依赖“来自 ST”才生效。
-
-## 4. 能力与模型工具
-
-只声明任务需要的能力。模型工具目录与能力映射如下：
-
-| 能力 | 工具 |
+| 结果 | 后续 |
 |---|---|
-| module-rule-tools | module_rules_read / module_rules_edit |
-| module-variable-tools | module_variables |
-| module-file-tools | module_file_read / module_file_append |
-| module-manifest-tools | module_manifest |
-| module-import-tools | module_import |
-| tool-config-engine | customTools 声明的工具 |
+| 校验拒绝或版本冲突 | 修正候选或重读版本，原定义保持 |
+| `activationPending` | 用返回版本与 `activateRuleId` 重试选择，不重放 edits |
+| 已保存、仅运行发布失败 | 用 `refreshOnly` 重试发布，不混用 edits/activateRuleId/validateOnly |
 
-规则模型工具先用显式 moduleId 读完整树与 revisions，再携带 moduleId/expectedRevisions 编辑完整合法规则；关闭标记 settingsChanged，显式启用用 activateRuleId，删除整规则用 rule:null。正文保存不覆盖并发状态，版本冲突先重读。expectedModuleId 只用于 bridge 对请求头主语的一致性校验，不是模型工具参数。
+完成判据：候选被接受，提交后的定义与版本已读回，保存、激活、运行发布的状态分别确认。
 
-变量先 list/get 取版本，再 set/delete；set 必须显式字符串，空串不是删除。global 写影响同一安装的所有模块；session 只访问真实当前会话，写入携 revisions.session 并等待持久化。文件 append 带当前目标身份与显式 path，与规则事务分开；module_manifest 按清单只写 data/、不覆盖。module_import 先预览并完成选择，提交原始 files 与两份预览凭据，默认另存且不自动启用。
+## 4. 验证生效并交付
 
-共享模型/能力参数以 `ENGINE_PARAM_DEFINITIONS` 为唯一目录，使用登记的 layerSettings 路径：主/子模型路由与采样、PTC 呈现、Git Bash、指令提示和工具批准都在其中；数量与 options 以源码为准，不抄旧文档的固定键数。也可通过 request-params 动作按受众改请求。官方工具、规划、压缩和普通委派来自官方预设，模块不重声明它们。PTC 的执行器生命周期与程序环境边界见 [reference.md](reference.md#ptc-呈现与程序环境)。
+工作台保存与开关走现有运行更新；直接手改定义后，通过重新读取与重建链确认实际加载结果。变量内容更新不重挂 Agent。插件代码、bundle 或 patch 更新需要用户重启 DSH；保留当前运行服务。
 
-完成判据：声明与实际工具注册一致，目标、版本、批准和取消保护没有绕过。
+按需求观察实际主/子 Agent 的条件命中、投递位置与次数、工具可见/执行面或变量写入。重点复核所改边界：没有事实、未授权目标、过期版本或依赖缺失；静态编译成功只证明声明合法。
 
-## 5. 导入和显式转换
-
-ST 预设、角色卡、世界书优先经工作台或 module_import 转换。**ST 导入自动登记缺失裸变量为空占位；普通规则不自动登记。** 导入只转换文本和声明，不执行 STscript 或任意来源代码；报告与生成后的 enabled 状态必须一起检查。
-
-用户要求转换旧内部模块时：
-
-1. 读取完整定义并保存用户同意范围内的备份；保留未知资产、记忆与来源证明。
-2. 将旧上下文策略转换为 context-activation，明确 scan；ST 数字副键映射为具名真值逻辑，不能照抄旧 any/not 注释。
-3. 将 stWorldBook 执行字段拆为 activation，把角色/位置/不支持控制项移至 source.original；模块递归声明 contextActivationRecursive。
-4. 将 set/get/add/inc/decvar 经 parser 转为 module/global 操作，启用 templateEvaluation。局部变量无冲突提升到顶层 variables，同名不同值先报告并解决；ST 局部变量不自动映射到 session 持久域。
-5. 将旧工具与能力改为上表名称；完整规则替换保留分支与未改字段，记忆从 note 副作用分离。
-6. 旧顶层 persona 与 config.yml.personaSources 均已退役。按用户明确要求手工重建为 persona 规则动作，保留省略/空串/false 和受众含义；展示新规则启停与排序供核对，不自动迁移或启用。
-7. 旧私有记忆标记先核实并把私有内容归回 memory.md；不能单删标记后导出。
-8. 在隔离候选校验与读回，再按授权提交；失败保留原定义。
-
-插件不提供自动迁移器。未知宏、不等价控制或无法证明的行为要明确报告，不能把成功解析当成转换完成。
-
-## 6. 生效与交付
-
-工作台保存和开关走官方插件运行更新；变量内容更新不重挂 Agent。直接手改 module.yml 的实际加载结果需通过重新读取/重建链确认。代码、bundle、patch 更新需要用户重启 DSH；不自行停止正在运行的服务。
-
-验证以实际公共出口为准：层、位置、次数、受众、规则条件、epoch、变量写入与 disposer。读取失败、过期版本、解析拒绝不应改盘；发布失败区分已保存与尚未生效，refreshOnly 不重放写入。
-
-在本仓库开发时遵守 AGENTS.md 的隔离 cwd 和完整 package gates。一次性探针放临时目录，永久测试须满足项目的 seam/独立真值/公共接口准入，不为退役符号写墓碑测试。
-
-完成判据：用户要求的改动、生效验证和失败路径已覆盖，交付明确实际运行过的检查与未验证限制。
-
-## 审查已有模块
-
-按身份、完整规则树、执行点、受众、变量 owner、共享参数归属、能力授权、人设规则聚合、官方回退与布尔冲突、排序、保存版本逐项核对。纯审查只给事实与改法，不自动把发现转成修复授权。
+仓库开发遵守 AGENTS.md 的检查要求；安装包使用者不依赖未分发的开发脚本。交付列出修改目标、实际运行的检查、未验证项和是否需要更新技能副本/重启。只读审查按上述所有权、执行点、版本与生效边界给出发现和改法。
