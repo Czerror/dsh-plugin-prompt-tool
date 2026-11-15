@@ -272,8 +272,6 @@ export function createRuleRuntime(ctx, options = {}) {
   }
   const mount = source => {
     const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], hostControls: hostControls.source(), dispose: undefined }
-    for (const rule of source.rules) {
-    }
     for (const rule of source.rules) hostControls.bind(rule, source.moduleId)
     for (const rule of source.rules) bindResultTextDependencies(rule, source.moduleId, options.onOutcome)
     for (const rule of source.rules) {
