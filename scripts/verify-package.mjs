@@ -5,7 +5,7 @@
 // 常规 test 跑的是仓库源码，看不见 package.json#files 的漏配——漏掉一个目录要等装完才发现。
 // 本脚本把包真的打出来验证，任一情况失败即退出码 1：
 //   1. 必需目录（lib / engine / modules / skills / templates）或顶层文件缺失；
-//   2. 解包后与仓库逐文件 SHA256 不一致，或文件数不等（内容漂移）；
+//   2. 安装后与仓库逐文件 SHA256 不一致，或文件数不等（内容漂移）；
 //   3. tarball 装进临时项目后，包内引擎加载不了主入口、编译不了规则，或模块库与随包技能缺失。
 //
 // 写盘范围仅限系统临时目录，结束后清理；不触碰仓库与运行中的 DSH。
@@ -101,11 +101,20 @@ try {
   const tarball = readdirSync(packDir).find((name) => name.endsWith('.tgz'))
   if (tarball === undefined) throw new Error('npm pack 没有产出 tarball')
 
-  const unpacked = join(work, 'unpacked')
-  mkdirSync(unpacked)
-  const tar = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:/Windows', 'System32/tar.exe') : 'tar'
-  execFileSync(tar, ['-xzf', join(packDir, tarball), '-C', unpacked], { windowsHide: true })
-  const pkg = join(unpacked, 'package')
+  const project = join(work, 'project')
+  mkdirSync(project)
+  const { packageManager, devDependencies } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'verify-pack', private: true, type: 'module', packageManager }))
+  // 真实 registry 安装固定官方基线，复用仓库明确锁定的依赖与补丁。
+  const workspace = parse(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8'))
+  const overrides = { ...workspace.overrides, ...Object.fromEntries(Object.entries(devDependencies).filter(([name]) => name.startsWith('@deepseek-ai/'))) }
+  const patchedDependencies = Object.fromEntries(Object.entries(workspace.patchedDependencies ?? {}).map(([name, path]) => [name, resolve(root, path).replaceAll('\\', '/')]))
+  writeFileSync(join(project, 'pnpm-workspace.yaml'), JSON.stringify({ overrides, patchedDependencies, allowUnusedPatches: true }))
+  if (!process.env.npm_execpath) throw new Error('请通过 pnpm run verify:pack 使用仓库固定的 pnpm 版本')
+  const pnpm = process.env.npm_execpath
+  const native = /\.exe$/i.test(pnpm) || isNativeBinary(pnpm)
+  execFileSync(native ? pnpm : process.execPath, [...(native ? [] : [pnpm]), 'add', '--allow-build=koffi', join(packDir, tarball)], { cwd: project, stdio: 'pipe', windowsHide: true })
+  const pkg = join(project, 'node_modules/dsh-plugin-prompt-tool')
 
   for (const name of REQUIRED_DIRS) {
     const packed = join(pkg, name)
@@ -130,19 +139,6 @@ try {
     if (!statSync(join(pkg, name), { throwIfNoEntry: false })?.isFile()) failures.push(`包内缺少 ${name}`)
   }
 
-  const project = join(work, 'project')
-  mkdirSync(project)
-  const { packageManager, devDependencies } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
-  writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'verify-pack', private: true, type: 'module', packageManager }))
-  // 真实 registry 安装固定官方基线，复用仓库明确锁定的依赖与补丁。
-  const workspace = parse(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8'))
-  const overrides = { ...workspace.overrides, ...Object.fromEntries(Object.entries(devDependencies).filter(([name]) => name.startsWith('@deepseek-ai/'))) }
-  const patchedDependencies = Object.fromEntries(Object.entries(workspace.patchedDependencies ?? {}).map(([name, path]) => [name, resolve(root, path).replaceAll('\\', '/')]))
-  writeFileSync(join(project, 'pnpm-workspace.yaml'), JSON.stringify({ overrides, patchedDependencies, allowUnusedPatches: true }))
-  if (!process.env.npm_execpath) throw new Error('请通过 pnpm run verify:pack 使用仓库固定的 pnpm 版本')
-  const pnpm = process.env.npm_execpath
-  const native = /\.exe$/i.test(pnpm) || isNativeBinary(pnpm)
-  execFileSync(native ? pnpm : process.execPath, [...(native ? [] : [pnpm]), 'add', '--allow-build=koffi', join(packDir, tarball)], { cwd: project, stdio: 'pipe', windowsHide: true })
   writeFileSync(join(project, 'smoke.mjs'), SMOKE)
   process.stdout.write(run(`${quote(process.execPath)} smoke.mjs`, { cwd: project, encoding: 'utf8' }))
 } catch (error) {
