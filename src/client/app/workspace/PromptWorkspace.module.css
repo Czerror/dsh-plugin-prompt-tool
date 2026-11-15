@@ -57,6 +57,10 @@
 .nav button[data-active] { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsw-alias-state-business-primary); }
 
 .canvas { min-width: 0; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scroll-padding-block-start: calc(var(--pt-sticky-height, 0px) + 8px); }
+:global([data-conversation-scroll] > [data-slot='conversation.session'] > div:has([data-slot='conversation.view'] [data-workspace-canvas])) {
+  flex: 1 1 0;
+  min-height: 0;
+}
 .canvas > div { width: 100%; padding: 14px 16px 16px; }
 
 @container workspace (max-width: 760px) {
