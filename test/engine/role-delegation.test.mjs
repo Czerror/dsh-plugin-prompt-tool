@@ -63,22 +63,12 @@ const [{ default: Llm, LlmAdapter }, { default: Agents }, { default: Sessions },
   import('@deepseek-ai/dsh-subagent-spawn-in-process'),
 ])
 
-/**
- * 官方 Team 包不在本插件依赖树里：先按普通说明符解析（本地 junction 或将来成为正式依赖），
- * 再回退到 `verify:harness` 固定的官方源码构建目录。两者都不可用时明确报准备缺失，
- * 不用 skip 冒充「已验过真实 Team」。
- */
+/** 官方 Team 必须来自已安装依赖；不可用时明确失败，不用 skip 冒充真实验收。 */
 async function loadTeam() {
   try {
     return (await import('@deepseek-ai/dsh-agent-team')).default
   } catch (primary) {
-    const marker = new URL('../../.scratch/harness/local.json', import.meta.url)
-    const sourceRoot = existsSync(marker) ? JSON.parse(readFileSync(marker, 'utf8')).sourceRoot : undefined
-    const entry = typeof sourceRoot === 'string' ? join(sourceRoot, 'packages', 'team', 'agent-team', 'lib', 'index.js') : undefined
-    if (entry === undefined || !existsSync(entry)) {
-      throw new Error('官方 Team 包不可用：package.json 的 devDependencies 应声明 @deepseek-ai/dsh-agent-team@0.2.2-rc.2（install 后由 lock 的 overrides 解析到固定构建）；也可用 .scratch/harness/local.json 指向固定 rc.2 源码构建；原因：' + String(primary?.message ?? primary))
-    }
-    return (await import(pathToFileURL(entry).href)).default
+    throw new Error('官方 Team 包不可用：请按锁文件安装 @deepseek-ai/dsh-agent-team@0.2.2-rc.2；原因：' + String(primary?.message ?? primary))
   }
 }
 const TeamService = await loadTeam()

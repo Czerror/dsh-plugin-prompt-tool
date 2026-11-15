@@ -12,13 +12,13 @@ Session 解释器在 Agent 创建及插件挂载已有 Agent 时安装，公开�
 
 普通规则 `host-control / messages-current-system` 仅接受 `value: true`，默认开启，独立于 `current-system-snapshot`，不隐式开启它。单独生效时，Messages 顶层 system 使用当前请求历史中最后一条非空 system 正文，空正文不擦除已有正文，原 `options.system` 前缀保持。两者在同一步同时获准时，按真实消息来源先放本步已接受的完整 `system-prompt` 正文，再按原顺序组合其他来源 system；其他来源的空白、换行和同文贡献保持，不按正文全局去重，不把这些正文降为中途 system。工具增删通知仍沿官方 developer 路径，工具配对、ID 和内容校验不绕过。
 
-Messages 资格复用真实 Agent 的 sealed 工具步骤、原 prepared adapter 身份与 snapshot owner 判据，热更新不混入旧步及重试，缺 owner、取消、释放或路由重挂停止旧资格。缺失必要 owner 只暂停该动作及显式依赖正文，无关规则继续。可选 early 接入逐一校验 `@deepseek-ai/dsh-llm-deepseek@0.2.2-rc.2` 的完整发行指纹和唯一锚点；目标为固定源码构建产物。需用户重启 DSH 后生效，真实 CLI/Web 综合验收另行执行。
+Messages 资格复用真实 Agent 的 sealed 工具步骤、原 prepared adapter 身份与 snapshot owner 判据，热更新不混入旧步及重试，缺 owner、取消、释放或路由重挂停止旧资格。缺失必要 owner 只暂停该动作及显式依赖正文，无关规则继续。可选 early 接入逐一校验 npm 官方发布包 `@deepseek-ai/dsh-llm-deepseek@0.2.2-rc.2` 的完整发行指纹和唯一锚点。需用户重启 DSH 后生效，真实 CLI/Web 综合验收另行执行。
 
 Responses 同段包含系统正文和工具删除时，正文沿系统角色映射，工具删除沿固定 PI 的当前工具集合折叠；关闭时保留官方角色判据。
 
 请求身份首段与系统角色由两个独立 `host-control` 动作控制：`oauth-identity-prefix` 和 `provider-system-role`，均只接受 `value: true`，内置卡默认开启。前者只跳过 Anthropic OAuth builder 自动添加的 Claude Code 身份首块，用户正文中的相同句子保留；认证、headers、工具名、缓存与其他正文保持官方路径。后者只调整 completions 与 responses 的系统正文角色判据：原推理与 compat 条件允许 developer 时，仅 `URL.hostname` 精确为 `api.openai.com` 或真正的 `.azure.com` 子域保留 developer，其余使用 system。工具增删通知的既有 developer 语义不改；相似后缀、userinfo 和 query 不授权原生角色。
 
-当前适配仅面向固定官方源码 `ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c` 构建的 `@deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.2` 与实际解析的 `@earendil-works/pi-ai@1.3.0`，应用该源码的共享 streamed tool-argument patch。三条协议分别校验完整指纹与唯一锚点，未验证文件不投影。Messages 每次发送完整 system/tools；第三方 completions 缓存键沿该版官方判据，不启用后续版本专有选项。Responses 纯新增工具声明保留原生 developer `additional_tools`；出现删除或同名重声明时，官方将工具历史折叠到顶层当前集合，插件不添加文本通知。角色映射只改变系统正文。
+当前适配面向 npm 官方发布包 `@deepseek-ai/dsh-llm-pi-ai@0.2.2-rc.2` 与实际解析的 `@earendil-works/pi-ai@1.3.0`；开发与 CI 通过 `patches/pi-ai-1.3.0.patch` 保留官方源码 `ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c` 的共享 streamed tool-argument patch，无需构建官方源码。三条协议分别校验完整指纹与唯一锚点，未验证文件不投影。Messages 每次发送完整 system/tools；第三方 completions 缓存键沿该版官方判据，不启用后续版本专有选项。Responses 纯新增工具声明保留原生 developer `additional_tools`；出现删除或同名重声明时，官方将工具历史折叠到顶层当前集合，插件不添加文本通知。角色映射只改变系统正文。
 
 资格在实际 Agent 的工具步骤准备时冻结，loop 只在本次 `llm.prepareCall` 期间携带身份，实际 adapter 将它绑定到原 prepared stream。请求专属模型副本携带该身份，不按 sessionId、最近 Agent 或全局 fetch 关联。热更只影响后续步骤；取消、步骤关闭、规则 owner 撤回或 adapter 注册释放后停止本来源效果，重挂不能复活旧资格。发行适配分别校验 loop、LLM 路由、DSH PI adapter 与 PI provider 的版本、完整指纹和唯一锚点；两个 OpenAI 目标均成功加载才就绪，缺失仅暂停该能力及显式依赖分支，OAuth 能力独立。需要 early 入口与用户重启 DSH 后生效；本地最终载荷不承诺远端服务接受，CLI/Web 综合验收另行执行。
 

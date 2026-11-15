@@ -181,19 +181,13 @@ AGENTS.md/CLAUDE.md 及 local 变体正文属于用户文件。编辑需上下�
 
 ## 开发与验证
 
-开发与 CI 唯一目标为官方 `dsh-v0.2.2-rc.2`，SHA `ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c`，使用 Windows x64 源码构建包。首次安装前准备该源码的完整干净 checkout，以 Node 26.13.0、pnpm 11.28.5 执行：
+开发与 CI 使用 npm 已发布的官方 `0.2.2-rc.2` 包，以 Node 26.13.0、pnpm 11.28.5 执行：
 
 ```powershell
-$Source = '<固定官方源码 checkout 的绝对路径>'
-pnpm --dir $Source install --frozen-lockfile
-pnpm --dir $Source run package:desktop:win:x64:unsigned
-node scripts/sync-harness-deps.mjs --source-root $Source
 pnpm install --frozen-lockfile
 ```
 
-源码构建采用官方 unsigned/local 流程；不安装或启动生成的桌面程序。`sync:harness` 先核验固定源码 SHA、tag 与已跟踪文件无改动，再暂存构建 tarball 与官方 PI 1.3.0 patch，生成 ignored `.scratch/harness/` 下的安装 hook 与本机来源路径，不修改 manifest、不安装。冷 checkout 尚无 node_modules 时，脚本从已安装完成的官方 `packages/settings/settings` 取得其声明的 YAML 依赖，不需要先用旧宿主包引导。根 `pnpm-workspace.yaml` 自动启用该 hook，普通安装、验证与构建均复用固定源图；冷 checkout 必须先完成上述暂存步骤再执行根 pnpm 命令。
-
-根锁保留相对 tarball 路径、integrity 与第三方锁定输入，tarball、源码路径和机器路径不提交。CI 按固定 SHA、平台、工具链与本仓库锁哈希缓存官方 packed 产物；缓存缺失时重新构建并执行相同 frozen 安装。相同 SHA 的独立构建尚不承诺 tarball 字节相同：完整性不匹配必须失败，由维护者确认构建输入后更新锁，不删除 integrity 或回退 registry。更换目标属于显式基线升级。
+依赖版本与 registry 完整性由 `pnpm-lock.yaml` 锁定，冷 checkout 可直接安装，无需官方源码、桌面打包配置或本地 `.scratch` 产物。PI 保留已验证的 `1.3.0` 及 [官方补丁](patches/pi-ai-1.3.0.patch)，由 pnpm 安装时应用。CI 使用 frozen 安装，依赖图不一致时失败；升级官方基线需同时更新声明与锁文件并重新验证。
 
 在本仓库按 AGENTS.md 从隔离目录启动命令：
 
@@ -204,13 +198,12 @@ Set-Location 'D:\AI\workspase\_temp'
 pnpm --dir $Repo typecheck
 pnpm --dir $Repo lint
 pnpm --dir $Repo test
-pnpm --dir $Repo build
 git -C $Repo diff --check
 ```
 
-涉及分发或宿主接入另执行 `verify:host`、`verify:harness`、`verify:pack`。`verify:host` 校验固定源 SHA、包名版本、tarball/安装入口完整性、根 node_modules 真实解析、锁与 peer 图、导入约束及官方档位。`verify:harness` 等同于 `sync:harness --check`，从 ignored `.scratch/harness/local.json` 读取首次显式指定的本地源码路径，只读复验源码、tag、已跟踪文件无改动、构建包与官方 PI patch，不查询 registry。`verify:pack` 使用当前 pnpm 在临时项目安装真实 tarball，复用同一源码包与 PI patch 图；临时绝对路径配置不进入发布包。自建包不是 npm 已发布版本；失败阻断交付，不自动追新或降级。
+涉及分发或宿主接入另执行 `verify:host`、`verify:pack`。`verify:host` 校验官方包名版本、registry 锁记录、根 node_modules 真实解析、依赖与 peer 图、导入约束及官方档位，拒绝链接到仓库外的源码。`verify:pack` 在临时项目安装真实 tarball，以相同官方开发依赖版本执行安装冒烟；临时安装配置不进入发布包。失败阻断交付，不自动追新或降级。
 
-参考模板用 `rebuild:module-template`，追加 `-- --check` 检查漂移。test 脚本先 build，再以独立 cwd/TEMP/TMP/DSH_HOME 运行 Node 测试。类型、单测和包检查通过不代表真实发布宿主与桌面 UI 已验收；隔离发布 CLI 的 headless/web 验证和用户桌面验收分别记录。
+参考模板用 `rebuild:module-template`，追加 `-- --check` 检查漂移。test 脚本先 build，再以独立 cwd/TEMP/TMP/DSH_HOME 运行 Node 测试。发布流程复用测试构建，`verify:pack` 通过 `npm pack` 的 `prepare` 重建并验证分发包，最终 `npm publish --ignore-scripts` 复用已验证产物。类型、单测和包检查通过不代表真实发布宿主与桌面 UI 已验收；隔离发布 CLI 的 headless/web 验证和用户桌面验收分别记录。
 
 源文件通过 package scripts 生成 lib 和 YAML vendor 快照，不手改构建产物。永久测试仅保留注入行为、写盘语义、bridge 载荷、安全拒绝、UI slot / 入口注册五条 seam 的公共接口回归，期望来自独立真值；临时探针及纯旧名消失检查不进入测试套件。
 

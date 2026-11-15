@@ -2,25 +2,20 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire, registerHooks } from 'node:module'
-import { execFileSync } from 'node:child_process'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { installRewindConversation } from '../../src/client/data/rewind-conversation.ts'
 import { Context } from '@deepseek-ai/cordis'
 
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
-const version = require('@deepseek-ai/dsh-client-ui-conversation/package.json').version
-const archives = new Map()
-// Client-only support packages are in the existing fixed package graph, not Node runtime dependencies.
+const sources = new Map()
+// Client-only support packages need browser adaptation, not archive extraction.
 const loader = registerHooks({ resolve(specifier, context, next) {
   if (specifier === '@deepseek-ai/dsh-client-store' || specifier === '@deepseek-ai/dsh-util-values') {
-    let url = archives.get(specifier)
+    let url = sources.get(specifier)
     if (url === undefined) {
       const name = specifier.slice('@deepseek-ai/'.length)
-      const archive = fileURLToPath(new URL(`../../.scratch/harness/packages/deepseek-ai-${name}-${version}.tgz`, import.meta.url))
-      const tar = process.platform === 'win32' ? join(process.env.SystemRoot ?? 'C:/Windows', 'System32/tar.exe') : 'tar'
-      let source = execFileSync(tar, ['-xOf', archive, 'package/lib/index.js'], { encoding: 'utf8', windowsHide: true })
+      let source = readFileSync(new URL(next(specifier, context).url), 'utf8')
       if (name === 'dsh-client-store') {
         // This target has no groups: retain the actual notifier; fail if a grouping store is used.
         const parsed = ts.createSourceFile('official-store.js', source, ts.ScriptTarget.ES2024, true, ts.ScriptKind.JS)
@@ -40,7 +35,7 @@ const loader = registerHooks({ resolve(specifier, context, next) {
         source = `${notify.getText(parsed)}\nexport { notifySubscribers }; export function createSnapshotStore() { throw new Error('Grouping is outside this fixture'); }`
       }
       url = `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`
-      archives.set(specifier, url)
+      sources.set(specifier, url)
     }
     return { url, shortCircuit: true }
   }
