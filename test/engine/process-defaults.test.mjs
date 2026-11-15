@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
+import { registerHooks, createRequire } from 'node:module'
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse } from 'yaml'
@@ -18,6 +19,58 @@ const { moduleRoot } = isolatedHome('pt-process-defaults-')
 const processRule = { id: 'future-policy', executionScope: 'process', then: [
   { id: 'default', kind: 'host-control', capability: 'approval-config-default', value: 'never' },
 ] }
+
+test('published defaults affect only subsequent recognized real owner constructions', () => {
+  const entry = createRequire(import.meta.url).resolve('@deepseek-ai/dsh-agent-preset-registry')
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict'
+    import { createRequire } from 'node:module'
+    import { pathToFileURL } from 'node:url'
+    const dependencies = createRequire(process.argv[1])
+    const load = async name => import(pathToFileURL(dependencies.resolve(name)).href)
+    await import(${JSON.stringify(new URL('../../engine/process-defaults-early.mjs', import.meta.url).href)})
+    const { Context } = await load('@deepseek-ai/cordis')
+    const { default: Loader } = await load('@deepseek-ai/cordis-plugin-loader')
+    const { default: Projections } = await load('@deepseek-ai/dsh-session-projection')
+    const { default: Sandbox } = await load('@deepseek-ai/dsh-sandbox-policy')
+    const { default: Approval } = await load('@deepseek-ai/dsh-user-approval')
+    const { createProcessHostControls } = await import(${JSON.stringify(new URL('../../engine/host-control-process.mjs', import.meta.url).href)})
+    delete process.env.DSH_PERMISSION_MODE
+    const roots = []
+    async function construct(name, config) {
+      const root = new Context(); roots.push(root)
+      await root.plugin(Loader); await root.plugin(Projections)
+      root.loader.import = () => name.endsWith('sandbox-policy') ? Sandbox : Approval
+      await root.loader.create({ id: 'owner', name, config }); await root.loader.await()
+      return name.endsWith('sandbox-policy') ? root.sandboxPolicy : root.approval
+    }
+    const sandbox = '@deepseek-ai/dsh-sandbox-policy', approval = '@deepseek-ai/dsh-user-approval'
+    const soft = { mode: { __jsExpr: "process.env.DSH_PERMISSION_MODE ?? 'workspace-write'" } }
+    const composition = { policy: { __jsExpr: "(process.env.DSH_PERMISSION_MODE ?? 'workspace-write') === 'danger-full-access' ? 'never' : 'ask'" } }
+    const controls = createProcessHostControls(new Context(), () => {})
+    try {
+      for (const [capability, name, config, before, after] of [
+        ['sandbox-soft-default', sandbox, soft, 'workspace-write', 'danger-full-access'],
+        ['approval-composition-default', approval, composition, 'ask', 'never'],
+        ['approval-config-default', approval, {}, 'ask', 'never'],
+      ]) {
+        const read = owner => name === sandbox ? owner.resolve().mode : owner.config.policy
+        const existing = await construct(name, config)
+        assert.equal(read(existing), before)
+        await controls.publish('constructor', { rules: [{ id: 'defaults', executionScope: 'process', actions: [{ kind: 'host-control', capability, value: after }] }] }, () => true)
+        assert.equal(read(await construct(name, config)), after)
+        assert.equal(read(existing), before)
+        assert.equal(read(await construct(name, name === sandbox ? { mode: 'read-only' } : { policy: 'ask' })), name === sandbox ? 'read-only' : 'ask')
+        process.env.DSH_PERMISSION_MODE = 'workspace-write'
+        if (capability !== 'approval-config-default') assert.equal(read(await construct(name, config)), before)
+        delete process.env.DSH_PERMISSION_MODE
+        controls.withdraw()
+        assert.equal(read(await construct(name, config)), before)
+      }
+    } finally { controls.withdraw(); await controls.dispose(); for (const root of roots.reverse()) await root.fiber.dispose() }
+  `, entry], { encoding: 'utf8', timeout: 20000 })
+  assert.equal(result.status, 0, result.stderr + result.stdout)
+})
 
 test('public refresh recovers command confine after an optional package becomes resolvable', async () => {
   const id = 'command-package-recovery', dir = join(moduleRoot, id)
@@ -94,6 +147,15 @@ test('public module publication without Agents selects command calls and disabli
     await runtime.settled()
     assert.deepEqual(runtime.publicationFailures(), [])
     assert.deepEqual(root.sandbox.confine(['fixture'], {}), { argv: ['fixture'], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] })
+    const broken = join(moduleRoot, 'isolated-broken-process')
+    enabled = []
+    await runtime.refresh()
+    assert.deepEqual(root.sandbox.confine(['fixture'], {}), { refusal: 'original' })
+    mkdirSync(broken, { recursive: true })
+    writeFileSync(join(broken, 'module.yml'), 'rules: [')
+    enabled = [id, 'isolated-broken-process']
+    await assert.rejects(runtime.refresh(), /更新失败/)
+    assert.deepEqual(root.sandbox.confine(['fixture'], {}), { argv: ['fixture'], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }, '局部错误汇总不撤回有效进程发布')
     enabled = []
     await runtime.refresh()
     assert.deepEqual(root.sandbox.confine(['fixture'], {}), { refusal: 'original' })

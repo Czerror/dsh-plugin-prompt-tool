@@ -8,6 +8,7 @@ import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { createRequire } from 'node:module'
 import { resolveHostPackage } from './host-package.mjs'
 import { actionMatches } from './conditions/evaluation.mjs'
+import { bindHostDependency } from './conditions/host-dependencies.mjs'
 
 const prunerStates = new WeakMap()
 
@@ -36,7 +37,9 @@ export function repeatReminderStatus(agent) {
 export function bindRepeatCompactionDependencies(rule, moduleId, statusFor, onOutcome) {
   const controls = rule.actions.filter(isRepeatCompactionAction).map(action => ({ action,
     dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, i) => candidate.branchPath[i] === part)).map(candidate => candidate.id)) }))
-  rule.repeatCompactionAvailable = (entry, frame) => {
+  bindHostDependency(rule, 'post-tool', { key: 'repeatCompaction', reportUnavailable: true,
+    skip: frame => frame.ignoreRepeatCompactionDependency === true,
+    available: (entry, frame) => {
     const applicable = controls.filter(({ dependent }) => dependent.has(entry.ruleActionId ?? entry.id))
     if (applicable.length === 0) return true
     if (!frame || !entry) return true
@@ -49,6 +52,42 @@ export function bindRepeatCompactionDependencies(rule, moduleId, statusFor, onOu
         outcome: 'unavailable', identityOutcome: 'condition-unavailable', reason: current?.reason ?? 'official owner unavailable', definitionRevision: rule.definitionRevision, agentId: frame.subject?.agent?.id }) } catch {}
       return false
     })
+  } })
+}
+
+/** Session policies keep the original post-execute and pruner consumers. */
+export function registerRepeatCompaction(agent, ctx, onOutcome) {
+  const repeatSessions = new Set(), prunerBlockedSessions = new Set()
+  let active = true
+  const repeatRelease = ctx.on('tools/post-execute', async (exec, result, next) => {
+    const enabled = repeatSessions.has(exec?.agent?.session)
+    const decision = await next()
+    if (!active || exec?.signal?.aborted || !enabled) return decision
+    return filterRepeatReminderDecision(decision, true)
+  }, { prepend: true })
+  const prunerRelease = typeof ctx.inject === 'function'
+    ? installPrunerGate(ctx, session => prunerBlockedSessions.has(session) ? false : undefined)
+    : () => {}
+  const reset = () => { repeatSessions.clear(); prunerBlockedSessions.clear() }
+  return {
+    status(action, subject) { return action.capability === 'compaction-tool-result-pruner'
+      ? { available: prunerRelease.available?.(subject) === true, reason: 'official toolResultPruner unavailable' }
+      : repeatReminderStatus(subject) },
+    prepare(entries, frame, context) {
+      const subject = frame.subject?.agent ?? context?.agent ?? agent
+      const session = subject?.session
+      if (session === undefined) return
+      repeatSessions.delete(session); prunerBlockedSessions.delete(session)
+      for (const entry of entries) if (entry.rule.enabled !== false && actionMatches(entry, frame)) {
+        if (entry.action.capability === 'repeat-tool-reminder') repeatSessions.add(session)
+        if (entry.action.capability === 'compaction-tool-result-pruner') {
+          if (prunerRelease.available?.(subject) === true) prunerBlockedSessions.add(session)
+          else { try { onOutcome?.({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, actionId: entry.id, channel: 'host:compaction-tool-result-pruner', outcome: 'unavailable', identityOutcome: 'condition-unavailable', reason: 'official toolResultPruner injection unavailable' }) } catch {} }
+        }
+      }
+    },
+    reset,
+    dispose() { if (!active) return; active = false; repeatRelease?.(); prunerRelease?.(); reset() },
   }
 }
 

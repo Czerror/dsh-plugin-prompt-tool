@@ -1,5 +1,6 @@
 import { toolStepFor } from './tool-scope.mjs'
 import { actionMatches } from './conditions/evaluation.mjs'
+import { bindHostDependency } from './conditions/host-dependencies.mjs'
 
 const ownerKey = Symbol.for('prompt-tool:file-read-limits-owner')
 const key = Symbol.for('prompt-tool:file-read-limits')
@@ -67,7 +68,7 @@ export function bindReadLimitsDependencies(rule, moduleId, entries, onOutcome) {
   const controls = rule.actions.filter(isReadLimitsAction).map(action => ({ action,
     dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, index) => candidate.branchPath[index] === part)).map(candidate => candidate.id)) }))
   if (controls.length === 0) return
-  rule.readLimitsAvailable = (entry, frame) => {
+  const available = (entry, frame) => {
     if (!controls.some(({ dependent }) => dependent.has(entry.ruleActionId ?? entry.id))) return true
     const checking = { ...frame, ignoreReadLimitsDependency: true, onOutcome: undefined,
       decisions: new Map(), actionDecisions: new Set(), actionOutcomes: new Map(), reminders: new Map() }
@@ -86,6 +87,8 @@ export function bindReadLimitsDependencies(rule, moduleId, entries, onOutcome) {
       return false
     })
   }
+  bindHostDependency(rule, 'before', { key: 'file-read-limits', skip: frame => frame.ignoreReadLimitsDependency,
+    available, reportUnavailable: true })
 }
 
 export function prepareReadLimits(entries, frame, preview = false) {

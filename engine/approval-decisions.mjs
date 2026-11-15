@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { toolStepFor } from './tool-scope.mjs'
 import { actionMatches } from './conditions/evaluation.mjs'
 import { symbols } from '@deepseek-ai/cordis'
+import { bindHostDependency } from './conditions/host-dependencies.mjs'
 
 const calls = new AsyncLocalStorage()
 const original = value => value?.[symbols.original] ?? value
@@ -43,7 +44,7 @@ export function prepareApprovalDecisions(entries, frame) {
 export function bindApprovalDecisionsDependencies(rule, moduleId, onOutcome) {
   const controls = rule.actions.filter(isApprovalDecisionsAction).map(action => ({ action,
     dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, i) => candidate.branchPath[i] === part)).map(candidate => candidate.id)) }))
-  rule.approvalDecisionsAvailable = (entry, frame) => {
+  const available = (entry, frame) => {
     const applicable = controls.filter(({ dependent }) => dependent.has(entry.ruleActionId ?? entry.id))
     if (applicable.length === 0) return true
     const checking = { ...frame, ignoreApprovalDecisionsDependency: true, onOutcome: undefined,
@@ -58,6 +59,7 @@ export function bindApprovalDecisionsDependencies(rule, moduleId, onOutcome) {
       return false
     })
   }
+  bindHostDependency(rule, 'before', { key: 'approval-decisions', skip: frame => frame.ignoreApprovalDecisionsDependency, available })
 }
 export const approvalDecisionsState = globalThis[Symbol.for('prompt-tool:approval-decisions')] ??= {
   autoGrant: { available: false, reason: 'official approval early owner unavailable' },

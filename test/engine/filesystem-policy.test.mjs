@@ -24,7 +24,9 @@ test('文件策略缺少真实owner只暂停依赖分支，独立正文仍投递
     { if: { scope: { audience: 'main' } }, then: [
       { id: 'fence', kind: 'host-control', capability: 'filesystem-fence', value: true }, body('dependent', 'DEPENDENT FILE BODY'),
   ] }, body('sibling', 'SIBLING FILE BODY'),
-  ] }])
+  ] }, ...['sandbox-file-write', 'filesystem-observation'].map(capability => ({ id: capability, then: [
+    { id: 'policy', kind: 'host-control', capability, value: true }, body('blocked', `BLOCKED ${capability}`),
+  ] }))])
   runtime.replace([{ moduleId: 'files', rules }])
   let services
   await agent.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) { services = { tools: ctx.tools, prompt: ctx.systemPrompt } } })
@@ -32,9 +34,13 @@ test('文件策略缺少真实owner只暂停依赖分支，独立正文仍投递
   const toolSet = await services.tools.resolve(context)
   const assembly = await services.prompt.assemble({ ...context, toolSet })
   assert.equal(assembly.sections.some(section => section.text.includes('DEPENDENT FILE BODY')), false)
+  assert.equal(assembly.sections.some(section => section.text.includes('BLOCKED ')), false)
   assert.ok(assembly.sections.some(section => section.text.includes('SIBLING FILE BODY')))
   assert.equal(rules[0].enabled, true)
   assert.ok(outcomes.some(value => value.channel === 'host:filesystem-fence' && value.outcome === 'unavailable'))
+  assert.ok(outcomes.some(value => value.channel === 'host:filesystem-observation' && value.outcome === 'unavailable'))
+  assert.ok(outcomes.some(value => value.channel === 'host:sandbox-file-write' && value.outcome === 'unavailable'
+    && value.reason === (process.platform === 'darwin' ? 'Seatbelt exec identity adapter unavailable' : 'Seatbelt file-write policy is unavailable on this platform')))
   toolSet.dispose()
 })
 
@@ -98,6 +104,10 @@ test('真实Cordis工具策略按Agent隔离，压缩重判、取消及owner释�
   }
   const call = async frame => (await tools.execute({ ...frame, calls: [{ type: 'tool-call', id: 'policy', name: 'inspect_file_policy', arguments: '{}' }] })).results[0].result.value
   replace('filesystem-fence')
+  const unaccepted = { agent, scope: scopeOf(agent.ctx), signal: new AbortController().signal }
+  const unacceptedSet = await tools.resolve(unaccepted)
+  t.after(() => unacceptedSet.dispose())
+  await assert.rejects(call({ ...unaccepted, toolSet: unacceptedSet }), { code: 'TOOL_STEP_UNAVAILABLE' })
   const first = await prepare()
   assert.equal(filesystemPolicyStatus('filesystem-fence', agent).available, true)
   assert.equal(await call(first), '[true,false,"read-only"]')

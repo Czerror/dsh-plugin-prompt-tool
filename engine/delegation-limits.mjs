@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { toolStepFor } from './tool-scope.mjs'
 import { actionMatches } from './conditions/evaluation.mjs'
+import { bindHostDependency } from './conditions/host-dependencies.mjs'
 
 const ownerKey = Symbol.for('prompt-tool:delegation-limits-owner')
 export const delegationLimitsState = globalThis[Symbol.for('prompt-tool:delegation-limits')] ??= {
@@ -109,7 +110,7 @@ export function bindDelegationLimitsDependencies(rule, moduleId, entries, onOutc
   const controls = rule.actions.filter(isDelegationLimitsAction).map(action => ({ action,
     dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, index) => candidate.branchPath[index] === part)).map(candidate => candidate.id)) }))
   if (controls.length === 0) return
-  rule.delegationLimitsAvailable = (entry, frame) => {
+  const available = (entry, frame) => {
     if (!controls.some(({ dependent }) => dependent.has(entry.ruleActionId ?? entry.id))) return true
     const checking = { ...frame, ignoreDelegationLimitsDependency: true, onOutcome: undefined,
       decisions: new Map(), actionDecisions: new Set(), actionOutcomes: new Map(), reminders: new Map() }
@@ -131,4 +132,6 @@ export function bindDelegationLimitsDependencies(rule, moduleId, entries, onOutc
       return false
     })
   }
+  bindHostDependency(rule, 'before', { key: 'delegation-limits', skip: frame => frame.ignoreDelegationLimitsDependency,
+    available, reportUnavailable: true })
 }

@@ -16,21 +16,11 @@ import { installToolStepAssembly } from './tool-step-assembly.mjs'
 import { subagentParamsStatus } from './subagent-params.mjs'
 import { requestBudgetStatus } from './request-budget-bridge.mjs'
 import { compileWhen } from './conditions/index.mjs'
-import { bindReadLimitsDependencies, isReadLimitsAction, prepareReadLimits } from './read-limits.mjs'
-import { bindDelegationLimitsDependencies, isDelegationLimitsAction, prepareDelegationLimits } from './delegation-limits.mjs'
-import { bindFilesystemPolicyDependencies, isFilesystemPolicyAction, prepareFilesystemPolicy } from './filesystem-policy.mjs'
-import { bindApprovalDecisionsDependencies, isApprovalDecisionsAction, prepareApprovalDecisions } from './approval-decisions.mjs'
-import { bindEscalationDecisionDependencies, isEscalationDecisionAction, prepareEscalationDecisions } from './escalation-decisions.mjs'
+import { createHostControlAgent } from './host-control-agent.mjs'
 import { applyToolDescriptions } from './actions/assembly.mjs'
 import { applyTransportDescriptions, toolDescriptionObservation, settleSkillDescriptions, skillDescriptionObservation } from './tool-metadata.mjs'
 import { resultTextOwners } from './result-text-owners.mjs'
 import { bindResultTextDependencies } from './result-text.mjs'
-import { providerHookDecisionsState, isProviderHookDecisionsAction, prepareProviderHookDecisions, bindProviderHookDependencies } from './provider-hook-decisions.mjs'
-import { bindRepeatCompactionDependencies, filterRepeatReminderDecision, installPrunerGate, isRepeatCompactionAction, repeatReminderStatus } from './repeat-compaction-policy.mjs'
-import { bindCurrentSystemSnapshotDependencies, isCurrentSystemSnapshotAction, registerCurrentSystemSnapshot } from './current-system-snapshot.mjs'
-import { isRewindAction, registerRewindControl } from './rewind-control.mjs'
-import { bindMessageShapeGuardsDependencies, isMessageShapeGuardsAction, registerMessageShapeGuards } from './message-shape-guards.mjs'
-import { bindProviderSystemRolesDependencies, isProviderSystemRolesAction, registerProviderSystemRoles } from './provider-system-roles.mjs'
 
 const noNext = new Set(['agent/inbox/inserted', 'agent/turn-stopping', 'subagent/start', 'subagent/end'])
 // 判据与 `order.mjs#compareConfigSequence` 有意不同：这里在同通道同点内按 moduleId 字母序 +
@@ -146,29 +136,10 @@ function mountSources(ctx, sources, options = {}) {
         const { action, rule, moduleId } = item
         if (action.kind === 'request-params' && action.maxTokens !== undefined) options.collectRequestBudget({ action, rule, id: action.id, sourceModuleId: moduleId,
           actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
-        if (isProviderSystemRolesAction(action)) {
-          options.collectProviderSystemRoles({ action, rule, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
-          continue
-        }
-        if (isMessageShapeGuardsAction(action)) {
-          options.collectMessageShapeGuards({ action, rule, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
-          continue
-        }
-        if (isCurrentSystemSnapshotAction(action)) {
-          options.collectCurrentSystemSnapshot({ action, rule, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
-          continue
-        }
-        if (isRewindAction(action)) {
-          options.collectRewind({ action, rule, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
-          continue
-        }
-        if (action.kind === 'host-control' && isRepeatCompactionAction(action)) {
-          options.collectRepeatCompaction?.({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
-            ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
-          continue
-        }
-        if (action.kind === 'persona' || action.kind === 'subagent-params' || isReadLimitsAction(action) || isDelegationLimitsAction(action) || isFilesystemPolicyAction(action) || isApprovalDecisionsAction(action) || isEscalationDecisionAction(action) || isProviderHookDecisionsAction(action)) {
-          const collect = isProviderHookDecisionsAction(action) ? options.collectProviderHookDecisions : isEscalationDecisionAction(action) ? options.collectEscalationDecisions : isApprovalDecisionsAction(action) ? options.collectApprovalDecisions : isFilesystemPolicyAction(action) ? options.collectFilesystemPolicy : action.kind === 'persona' ? options.collectPersona : isReadLimitsAction(action) ? options.collectReadLimits : isDelegationLimitsAction(action) ? options.collectDelegationLimits : options.collectSubagentParams
+        if (options.collectHostControl?.({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
+          ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })) continue
+        if (action.kind === 'persona' || action.kind === 'subagent-params') {
+          const collect = action.kind === 'persona' ? options.collectPersona : options.collectSubagentParams
           collect({ action, rule, id: action.id, sequence: action.channelOrder, sourceModuleId: moduleId,
             ruleIndex: item.ruleIndex, ruleActionIndex: action.actionIndex, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen })
           continue
@@ -254,24 +225,10 @@ export function createRuleRuntime(ctx, options = {}) {
   let registeredCoordinator = initialCoordinator
   let active = true
   let records = new Map()
-  const currentSystemSnapshot = options.agent === undefined ? undefined : registerCurrentSystemSnapshot(options.agent)
-  const messageShapeGuards = options.agent === undefined ? undefined : registerMessageShapeGuards(options.agent)
-  const providerSystemRoles = options.agent === undefined ? undefined : registerProviderSystemRoles(options.agent)
-  const repeatSessions = new Set(), prunerBlockedSessions = new Set()
-  const repeatRelease = ctx.on('tools/post-execute', async (exec, result, next) => {
-    const enabled = repeatSessions.has(exec?.agent?.session)
-    const decision = await next()
-    if (!active || exec?.signal?.aborted || !enabled) return decision
-    return filterRepeatReminderDecision(decision, true)
-  }, { prepend: true })
-  const prunerRelease = typeof ctx.inject === 'function'
-    ? installPrunerGate(ctx, session => prunerBlockedSessions.has(session) ? false : undefined)
-    : () => {}
   let points = new Map()
   const listeners = new Map()
   const ruleOwners = new WeakMap()
   const resultTextOwner = {}
-  let releaseProviderHook
   const memo = new Map()
   const report = options.onOutcome === undefined ? undefined : (rule, channel, outcome) => options.onOutcome({ moduleId: ruleOwners.get(rule), ruleId: rule.id, channel, outcome })
   const assemblyFrames = new WeakMap()
@@ -284,12 +241,9 @@ export function createRuleRuntime(ctx, options = {}) {
     }
     return frame
   }
-  const releaseRewind = options.agent === undefined ? undefined : registerRewindControl(options.agent, capability => active
-    && [...records.values()].some(record => record.rewind.some(entry => entry.action.capability === capability && actionMatches(entry, assemblyFrame({ agent: options.agent })))))
   let layers
-  const readLimitEntries = () => [...records.values()].flatMap(record => record.readLimits)
-  const delegationLimitEntries = () => [...records.values()].flatMap(record => record.delegationLimits)
-  const filesystemEntries = () => [...records.values()].flatMap(record => record.filesystemPolicy)
+  const hostControls = createHostControlAgent(() => records.values(), options.onOutcome, options.agent, ctx,
+    (channel, args) => ruleFrame(channel, args, warnOnce, ctx, report))
   let releaseAssembly
   let releaseMemo, releaseFallback
   const register = (coordinator, source) => {
@@ -317,24 +271,10 @@ export function createRuleRuntime(ctx, options = {}) {
     } catch (error) { releaseMemo(); releaseMemo = undefined; throw error }
   }
   const mount = source => {
-    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], readLimits: [], delegationLimits: [], filesystemPolicy: [], providerHookDecisions: [], repeatCompaction: [], currentSystemSnapshot: [], rewind: [], messageShapeGuards: [], dispose: undefined }
-    record.approvalDecisions = []
-    record.providerSystemRoles = []
-    record.escalationDecisions = []
+    const record = { source, points: [], text: [], personas: [], subagentParams: [], requestBudgets: [], hostControls: hostControls.source(), dispose: undefined }
     for (const rule of source.rules) {
-      bindFilesystemPolicyDependencies(rule, source.moduleId, options.onOutcome)
-      bindApprovalDecisionsDependencies(rule, source.moduleId, options.onOutcome)
-      bindEscalationDecisionDependencies(rule, source.moduleId, options.onOutcome)
-      bindProviderHookDependencies(rule, source.moduleId, options.onOutcome)
-      bindCurrentSystemSnapshotDependencies(rule, source.moduleId, options.onOutcome)
-      bindMessageShapeGuardsDependencies(rule, source.moduleId, options.onOutcome)
-      bindProviderSystemRolesDependencies(rule, source.moduleId, options.onOutcome)
     }
-    for (const rule of source.rules) bindDelegationLimitsDependencies(rule, source.moduleId, delegationLimitEntries, options.onOutcome)
-    for (const rule of source.rules) bindReadLimitsDependencies(rule, source.moduleId, readLimitEntries, options.onOutcome)
-    for (const rule of source.rules) bindRepeatCompactionDependencies(rule, source.moduleId, (action, agent) => action.capability === 'compaction-tool-result-pruner'
-      ? { available: prunerRelease.available?.(agent) === true, reason: 'official toolResultPruner unavailable' }
-      : repeatReminderStatus(agent), options.onOutcome)
+    for (const rule of source.rules) hostControls.bind(rule, source.moduleId)
     for (const rule of source.rules) bindResultTextDependencies(rule, source.moduleId, options.onOutcome)
     for (const rule of source.rules) {
       const budgets = rule.actions.filter(action => action.kind === 'request-params' && action.maxTokens !== undefined)
@@ -396,17 +336,7 @@ export function createRuleRuntime(ctx, options = {}) {
       collectPersona(entry) { record.personas.push(entry) },
       collectSubagentParams(entry) { record.subagentParams.push(entry) },
       collectRequestBudget(entry) { record.requestBudgets.push(entry) },
-      collectReadLimits(entry) { record.readLimits.push(entry) },
-      collectDelegationLimits(entry) { record.delegationLimits.push(entry) },
-      collectFilesystemPolicy(entry) { record.filesystemPolicy.push(entry) },
-      collectApprovalDecisions(entry) { record.approvalDecisions.push(entry) },
-      collectEscalationDecisions(entry) { record.escalationDecisions.push(entry) },
-      collectProviderHookDecisions(entry) { record.providerHookDecisions.push(entry) },
-      collectRepeatCompaction(entry) { record.repeatCompaction.push(entry) },
-      collectCurrentSystemSnapshot(entry) { record.currentSystemSnapshot.push(entry) },
-      collectRewind(entry) { record.rewind.push(entry) },
-      collectMessageShapeGuards(entry) { record.messageShapeGuards.push(entry) },
-      collectProviderSystemRoles(entry) { record.providerSystemRoles.push(entry) },
+      collectHostControl(entry) { return hostControls.collect(record, entry) },
       collectText(point, configs) {
         for (const config of configs) { config.runtimePoint = point; record.text.push(config) }
       },
@@ -585,14 +515,6 @@ export function createRuleRuntime(ctx, options = {}) {
     frame.requestBudgetReason = reason
     return frame.requestBudgetConflict
   }
-  releaseProviderHook = providerHookDecisionsState.register(ctx, options.agent, (input, channel, result) => {
-    const entries = [...records.values()].flatMap(record => record.providerHookDecisions)
-    if (entries.length === 0 || input?.agent !== options.agent) return undefined
-    const frame = ruleFrame(channel, [{ ...input, modelSelection: input.modelSelection ?? {} }, result].filter(value => value !== undefined), warnOnce, ctx, report)
-    // Hook model conditions may use only this event's explicit selection; never read Agent current model.
-    frame.subject = { ...frame.subject, model: input.modelSelection?.model }
-    return { status: 'sealed', providerHookDecisions: prepareProviderHookDecisions(entries, frame) }
-  })
   const runtime = {
     replace(sources) {
       if (!active) throw new Error('rule runtime disposed')
@@ -618,23 +540,21 @@ export function createRuleRuntime(ctx, options = {}) {
           next.set(source.moduleId, record)
         }
         records = next
-        repeatSessions.clear(); prunerBlockedSessions.clear()
+        hostControls.reset()
         requestBudgetConflict(ruleFrame('agent/request', [{ agent: options.agent }], warnOnce, ctx), true)
-        prepareReadLimits(readLimitEntries(), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx), true)
-        prepareDelegationLimits(delegationLimitEntries(), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx), true)
-        prepareApprovalDecisions([...records.values()].flatMap(record => record.approvalDecisions), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx))
+        hostControls.preflight(() => ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx), 'before')
         prepareSubagentParams({}, true)
-        prepareProviderHookDecisions([...records.values()].flatMap(record => record.providerHookDecisions), ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx))
+        hostControls.preflight(() => ruleFrame('system-prompt/assemble', [{}, { agent: options.agent }], warnOnce, ctx), 'after')
         const personaPlan = preparePersona({}, true)
         const text = [...records.values()].flatMap(record => record.text)
         if (text.length > 0) layers ??= createLayerRuntime(ctx, warnOnce, { agent: options.agent, turnStopBudgets: new Map(), sourceError })
         layers?.replace(text)
         publishPoints()
         if (options.externalAssembly !== true && releaseAssembly === undefined
-          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.providerSystemRoles.length > 0 || record.messageShapeGuards.length > 0 || record.currentSystemSnapshot.length > 0 || record.escalationDecisions.length > 0 || record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))) {
+          && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || hostControls.has(record)))) {
           const scope = scopeOf(ctx)
           releaseAssembly = installToolStepAssembly(ctx, {
-            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.providerSystemRoles.length > 0 || record.messageShapeGuards.length > 0 || record.currentSystemSnapshot.length > 0 || record.escalationDecisions.length > 0 || record.approvalDecisions.length > 0 || record.personas.length > 0 || record.subagentParams.length > 0 || record.readLimits.length > 0 || record.delegationLimits.length > 0 || record.filesystemPolicy.length > 0))
+            knows: agent => active && ([...points.values()].some(point => point.handlers.some(entry => entry.toolSurface || entry.toolDescription || entry.contextReplacement || entry.handler.resultTextPlan !== undefined)) || [...records.values()].some(record => record.personas.length > 0 || record.subagentParams.length > 0 || hostControls.has(record)))
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
@@ -658,31 +578,8 @@ export function createRuleRuntime(ctx, options = {}) {
     prepareAssembly(context) {
       if (!active) return
       if (context !== undefined) assemblyFrames.delete(context)
-      const policyFrame = assemblyFrame(context ?? { agent: options.agent })
-      currentSystemSnapshot?.setEnabled([...records.values()].flatMap(record => record.currentSystemSnapshot).some(entry => actionMatches(entry, policyFrame)), context)
-      messageShapeGuards?.setEnabled([...records.values()].flatMap(record => record.messageShapeGuards).some(entry => actionMatches(entry, policyFrame)), context)
-      providerSystemRoles?.prepare([...records.values()].flatMap(record => record.providerSystemRoles), policyFrame, context)
-      const session = policyFrame.subject?.agent?.session ?? context?.agent?.session ?? options.agent?.session
-      const policies = [...records.values()].flatMap(record => record.repeatCompaction)
-      if (session !== undefined) {
-        repeatSessions.delete(session); prunerBlockedSessions.delete(session)
-        for (const entry of policies) if (entry.rule.enabled !== false && actionMatches(entry, policyFrame)) {
-          if (entry.action.capability === 'repeat-tool-reminder') repeatSessions.add(session)
-          if (entry.action.capability === 'compaction-tool-result-pruner') {
-            if (prunerRelease.available?.(policyFrame.subject?.agent ?? context?.agent ?? options.agent) === true) prunerBlockedSessions.add(session)
-            else { try { options.onOutcome?.({ moduleId: entry.sourceModuleId, ruleId: entry.rule.id, actionId: entry.id, channel: 'host:compaction-tool-result-pruner', outcome: 'unavailable', identityOutcome: 'condition-unavailable', reason: 'official toolResultPruner injection unavailable' }) } catch {} }
-          }
-        }
-      }
       const step = toolStepFor(context)
-      if (step != null) step.escalationDecisions = prepareEscalationDecisions([...records.values()].flatMap(record => record.escalationDecisions), assemblyFrame(context ?? { agent: options.agent }), context)
-      if (step != null) step.approvalDecisions = prepareApprovalDecisions([...records.values()].flatMap(record => record.approvalDecisions), assemblyFrame(context ?? { agent: options.agent }))
-      const filesystem = prepareFilesystemPolicy(filesystemEntries(), assemblyFrame(context ?? { agent: options.agent }))
-      if (step != null) { step.filesystemPolicy = filesystem.values; step.filesystemPolicyObservations = filesystem.observations }
-      const reading = prepareReadLimits(readLimitEntries(), assemblyFrame(context ?? { agent: options.agent }))
-      if (step != null) { step.readLimits = reading.values; step.readLimitsObservations = reading.observations }
-      const limits = prepareDelegationLimits(delegationLimitEntries(), assemblyFrame(context ?? { agent: options.agent }))
-      if (step != null) { step.delegationLimits = limits.values; step.delegationLimitsObservations = limits.observations }
+      hostControls.prepare(() => assemblyFrame(context ?? { agent: options.agent }), step, context)
       const delegation = prepareSubagentParams(context)
       if (step != null) { step.subagentParams = delegation.values; step.subagentObservations = delegation.observations }
       if (step != null) {
@@ -774,15 +671,7 @@ export function createRuleRuntime(ctx, options = {}) {
       for (const observation of toolStepFor(context)?.subagentObservations ?? []) {
         try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
       }
-      for (const observation of toolStepFor(context)?.readLimitsObservations ?? []) {
-        try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
-      }
-      for (const observation of toolStepFor(context)?.delegationLimitsObservations ?? []) {
-        try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
-      }
-      for (const observation of toolStepFor(context)?.filesystemPolicyObservations ?? []) {
-        try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
-      }
+      hostControls.observe(toolStepFor(context))
       for (const plan of toolStepFor(context)?.toolDescriptions ?? []) if (plan.owner === ctx) {
         try { options.onOutcome?.(toolDescriptionObservation(plan, toolStepFor(context))) } catch { /* 只读诊断不改变已接受装配 */ }
       }
@@ -805,14 +694,7 @@ export function createRuleRuntime(ctx, options = {}) {
       points.clear()
       releaseFallback?.()
       releaseMemo?.()
-      releaseProviderHook?.()
-      repeatRelease?.()
-      prunerRelease?.()
-      repeatSessions.clear(); prunerBlockedSessions.clear()
-      currentSystemSnapshot?.dispose()
-      releaseRewind?.()
-      messageShapeGuards?.dispose()
-      providerSystemRoles?.dispose()
+      hostControls.dispose()
       if (ownsPool) pool.dispose()
     },
   }

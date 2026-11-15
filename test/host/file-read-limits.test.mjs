@@ -7,9 +7,67 @@ import Tools from '@deepseek-ai/dsh-tools'
 import * as Native from '@deepseek-ai/dsh-tool-executor-native'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { createRuleRuntime } from '../../engine/rule-runtime.mjs'
+import { readLimitsState } from '../../engine/read-limits.mjs'
 
 const control = value => ({ id: 'read', kind: 'host-control', capability: 'file-read-limits', value })
 const source = (moduleId, value) => ({ moduleId, rules: compileRules([{ id: 'limits', then: [control(value)] }], { moduleId }) })
+
+test('读取工具消费各自已接受步骤，热更新、主子并发及释放不混入其他额度', async t => {
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  await root.plugin(Tools)
+  await root.plugin(Native)
+  root.provide('fs', {})
+  root.provide('workingDirectory', {})
+  const available = readLimitsState.available
+  readLimitsState.available = true
+  const main = { id: 'read-main', session: { id: 'read-main', header: {}, snapshotEvents: () => [] } }
+  const child = { id: 'read-child', session: { id: 'read-child', header: { parent: 'read-main' }, snapshotEvents: () => [] } }
+  for (const agent of [main, child]) agent.ctx = createScope(root, agent).ctx
+  const runtimes = [main, child].map(agent => createRuleRuntime(agent.ctx, { agent }))
+  const frames = []
+  t.after(async () => {
+    for (const frame of frames) frame.toolSet.dispose()
+    for (const runtime of runtimes) runtime.dispose()
+    await root.fiber.dispose()
+    readLimitsState.available = available
+  })
+  runtimes[0].replace([source('main', { limit: 3 }), source('bytes', { maxBytes: 7 })])
+  runtimes[1].replace([source('child', { limit: 9 })])
+  const services = new Map()
+  for (const agent of [main, child]) await agent.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) {
+    services.set(agent, { tools: ctx.tools, prompt: ctx.systemPrompt })
+    ctx.effect(() => ctx.tools.register(readLimitsState.mark(ctx, {
+      name: 'read', description: 'Read limits consumer',
+      parameters: { type: 'object', properties: { limit: { type: 'integer', description: 'Original line limit.' } } },
+      output: { schema: { type: 'object' }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
+      execute: (_args, exec) => readLimitsState.read(ctx, exec, { limit: 20, maxBytes: 100, maxLineLength: 30 }),
+    })))
+  } })
+  const prepare = async agent => {
+    const { tools, prompt } = services.get(agent)
+    const context = { agent, scope: scopeOf(agent.ctx), signal: new AbortController().signal }
+    const toolSet = await tools.resolve(context)
+    const frame = { ...context, toolSet }
+    frames.push(frame)
+    await prompt.assemble(frame)
+    return frame
+  }
+  const call = async frame => (await services.get(frame.agent).tools.execute({ ...frame, calls: [
+    { type: 'tool-call', id: 'read', name: 'read', arguments: '{}' },
+  ] })).results[0].result.value
+  const [first, childFrame] = await Promise.all([prepare(main), prepare(child)])
+  assert.deepEqual(await call(first), { limit: 3, maxBytes: 7, maxLineLength: 30 })
+  assert.deepEqual(await call(childFrame), { limit: 9, maxBytes: 100, maxLineLength: 30 })
+  assert.throws(() => runtimes[0].replace([source('bad-a', { limit: 4 }), source('bad-b', { limit: 5 })]), /limit.*conflict/)
+  assert.deepEqual(await call(await prepare(main)), { limit: 3, maxBytes: 7, maxLineLength: 30 })
+  runtimes[0].replace([source('main', { limit: 6 })])
+  assert.deepEqual(await call(await prepare(main)), { limit: 6, maxBytes: 100, maxLineLength: 30 })
+  assert.deepEqual(await call(first), { limit: 3, maxBytes: 7, maxLineLength: 30 })
+  runtimes[0].dispose()
+  assert.deepEqual(await call(await prepare(main)), { limit: 20, maxBytes: 100, maxLineLength: 30 })
+  assert.deepEqual(await call(childFrame), { limit: 9, maxBytes: 100, maxLineLength: 30 })
+})
 
 test('读取额度沿普通规则编译校验，允许独立字段且拒绝非法数字和空配置', () => {
   for (const value of [{ maxLineLength: 10000, maxBytes: 1048576, limit: 20000 }, { limit: 3 }]) {

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { actionMatches } from './conditions/evaluation.mjs'
+import { bindHostDependency } from './conditions/host-dependencies.mjs'
 import { toolStepFor } from './tool-scope.mjs'
 import { acceptedCurrentSystemStep, currentSystemSnapshotStatus } from './current-system-snapshot.mjs'
 
@@ -24,7 +25,7 @@ export function providerSystemRolesStatus(agent, capability, selection) {
 }
 export function bindProviderSystemRolesDependencies(rule, moduleId, onOutcome) {
   const controls = rule.actions.filter(isProviderSystemRolesAction).map(action => ({ action, dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, index) => candidate.branchPath[index] === part)).map(candidate => candidate.id)) }))
-  rule.providerSystemRolesAvailable = (entry, frame) => controls.every(({ action, dependent }) => {
+  const available = (entry, frame) => controls.every(({ action, dependent }) => {
     if (!dependent.has(entry.ruleActionId ?? entry.id)) return true
     // Independent control actions must not borrow each other's readiness.
     if (isProviderSystemRolesAction(entry.action) && entry.action !== action) return true
@@ -35,6 +36,7 @@ export function bindProviderSystemRolesDependencies(rule, moduleId, onOutcome) {
     try { onOutcome?.({ moduleId, ruleId: rule.id, actionId: action.id, channel: `host:${action.capability}`, outcome: 'unavailable', identityOutcome: 'condition-unavailable', reason: current.reason, definitionRevision: rule.definitionRevision, agentId: frame.subject?.agent?.id }) } catch {}
     return false
   })
+  bindHostDependency(rule, 'before', { key: 'provider-system-roles', skip: frame => frame.ignoreProviderSystemRolesDependency === true, available })
 }
 export function registerProviderSystemRoles(agent) {
   const owner = {}

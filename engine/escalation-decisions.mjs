@@ -2,6 +2,7 @@ import { toolStepFor } from './tool-scope.mjs'
 import { actionMatches } from './conditions/evaluation.mjs'
 import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { symbols } from '@deepseek-ai/cordis'
+import { bindHostDependency } from './conditions/host-dependencies.mjs'
 
 export const escalationCapabilities = Object.freeze(['escalation-criteria', 'escalation-grant', 'escalation-outcome'])
 export const escalationDecisionsState = globalThis[Symbol.for('prompt-tool:escalation-decisions')] ??= { status: new Map() }
@@ -85,7 +86,7 @@ export function bindEscalationDecisionDependencies(rule, moduleId, onOutcome) {
   const controls = rule.actions.filter(isEscalationDecisionAction).map(action => ({ action,
     dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, i) => candidate.branchPath[i] === part)).map(candidate => candidate.id)) }))
   if (controls.length === 0) return
-  rule.escalationDecisionsAvailable = (entry, frame) => {
+  const available = (entry, frame) => {
     if (!controls.some(({ dependent }) => dependent.has(entry.ruleActionId ?? entry.id))) return true
     const checking = { ...frame, ignoreEscalationDecisionsDependency: true, onOutcome: undefined,
       decisions: new Map(), actionDecisions: new Set(), actionOutcomes: new Map(), reminders: new Map() }
@@ -98,6 +99,7 @@ export function bindEscalationDecisionDependencies(rule, moduleId, onOutcome) {
       definitionRevision: rule.definitionRevision, agentId: frame.subject?.agent?.id }) } catch { /* 诊断不改变资格 */ }
     return false
   }
+  bindHostDependency(rule, 'before', { key: 'escalation-decisions', skip: frame => frame.ignoreEscalationDecisionsDependency, available })
 }
 
 /** Changes only the three specified branches; the original owner keeps all errors and approval calls. */

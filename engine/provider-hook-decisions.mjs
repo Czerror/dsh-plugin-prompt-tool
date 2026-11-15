@@ -1,4 +1,5 @@
 import { actionMatches } from './conditions/evaluation.mjs'
+import { bindHostDependency } from './conditions/host-dependencies.mjs'
 import { Context } from '@deepseek-ai/cordis'
 import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 
@@ -44,7 +45,8 @@ function status(action, agent) {
 export function bindProviderHookDependencies(rule, moduleId, onOutcome) {
   const controls = rule.actions.filter(isProviderHookDecisionsAction).map(action => ({ action,
     dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, i) => candidate.branchPath[i] === part)).map(candidate => candidate.id)) }))
-  rule.providerHookAvailable = (entry, frame) => controls.every(({ action, dependent }) => {
+  bindHostDependency(rule, 'before', { key: 'provider-hook-decisions', skip: frame => frame.ignoreProviderHookDependency,
+    available: (entry, frame) => controls.every(({ action, dependent }) => {
     if (!dependent.has(entry.ruleActionId ?? entry.id)) return true
     const checking = { ...frame, ignoreProviderHookDependency: true, onOutcome: undefined,
       decisions: new Map(), actionDecisions: new Set(), actionOutcomes: new Map(), reminders: new Map() }
@@ -55,7 +57,18 @@ export function bindProviderHookDependencies(rule, moduleId, onOutcome) {
       outcome: 'unavailable', identityOutcome: 'condition-unavailable', reason: current.reason,
       definitionRevision: rule.definitionRevision, agentId: frame.subject?.agent?.id }) } catch { /* 只读诊断 */ }
     return false
+  }) })
+}
+export function registerProviderHookDecisions(agent, ctx, _onOutcome, entries, eventFrame) {
+  const release = providerHookDecisionsState.register(ctx, agent, (input, channel, result) => {
+    const current = entries()
+    if (current.length === 0 || input?.agent !== agent) return undefined
+    const frame = eventFrame(channel, [{ ...input, modelSelection: input.modelSelection ?? {} }, result].filter(value => value !== undefined))
+    // Hook 只采用本事件显式模型，不借用 Agent 当前选择或工具步骤。
+    frame.subject = { ...frame.subject, model: input.modelSelection?.model }
+    return { status: 'sealed', providerHookDecisions: prepareProviderHookDecisions(current, frame) }
   })
+  return { dispose: release }
 }
 providerHookDecisionsState.register = (ctx, agent, resolve) => {
   const entry = { ctx, agent, resolve }

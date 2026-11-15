@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { actionMatches } from './conditions/evaluation.mjs'
+import { bindHostDependency } from './conditions/host-dependencies.mjs'
 import { toolAssemblyContext, toolStepFor } from './tool-scope.mjs'
 
 const owners = new WeakMap(), calls = new AsyncLocalStorage(), derivedSteps = new WeakMap()
@@ -16,7 +17,7 @@ export function messageShapeGuardsStatus(agent) {
 }
 export function bindMessageShapeGuardsDependencies(rule, moduleId, onOutcome) {
   const controls = rule.actions.filter(isMessageShapeGuardsAction).map(action => ({ action, dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, index) => candidate.branchPath[index] === part)).map(candidate => candidate.id)) }))
-  rule.messageShapeGuardsAvailable = (entry, frame) => {
+  const available = (entry, frame) => {
     const applicable = controls.filter(({ dependent }) => dependent.has(entry.ruleActionId ?? entry.id))
     if (!applicable.some(({ action }) => actionMatches({ rule, action, id: action.id, actionWhen: action.actionWhen, bypassRuleWhen: action.bypassRuleWhen }, { ...frame, ignoreMessageShapeGuardsDependency: true }))) return true
     const status = messageShapeGuardsStatus(frame.subject?.agent)
@@ -24,6 +25,10 @@ export function bindMessageShapeGuardsDependencies(rule, moduleId, onOutcome) {
     try { onOutcome?.({ moduleId, ruleId: rule.id, actionId: applicable[0].action.id, channel: 'host:message-shape-guards', outcome: 'unavailable', identityOutcome: 'condition-unavailable', reason: status.reason, definitionRevision: rule.definitionRevision, agentId: frame.subject?.agent?.id }) } catch {}
     return false
   }
+  bindHostDependency(rule, 'before', { key: 'message-shape-guards', skip: frame => frame.ignoreMessageShapeGuardsDependency === true, available })
+}
+export function prepareMessageShapeGuards(entries, frame, _preview, owner, context) {
+  owner?.setEnabled(entries.some(entry => actionMatches(entry, frame)), context)
 }
 export function registerMessageShapeGuards(agent) {
   const owner = {}

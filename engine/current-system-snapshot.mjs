@@ -1,4 +1,5 @@
 import { actionMatches } from './conditions/evaluation.mjs'
+import { bindHostDependency } from './conditions/host-dependencies.mjs'
 import { currentEvents } from './history.mjs'
 import { toolAssemblyContext, toolStepFor } from './tool-scope.mjs'
 
@@ -15,7 +16,7 @@ export function validateCurrentSystemSnapshotAction(action) {
 export function bindCurrentSystemSnapshotDependencies(rule, moduleId, onOutcome) {
   const controls = rule.actions.filter(isCurrentSystemSnapshotAction).map(action => ({ action,
     dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, index) => candidate.branchPath[index] === part)).map(candidate => candidate.id)) }))
-  rule.currentSystemSnapshotAvailable = (entry, frame) => {
+  const available = (entry, frame) => {
     const applicable = controls.filter(({ dependent }) => dependent.has(entry.ruleActionId ?? entry.id))
     if (applicable.length === 0) return true
     const checking = { ...frame, ignoreCurrentSystemSnapshotDependency: true }
@@ -26,6 +27,11 @@ export function bindCurrentSystemSnapshotDependencies(rule, moduleId, onOutcome)
       outcome: 'unavailable', identityOutcome: 'condition-unavailable', reason: status.reason, definitionRevision: rule.definitionRevision, agentId: frame.subject?.agent?.id }) } catch {}
     return false
   }
+  bindHostDependency(rule, 'before', { key: 'current-system-snapshot', skip: frame => frame.ignoreCurrentSystemSnapshotDependency === true, available, reportUnavailable: true })
+}
+
+export function prepareCurrentSystemSnapshot(entries, frame, _preview, owner, context) {
+  owner?.setEnabled(entries.some(entry => actionMatches(entry, frame)), context)
 }
 
 export function registerCurrentSystemSnapshot(agent) {

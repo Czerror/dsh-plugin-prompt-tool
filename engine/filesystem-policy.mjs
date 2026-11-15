@@ -1,6 +1,7 @@
 import { toolStepFor } from './tool-scope.mjs'
 import { actionMatches } from './conditions/evaluation.mjs'
 import { symbols } from '@deepseek-ai/cordis'
+import { bindHostDependency } from './conditions/host-dependencies.mjs'
 
 export const filesystemCapabilities = Object.freeze(['sandbox-file-write', 'filesystem-fence', 'filesystem-observation'])
 const key = Symbol.for('prompt-tool:filesystem-policy')
@@ -76,7 +77,7 @@ export function bindFilesystemPolicyDependencies(rule, moduleId, onOutcome) {
   const controls = rule.actions.filter(isFilesystemPolicyAction).map(action => ({ action,
     dependent: new Set(rule.actions.filter(candidate => action.branchPath.every((part, i) => candidate.branchPath[i] === part)).map(candidate => candidate.id)) }))
   if (controls.length === 0) return
-  rule.filesystemPolicyAvailable = (entry, frame) => {
+  const available = (entry, frame) => {
     const applicable = controls.filter(({ dependent }) => dependent.has(entry.ruleActionId ?? entry.id))
     if (applicable.length === 0) return true
     const checking = { ...frame, ignoreFilesystemPolicyDependency: true, onOutcome: undefined,
@@ -91,6 +92,7 @@ export function bindFilesystemPolicyDependencies(rule, moduleId, onOutcome) {
       return false
     })
   }
+  bindHostDependency(rule, 'before', { key: 'filesystem', skip: frame => frame.ignoreFilesystemPolicyDependency, available, reportUnavailable: true })
 }
 
 function accepted(exec, capability) {

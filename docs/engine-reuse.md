@@ -123,6 +123,9 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 | `rule-spec.mjs` | 唯一规则编译、身份和字段校验 |
 | `branch.mjs` | 分支判据与展开；host 完整树遍历共用同一语法 |
 | `rule-runtime.mjs` | 按 Agent 的来源增量、同点排序、资格、作用域挂载和释放 |
+| `host-control-catalog.mjs` | 宿主能力的静态身份、执行范围、原值校验与进程/Agent接线登记 |
+| `host-control-agent.mjs` | Agent宿主能力的来源贡献、原阶段准备、事件/按需接线、观测与释放协调 |
+| `host-control-process.mjs` | 进程宿主能力的来源发布、可选接入、可用性观测、撤回与释放 |
 | `conditions/` | 谓词、三值条件与通道事实 |
 | `actions/` | 实际动作；`content.mjs` 只选择正文 |
 | `executor.mjs` | pre-step 资格快照、批处理、位置、去重与提交 |
@@ -140,6 +143,10 @@ AgentSetup 捕获的同层声明保留原 PromptSection 与 owner 生存状态�
 | `path-safety.mjs` | `instruction-hint` 与 custom `fs` 共用的 realpath containment（symlink/junction 不越信任根） |
 
 相对路径均基于包根的 `engine/`。`actions.mjs`、`predicates.mjs`、`strategies.mjs` 只是已有入口，不把实现堆回 barrel。`engine/vendor/yaml/` 是版本化分发快照，通过 package script 生成，不手改。
+
+宿主能力目录是内部静态接线，不提供动态注册协议。具体能力仍拥有值、字段冲突、真实owner、平台和发行指纹政策。通用条件求值器执行接入侧绑定的依赖，不导入目录或具体能力；冻结结果、短路、局部自依赖绕过、诊断及与非宿主检查的交错顺序保持原语义。
+
+Agent接入保持步骤准备、真实接受、Hook事件、工具后处理与回退按需查询各自时机，不以最新Agent状态替代已接受身份。进程接入独立于单个Agent的寿命，仅在外层装配协调器原可发布点更新来源：默认值owner先于命令owner，随后释放旧token。批次中途失败在发布前退出；局部失败被隔离后，有效贡献仍可能先发布再汇总报错。撤回影响后续构造或调用，不追溯改写已有实例，也不增加跨owner原子事务。
 
 ### 插件侧怎么引入引擎（类型边界）
 

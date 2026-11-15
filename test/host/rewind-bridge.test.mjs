@@ -227,7 +227,8 @@ test('回退 bridge：真实 Agent 的重复提问按输入身份回退，durabl
   const root = new Context(), handlers = new Map(), capture = new Capture()
   const home = mkdtempSync(join(tmpdir(), 'pt26-')), moduleRoot = join(home, 'modules'), moduleDir = join(moduleRoot, 'rewind')
   mkdirSync(moduleDir, { recursive: true })
-  writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify({ id: 'rewind', modules: ['rule-engine'], rules: [{ id: 'rewind', then: [{ id: 'rewind', kind: 'host-control', capability: 'session-rewind', value: true }] }] }))
+  const definition = { id: 'rewind', modules: ['rule-engine'], rules: [{ id: 'rewind', then: [{ id: 'rewind', kind: 'host-control', capability: 'session-rewind', value: true }] }] }
+  writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify(definition))
   for (const plugin of [Llm, Sessions, Projections, Prompt, Tools, Native, Agents]) await root.plugin(plugin)
   await root.plugin(Loop, { agents: [] })
   root.provide('workingDirectory', { get: () => process.cwd(), ensure: async () => process.cwd(), set: async () => process.cwd() })
@@ -269,6 +270,16 @@ test('回退 bridge：真实 Agent 的重复提问按输入身份回退，durabl
   const replayed = await root.agents.create({ sessionId: 'pt26-cold-replay', seed: events, agentOptions: { provider: 'local', model: 'probe' } })
   t.after(() => replayed.dispose())
   assert.deepEqual(replayed.agent.session.deriveMessages().filter(message => message.source.kind === 'user').map(message => message.id), [a.id], '冷重放无需预览也解释既有 marker')
+  const replayRequest = { ...request, sessionId: replayed.agent.id, requestId: 'replay-no-step' }
+  assert.equal((await post(handlers, replayRequest)).status, 200, '未执行工具步骤的真实 Agent 可立即回退')
+  definition.rules[0].if = { scope: { modelScope: 'flash' } }
+  writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify(definition))
+  await assembly.refresh('rewind')
+  assert.equal((await post(handlers, { ...replayRequest, requestId: 'replay-condition-miss' })).status, 409, '调用时按当前条件拒绝，不沿用上次查询结果')
+  delete definition.rules[0].if
+  writeFileSync(join(moduleDir, 'module.yml'), JSON.stringify(definition))
+  await assembly.refresh('rewind')
+  assert.equal((await post(handlers, { ...replayRequest, requestId: 'replay-condition-restored' })).status, 200, '来源重挂后无需工具步骤即可恢复')
   replayed.agent.followup(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '冷重放后新输入' }] }))
   await replayed.agent.whenIdle()
   assert.equal(capture.requests.at(-1).messages.some(message => message.id.startsWith('rewind-pt-') || message.id === b.id), false)
@@ -321,6 +332,15 @@ test('回退 bridge：真实 Agent 的重复提问按输入身份回退，durabl
     Date.now = () => now() + 11 * 60_000
     assert.equal((await post(handlers, request)).status, 403, '过期页面凭据不再授权')
   } finally { Date.now = now }
+  const replacement = createAgentAssembly(root, { moduleRoot, enabledModules: () => ['rewind'], warn: () => {} })
+  await replacement.settled()
+  t.after(() => replacement.dispose())
+  await assembly.dispose()
+  await assembly.dispose()
+  const ownerRequest = { ...request, requestId: 'replacement-owner' }
+  assert.equal((await post(handlers, ownerRequest)).status, 200, '旧运行时重复释放不撤销重挂的新 owner')
+  await replacement.dispose()
+  assert.equal((await post(handlers, { ...ownerRequest, requestId: 'released-owner' })).status, 409, '当前 owner 释放后真实回退入口拒绝')
 })
 
 test('回退上一轮沿真实子代理启动与官方目录固定主子目标，保留旧主轮', { timeout: 15000 }, async t => {

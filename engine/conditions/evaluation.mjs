@@ -1,5 +1,6 @@
 import { subjectOf } from './subject.mjs'
 import { UNAVAILABLE } from './availability.mjs'
+import { hostDependenciesAvailable } from './host-dependencies.mjs'
 
 /**
  * 一次官方调用的局部判定帧；不按 session、turn 或载荷身份缓存。
@@ -70,31 +71,10 @@ export function ruleMatches(rule, frame) {
  */
 export function actionMatches(entry, frame) {
   if (frame.frozenActionMatches?.has(entry)) return frame.frozenActionMatches.get(entry)
-  if (!frame.ignoreProviderSystemRolesDependency && entry.rule?.providerSystemRolesAvailable?.(entry, frame) === false) return false
-  if (!frame.ignoreMessageShapeGuardsDependency && entry.rule?.messageShapeGuardsAvailable?.(entry, frame) === false) return false
-  if (!frame.ignoreCurrentSystemSnapshotDependency && entry.rule?.currentSystemSnapshotAvailable?.(entry, frame) === false) {
+  if (!hostDependenciesAvailable(entry, frame, 'before', () => {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
-    return false
-  }
-  if (!frame.ignoreProviderHookDependency && entry.rule?.providerHookAvailable?.(entry, frame) === false) return false
-  if (!frame.ignoreEscalationDecisionsDependency && entry.rule?.escalationDecisionsAvailable?.(entry, frame) === false) return false
-  if (!frame.ignoreApprovalDecisionsDependency && entry.rule?.approvalDecisionsAvailable?.(entry, frame) === false) return false
-  if (!frame.ignoreFilesystemPolicyDependency && entry.rule?.filesystemPolicyAvailable?.(entry, frame) === false) {
-    frame.actionOutcomes.set(entry, 'unavailable')
-    if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
-    return false
-  }
-  if (!frame.ignoreDelegationLimitsDependency && entry.rule?.delegationLimitsAvailable?.(entry, frame) === false) {
-    frame.actionOutcomes.set(entry, 'unavailable')
-    if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
-    return false
-  }
-  if (!frame.ignoreReadLimitsDependency && entry.rule?.readLimitsAvailable?.(entry, frame) === false) {
-    frame.actionOutcomes.set(entry, 'unavailable')
-    if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
-    return false
-  }
+  })) return false
   if (!frame.ignoreRequestBudgetDependency && entry.rule?.requestBudgetAvailable?.(entry, frame) === false) {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
@@ -105,11 +85,10 @@ export function actionMatches(entry, frame) {
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
     return false
   }
-  if (!frame.ignoreRepeatCompactionDependency && entry.rule?.repeatCompactionAvailable?.(entry, frame) === false) {
+  if (!hostDependenciesAvailable(entry, frame, 'post-tool', () => {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
-    return false
-  }
+  })) return false
   if (!frame.ignoreInstructionsDependency && entry.rule?.instructionsAvailable?.(entry) === false) {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }

@@ -18,6 +18,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as nativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { PtcExecutor } from '@deepseek-ai/dsh-tool-executor-ptc'
+import { commandConfineState } from '../../engine/command-confine.mjs'
 import { isolatedHome, fixtureRule } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-assembly-')
@@ -1641,8 +1642,17 @@ test('公共人设发布失败恢复整批旧贡献，恢复失败保留原因�
   let prefix = 'OLD-PERSONA'
   const writePersona = () => writeModuleFixture('assembly-persona', { modules: [], persona: { main: { prefix }, subagent: { prefix } } })
   writePersona()
-  const h = await liveAssembly(t, () => ['assembly-restore', 'assembly-persona'])
+  let enabled = ['assembly-restore', 'assembly-persona']
+  const h = await liveAssembly(t, () => enabled)
   const agents = [await h.makeAgent('batch-first'), await h.makeAgent('batch-second', 1)]
+  class Provider { confine() { return { refusal: 'original' } } }
+  h.root.provide('sandbox', new Provider())
+  const off = await commandConfineState.install(h.root, Provider)
+  t.after(off)
+  writeModuleFixture('batch-process', { modules: [], rules: [{ id: 'command', executionScope: 'process', then: [
+    { id: 'call', kind: 'host-control', capability: 'command-confine-passthrough', value: true },
+  ] }] })
+  enabled = [...enabled, 'batch-process']
   const section = h.root.systemPrompt.section
   let remaining = 1
   t.mock.method(h.root.systemPrompt, 'section', function (value) {
@@ -1655,6 +1665,7 @@ test('公共人设发布失败恢复整批旧贡献，恢复失败保留原因�
   prefix = 'NEW-PERSONA'
   writePersona()
   await assert.rejects(h.runtime.refresh(), /PUBLIC-PERSONA-FAIL/)
+  assert.deepEqual(h.root.sandbox.confine(['fixture'], {}), { refusal: 'original' }, '批次回滚没有发布进程候选')
   for (const agent of agents) {
     const system = await h.root.systemPrompt.assemble({ agent, scope: agent })
     assert.equal(system.sections.find(value => value.name === 'deployment:persona-prefix').text, 'OLD-PERSONA')
@@ -1663,6 +1674,7 @@ test('公共人设发布失败恢复整批旧贡献，恢复失败保留原因�
   assert.equal(h.runtime.publicationFailures().length, 1)
   await h.runtime.refresh()
   assert.deepEqual(h.runtime.publicationFailures(), [])
+  assert.deepEqual(h.root.sandbox.confine(['fixture'], {}), { argv: ['fixture'], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] })
   prefix = 'ANOTHER-PERSONA'
   writePersona()
   remaining = 2
@@ -1672,6 +1684,9 @@ test('公共人设发布失败恢复整批旧贡献，恢复失败保留原因�
     return true
   })
   assert.equal(h.runtime.hasMounted(agents[1].id), false)
+  await h.root.serial(scopeTarget(agents[0], agents[0]), 'agent/disposed', { agent: agents[0] })
+  await h.runtime.settled()
+  assert.deepEqual(h.root.sandbox.confine(['fixture'], {}), { argv: ['fixture'], enforcement: 'full', denialSignatures: [], runnerFailureRules: [] }, 'Agent 释放不撤回进程来源')
 })
 
 test('启用表增删直接更新真实贡献，空启用表零贡献', async t => {
