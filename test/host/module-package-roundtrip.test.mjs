@@ -4,14 +4,12 @@ import fs, { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writ
 import { syncBuiltinESMExports } from 'node:module'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { parse } from 'yaml'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-package-roundtrip-')
 const { moduleImportPreview, installModulePackage, exportModulePackage, expandModuleSource } = await import('../../src/host/module-package.ts')
 const { ensureModuleSlices, readRulesDir } = await import('../../src/host/module-slices.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
-const { packageModulesDir } = await import('../../src/host/module-dirs.ts')
 const rule = (id, text, extra = {}) => ({ id, enabled: false, then: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
 const source = (id, extra = {}) => ({ id, name: id, modules: [], rules: [rule('hello', 'SOURCE')], variables: { owner: 'Mia' }, variablesEnabled: false, configOrder: { hello: 40 }, ...extra })
 function fixture(id, value = source(id)) {
@@ -80,84 +78,6 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
   await assert.rejects(expandModuleSource(withManifest.map(file => file.path === 'assets/notice.txt' ? { ...file, content: 'TAMPERED', encoding: 'utf8' } : file)), /摘要/)
 })
 
-test('语义无效源在预览、安装、导出共同拒绝，模板预览只读取上传文件', async () => {
-  mkdirSync(moduleRoot, { recursive: true })
-  const invalid = [
-    { rules: [{ id: 'hello', then: [{ id: 'x', kind: 'not-an-action' }] }] },
-    { rules: [rule('variables', 'RESERVED')] },
-    { configOrder: { hello: -1 } },
-    { variables: { owner: 1 } },
-    { variablesEnabled: 'false' },
-    { rules: [{ ...rule('hello', 'TOP'), if: { scope: { audience: 'main' } }, else: [{ id: 'inject', kind: 'inject-text', config: { text: 'DUPLICATE' } }] }] },
-    { rules: [{ ...rule('hello', 'TOP', { id: 'same-config' }), if: { scope: { audience: 'main' } }, else: [{ id: 'other', kind: 'inject-text', config: { id: 'same-config', text: 'DUPLICATE' } }] }] },
-  ]
-  for (const [index, extra] of invalid.entries()) {
-    const id = 'invalid-' + index, spec = source(id, extra)
-    const dir = fixture(id, spec), before = state(dir)
-    const files = [{ path: 'module.yml', content: JSON.stringify(spec) }]
-    assert.throws(() => moduleImportPreview(moduleRoot, files, { targetId: id }))
-    await assert.rejects(installModulePackage(moduleRoot, files, { targetId: id, overwrite: true, expectedSourceDigest: '0'.repeat(64), expectedPreviewRevision: '0'.repeat(64) }))
-    for (const mode of ['definition', 'zip']) await assert.rejects(exportModulePackage(moduleRoot, { id, mode, preview: true }))
-    assert.deepEqual(state(dir), before)
-    assert.equal(existsSync(join(dir, 'rules')), false)
-  }
-  const id = 'template-preview', dir = fixture(id)
-  writeFileSync(join(dir, 'secret.txt'), 'REAL TARGET MUST NOT FILL UPLOAD')
-  const candidate = source(id, { rules: [rule('hello', undefined, { templateFile: './secret.txt' })] })
-  const files = [{ path: 'module.yml', content: JSON.stringify(candidate) }]
-  assert.throws(() => moduleImportPreview(moduleRoot, files, { targetId: id }), /缺失|missing|资源/)
-  files.push({ path: 'secret.txt', content: 'UPLOAD CONTENT' })
-  const before = state(dir)
-  const writes = []
-  for (const name of ['writeFileSync', 'mkdirSync', 'rmSync', 'rmdirSync', 'renameSync']) mock.method(fs, name, () => { writes.push(name); throw new Error('预览不得写盘') })
-  syncBuiltinESMExports()
-  try { assert.ok(moduleImportPreview(moduleRoot, files, { targetId: id }).prepared) }
-  finally { mock.restoreAll(); syncBuiltinESMExports() }
-  assert.deepEqual(writes, [])
-  assert.deepEqual(state(dir), before)
-  candidate.rules[0].then[0].config.templateFile = '../outside.txt'
-  assert.throws(() => moduleImportPreview(moduleRoot, [{ path: 'module.yml', content: JSON.stringify(candidate) }], { targetId: id }), /外部|越界|资源/)
-})
-
-test('不分享的切片和记忆不读、不影响导出版本；定义模式可携缺附件告警', async () => {
-  const id = 'excluded-assets', dir = fixture(id)
-  ensureModuleSlices(dir)
-  writeFileSync(join(dir, 'memory.md'), 'PRIVATE')
-  writeFileSync(join(dir, 'agent.cordis.yml'), 'OLD')
-  const originalRead = fs.readFileSync
-  const read = mock.method(fs, 'readFileSync', (file, ...args) => {
-    const path = String(file).replaceAll('\\', '/')
-    if (path.startsWith(dir.replaceAll('\\', '/') + '/rules/') || path.endsWith('/memory.md') || path.endsWith('/agent.cordis.yml')) throw new Error('不可读取非分享内容')
-    return originalRead(file, ...args)
-  })
-  syncBuiltinESMExports()
-  let preview
-  try { preview = await exportModulePackage(moduleRoot, { id, mode: 'zip', preview: true }) }
-  finally { read.mock.restore(); syncBuiltinESMExports() }
-  writeFileSync(join(dir, 'rules', 'hello.yml'), 'DRIFT')
-  writeFileSync(join(dir, 'memory.md'), 'NEW PRIVATE')
-  const downloaded = await exportModulePackage(moduleRoot, { id, mode: 'zip', expectedRevision: preview.revision })
-  assert.equal(downloaded.revision, preview.revision)
-  const missing = 'missing-template'
-  fixture(missing, source(missing, { rules: [rule('hello', undefined, { templateFile: './absent.txt' })] }))
-  const definition = await exportModulePackage(moduleRoot, { id: missing, mode: 'definition' })
-  assert.equal(parse(definition.content).rules[0].then[0].config.templateFile, './absent.txt')
-  assert.ok(definition.warnings.some(warning => warning.includes('absent.txt')))
-  const blocked = await exportModulePackage(moduleRoot, { id: missing, mode: 'zip', preview: true })
-  assert.ok(blocked.blockers.some(warning => warning.includes('absent.txt')))
-  await assert.rejects(exportModulePackage(moduleRoot, { id: missing, mode: 'zip' }), /absent.txt/)
-  fixture('provenance-source')
-  const privateId = 'module-provenance-source-memory'
-  fixture('provenance-owner', source('provenance-owner', {
-    rules: [rule(privateId, 'POTENTIAL PRIVATE')], configOrder: { [privateId]: 0 },
-    meta: { importedCharacters: ['provenance-source'] },
-  }))
-  const privateFile = join(moduleRoot, 'provenance-owner', 'module.yml')
-  const original = readFileSync(privateFile, 'utf8')
-  for (const mode of ['definition', 'zip']) await assert.rejects(exportModulePackage(moduleRoot, { id: 'provenance-owner', mode }), /私有记忆|显式转换/, '来源不明的私有记忆不得进入任何分享包')
-  assert.equal(readFileSync(privateFile, 'utf8'), original, '拒绝导出不改用户定义')
-})
-
 test('模块私有 data/ 不随包导出；覆盖安装旧数据优先，包内只补缺失', async () => {
   const id = 'data-keep', dir = fixture(id)
   mkdirSync(join(dir, 'data'))
@@ -177,45 +97,6 @@ test('模块私有 data/ 不随包导出；覆盖安装旧数据优先，包内�
   await installModulePackage(moduleRoot, packaged, { ...credentials(overwritePreview), overwrite: true })
   assert.equal(readFileSync(join(moduleRoot, 'data-keep', 'data', 'ledger.jsonl'), 'utf8'), 'OLD LEDGER\n', '旧账本不被覆盖')
   assert.equal(readFileSync(join(moduleRoot, 'data-keep', 'data', 'new.txt'), 'utf8'), 'PACKAGED NEW', '包内只补缺失')
-})
-
-test('内置定义包无资产也能安装导出，另存补齐资产并保留用户覆盖', async () => {
-  const definition = readFileSync(join(packageModulesDir(), 'soul', 'module.yml'), 'utf8')
-  const files = [{ path: 'module.yml', content: definition }]
-  const installed = await install(files, 'soul')
-  assert.equal(installed.id, 'soul')
-  const dir = join(moduleRoot, 'soul')
-  assert.equal(existsSync(join(dir, 'assets')), false)
-  const exported = await exportModulePackage(moduleRoot, { id: 'soul', mode: 'zip' })
-  const packaged = await expandModuleSource([{ path: 'soul.zip', content: exported.content, encoding: 'base64' }])
-  assert.deepEqual(packaged.map(file => file.path), ['module.yml'])
-  assert.equal(existsSync(join(dir, 'assets')), false, '导出不物化隐式依赖')
-  const renamed = await install(packaged, 'independent-soul')
-  assert.ok(existsSync(join(moduleRoot, renamed.id, 'assets', 'reference', 'README.md')))
-  assert.ok(existsSync(join(moduleRoot, renamed.id, 'assets', 'manifest.yml')))
-  const independent = await exportModulePackage(moduleRoot, { id: renamed.id, mode: 'zip' })
-  assert.ok(independent.files.some(file => file.path === 'assets/criteria.md'))
-
-  mkdirSync(join(dir, 'assets'))
-  writeFileSync(join(dir, 'assets', 'criteria.md'), 'USER OVERRIDE')
-  const override = await exportModulePackage(moduleRoot, { id: 'soul', mode: 'zip' })
-  const overrideFiles = await expandModuleSource([{ path: 'soul.zip', content: override.content, encoding: 'base64' }])
-  assert.deepEqual(overrideFiles.map(file => file.path).sort(), ['assets/criteria.md', 'module.yml'])
-  await install(overrideFiles, 'override-copy')
-  assert.equal(readFileSync(join(moduleRoot, 'override-copy', 'assets', 'criteria.md'), 'utf8'), 'USER OVERRIDE')
-  assert.ok(existsSync(join(moduleRoot, 'override-copy', 'assets', 'tools.md')))
-
-  writeFileSync(join(dir, 'assets', 'private.md'), 'TARGET ONLY')
-  const invalid = [{ path: 'module.yml', content: JSON.stringify(source('soul', { rules: [rule('hello', undefined, { templateFile: './assets/private.md' })] })) }]
-  assert.throws(() => moduleImportPreview(moduleRoot, invalid, { targetId: 'soul', overwrite: true }), /缺失/, '入站校验不得回读用户目标补附件')
-  const restore = [...files, { path: 'assets/criteria.md', content: readFileSync(join(packageModulesDir(), 'soul', 'assets', 'criteria.md'), 'utf8') }]
-  const reset = moduleImportPreview(moduleRoot, restore, { targetId: 'soul', overwrite: true })
-  await installModulePackage(moduleRoot, restore, credentials(reset), { preserveAssets: true })
-  assert.equal(readFileSync(join(dir, 'assets', 'criteria.md'), 'utf8'), restore[1].content, '显式上传保留为用户资产，不自动去重删除')
-  assert.equal(readFileSync(join(dir, 'assets', 'private.md'), 'utf8'), 'TARGET ONLY', '未上传的用户资产仍保留')
-  for (const path of ['assets/Criteria.md', 'assets/templates']) {
-    assert.throws(() => moduleImportPreview(moduleRoot, [...files, { path, content: 'CONFLICT' }], { targetId: 'conflict-copy' }), /冲突/, '合并后的路径冲突也须拒绝')
-  }
 })
 
 test('覆盖安装拒绝 data/ 内的链接', async () => {

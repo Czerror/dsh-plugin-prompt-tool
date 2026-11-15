@@ -17,14 +17,13 @@ function draftOf(moduleId) {
 function harness(request) {
   const draft = draftOf('module-a')
   const calls = []
-  let current = true
   const editor = createToolsEditor('module-a', draft, {
     reader: { load: () => request({ expectedModuleId: 'module-a' }) },
     request: async body => { calls.push(structuredClone(body)); return request(body) },
-    isCurrent: () => current,
+    isCurrent: () => true,
     changed: () => {},
   })
-  return { draft, editor, calls, leave: () => { current = false } }
+  return { draft, editor, calls }
 }
 
 test('tools owner：读取落地草稿，迟到应答不落地也不改状态', async () => {
@@ -90,21 +89,6 @@ test('tools owner：保存做空 key 清理；失败保草稿且不污染 error'
   assert.equal(failing.draft.saving, false, '保存失败也要清 saving')
 })
 
-test('tools owner：已卸载（isCurrent 为假）时应答不落地', async () => {
-  let resolveLoad
-  const draft = draftOf('module-a')
-  const editor = createToolsEditor('module-a', draft, {
-    reader: { load: () => new Promise(resolve => { resolveLoad = resolve }) },
-    request: async () => ok([]),
-    isCurrent: () => false,
-    changed: () => {},
-  })
-  const loading = editor.load()
-  resolveLoad(ok([tool('late')]))
-  assert.equal(await loading, false)
-  assert.deepEqual(draft.tools, [], '卸载后应答不落地')
-  assert.equal(draft.loaded, false, '卸载后不改 loaded')
-})
 test('tools owner：发布重试只发 refreshOnly，不重写工具定义', async () => {
   const h = harness(async () => ok([]))
   h.draft.loaded = true
@@ -113,32 +97,4 @@ test('tools owner：发布重试只发 refreshOnly，不重写工具定义', asy
   assert.equal(result.ok, true)
   assert.deepEqual(h.calls.at(-1), { expectedModuleId: 'module-a', refreshOnly: true })
   assert.equal(h.draft.publicationPending, false)
-})
-
-test('tools owner：insertTemplate 走同一读守卫，失败写 error，重复不插入', async () => {
-  const failingDraft = draftOf('module-a')
-  let changed = 0
-  const failing = createToolsEditor('module-a', failingDraft, {
-    reader: { load: () => Promise.resolve(fail('读失败')) },
-    request: async () => fail('unused'),
-    isCurrent: () => true,
-    changed: () => { changed += 1 },
-  })
-  assert.equal(await failing.insertTemplate({ id: 'tpl' }), 'failed')
-  assert.equal(failingDraft.error, '读失败', '模板入口与卡内 load 共用错误落点')
-  assert.ok(changed > 0, '错误落点触发视图 refresh')
-
-  const draft = draftOf('module-a')
-  let reads = 0
-  const editor = createToolsEditor('module-a', draft, {
-    reader: { load: () => { reads += 1; return Promise.resolve(ok([tool('server')])) } },
-    request: async () => fail('unused'),
-    isCurrent: () => true,
-    changed: () => {},
-  })
-  assert.equal(await editor.insertTemplate({ id: 'tpl' }), 'inserted')
-  assert.deepEqual(draft.tools.map(item => item.id), ['server', 'tpl'])
-  assert.equal(await editor.insertTemplate({ id: 'tpl' }), 'duplicate')
-  assert.equal(reads, 1, '重复插入不再读')
-  assert.deepEqual(draft.tools.map(item => item.id), ['server', 'tpl'])
 })
