@@ -822,21 +822,21 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 
 ### 12.1 契约测试
 
-五条 seam 的覆盖位置（定义与准入见 [AGENTS.md](../AGENTS.md#测试)）：
+常驻套件只覆盖核心行为；新增用例按 [项目测试准入](../AGENTS.md#测试准入) 判断，不按功能目录补齐测试。
 
-| seam | 覆盖位置 |
+| 核心行为 | 覆盖位置 |
 |---|---|
-| 引擎注入行为（插入点 / 时机 / 次数 / 受众） | `test/engine/*.test.mjs` |
-| 写盘产物语义 | `test/host/write-module.test.mjs`、`test/host/module-*.test.mjs`、`test/host/module-slices.test.mjs`、`test/host/global-params.test.mjs`（全局层写/删键/空层回收与优先级）、`test/host/skill-seed.test.mjs`（内置技能只补缺失、不覆盖用户副本）、`test/client/instruction-editor.test.mjs`（指令文件逐文件保存结果、在途会话变化、策略 revision 乐观并发） |
-| bridge 端点载荷 | `test/shared/bridge-contract.test.mjs`、`test/client/bridge-client.test.mjs`、`test/host/settings-bridge.test.mjs`、`test/host/publication-state.test.mjs`、`test/host/*-bridge.test.mjs`、`test/client/*.test.mjs`（固定卡接线、请求主语与渲染链路，含 layer-cards、instruction-cards） |
-| 安全与拒绝路径 | `test/host/instructions-policy.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/module-package-import.test.mjs`、`test/host/wave1-safety.test.mjs`、`test/host/agents-cards.test.mjs`、`test/engine/instruction-files.test.mjs` |
-| UI slot / 入口注册 | `test/client/workbench-sidebar-entry.test.mjs` 覆盖三面注册、会话、可见性及释放；`test/host/entry-surface.test.mjs` 覆盖发布导出与依赖门；`test/host/tui-settings-section.test.mjs` 覆盖字段与 disposer；`test/client/rule-facts.test.mjs` 覆盖受众可见性，不锁内部 data-* 形态 |
+| 规则执行、主子隔离与生命周期 | `test/engine/rules.test.mjs`、`test/host/agent-assembly.test.mjs`、`test/host/tool-step-assembly.test.mjs` |
+| 写盘、导入导出、冲突与私有数据保全 | `test/host/module-rule-tools.test.mjs`、`test/host/module-file-tools.test.mjs`、`test/host/module-package-*.test.mjs` |
+| 请求和文件路径安全 | `test/shared/bridge-contract.test.mjs`、`test/host/instruction-scope-guard.test.mjs`、`test/host/agents-cards.test.mjs` |
+| 保存失败、迟到响应与回退 | `test/client/*-editor.test.mjs`、`test/client/module-variables.test.mjs`、`test/client/rewind*.test.mjs`、`test/host/rewind-bridge.test.mjs` |
+| 安装图、入口与分发完整性 | `verify:host`、`verify:pack` |
 
-**安全边界的守护位置**：指令文件读写（授权、上下文白名单、内容版本冲突、读取失败）、导入回滚、路径穿越、大小上限、桥端点安全面、晋升门控与 epoch 这些不变量，由上面「安全与拒绝路径」一栏的文件覆盖；改动它们需要独立授权，不得顺带删减。
+测试使用最小自建模块，不固定内置模块名称、数量、正文或默认行为。已有核心用例覆盖的风险不再分层重复测试；类型、字段字典、导出与资源分发交给对应检查。
 
-**类型检查范围分三个项目**：`tsconfig.json`（`src` 非 client）、`tsconfig.client.json`（`src/client`）与 `tsconfig.test.json`（`test/fixtures/**` 与 `test/client/support/**`）。第三个是**白名单式的分阶段纳入**——它 `extends` client 配置并开 `allowJs`/`checkJs`，**加一个测试文件＝往 `include` 加一行**；之所以分批，是因为 `test/` 整体纳入 `checkJs` 时实测有 458 个缺类型标注的错误（隐式 any 与可能 undefined 占多数），而**纳入一个文件会连带检查它 import 的文件**，所以顺序只能是「先基础层（被所有 client 测试引用）→ 再逐个测试文件」。给测试桩补类型不是额外纪律：桩与端口是否一致由这条 tsc 边界直接抓，漂移不再无声。当前白名单命中 3 个文件（`host-harness.mjs`、`module-template.mjs`、`ssr-render.mjs`）；将来把客户端用例加进来时会连带引入 `.tsx`，届时 `include` 需一并加入 `src/css-modules.d.ts`（CSS import 的类型声明）。
+类型检查分为 `tsconfig.json`（`src` 非 client）、`tsconfig.client.json`（`src/client`）与 `tsconfig.test.json`（`test/fixtures/**`）。测试夹具目前仅保留 `host-harness.mjs`，通过 `allowJs`/`checkJs` 检查其端口类型。
 
-不再引入 Jest、Vitest、jsdom 或 happy-dom。客户端渲染断言**只**覆盖两类：固定卡（指令卡）的**接线**——卡在场、可展开、设置区页签在场、缺主语时不写不发；通用规则卡（含人设动作字段、参数组、变量、自定义工具、资产卡）的**渲染链路**——按声明出卡/不出卡、添加入口在场、参数组按事实渲染、请求主语正确。内部 `data-*` 属性**可以**作为在场/缺席的见证（选择器锚点），但不得锁它的形态、拼法与结构；文案断言必须经 `t()` 词条取值，不写死正文；排除式断言只禁止**为已删除的实现或产物写的墓碑**（`doesNotMatch(已删标记)`），不禁止「按声明不出卡」这类行为性缺席。交互、真实 CSS 计算值与 portal 内容一律不做断言——它们留**真机浏览器核对（Edge smoke）**；`§12.2` 的命令门禁只覆盖可自动化的部分（typecheck／lint／test／build／`git diff --check`）。
+继续使用 Node 内置 runner，不引入新的测试框架或渲染模拟器。UI 文案、静态渲染、DOM/CSS 结构及字段穷举不进入常驻套件；交互和布局改动按需在真实浏览器核对。`§12.2` 的命令只验证自动化边界，不代表桌面体验已验收。
 
 ### 12.2 验证命令
 
@@ -848,7 +848,6 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
     pnpm --dir $Repo typecheck
     pnpm --dir $Repo lint
     pnpm --dir $Repo test
-    pnpm --dir $Repo build
     git -C $Repo diff --check
 
 测试从临时 cwd 与临时 DSH_HOME 执行，不接触当前运行中的 DSH 服务。

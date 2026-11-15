@@ -12,8 +12,7 @@
 //   7. 插件官方档位分组与已安装发布类型的键集合不一致。
 //
 // 只读：不写盘、不安装、不触碰当前运行中的 DSH。
-import { existsSync, readFileSync, realpathSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { existsSync, globSync, readFileSync, realpathSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
@@ -115,11 +114,10 @@ for (const section of ['peerDependencies', 'devDependencies', 'dependencies']) {
   }
 }
 
-// rg 遵守忽略规则；AST 区分纯类型、运行时 import 和引擎 importHostPackage。
-const sourceFiles = execFileSync('rg', [
-  '--files', '--max-depth', '8', '-g', '!node_modules', '-g', '!lib', '-g', '!dist',
-  join(root, 'src'), join(root, 'engine'),
-], { encoding: 'utf8', windowsHide: true }).trim().split(/\r?\n/).filter((file) => /\.(?:[cm]?[jt]s|tsx)$/.test(file))
+// AST 区分纯类型、运行时 import 和引擎 importHostPackage。
+const sourceFiles = globSync(['src/**/*', 'engine/**/*'], {
+  cwd: root, exclude: ['**/node_modules/**', '**/lib/**', '**/dist/**'],
+}).filter((file) => /\.(?:[cm]?[jt]s|tsx)$/.test(file)).map(file => join(root, file))
 for (const file of sourceFiles) {
   const local = relative(root, file).replaceAll('\\', '/')
   for (const edge of moduleImportEdges(readFileSync(file, 'utf8'), file)) {

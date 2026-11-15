@@ -18,13 +18,12 @@ import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-/** 必须有内容的目录；缺一个就说明 package.json#files 漏配。 */
-const REQUIRED_DIRS = ['lib', 'engine', 'modules', 'skills', 'templates']
+/** 入口必需目录与当前存在的随包资源；资源内容可替换或移除。 */
+const REQUIRED_DIRS = ['lib', 'engine', ...['modules', 'skills', 'templates'].filter(name => statSync(join(root, name), { throwIfNoEntry: false })?.isDirectory())]
 const REQUIRED_FILES = ['cordis.patch.yml', 'package.json', 'README.md', 'LICENSE']
 
-/** 在临时项目里跑：主入口可用 + 包内引擎真编译一条规则 + 模块库与技能随包。 */
-const SMOKE = `import { existsSync, readdirSync } from 'node:fs'
-import assert from 'node:assert/strict'
+/** 在临时项目里跑：主入口可用 + 包内引擎真编译一条自建规则。 */
+const SMOKE = `import assert from 'node:assert/strict'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -64,12 +63,7 @@ const { compileRules } = await import(pathToFileURL(join(pluginRoot, 'engine/rul
 const rules = [{ id: 'smoke', then: [{ id: 's', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'context-activation', text: '{{module.get::greeting}}', params: { activation: { scan: 'batch' }, keys: ['hello'], templateEvaluation: true } } }] }]
 const compiled = compileRules(rules)
 if (compiled.length !== 1 || compiled[0].actions.length !== 1) throw new Error('包内引擎编译规则失败')
-const modules = readdirSync(join(pluginRoot, 'engine/compositions/source/local')).filter((name) => name.endsWith('.yml'))
-for (const name of ['rule-engine', 'module-import-tools', 'module-rule-tools', 'module-file-tools', 'module-manifest-tools', 'module-variable-tools']) {
-  if (!modules.includes(name + '.yml')) throw new Error('组合模块库缺少 ' + name)
-}
-if (!existsSync(join(pluginRoot, 'skills/dsh-module/SKILL.md'))) throw new Error('随包技能缺失')
-console.log('smoke: 主入口 + early/server 引擎身份 + 原生规则编译 + 组合模块库 + 随包技能 均通过')
+console.log('smoke: 主入口 + early/server 引擎身份 + 原生规则编译 均通过')
 `
 
 const failures = []

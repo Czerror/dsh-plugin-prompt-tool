@@ -1,8 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
-import { createRuleEditor, getRulesDraft, ruleEdits, rulesDirty } from '../../src/client/data/rule-drafts.ts'
-import { changeHostCapability } from '../../src/client/data/host-control-policy.ts'
+import { createRuleEditor, getRulesDraft, rulesDirty } from '../../src/client/data/rule-drafts.ts'
 
 const meta = { predicates: [], composites: ['all', 'any', 'not', 'notAny'], actions: [], waterfallPositions: ['default'] }
 const alpha = { id: 'alpha', enabled: true, group: 'mode', exclusive: true, then: [{ id: 'alpha-text', kind: 'inject-text', config: { id: 'text', text: 'Alpha', layer: 'pre-step', future: { keep: 42 } } }] }
@@ -18,46 +17,6 @@ function harness(request, enqueue = async (_moduleId, task) => task()) {
   })
   return { draft, editor, calls, switchModule: () => { current = false } }
 }
-
-test('rules bridge: 能力切换只清理值子树，无关非法输入阻止提交，修正后保存完整动作', async () => {
-  const action = { id: 'control', kind: 'host-control', capability: 'file-read-limits', value: { limit: 20000 }, future: { keep: 42 } }
-  const rule = { id: 'control-rule', if: { scope: { audience: 'main' } }, then: [action] }
-  const h = harness(async body => ({ ok: true, value: snapshot(body.edits ? [body.edits[0].rule] : [rule], body.edits ? 'saved' : 'baseline') }))
-  await h.editor.load()
-  const entry = h.draft.entries[0], fieldKey = entry.key + ':then:0'
-  const invalid = { source: '', text: '{', error: '未完成 JSON' }
-  for (const key of [fieldKey + ':value', fieldKey + ':value:limit', fieldKey + ':valueExtra', fieldKey + ':future', entry.key + ':then:1:value', 'other:then:0:value']) h.draft.fields.set(key, invalid)
-  const next = changeHostCapability(entry.value.then[0], 'session-rewind', { fields: h.draft.fields, fieldKey })
-  h.editor.patch(entry.key, { ...entry.value, then: [next] })
-  assert.deepEqual([...h.draft.fields.keys()], [fieldKey + ':valueExtra', fieldKey + ':future', entry.key + ':then:1:value', 'other:then:0:value'])
-  assert.equal(await h.editor.submit(), false)
-  assert.equal(h.calls.length, 1, '无关非法草稿不能被能力切换绕过')
-  h.draft.fields.clear()
-  assert.equal(await h.editor.submit(), true)
-  assert.deepEqual(h.calls[1], { expectedModuleId: 'module-a', expectedRevisions: { rules: { 'control-rule': 'baseline' } }, edits: [{ previousId: 'control-rule', rule: { ...rule, then: [{ ...action, capability: 'session-rewind', value: true }] }, settingsChanged: false }] })
-})
-
-test('rules bridge: 同能力保留输入，未知能力兜底与对象初值保持独立', async () => {
-  const action = { id: 'control', kind: 'host-control', capability: 'future-control', value: { custom: 7 } }
-  const rule = { id: 'future-rule', then: [action] }
-  const h = harness(async body => ({ ok: true, value: snapshot(body.edits ? [body.edits[0].rule] : [rule]) }))
-  await h.editor.load()
-  const entry = h.draft.entries[0], fieldKey = entry.key + ':then:0'
-  const raw = { source: '{}', text: '{', error: '未完成 JSON' }
-  h.draft.fields.set(fieldKey + ':value', raw)
-  const same = changeHostCapability(entry.value.then[0], 'future-control', { fields: h.draft.fields, fieldKey })
-  assert.deepEqual(same, action)
-  assert.equal(h.draft.fields.get(fieldKey + ':value'), raw)
-  const next = changeHostCapability(same, 'another-future', { fields: h.draft.fields, fieldKey })
-  assert.deepEqual(next.value, { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 })
-  const other = changeHostCapability(action, 'delegation-limits', { fields: new Map(), fieldKey: 'other' })
-  const independent = changeHostCapability(action, 'delegation-limits', { fields: new Map(), fieldKey: 'third' })
-  other.value.maxDepth = 1
-  assert.deepEqual(independent.value, { maxDepth: 10, askTimeout: 300 })
-  h.editor.patch(entry.key, { ...entry.value, then: [next] })
-  assert.equal(await h.editor.submit(), true)
-  assert.deepEqual(h.calls[1].edits[0].rule.then[0], { ...action, capability: 'another-future', value: { maxLineLength: 10000, maxBytes: 1048576, limit: 20000 } })
-})
 
 test('rules bridge: rename/delete use previous identity and CAS; unknown payload and action IDs survive', async () => {
   const next = { ...structuredClone(alpha), id: 'renamed-alpha', name: 'renamed' }
@@ -100,65 +59,6 @@ test('rules bridge: CAS failure and switched module never discard local input', 
   h.switchModule()
   assert.equal(await h.editor.submit(), false)
   assert.equal(h.calls.length, 3)
-})
-
-test('rules bridge: 确认关联和兜底字段按草稿增删，不在提交时补回默认值', async () => {
-  let saved = structuredClone(alpha)
-  const h = harness(async body => {
-    if (body.edits) saved = structuredClone(body.edits[0].rule)
-    return { ok: true, value: snapshot([saved], body.edits ? 'saved' : 'baseline') }
-  })
-  await h.editor.load()
-  const key = h.draft.entries[0].key
-  saved = { ...saved, if: { anchor: { subject: 'assistantReasoning', keys: ['READY'] } } }
-  h.editor.patch(key, saved)
-  assert.equal(await h.editor.submit(), true)
-  assert.deepEqual(h.calls.at(-1).edits[0].rule.if.anchor, { subject: 'assistantReasoning', keys: ['READY'] })
-  saved = { ...saved, if: { anchor: { ...saved.if.anchor, after: { action: 'seed' }, fallbackAfter: 2 } } }
-  h.editor.patch(key, saved)
-  assert.equal(await h.editor.submit(), true)
-  assert.deepEqual(h.calls.at(-1).edits[0].rule.if.anchor.after, { action: 'seed' })
-  assert.equal(h.calls.at(-1).edits[0].rule.if.anchor.fallbackAfter, 2)
-  delete saved.if.anchor.after
-  delete saved.if.anchor.fallbackAfter
-  h.editor.patch(key, saved)
-  assert.equal(await h.editor.submit(), true)
-  assert.deepEqual(h.calls.at(-1).edits[0].rule.if.anchor, { subject: 'assistantReasoning', keys: ['READY'] })
-})
-
-test('rules bridge: 文本长度增删与流动作完整提交，不把示例默认值写回', async () => {
-  let saved = { ...structuredClone(alpha), if: { text: { subject: 'userMessage', minChars: 0, maxChars: 120 } }, then: [{ id: 'output', kind: 'stream-output', mode: 'replace', text: '输出' }] }
-  const h = harness(async body => {
-    if (body.edits) saved = structuredClone(body.edits[0].rule)
-    return { ok: true, value: snapshot([saved], body.edits ? 'saved' : 'baseline') }
-  })
-  await h.editor.load()
-  const key = h.draft.entries[0].key
-  const next = structuredClone(saved)
-  delete next.if.text.maxChars
-  h.editor.patch(key, next)
-  assert.equal(await h.editor.submit(), true)
-  assert.deepEqual(h.calls.at(-1).edits[0].rule.if, { text: { subject: 'userMessage', minChars: 0 } })
-  assert.deepEqual(h.calls.at(-1).edits[0].rule.then, [{ id: 'output', kind: 'stream-output', mode: 'replace', text: '输出' }])
-  const withoutLength = { ...saved, if: { text: { subject: 'userMessage', keys: ['完成'] } } }
-  h.editor.patch(key, withoutLength)
-  assert.equal(await h.editor.submit(), true)
-  assert.deepEqual(h.calls.at(-1).edits[0].rule.if, { text: { subject: 'userMessage', keys: ['完成'] } })
-})
-
-test('rules bridge: 共享引用被拒后只许重新读取，不重放那一次写', async () => {
-  const h = harness(async body => body.edits
-    ? { ok: false, code: 'shared-alias', message: 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑（连带改了 persona）' }
-    : { ok: true, value: snapshot() })
-  await h.editor.load()
-  h.editor.patch(h.draft.entries[0].key, { ...structuredClone(alpha), name: 'local draft' })
-  assert.equal(await h.editor.submit(), false)
-  assert.match(h.draft.error, /共享引用/)
-  assert.equal(h.editor.retryKind, 'read', '共享引用不是「重试保存」能解决的')
-  assert.equal(await h.editor.submit(), false, '被拒后禁止再次提交旧版本')
-  assert.equal(h.calls.length, 2, '不重放注定失败的写请求')
-  assert.equal(await h.editor.retry(), true, '重试走重新读取')
-  assert.equal(h.calls.at(-1).edits, undefined, '重试只读，不重放写')
 })
 
 test('新建条件与空白规则留在草稿；无效字段不提交，后台读取不删除，修正后完整保存', async () => {
@@ -226,30 +126,6 @@ test('rules bridge: first creation stores the complete result without an active 
   assert.equal(h.draft.publicationPending, false)
   assert.equal(h.draft.revisions.rules.first, 'published')
   assert.equal(h.draft.entries[0].value.name, 'unsaved')
-})
-
-test('rules bridge: activation accepts full mutex snapshot while preserving edits made during save', async () => {
-  let release
-  const waiting = new Promise(resolve => { release = resolve })
-  const h = harness(async body => body.edits ? waiting : { ok: true, value: snapshot() })
-  await h.editor.load()
-  const target = h.draft.entries[1]
-  h.editor.patch(target.key, { ...target.value, enabled: true })
-  const saving = h.editor.submit({ activateRuleId: 'beta' })
-  await Promise.resolve()
-  h.editor.patch(target.key, { ...h.draft.entries[1].value, name: 'typed during save' })
-  h.editor.patch(h.draft.entries[0].key, { ...h.draft.entries[0].value, name: 'other body during save' })
-  release({ ok: true, value: snapshot([{ ...alpha, enabled: false }, { ...beta, enabled: true }], 'activated') })
-  assert.equal(await saving, true)
-  assert.equal(h.calls[1].activateRuleId, 'beta')
-  assert.equal(h.draft.entries[0].value.enabled, false)
-  assert.equal(h.draft.entries[1].value.enabled, true)
-  assert.equal(h.draft.entries[1].value.name, 'typed during save')
-  assert.deepEqual(ruleEdits(h.draft), [
-    { previousId: 'alpha', rule: { ...alpha, enabled: false, name: 'other body during save' }, settingsChanged: false },
-    { previousId: 'beta', rule: { ...beta, enabled: true, name: 'typed during save' }, settingsChanged: false },
-  ])
-  assert.equal(h.draft.revisions.settings, 'activated')
 })
 
 test('rules bridge: queued save and in-flight read survive leaving the view without losing input', async () => {

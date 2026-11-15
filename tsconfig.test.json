@@ -5,5 +5,5 @@
     "checkJs": true,
     "types": ["node"]
   },
-  "include": ["test/fixtures/**/*.mjs", "test/client/support/**/*.mjs"]
+  "include": ["test/fixtures/**/*.mjs"]
 }

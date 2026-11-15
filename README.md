@@ -205,7 +205,7 @@ git -C $Repo diff --check
 
 参考模板用 `rebuild:module-template`，追加 `-- --check` 检查漂移。test 脚本先 build，再以独立 cwd/TEMP/TMP/DSH_HOME 运行 Node 测试。发布流程复用测试构建，`verify:pack` 通过 `npm pack` 的 `prepare` 重建并验证分发包，最终 `npm publish --ignore-scripts` 复用已验证产物。类型、单测和包检查通过不代表真实发布宿主与桌面 UI 已验收；隔离发布 CLI 的 headless/web 验证和用户桌面验收分别记录。
 
-源文件通过 package scripts 生成 lib 和 YAML vendor 快照，不手改构建产物。永久测试仅保留注入行为、写盘语义、bridge 载荷、安全拒绝、UI slot / 入口注册五条 seam 的公共接口回归，期望来自独立真值；临时探针及纯旧名消失检查不进入测试套件。
+源文件通过 package scripts 生成 lib 和 YAML vendor 快照，不手改构建产物。测试只保留核心规则执行、真实宿主接入、写盘与请求安全、保存冲突及回退行为；类型与发布完整性由各自检查负责。不固定内置模块的名称、数量、正文或默认规则，模块机制使用自建小夹具验证；分发检查只核对仓库当前资源是否完整入包。字段穷举、界面快照、源码字符串及重复辅助函数测试不进入常驻套件，新增回归优先并入已有核心用例。
 
 ## 排障
 
