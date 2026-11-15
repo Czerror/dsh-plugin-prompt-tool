@@ -6,8 +6,8 @@
  * 本模块拥有本地卡片的文件身份、读取快照与读写校验；读取失败与空文件严格区分。
  */
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { dshHome } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { replaceVersionedText } from './versioned-text.ts'
@@ -44,12 +44,22 @@ export function agentsFileId(path: string): string {
   return createHash('sha256').update(key).digest('hex').slice(0, 16)
 }
 
-/** 真实路径（解析符号链接/重解析点）；不存在或无法稳定确认时返回 undefined。 */
-function realPathOf(path: string): string | undefined {
+/** 真实路径；仅身份解析允许缺失尾路径，其余无法稳定确认时返回 undefined。 */
+function realPathOf(path: string, allowMissing = false): string | undefined {
   try {
     return realpathSync.native(path)
-  } catch {
-    return undefined
+  } catch (error) {
+    if (!allowMissing || (error as NodeJS.ErrnoException).code !== 'ENOENT') return undefined
+    try {
+      // 缺失文件沿现存祖先解析；不能跨过悬空链接或忽略父目录的重解析点。
+      if (lstatSync(path, { throwIfNoEntry: false }) !== undefined) return undefined
+      const parent = dirname(path)
+      if (parent === path) return undefined
+      const realParent = realPathOf(parent, true)
+      return realParent === undefined ? undefined : join(realParent, basename(path))
+    } catch {
+      return undefined
+    }
   }
 }
 
@@ -71,8 +81,9 @@ export function instructionFileIdFromDisplayPath(displayPath: string, projectRoo
   const path = global ? join(root, USER_GLOBAL_INSTRUCTION_FILE) : resolve(root, displayPath)
   if (!within(root, path)) return undefined
   // 文件已删除时仍按原普通路径匹配其关闭策略，允许过滤 remove 通知。
-  const realPath = realPathOf(path) ?? path
-  if (!within(realPathOf(root) ?? root, realPath)) return undefined
+  const realPath = realPathOf(path, true)
+  const realRoot = realPathOf(root, true)
+  if (realPath === undefined || realRoot === undefined || !within(realRoot, realPath)) return undefined
   return agentsFileId(realPath)
 }
 

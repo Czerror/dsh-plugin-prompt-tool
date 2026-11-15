@@ -4,13 +4,36 @@
  */
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { detectAgentsFiles } from '../../src/host/agents-cards.ts'
+import { agentsFileId, detectAgentsFiles, instructionFileIdFromDisplayPath } from '../../src/host/agents-cards.ts'
 
 const work = mkdtempSync(join(tmpdir(), 'pt-agents-cards-'))
 after(() => { rmSync(work, { recursive: true, force: true }) })
+
+test('指令身份：junction 根中缺失的全局与项目文件使用真实路径身份', () => {
+  const target = join(work, 'identity-root')
+  const alias = join(work, 'identity-alias')
+  mkdirSync(target)
+  symlinkSync(target, alias, 'junction')
+  const realRoot = realpathSync.native(target)
+  assert.equal(instructionFileIdFromDisplayPath('~/.dsh/AGENTS.md', undefined, alias), agentsFileId(join(realRoot, 'AGENTS.md')))
+  assert.equal(instructionFileIdFromDisplayPath('AGENTS.md', alias), agentsFileId(join(realRoot, 'AGENTS.md')))
+  assert.equal(instructionFileIdFromDisplayPath('nested/AGENTS.md', alias), agentsFileId(join(realRoot, 'nested/AGENTS.md')))
+})
+
+test('指令身份：指向根外的 junction 中缺失文件仍拒绝', () => {
+  const root = join(work, 'identity-contained')
+  const outside = join(work, 'identity-outside')
+  mkdirSync(root)
+  mkdirSync(outside)
+  symlinkSync(outside, join(root, 'external'), 'junction')
+  assert.equal(instructionFileIdFromDisplayPath('external/AGENTS.md', root), undefined)
+  assert.equal(instructionFileIdFromDisplayPath('external/nested/AGENTS.md', root), undefined)
+  writeFileSync(join(outside, 'AGENTS.md'), 'OUTSIDE\n')
+  assert.equal(instructionFileIdFromDisplayPath('external/AGENTS.md', root), undefined)
+})
 
 test('detectAgentsFiles：项目根到 cwd 的链，广到窄，展示路径相对项目根', () => {
   const repo = join(work, 'repo')
