@@ -1,4 +1,7 @@
-pnpmfile: .scratch/harness/pnpmfile.cjs
+overrides:
+  '@earendil-works/pi-ai': 1.3.0
+patchedDependencies:
+  '@earendil-works/pi-ai@1.3.0': patches/pi-ai-1.3.0.patch
 allowBuilds:
   koffi: true
   '@google/genai': false

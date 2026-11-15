@@ -13,7 +13,6 @@ export const OFFICIAL_SCOPE = '@deepseek-ai/'
 
 /** 已验证的最低宿主契约；范围可以开放上界，锁文件固定本地验证输入。 */
 export const DSH_BASELINE = '0.2.2-rc.2'
-export { DSH_SOURCE_SHA } from './harness-source.mjs'
 
 /** 比较发布类型的档位键与插件分组；只解析声明，不执行宿主包或手抄数值。 */
 export function officialOrderContractProblems(officialSource, pluginSource) {
@@ -86,7 +85,7 @@ export function isExactBaseline(version, expected) {
 }
 
 /** CLI 与行为测试共用的版本验证；manifest 可显式传入，不需要改写仓库文件。 */
-export function dependencyVersionProblems(name, section, version, selectedManifest = manifest, locked, sourcePackage) {
+export function dependencyVersionProblems(name, section, version, selectedManifest = manifest, locked) {
   const range = selectedManifest[section]?.[name]
   const problems = []
   if (!peerRangeAccepts(range, version)) {
@@ -99,14 +98,25 @@ export function dependencyVersionProblems(name, section, version, selectedManife
     }
   }
   if (locked !== undefined) {
-    const sourceVersion = sourcePackage && locked.version?.split('(')[0] === `file:${sourcePackage.path}` ? sourcePackage.version : undefined
-    const lockedVersion = sourceVersion ?? (typeof locked.version === 'string' ? locked.version.split('(')[0] : undefined)
+    const lockedVersion = typeof locked.version === 'string' ? locked.version.split('(')[0] : undefined
     if (!isExactBaseline(version, lockedVersion)) problems.push(`安装版本 ${version} 不等于锁定版本 ${String(lockedVersion)}`)
-    if (section !== 'peerDependencies' && locked.specifier !== (sourceVersion ? `file:${sourcePackage.path}` : range)) {
+    if (section !== 'peerDependencies' && locked.specifier !== range) {
       problems.push(`锁文件声明 ${String(locked.specifier)} 与 ${section} 范围 ${range} 不一致`)
     }
   }
   return problems
+}
+
+/** 每个已安装的官方图节点必须有 registry 版本及完整性记录。 */
+export function registryPackageProblems(name, version, lock) {
+  const resolution = lock.packages?.[`${name}@${version}`]?.resolution
+  if (!resolution || typeof resolution.integrity !== 'string' || resolution.integrity.length === 0) {
+    return [`${name}@${version}: 缺少 registry 锁定完整性记录`]
+  }
+  if (resolution.type !== undefined || (resolution.tarball !== undefined && !/^https?:\/\//.test(resolution.tarball))) {
+    return [`${name}@${version}: 不能使用本地源码或 tarball 锁定输入`]
+  }
+  return []
 }
 
 /**

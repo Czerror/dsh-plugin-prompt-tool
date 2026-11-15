@@ -11,11 +11,11 @@
 // 写盘范围仅限系统临时目录，结束后清理；不触碰仓库与运行中的 DSH。
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
-import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { parse } from 'yaml'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 /** 必须有内容的目录；缺一个就说明 package.json#files 漏配。 */
@@ -86,6 +86,19 @@ const listFiles = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((en
 const quote = (value) => `"${value}"`
 const run = (command, options = {}) => execFileSync(command, { stdio: 'pipe', windowsHide: true, shell: true, ...options })
 
+function isNativeBinary(path) {
+  const fd = openSync(path, 'r')
+  try {
+    const head = Buffer.alloc(4)
+    if (readSync(fd, head, 0, 4, 0) < 4) return false
+    const magic = head.readUInt32BE(0)
+    return magic === 0x7f454c46 || magic === 0xfeedface || magic === 0xfeedfacf
+      || magic === 0xcafebabe || magic === 0xcffaedfe || (head[0] === 0x4d && head[1] === 0x5a)
+  } finally {
+    closeSync(fd)
+  }
+}
+
 const work = mkdtempSync(join(tmpdir(), 'dsh-verify-pack-'))
 try {
   const packDir = join(work, 'pack')
@@ -125,16 +138,17 @@ try {
 
   const project = join(work, 'project')
   mkdirSync(project)
-  const { packageManager } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+  const { packageManager, devDependencies } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
   writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'verify-pack', private: true, type: 'module', packageManager }))
-  // 临时安装复用固定源图；绝对路径只写进临时 hook，不进入发布 manifest。
-  const sourceConfig = createRequire(import.meta.url)(join(root, '.scratch/harness/pnpmfile.cjs')).hooks.updateConfig({})
-  const overrides = Object.fromEntries(Object.entries(sourceConfig.overrides).map(([name, value]) => [name, value.startsWith('file:') ? `file:${resolve(root, value.slice(5)).replaceAll('\\', '/')}` : value]))
-  const patchedDependencies = Object.fromEntries(Object.entries(sourceConfig.patchedDependencies).map(([name, path]) => [name, resolve(root, path).replaceAll('\\', '/')]))
-  // 发布闭包可以不含 PI；若存在仍应用原 patch，应用失败仍由 pnpm 阻断。
-  writeFileSync(join(project, 'pnpmfile.cjs'), `module.exports = { hooks: { updateConfig(config) { return { ...config, overrides: ${JSON.stringify(overrides)}, patchedDependencies: ${JSON.stringify(patchedDependencies)}, allowUnusedPatches: true }; } } };\n`)
+  // 真实 registry 安装固定官方基线，复用仓库明确锁定的依赖与补丁。
+  const workspace = parse(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8'))
+  const overrides = { ...workspace.overrides, ...Object.fromEntries(Object.entries(devDependencies).filter(([name]) => name.startsWith('@deepseek-ai/'))) }
+  const patchedDependencies = Object.fromEntries(Object.entries(workspace.patchedDependencies ?? {}).map(([name, path]) => [name, resolve(root, path).replaceAll('\\', '/')]))
+  writeFileSync(join(project, 'pnpm-workspace.yaml'), JSON.stringify({ overrides, patchedDependencies, allowUnusedPatches: true }))
   if (!process.env.npm_execpath) throw new Error('请通过 pnpm run verify:pack 使用仓库固定的 pnpm 版本')
-  execFileSync(process.execPath, [process.env.npm_execpath, 'add', '--allow-build=koffi', '--pnpmfile', join(project, 'pnpmfile.cjs'), join(packDir, tarball)], { cwd: project, stdio: 'pipe', windowsHide: true })
+  const pnpm = process.env.npm_execpath
+  const native = /\.exe$/i.test(pnpm) || isNativeBinary(pnpm)
+  execFileSync(native ? pnpm : process.execPath, [...(native ? [] : [pnpm]), 'add', '--allow-build=koffi', join(packDir, tarball)], { cwd: project, stdio: 'pipe', windowsHide: true })
   writeFileSync(join(project, 'smoke.mjs'), SMOKE)
   process.stdout.write(run(`${quote(process.execPath)} smoke.mjs`, { cwd: project, encoding: 'utf8' }))
 } catch (error) {
