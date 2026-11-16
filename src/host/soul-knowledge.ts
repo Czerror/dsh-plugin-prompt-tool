@@ -24,7 +24,7 @@ type Binding = z.infer<typeof binding>
 export interface SoulKnowledgeRequest { moduleId: string; action: 'status' | 'preview' | 'confirm' | 'sources' | 'source-preview' | 'source-confirm' | 'revoke' | 'project' | 'enable' | 'disable'; root?: string; read?: string[]; write?: string[]; expectedRevision?: string; path?: string; scope?: 'general' | 'project'; projectDirectory?: string; sourceId?: string; sessionId?: string; seqs?: number[] }
 export interface KnowledgeDocument { kind: 'knowledge'; moduleId: string; root: string; path: string; scope: string; sourceId: string; revision: string; content: string }
 export interface SoulKnowledgeOwner {
-  status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; consolidationRevision?: string; reason?: string; entry: string }
+  status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; consolidationRevision?: string; reason?: string; entry: string; assistedConsolidation: { state: 'unavailable'; reason: string } }
   preview(directory: string, request: SoulKnowledgeRequest): Record<string, unknown>
   confirm(directory: string, request: SoulKnowledgeRequest, signal: AbortSignal): Promise<ReturnType<SoulKnowledgeOwner['status']>>
   sources(directory: string, sessionId: string): { state: string; documents: KnowledgeDocument[]; histories: z.infer<typeof history>[] }
@@ -116,7 +116,8 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   const status: SoulKnowledgeOwner['status'] = directory => {
     assertActive()
     const current = table.get(revisionOf(key(directory))), entry = '/prompt-tool knowledge <JSON：moduleId、action=preview|confirm|status>'
-    if (!current) return { state: 'unbound', entry }
+    const assistedConsolidation = { state: 'unavailable' as const, reason: '当前发布包缺少可验证的完整辅助请求输入计量，且未验证路由输出硬上限；不运行辅助整理。正常会话及已获准的直接记录、整理仍可用。' }
+    if (!current) return { state: 'unbound', entry, assistedConsolidation }
     try {
       assertModuleSnapshotSource(dirname(directory), basename(directory))
       if (identity(directory) !== current.moduleIdentity) throw new Error('来源模块身份已变化，请重新预览确认')
@@ -128,8 +129,8 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const stat = lstatSync(absolute)
         if (stat.isSymbolicLink() || current.read.includes(path) && !stat.isFile() || current.write.includes(path) && !stat.isDirectory()) throw new Error('授权资料类型已变化或被替换为链接')
       }
-      return { state: 'bound', binding: structuredClone(current), consolidationRevision: consolidationRevision(current), entry }
-    } catch (error) { return { state: 'unavailable', reason: String((error as Error).message), entry } }
+      return { state: 'bound', binding: structuredClone(current), consolidationRevision: consolidationRevision(current), entry, assistedConsolidation }
+    } catch (error) { return { state: 'unavailable', reason: String((error as Error).message), entry, assistedConsolidation } }
   }
   const prepare = (directory: string, request: SoulKnowledgeRequest) => {
     assertActive()

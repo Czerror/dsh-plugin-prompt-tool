@@ -43,9 +43,11 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await root.plugin(domain, { backend: 'json' })
   await root.plugin(Persistence, { root: join(home, 'sessions'), compression: 'none' })
   await root.plugin(Loop, { agents: [] })
+  let modelCalls = 0
   class Model extends LlmAdapter {
     async resolveModel(provider, id) { return { provider, id, name: id } }
     async *stream(request) {
+      modelCalls++
       yield { type: 'block-start', index: 0, blockType: 'text' }
       if (request.model === 'held') await new Promise((_, reject) => request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true }))
       yield { type: 'block-end', index: 0, block: { type: 'text', text: 'fixture response' } }
@@ -142,8 +144,11 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     assert.equal(result.isError, expectError, JSON.stringify(result))
     return expectError ? result : result.value.publication
   }
+  const callsBeforePublication = modelCalls
   const statusResult = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'publication-status', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'status' }) }] })).results[0].result
   assert.equal(statusResult.isError, false, JSON.stringify(statusResult))
+  assert.equal(statusResult.value.knowledge.assistedConsolidation?.state, 'unavailable', '缺少可靠计量时明确禁用额外模型整理，直接记录及发布继续可用')
+  assert.ok(statusResult.value.knowledge.assistedConsolidation.reason, '不可用必须返回原因')
   const toolEvent = agent.session.append({ type: 'tool/result', data: { id: 'publication-status', result: statusResult } })
   await owner.observe(dir, agent.session.id, toolEvent.seq)
   assert.equal(owner.status(dir).consolidationRevision, statusResult.value.knowledge.consolidationRevision, '工具结果不改变生成前整理依赖版本')
@@ -165,6 +170,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(owner.recording(dir, agent.session.id).pending, 0)
   assert.equal((await consolidate(publication)).state, 'published')
   const publishedPath = 'data/' + owner.sources(dir, agent.session.id).documents.at(-1).path
+  assert.equal(modelCalls, callsBeforePublication, '不可用状态查询和直接整理不额外调用模型')
   replaceEvidence = true
   const staleRead = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'stale-publication-read', name: 'module_file_read', arguments: JSON.stringify({ moduleId: 'alice', path: publishedPath }) }] })).results[0].result
   assert.equal(staleRead.isError, true, '普通文件工具也刷新持久历史，拒绝失效派生正文')
