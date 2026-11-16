@@ -35,11 +35,15 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const { createUserMessage } = await peer('@deepseek-ai/dsh-llm')
   const { openSoulKnowledge } = await import('../../src/host/soul-knowledge.ts')
   const { installSoulRuntime } = await import('../../src/runtime/soul-runtime.ts')
+  const { registerTuiCommand } = await import('../../src/runtime/tui.ts')
+  const Commands = await peer('@deepseek-ai/dsh-commands')
   const { registerSoulLedgerTools } = await import('../../src/runtime/soul-ledger-tools.ts')
   const { registerSoulStateTools } = await import('../../src/runtime/soul-state-tools.ts')
   const { registerModuleFileTools } = await import('../../src/runtime/module-file-tools.ts')
   const { readSoulLedgerProjection } = await import('../../src/host/soul-ledger.ts')
   for (const plugin of [Llm, Sessions, Projections, Prompt, Tools, Native, Agents, storage.default]) await root.plugin(plugin)
+  await root.plugin(Commands.default)
+  root.provide('settings', {})
   await root.plugin(json, { root: join(home, 'storage') })
   await root.plugin(domain, { backend: 'json' })
   await root.plugin(Persistence, { root: join(home, 'sessions'), compression: 'none' })
@@ -105,6 +109,9 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   registerSoulLedgerTools(root, host, () => owner)
   registerSoulStateTools(root, host, undefined, () => variables, () => owner)
   registerModuleFileTools(root, host, () => owner)
+  await root.plugin({ name: 'command-cas-test', inject: ['commands'], apply: scope => {
+    registerTuiCommand(scope, 'test', () => ({}), () => ({}), async () => ({}), id => id === 'alice' ? dir : '', undefined, undefined, () => owner)
+  } })
   await new Promise(resolve => setImmediate(resolve))
   const signal = new AbortController().signal
   const previewRequest = { moduleId: 'alice', action: 'preview', write: ['general', 'projects'] }
@@ -112,6 +119,16 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await owner.confirm(dir, { ...previewRequest, action: 'confirm', expectedRevision: preview.revision }, signal)
   const manage = async action => owner.manage(dir, { moduleId: 'alice', ...action, expectedRevision: owner.status(dir).binding.revision }, agent.session.id, signal)
   await manage({ action: 'project', projectDirectory: home })
+  // Commands.execute appends command lifecycle events; the runtime observes them
+  // before the command handler reaches the knowledge CAS queue.
+  const commandAgentHandle = await root.agents.create({ sessionId: 'command-cas', agentOptions: { provider: 'fixture', model: 'normal' }, meta: { cwd: home } })
+  handles.push(commandAgentHandle)
+  const commandAgent = commandAgentHandle.agent
+  const command = async request => (await root.commands.execute(commandAgent, '/prompt-tool knowledge ' + JSON.stringify({ moduleId: 'alice', ...request }), [], signal)).result
+  const commandRevision = owner.status(dir).binding.revision
+  const commandProject = await command({ action: 'project', projectDirectory: home, expectedRevision: commandRevision })
+  assert.equal(commandProject.kind, 'success', JSON.stringify(commandProject))
+  assert.equal((await command({ action: 'enable', expectedRevision: commandRevision })).kind, 'error', '真实命令生命周期后的旧控制版本必须拒绝')
   const send = async message => { agent.send(message, 'next-turn', true); await agent.whenIdle(); await owner.observe(dir, agent.session.id) }
   await send(createUserMessage({ content: [{ type: 'text', text: 'OLD HISTORY' }], source: { kind: 'user' } }))
   await manage({ action: 'enable' })
