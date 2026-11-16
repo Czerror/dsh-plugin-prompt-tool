@@ -326,6 +326,8 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         }
         for (const ref of refs) await visit(ref, true)
         for (const ref of parsed.assessment?.counterRefs ?? []) await visit(ref, false)
+        const currentParticipant = value.participants?.findLast(row => row.sessionId === sessionId && row.generation === value.continuity?.generation)
+        const rootSession = await loadEvidence(currentParticipant?.rootSessionId ?? sessionId)
         // 最后一次加载可能使已检查来源变化；提交前同步复核完整依赖。
         const finalAccess = sources(directory, sessionId)
         for (const [id, version] of evidence) {
@@ -336,6 +338,11 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           if (!finalAccess.documents.some(item => item.sourceId === ref)) throw new Error('学习提交派生来源已失效')
         }
         if (parsed.previous && !owner.learning(directory, sessionId).some(row => row.id === parsed.previous)) throw new Error('被替换学习已失效')
+        const latestInput = rootSession?.snapshotEvents().findLast(event => {
+          const data = (event as unknown as { data?: { source?: { kind?: string } } }).data
+          return event.type === 'user/message' && data?.source?.kind === 'user'
+        }) as unknown as { data?: { id?: string } } | undefined
+        if (!currentParticipant || latestInput?.data?.id !== currentParticipant.rootMessageId) throw new Error('新输入已使学习候选失效')
         signal.throwIfAborted(); assertAuthorized?.(); assertActive()
         if (requireBinding(directory).revision !== value.revision) throw new Error('学习提交版本冲突')
         const inferred = parsed.basis === 'inference' && supporting.size >= 2 && parsed.assessment?.decision === 'adopt' && !parsed.assessment.unresolved && !['core', 'locked'].includes(parsed.layer)
