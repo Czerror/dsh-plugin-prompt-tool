@@ -57,7 +57,7 @@ export function createSoulAssisted(ctx: Context, knowledge: () => SoulKnowledgeO
     if (!owner) throw new Error('知识库持久状态不可用')
     const access = owner.status(directory), participant = access.binding?.participants?.findLast(row => row.sessionId === agent.session.id && row.generation === access.binding?.continuity?.generation)
     if (access.state !== 'bound' || !access.binding?.continuity?.enabled || !participant?.rootMessageId) throw new Error('持续记忆未启用或缺少真实根用户回合')
-    const key = JSON.stringify([directory, access.binding.moduleIdentity, participant.rootSessionId])
+    const key = JSON.stringify([directory, access.binding.assistedIdentity ?? access.binding.moduleIdentity, participant.rootSessionId])
     return { directory, owner, access, participant, key }
   }
   const status = (id: string, agent: Agent): Record<string, unknown> => {

@@ -9,6 +9,11 @@ import { resolveModuleToolTarget } from '../../src/host/module-tool-target.ts'
 test('用户升级：完整预览确认、目标变化拒绝、私有资产保留与用户正文冲突', async t => {
   const { Context } = await import('@deepseek-ai/cordis')
   const commands = await import('@deepseek-ai/dsh-commands')
+  const storage = await import('@deepseek-ai/dsh-storage')
+  const json = await import('@deepseek-ai/dsh-storage-json')
+  const domain = await import('@deepseek-ai/dsh-storage-domain')
+  const { openSoulKnowledge } = await import('../../src/host/soul-knowledge.ts')
+  const { appendSoulLedger } = await import('../../src/host/soul-ledger.ts')
   const { registerTuiCommand } = await import('../../src/runtime/tui.ts')
   const { packageModulesDir, userModulesDir } = await import('../../src/host/module-dirs.ts')
   const { parse, stringify } = await import('yaml')
@@ -32,14 +37,36 @@ test('用户升级：完整预览确认、目标变化拒绝、私有资产保�
   writeFileSync(join(dir, 'data', 'private.jsonl'), 'PRIVATE LEDGER')
   writeFileSync(join(dir, 'unknown.bin'), 'UNKNOWN')
   const ctx = new Context(); let refreshes = 0
+  await ctx.plugin(storage.default); await ctx.plugin(json, { root: join(home, 'storage') }); await ctx.plugin(domain, { backend: 'json' })
+  const events = []
+  let bindingTable
+  const facility = { open: async spec => { const opened = await ctx.storageDomain.open(spec); if (spec.name === 'prompt_tool_soul_knowledge') bindingTable = opened.table('bindings'); return opened } }
+  let owner = await openSoulKnowledge(facility, async sessionId => ({ id: sessionId, snapshotEvents: () => events }))
   await ctx.plugin(commands.default); ctx.provide('settings', {})
   await ctx.plugin({ name: 'upgrade-command-test', inject: ['commands'], apply(scope) {
-    registerTuiCommand(scope, 'test', () => ({}), () => ({}), async () => ({}), target => target === id ? dir : '', undefined, async () => { refreshes++ })
+    registerTuiCommand(scope, 'test', () => ({}), () => ({}), async () => ({}), target => target === id ? dir : '', undefined, async () => { refreshes++ }, () => owner)
   } })
-  t.after(() => ctx.fiber.dispose())
+  t.after(async () => { await owner.dispose(); await ctx.fiber.dispose() })
   await new Promise(resolve => setImmediate(resolve))
   const agent = { id: 'user', session: { id: 'upgrade-user', header: {}, snapshotEvents: () => [], append: () => ({}) } }
   const run = async request => (await ctx.commands.execute(agent, '/prompt-tool upgrade ' + JSON.stringify({ moduleId: id, ...request }), [], new AbortController().signal)).result
+  const signal = new AbortController().signal, project = join(home, 'project'), root = join(home, 'knowledge')
+  mkdirSync(project); mkdirSync(root)
+  writeFileSync(join(root, 'old.md'), 'AUTHORIZED SOURCE')
+  const binding = { moduleId: id, action: 'preview', root, read: ['old.md'], write: ['general', 'projects'] }
+  await owner.confirm(dir, { ...binding, action: 'confirm', expectedRevision: owner.preview(dir, binding).revision }, signal)
+  const manage = request => owner.manage(dir, { moduleId: id, ...request, expectedRevision: owner.status(dir).binding.revision }, agent.session.id, signal)
+  await manage({ action: 'project', projectDirectory: project }); await manage({ action: 'enable' })
+  const selected = { moduleId: id, action: 'source-preview', path: 'old.md', scope: 'project' }
+  await owner.manage(dir, { ...selected, action: 'source-confirm', expectedRevision: (await owner.manage(dir, selected, agent.session.id, signal)).expectedRevision }, agent.session.id, signal)
+  events.push({ seq: 0, type: 'user/message', time: Date.now() + 1, data: { id: 'human-1', source: { kind: 'user' }, content: [{ type: 'text', text: '今后长期使用中文回答' }] } })
+  await owner.observe(dir, agent.session.id, 0)
+  const record = await owner.record(dir, agent.session.id, 'record-1', origin => appendSoulLedger(dir, { type: 'fact', text: '长期使用中文回答' }, { sessionId: agent.session.id, signal, origin }), signal)
+  assert.equal((await owner.learn(dir, agent.session.id, { text: '长期使用中文回答', layer: 'expression', basis: 'explicit-long-term', ref: record.reference.entryId, expectedRevision: owner.status(dir).learningRevision }, signal)).state, 'adopted')
+  const before = owner.status(dir).binding
+  const budgetKey = JSON.stringify([dir, before.moduleIdentity, agent.session.id])
+  const limits = { inputTarget: 10, outputTokens: 10, timeoutMs: 10, sessionTokens: 100, sessionMs: 100, backlogTurns: 2 }
+  assert.equal((await owner.assisted.reserve(budgetKey, 'human-1', 10, limits)).state, 'reserved')
   const preview = JSON.parse((await run({ action: 'preview' })).text)
   assert.equal(preview.status, 'ready')
   assert.ok(preview.changes.some(change => change.id.endsWith('.assistedInputTarget')))
@@ -47,16 +74,60 @@ test('用户升级：完整预览确认、目标变化拒绝、私有资产保�
   const credentials = { expectedRevision: preview.expectedRevision, expectedSourceDigest: preview.expectedSourceDigest, expectedPreviewRevision: preview.expectedPreviewRevision }
   writeFileSync(join(dir, 'unknown.bin'), 'CHANGED')
   assert.equal((await run({ action: 'confirm', ...credentials })).kind, 'error')
+  const changed = JSON.parse((await run({ action: 'preview' })).text)
+  await manage({ action: 'disable' })
+  assert.equal((await run({ action: 'confirm', expectedRevision: changed.expectedRevision, expectedSourceDigest: changed.expectedSourceDigest, expectedPreviewRevision: changed.expectedPreviewRevision })).kind, 'error', '预览后关闭不能沿旧授权交接')
+  await manage({ action: 'enable' })
+  const preserved = owner.status(dir).binding, oldDefinition = readFileSync(join(dir, 'module.yml'), 'utf8')
   const fresh = JSON.parse((await run({ action: 'preview' })).text)
+  const failure = t.mock.method(bindingTable, 'put', async () => { throw new Error('STORAGE WRITE FAILED') })
+  assert.equal((await run({ action: 'confirm', expectedRevision: fresh.expectedRevision, expectedSourceDigest: fresh.expectedSourceDigest, expectedPreviewRevision: fresh.expectedPreviewRevision })).kind, 'error')
+  failure.mock.restore()
+  assert.deepEqual(owner.status(dir).binding, preserved, '持久失败恢复原目录身份和完整绑定')
+  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), oldDefinition)
   assert.equal((await run({ action: 'confirm', expectedRevision: fresh.expectedRevision, expectedSourceDigest: fresh.expectedSourceDigest, expectedPreviewRevision: fresh.expectedPreviewRevision })).kind, 'success')
   assert.equal(refreshes, 1)
+  assert.equal(owner.status(dir).state, 'bound', '用户确认升级必须保留知识库绑定')
+  const after = owner.status(dir).binding
+  for (const key of ['root', 'identity', 'read', 'write', 'generation', 'sources', 'projects', 'histories', 'continuity', 'participants', 'records', 'publications', 'learning']) assert.deepEqual(after[key], preserved[key], key)
+  assert.equal(owner.learning(dir, agent.session.id)[0].state, 'adopted')
+  assert.equal(owner.sources(dir, agent.session.id).documents[0].content, 'AUTHORIZED SOURCE')
+  const upgradedBudgetKey = JSON.stringify([dir, after.assistedIdentity ?? after.moduleIdentity, agent.session.id])
+  assert.equal(upgradedBudgetKey, budgetKey)
+  assert.equal((await owner.assisted.reserve(upgradedBudgetKey, 'human-1', 10, limits)).state, 'deferred', '升级不能重获已消费回合额度')
+  await owner.dispose()
+  owner = await openSoulKnowledge(ctx.storageDomain, async sessionId => ({ id: sessionId, snapshotEvents: () => events }))
+  assert.equal(owner.status(dir).state, 'bound', '重新打开持久域仍保持绑定')
+  assert.equal((await owner.assisted.reserve(upgradedBudgetKey, 'human-1', 10, limits)).state, 'deferred')
   assert.equal(readFileSync(join(dir, 'data', 'SELF.src.md'), 'utf8'), 'USER SKELETON')
   assert.equal(readFileSync(join(dir, 'data', 'private.jsonl'), 'utf8'), 'PRIVATE LEDGER')
   assert.equal(readFileSync(join(dir, 'unknown.bin'), 'utf8'), 'CHANGED')
+  writeFileSync(join(dir, 'data', 'old.md'), 'INTERNAL SOURCE')
+  const internal = { moduleId: id, action: 'preview', read: ['old.md'], write: ['general', 'projects'] }
+  await owner.confirm(dir, { ...internal, action: 'confirm', expectedRevision: owner.preview(dir, internal).revision }, signal)
+  await manage({ action: 'project', projectDirectory: project }); await manage({ action: 'enable' })
+  await owner.manage(dir, { ...selected, action: 'source-confirm', expectedRevision: (await owner.manage(dir, selected, agent.session.id, signal)).expectedRevision }, agent.session.id, signal)
+  events.push({ seq: 1, type: 'user/message', time: Date.now() + 1, data: { id: 'human-2', source: { kind: 'user' }, content: [{ type: 'text', text: '今后长期先给结论' }] } })
+  await owner.observe(dir, agent.session.id, 1)
+  const internalRecord = await owner.record(dir, agent.session.id, 'record-2', origin => appendSoulLedger(dir, { type: 'fact', text: '先给结论' }, { sessionId: agent.session.id, signal, origin }), signal)
+  assert.equal((await owner.learn(dir, agent.session.id, { text: '先给结论', layer: 'expression', basis: 'explicit-long-term', ref: internalRecord.reference.entryId, expectedRevision: owner.status(dir).learningRevision }, signal)).state, 'adopted')
+  const internalBefore = owner.status(dir).binding
+  const internalPreview = JSON.parse((await run({ action: 'preview' })).text)
+  assert.equal((await run({ action: 'confirm', expectedRevision: internalPreview.expectedRevision, expectedSourceDigest: internalPreview.expectedSourceDigest, expectedPreviewRevision: internalPreview.expectedPreviewRevision })).kind, 'success')
+  const internalAfter = owner.status(dir).binding
+  assert.notEqual(internalAfter.identity, internalBefore.identity, '模块内根身份随受控目录交换')
+  for (const key of ['root', 'read', 'write', 'generation', 'sources', 'projects', 'histories', 'continuity', 'participants', 'records', 'learning']) assert.deepEqual(internalAfter[key], internalBefore[key], key)
+  assert.equal(owner.sources(dir, agent.session.id).documents[0].content, 'INTERNAL SOURCE')
+  await owner.dispose()
+  owner = await openSoulKnowledge(ctx.storageDomain, async sessionId => ({ id: sessionId, snapshotEvents: () => events }))
+  assert.equal(owner.status(dir).state, 'bound')
+  assert.equal(owner.learning(dir, agent.session.id)[0].state, 'adopted')
   writeFileSync(join(dir, 'assets', 'tools.md'), 'USER CUSTOM TOOLS')
   const conflict = JSON.parse((await run({ action: 'preview' })).text)
   assert.equal(conflict.status, 'conflict')
   assert.equal(readFileSync(join(dir, 'assets', 'tools.md'), 'utf8'), 'USER CUSTOM TOOLS')
+  renameSync(dir, dir + '-original'); cpSync(dir + '-original', dir, { recursive: true })
+  assert.equal(owner.status(dir).state, 'unavailable', '普通目录替换不能沿用受控升级的身份交接')
 })
 
 test('知识库接入：用户预览确认、部分授权和旧预览拒绝，不改旧资料', async t => {

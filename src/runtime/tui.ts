@@ -15,7 +15,7 @@ import type { SoulKnowledgeOwner, SoulKnowledgeRequest } from '../host/soul-know
 import { SOUL_SELF_SERVICE } from '../../engine/service-names.mjs'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { readSoulUpgradePreview } from '../host/soul-upgrade.ts'
-import { moduleImportPreview, installModulePackage } from '../host/module-package.ts'
+import { moduleImportPreview } from '../host/module-package.ts'
 import { userModulesDir } from '../host/module-dirs.ts'
 
 /** dsh-tui 全局开关：键名与 settings 路径一致（settings mutate）。 */
@@ -122,6 +122,7 @@ export function registerTuiCommand(
   ctx.inject(['settings'], (sctx: Context) => {
     /** 用户显式声明过的 TUI 会话主语（按发起命令的 Agent）：只记用户说的，不持久化、不跨会话共享。 */
     const sessionSubjects = new Map<string, string>()
+    const upgradePreviews = new Map<string, { owner: SoulKnowledgeOwner; revision: string | null; preview: string }>()
     return sctx.commands.register({
       name: 'prompt-tool',
       description: '提示词工具：查看或切换本插件开关',
@@ -141,9 +142,19 @@ export function registerTuiCommand(
             const choices = { targetId: request.moduleId, overwrite: true }
             const preview = moduleImportPreview(userModulesDir(), candidate.files, choices)
             if (!('prepared' in preview)) throw new Error('升级候选需要额外选择')
-            if (request.action === 'preview') return { kind: 'success', text: JSON.stringify({ ...candidate, files: undefined, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision, summary: preview.summary }) }
+            const owner = knowledge?.(), previewKey = JSON.stringify([invocation.agent.id, request.moduleId])
+            if (!owner) throw new Error('升级知识库持久状态不可用')
+            if (request.action === 'preview') {
+              const current = owner.status(directory)
+              if (current.state === 'unavailable') throw new Error('升级知识库授权不可用：' + current.reason)
+              upgradePreviews.set(previewKey, { owner, revision: current.binding?.revision ?? null, preview: preview.previewRevision })
+              return { kind: 'success', text: JSON.stringify({ ...candidate, files: undefined, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision, summary: preview.summary }) }
+            }
             if (request.expectedRevision !== candidate.expectedRevision || typeof request.expectedSourceDigest !== 'string' || typeof request.expectedPreviewRevision !== 'string') throw new Error('升级预览已过期或缺少确认凭据，请重新预览')
-            const installed = await installModulePackage(userModulesDir(), candidate.files, { ...choices, expectedSourceDigest: request.expectedSourceDigest, expectedPreviewRevision: request.expectedPreviewRevision }, { preserveAssets: true, signal: invocation.signal })
+            const confirmed = upgradePreviews.get(previewKey)
+            if (!confirmed || confirmed.owner !== owner || confirmed.preview !== request.expectedPreviewRevision) throw new Error('升级预览已失效，请重新预览')
+            const installed = await owner.upgrade(directory, candidate.files, { ...choices, expectedSourceDigest: request.expectedSourceDigest, expectedPreviewRevision: request.expectedPreviewRevision }, confirmed.revision, invocation.signal)
+            upgradePreviews.delete(previewKey)
             try { await refreshModule(request.moduleId) } catch (error) {
               return { kind: 'error', text: JSON.stringify({ ...installed, persisted: true, publicationPending: true, reason: String((error as Error).message) }) }
             }
