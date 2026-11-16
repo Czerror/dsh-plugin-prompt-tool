@@ -46,6 +46,20 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     return assertModuleSnapshotSource(host.root, id)
   }
   const keyOf = (id: string, agent: Agent): string => JSON.stringify([id, agent.session.id])
+  const admit = async (id: string, agent: Agent, seq?: number, attached = false) => {
+    const dir = source(id, agent), owner = knowledge?.()
+    if (!owner || owner.status(dir).state === 'unbound') return
+    const parentId = agent.session.header.parentSession
+    if (parentId) {
+      const subagents = ctx.get('subagents') as { rootOf(agent: Agent): Agent } | undefined
+      const agents = ctx.get('agents') as { get(id: string): Agent | undefined } | undefined
+      const parent = agents?.get(parentId)
+      if (!parent || !subagents || subagents.rootOf(parent) !== subagents.rootOf(agent)) throw new Error('子代理真实委派关系不可核实')
+      source(id, parent)
+    }
+    await owner.observe(dir, agent.session.id, seq, parentId, () => { source(id, agent) }, attached, agent.session.header.cwd)
+    source(id, agent)
+  }
   const activityOf = (agent: Agent): string | null => {
     const events = agent.session.snapshotEvents()
     for (let i = events.length - 1; i >= 0; i--) {
@@ -132,6 +146,9 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   }
   ctx.provide(SOUL_SELF_SERVICE, {
     status,
+    admit,
+    attached: (id: string, agent: Agent, boundary: number) => admit(id, agent, boundary + 1, true),
+    assertParticipating: source,
     readValue,
     reminder,
     committed: (id: string, agent: Agent) => {
@@ -169,6 +186,11 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     },
   })
   ctx.effect(() => ctx.on('session/event', (session, event) => {
+    const agents = ctx.get('agents') as { get(id: string): Agent | undefined } | undefined
+    const agent = agents?.get(session.id)
+    if (agent) for (const id of moduleIds(agent.id)) {
+      void admit(id, agent, event.seq).catch(error => ctx.logger?.warn?.(`Soul来源登记失败：${String(error)}`))
+    }
     const data = event.data as { message?: { source?: { kind?: string; form?: string; sections?: Array<{ text?: string }> } } }
     const observed = data.message?.source
     if (observed?.kind !== 'runtime-context' || observed.form !== 'snapshot') return
@@ -178,6 +200,13 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
       delivered.set(key, new Date(event.time).toISOString())
     }
   }))
+  ctx.effect(() => {
+    const agents = ctx.get('agents') as { list(): Agent[] } | undefined
+    for (const agent of agents?.list() ?? []) for (const id of moduleIds(agent.id)) {
+      void admit(id, agent).catch(error => ctx.logger?.warn?.(`Soul恢复对账失败：${String(error)}`))
+    }
+    return () => {}
+  })
   ctx.effect(() => () => { active = false; maintenance.dispose(); budgets.clear(); rendered.clear(); delivered.clear() })
   const observe = (exec: ToolExecution, id: string) => {
     if (!exec.agent) throw new Error('Soul状态缺少实际Agent')

@@ -34,6 +34,7 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       mark: { oneOf: [{ type: 'null' }, { type: 'object', additionalProperties: false, properties: { text: { type: 'string' }, recordedAt: { type: 'string' } } }] },
       observation: { type: 'json' },
       knowledge: { type: 'json' },
+      recording: { type: 'json' },
       persisted: { type: 'boolean' }, publicationSuppressed: { type: 'boolean' },
     } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     execute: async (args, exec) => {
@@ -68,7 +69,9 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       assertUpgradeAllowed()
       exec.signal.throwIfAborted()
       if (host.target(exec, args.moduleId).dir !== target.dir || exec.agent?.session.id !== sessionId) throw new Error('Soul状态来源或会话已变化')
-      return { sessionId, ...readSoulState(target.dir, sessionId, sessionOwner()), knowledge: knowledge?.()?.status(target.dir) ?? { state: 'unavailable', reason: '知识库持久状态不可用' }, ...(observation === undefined ? {} : { observation }) }
+      const owner = knowledge?.(), access = owner?.status(target.dir)
+      const recording = access?.state === 'bound' ? owner!.recording(target.dir, sessionId) : { persisted: 0, pending: 0, derivedFailed: 0 }
+      return { sessionId, ...readSoulState(target.dir, sessionId, sessionOwner()), knowledge: access ?? { state: 'unavailable', reason: '知识库持久状态不可用' }, recording, ...(observation === undefined ? {} : { observation }) }
     },
   })))
   return () => { void fiber.dispose() }
