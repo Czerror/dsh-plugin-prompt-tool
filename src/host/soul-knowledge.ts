@@ -136,12 +136,9 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     const copy = structuredClone(value)
     // Session/project discovery is derived from the current cwd; explicit project commands still CAS in manage().
     delete copy.projects
-    copy.participants = copy.participants?.map(row => {
-      const stable = { ...row } as Record<string, unknown>
-      delete stable.cursor
-      delete stable.grants
-      return stable as typeof row
-    })
+    // Participants are created and advanced by observation; user control uses
+    // explicit project/enable/source records instead.
+    delete copy.participants
     copy.histories = copy.histories?.filter(row => !row.automatic || row.revoked)
     return JSON.stringify({ ...copy, revision: undefined })
   }
