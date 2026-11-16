@@ -14,6 +14,7 @@ import { registerSoulLedgerTools } from './runtime/soul-ledger-tools.ts'
 import { registerSoulStateTools } from './runtime/soul-state-tools.ts'
 import { installSoulRuntime } from './runtime/soul-runtime.ts'
 import { installSessionVariables } from './runtime/session-variables.ts'
+import { installSoulKnowledge } from './runtime/soul-knowledge.ts'
 import { createRoleDelegation } from './runtime/role-delegation.ts'
 import { createAutoDelegation } from './runtime/auto-delegation.ts'
 import { registerAutoDelegationTools } from './runtime/auto-delegation-tools.ts'
@@ -138,6 +139,7 @@ export function apply(ctx: Context, configIn: Config): void {
   registerTuiSettingsSection(ctx, settingsNs)
 
   // dsh-tui 命令入口：/prompt-tool 查看或切换开关。
+  const soulKnowledge = installSoulKnowledge(ctx)
 registerTuiCommand(
   ctx,
   settingsNs,
@@ -153,6 +155,7 @@ registerTuiCommand(
     await refreshModuleRuntime(moduleId)
   },
   (id) => refreshModuleRuntime(id),
+  soulKnowledge,
 )
 
   let needsInitialApply = true
@@ -225,7 +228,7 @@ registerTuiCommand(
     mount: (scopeCtx: Context): (() => void) => {
       const ledger = registerSoulLedgerTools(scopeCtx, moduleToolHost)
       try {
-        const state = registerSoulStateTools(scopeCtx, moduleToolHost, soulRuntime, sessionVariables)
+        const state = registerSoulStateTools(scopeCtx, moduleToolHost, soulRuntime, sessionVariables, soulKnowledge)
         return () => { state(); ledger() }
       } catch (error) { ledger(); throw error }
     },

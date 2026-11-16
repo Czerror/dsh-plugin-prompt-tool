@@ -1,10 +1,72 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tempDir } from '../fixtures/host-harness.mjs'
 import { registerModuleFileTools } from '../../src/runtime/module-file-tools.ts'
 import { resolveModuleToolTarget } from '../../src/host/module-tool-target.ts'
+
+test('知识库接入：用户预览确认、部分授权和旧预览拒绝，不改旧资料', async t => {
+  const { Context } = await import('@deepseek-ai/cordis')
+  const storage = await import('@deepseek-ai/dsh-storage')
+  const json = await import('@deepseek-ai/dsh-storage-json')
+  const domain = await import('@deepseek-ai/dsh-storage-domain')
+  const commands = await import('@deepseek-ai/dsh-commands')
+  const { openSoulKnowledge } = await import('../../src/host/soul-knowledge.ts')
+  const { registerTuiCommand } = await import('../../src/runtime/tui.ts')
+  const f = fixture(t), ctx = new Context()
+  await ctx.plugin(storage.default)
+  await ctx.plugin(json, { root: join(f.root, 'storage') })
+  await ctx.plugin(domain, { backend: 'json' })
+  const owner = await openSoulKnowledge(ctx.storageDomain)
+  t.after(async () => { await owner.dispose(); await ctx.fiber.dispose() })
+  await ctx.plugin(commands.default)
+  ctx.provide('settings', {})
+  await ctx.plugin({ name: 'knowledge-command-test', inject: ['commands'], apply(scope) {
+    registerTuiCommand(scope, 'test', () => ({}), () => ({}), async () => ({}), id => id === 'alice' ? f.dir : '', undefined, undefined, () => owner)
+  } })
+  await new Promise(resolve => setImmediate(resolve))
+  const agent = { id: 'user', session: { append: () => ({}) } }
+  assert.ok(ctx.commands.find(agent, 'prompt-tool'), '用户命令必须正式注册')
+  const run = async request => (await ctx.commands.execute(agent, '/prompt-tool knowledge ' + JSON.stringify(request), [], new AbortController().signal)).result
+  const root = join(f.dir, 'data')
+  mkdirSync(root)
+  writeFileSync(join(root, 'old.md'), 'PRIVATE')
+  writeFileSync(join(root, 'SELF.src.md'), 'MY SELF')
+  writeFileSync(join(root, '02-soul.jsonl'), 'OLD LEDGER')
+  const request = { moduleId: 'alice', action: 'preview', root, read: ['old.md'], write: ['general', 'projects'] }
+  assert.equal(owner.status(f.dir).state, 'unbound')
+  const preview = JSON.parse((await run(request)).text)
+  assert.equal(preview.state, 'preview')
+  assert.equal(owner.status(f.dir).state, 'unbound')
+  writeFileSync(join(root, 'old.md'), 'CHANGED')
+  assert.equal((await run({ ...request, action: 'confirm', expectedRevision: preview.revision })).kind, 'error')
+  const fresh = JSON.parse((await run(request)).text)
+  assert.equal((await run({ ...request, action: 'confirm', expectedRevision: fresh.revision })).kind, 'success')
+  assert.equal(owner.status(f.dir).state, 'bound')
+  mkdirSync(join(f.root, 'other'))
+  assert.equal(owner.status(join(f.root, 'other')).state, 'unbound')
+  assert.equal(readFileSync(join(root, 'old.md'), 'utf8'), 'CHANGED')
+  assert.equal(readFileSync(join(root, 'SELF.src.md'), 'utf8'), 'MY SELF')
+  assert.equal(readFileSync(join(root, '02-soul.jsonl'), 'utf8'), 'OLD LEDGER')
+  renameSync(join(root, 'old.md'), join(root, 'old-original.md'))
+  mkdirSync(join(root, 'old.md'))
+  assert.equal(owner.status(f.dir).state, 'unavailable', '授权文件变成目录必须停用')
+  renameSync(join(root, 'old.md'), join(root, 'old-directory'))
+  renameSync(join(root, 'old-original.md'), join(root, 'old.md'))
+  renameSync(join(root, 'general'), join(root, 'general-original'))
+  writeFileSync(join(root, 'general'), 'NOT DIRECTORY')
+  assert.equal(owner.status(f.dir).state, 'unavailable', '写入目录变成文件必须停用')
+  renameSync(join(root, 'general'), join(root, 'general-file'))
+  renameSync(join(root, 'general-original'), join(root, 'general'))
+  mkdirSync(join(root, '.runtime'))
+  writeFileSync(join(root, '.runtime', 'snapshot.json'), '{}')
+  assert.equal((await run({ ...request, root: join(root, '.RUNTIME'), read: ['snapshot.json'] })).kind, 'error', '保护目录不能通过大小写或新根绕过白名单')
+  assert.equal((await run({ ...request, read: ['SELF.src.md'] })).kind, 'error')
+  renameSync(root, root + '-moved')
+  mkdirSync(root)
+  assert.equal(owner.status(f.dir).state, 'unavailable')
+})
 
 function fixture(t) {
   const root = tempDir('pt-module-file-')

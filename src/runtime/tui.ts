@@ -11,6 +11,7 @@ import { loadModuleSpec } from '../host/module-spec.ts'
 import { ENGINE_PARAM_DEFINITIONS, type EngineParamKey } from '../shared/engine-params.ts'
 import { modulesEnabledOps } from '../shared/module-settings.ts'
 import { previewModuleDataImport, applyModuleDataImport, type ModuleDataImportRequest } from '../host/module-data-import.ts'
+import type { SoulKnowledgeOwner, SoulKnowledgeRequest } from '../host/soul-knowledge.ts'
 
 /** dsh-tui 全局开关：键名与 settings 路径一致（settings mutate）。 */
 const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
@@ -111,6 +112,7 @@ export function registerTuiCommand(
   getModuleDirectory?: (moduleId: string) => string,
   saveModuleParam?: SaveModuleParam,
   refreshModule?: (id: string) => Promise<void>,
+  knowledge?: () => SoulKnowledgeOwner | undefined,
 ): void {
   ctx.inject(['settings'], (sctx: Context) => {
     /** 用户显式声明过的 TUI 会话主语（按发起命令的 Agent）：只记用户说的，不持久化、不跨会话共享。 */
@@ -118,8 +120,23 @@ export function registerTuiCommand(
     return sctx.commands.register({
       name: 'prompt-tool',
       description: '提示词工具：查看或切换本插件开关',
-      input: { hint: 'status | module [模块id] | data-import <JSON> | on/off/toggle <开关> | [module <模块id>] config <id> [on/off/toggle]' },
+      input: { hint: 'status | module [模块id] | knowledge <JSON> | data-import <JSON> | on/off/toggle <开关> | [module <模块id>] config <id> [on/off/toggle]' },
       handler: async (invocation): Promise<CommandResult> => {
+        const knowledgeInput = /^knowledge\s+([\s\S]+)$/.exec(invocation.rawInput.trim())
+        if (knowledgeInput) {
+          try {
+            const request = JSON.parse(knowledgeInput[1]!) as SoulKnowledgeRequest
+            if (!request || typeof request.moduleId !== 'string') throw new Error('知识库操作必须显式声明moduleId')
+            const directory = getModuleDirectory?.(request.moduleId), owner = knowledge?.()
+            if (!directory || !owner) throw new Error('模块或知识库持久状态不可用')
+            invocation.signal.throwIfAborted()
+            const result = request.action === 'preview' ? owner.preview(directory, request)
+              : request.action === 'confirm' ? await owner.confirm(directory, request, invocation.signal)
+                : request.action === 'status' ? owner.status(directory) : undefined
+            if (!result) throw new Error('知识库action无效')
+            return { kind: 'success', text: JSON.stringify(result) }
+          } catch (error) { return { kind: 'error', text: `知识库操作拒绝：${String((error as Error).message)}` } }
+        }
         // 命令由用户直接调用；JSON 保留来源路径中的空格，不经过 token 拆分。
         const dataImport = /^data-import\s+([\s\S]+)$/.exec(invocation.rawInput.trim())
         if (dataImport) {
@@ -140,6 +157,7 @@ export function registerTuiCommand(
             `      /prompt-tool on|off|toggle <${[...TUI_GLOBAL_SWITCHES, ...TUI_PARAM_SWITCHES].map(([key]) => key).join('|')}>\n` +
             '      /prompt-tool module <模块id>（声明本次会话主语，随后命令都作用在它上面）\n' +
             '      /prompt-tool module（显示当前声明）\n' +
+            '      /prompt-tool knowledge <JSON>（显式moduleId；action=preview|confirm|status；确认须带预览expectedRevision）\n' +
             '      /prompt-tool data-import <JSON>（moduleId + sourceDirectory/paths 或 initialize:true；预览后带 expectedRevision 应用，只补缺失）\n' +
             '      /prompt-tool module <模块id> on|off|toggle <模块参数>（单条命令前声明并执行）\n' +
             '      /prompt-tool config <id>（id 可含空格）\n' +
@@ -200,7 +218,8 @@ export function registerTuiCommand(
           const modelsLine = catalogEntries.length > 0
             ? `检测到的模型名: ${catalogEntries.map(([provider, models]) => `${provider} → ${models.join(', ')}`).join('；')}`
             : '未检测到模型名（adapter 未公布或查询失败）'
-          return { kind: 'success', text: renderTuiStatus(source, params, rules, declared) + '\n' + providersLine + '\n' + modelsLine }
+          const knowledgeStatus = moduleDir ? knowledge?.()?.status(moduleDir) : undefined
+          return { kind: 'success', text: renderTuiStatus(source, params, rules, declared) + '\n' + providersLine + '\n' + modelsLine + '\n知识库：' + JSON.stringify(knowledgeStatus ?? { state: 'unavailable', entry: '/prompt-tool knowledge <JSON：moduleId、action=preview|confirm|status>' }) }
         }
         if (tokens[0] === 'config') {
           const { id, action } = parseIdentifierAndAction(
