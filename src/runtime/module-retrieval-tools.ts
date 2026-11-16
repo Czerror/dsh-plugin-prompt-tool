@@ -5,12 +5,11 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 import { MODULE_ID_PARAM } from '../host/module-tool-target.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
-import { createModuleRetrieval } from '../host/module-retrieval.ts'
+import { createModuleRetrieval, createRetrievalEventProjection, retrievalEventRevision } from '../host/module-retrieval.ts'
 import type { LoadRetrievalSession, RetrievalReference } from '../host/module-retrieval.ts'
 import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 import type { SoulKnowledgeOwner } from '../host/soul-knowledge.ts'
 import { resolveModuleReadPath } from '../host/module-file-path.ts'
-import { revisionOf } from '../host/module-write.ts'
 
 export interface RetrievalConfig { paths: readonly string[]; sessions: readonly string[]; synonymsFile?: string }
 export interface RetrievalMount { agent: Agent; sourceModuleId: string; sourceModuleDir: string }
@@ -74,15 +73,31 @@ export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target
   const retrievalFor = (state: Pick<State, 'modules' | 'indexes'>, moduleId: string, agent: Agent) => {
     let retrieval = state.indexes.get(moduleId)
     if (retrieval === undefined) {
+      const projectCurrent = createRetrievalEventProjection()
       retrieval = createModuleRetrieval(() => {
         const current = [...(state.modules.get(moduleId)?.values() ?? [])].at(-1)
         if (!current) throw new Error('检索模块未授权')
         if (knowledge && !knowledge()) throw new Error('知识来源授权持久状态不可用')
         const owner = knowledge?.(), bound = owner?.status(current.dir).state !== 'unbound' && owner !== undefined
         const projection = bound ? owner.sources(current.dir, agent.session.id) : undefined
+        const currentTurn = projectCurrent(agent.session.snapshotEvents()).latestUser
+        const allowedEvents = new Map<string, Map<number, { versions: Set<string>; automatic: boolean }>>()
+        for (const item of projection?.histories ?? []) {
+          let selected = allowedEvents.get(item.sessionId)
+          if (!selected) { selected = new Map(); allowedEvents.set(item.sessionId, selected) }
+          for (const [index, seq] of item.seqs.entries()) {
+            let allowed = selected.get(seq)
+            if (!allowed) { allowed = { versions: new Set(), automatic: !!item.automatic }; selected.set(seq, allowed) }
+            allowed.automatic &&= !!item.automatic
+            allowed.versions.add(item.versions[index]!)
+          }
+        }
         return { moduleId, dir: current.dir, paths: current.config.paths, sessions: projection ? [...new Set(projection.histories.map(item => item.sessionId))] : current.config.sessions, synonymsFile: current.config.synonymsFile, session: bound ? undefined : agent.session,
           knowledge: projection?.documents ?? [],
-          eventAllowed: projection ? (id: string, event: import('../../engine/retrieval-reference.mjs').RetrievalEvent) => projection.histories.some(item => item.sessionId === id && item.seqs.some((seq, index) => seq === event.seq && item.versions[index] === revisionOf(JSON.stringify(event)))) : undefined,
+          eventAllowed: projection ? (id: string, event: import('../../engine/retrieval-reference.mjs').RetrievalEvent) => {
+            const allowed = allowedEvents.get(id)?.get(event.seq)
+            return !!allowed && !(allowed.automatic && id === agent.session.id && event.seq > currentTurn && ['assistant/message', 'tool/result'].includes(event.type)) && allowed.versions.has(retrievalEventRevision(event))
+          } : undefined,
           fileAllowed: owner ? (path: string) => { try { owner.assertFile(current.dir, resolveModuleReadPath(current.dir, path, ['assets', 'data'], { allowRootMemory: true }), agent.session.id); return true } catch { return false } } : undefined }
       }, loadSession, async () => {
         const current = [...(state.modules.get(moduleId)?.values() ?? [])].at(-1)

@@ -10,6 +10,7 @@ import { createTargetQueue } from '../shared/target-queue.ts'
 import { canonicalDirectory, directoryKey, revisionOf } from './module-write.ts'
 import { assertModuleSnapshotSource } from './module-install.ts'
 import type { LoadRetrievalSession } from './module-retrieval.ts'
+import { createRetrievalEventProjection, retrievalEventRevision } from './module-retrieval.ts'
 import { readSoulLedgerProjection } from './soul-ledger.ts'
 import { openAssistedBudget } from './soul-assisted-budget.ts'
 import { installModulePackage } from './module-package.ts'
@@ -119,6 +120,13 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     for (const listener of changeListeners) { try { listener() } catch { /* 通知失败不撤销已持久化事实。 */ } }
   }
   const evidenceSessions = new Map<string, Awaited<ReturnType<LoadRetrievalSession>>>()
+  const observationCursors = new Map<string, number>()
+  const evidenceProjections = new Map<string, ReturnType<typeof createRetrievalEventProjection>>()
+  const projectionOf = (id: string, events: ReturnType<NonNullable<Awaited<ReturnType<LoadRetrievalSession>>>['snapshotEvents']>) => {
+    let project = evidenceProjections.get(id)
+    if (!project) { project = createRetrievalEventProjection(); evidenceProjections.set(id, project) }
+    return project(events)
+  }
   const loadEvidence = async (id: string) => {
     const session = await loadSession?.(id)
     evidenceSessions.set(id, session)
@@ -208,7 +216,17 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     const participant = value.participants?.findLast(row => row.sessionId === sessionId)
     const inherited = (id: string) => !participant?.parent || participant.grants.includes(id)
     const documents = (value.sources ?? []).filter(item => !item.revoked && inherited(item.id) && (item.scope === 'general' || item.scope === project)).map(item => readSource(value, item))
-    const histories = (value.histories ?? []).filter(item => !item.revoked && inherited(item.id) && (item.scope === 'general' || item.scope === project))
+    const projections = new Map<string, ReturnType<ReturnType<typeof createRetrievalEventProjection>> | undefined>()
+    const histories = (value.histories ?? []).filter(item => {
+      if (item.revoked || !inherited(item.id) || item.scope !== 'general' && item.scope !== project) return false
+      if (!item.automatic) return true
+      if (!projections.has(item.sessionId)) {
+        const events = evidenceSessions.get(item.sessionId)?.snapshotEvents()
+        projections.set(item.sessionId, events && projectionOf(item.sessionId, events))
+      }
+      const projection = projections.get(item.sessionId)
+      return !!projection && item.seqs.every(seq => projection.contents.has(seq))
+    })
     const allowed = new Set([...documents.map(row => row.sourceId), ...histories.map(row => row.id)])
     for (const row of value.publications ?? []) {
       if (!value.continuity?.enabled) continue
@@ -491,6 +509,11 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const session = await loadEvidence(sessionId)
         if (!session) throw new Error('真实会话不可读取')
         const events = session.snapshotEvents()
+        const priorParticipant = value.participants?.find(row => row.sessionId === sessionId && row.generation === control.generation)
+        const observationKey = JSON.stringify([key(directory), control.generation, sessionId])
+        const cursor = Math.max(priorParticipant?.cursor ?? -1, observationCursors.get(observationKey) ?? -1)
+        if (priorParticipant && !attached && (events.at(-1)?.seq ?? -1) <= cursor) return
+        const projection = projectionOf(sessionId, events)
         const next = structuredClone(value)
         if (!parentSessionId && !next.projects?.some(row => row.sessionId === sessionId) && cwd) {
           try {
@@ -525,16 +548,27 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           const parent = next.participants?.find(row => row.sessionId === participant!.parent && row.generation === control.generation)
           if (!parent) return
         }
-        for (const event of events.filter(row => row.seq > participant!.cursor)) {
+        participant.cursor = Math.max(participant.cursor, cursor)
+        const existing = new Set(next.histories?.map(row => row.id))
+        let offset = events.length
+        while (offset > 0 && events[offset - 1]!.seq > participant.cursor) offset--
+        for (const event of events.slice(offset)) {
           participant.cursor = event.seq
-          if (!['user/message', 'assistant/message', 'tool/result'].includes(event.type)) continue
           const data = (event as unknown as { data: { id?: string; source?: { kind?: string } } }).data
-          if (!data || data.source?.kind === 'runtime-context' || event.time === undefined || event.time < control.enabledAt) continue
-          const id = revisionOf(JSON.stringify([value.generation, sessionId, data.id ?? event.seq]))
+          if (!data || event.time === undefined || event.time < control.enabledAt) continue
           if (!participant.parent && event.type === 'user/message' && data.source?.kind === 'user' && typeof data.id === 'string') participant.rootMessageId = data.id
-          if (next.histories?.some(row => row.id === id)) continue
-          ;(next.histories ??= []).push({ id, sessionId, seqs: [event.seq], versions: [revisionOf(JSON.stringify(event))], scope: participant.scope, revoked: false, automatic: true })
+          if (!projection.contents.has(event.seq)) continue
+          const id = revisionOf(JSON.stringify([value.generation, sessionId, data.id ?? event.seq]))
+          if (existing.has(id)) continue
+          existing.add(id)
+          ;(next.histories ??= []).push({ id, sessionId, seqs: [event.seq], versions: [retrievalEventRevision(event)], scope: participant.scope, revoked: false, automatic: true })
           participant.grants.push(id)
+        }
+        if (priorParticipant && !attached && next.histories?.length === value.histories?.length
+          && participant.rootMessageId === priorParticipant.rootMessageId && next.projects?.length === value.projects?.length
+          && !events.slice(offset).some(event => event.type === 'command/run' || event.type === 'command/done')) {
+          observationCursors.set(observationKey, participant.cursor)
+          return
         }
         reconcile(directory, next)
         if (requireBinding(directory).revision !== value.revision) throw new Error('知识来源版本已变化')
@@ -542,6 +576,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         if (observationControlSnapshot(next) !== observationControlSnapshot(value)) next.revision = revisionOf(randomUUID())
         else next.revision = value.revision
         await saveBinding(revisionOf(key(directory)), next)
+        observationCursors.set(observationKey, participant.cursor)
       }))
     },
     record(directory, sessionId, operation, commit, signal) {

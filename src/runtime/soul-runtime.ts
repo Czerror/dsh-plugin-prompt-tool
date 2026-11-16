@@ -216,7 +216,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   ctx.effect(() => ctx.on('session/event', (session, event) => {
     const agents = ctx.get('agents') as { get(id: string): Agent | undefined } | undefined
     const agent = agents?.get(session.id)
-    if (agent) for (const id of moduleIds(agent.id)) {
+    if (agent && ['user/message', 'assistant/message', 'tool/call', 'tool/result', 'command/run', 'command/done', 'turn/end'].includes(event.type)) for (const id of moduleIds(agent.id)) {
       void admit(id, agent, event.seq).then(async () => {
         if (event.type === 'turn/end' && ['completed', 'no-visible-output'].includes((event.data as { reason?: { kind?: string } }).reason?.kind ?? '') && readModuleFacts(source(id, agent)).effectiveConfigs?.['soul-maintenance']?.enabled === true) await assisted.request(id, agent)
       }).catch(error => ctx.logger?.warn?.(`Soul来源登记或整理失败：${String(error)}`))

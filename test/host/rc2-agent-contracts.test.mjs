@@ -32,7 +32,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const storage = await import('@deepseek-ai/dsh-storage')
   const json = await import('@deepseek-ai/dsh-storage-json')
   const domain = await import('@deepseek-ai/dsh-storage-domain')
-  const { createUserMessage } = await peer('@deepseek-ai/dsh-llm')
+  const { createUserMessage, createAssistantMessage, createToolResultMessage } = await peer('@deepseek-ai/dsh-llm')
   const { openSoulKnowledge } = await import('../../src/host/soul-knowledge.ts')
   const { installSoulRuntime } = await import('../../src/runtime/soul-runtime.ts')
   const { registerTuiCommand } = await import('../../src/runtime/tui.ts')
@@ -75,13 +75,14 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const handle = await root.agents.create({ sessionId: 'record-parent', agentOptions: { provider: 'fixture', model: 'normal' }, meta: { cwd: home } })
   const agent = handle.agent
   const handles = [handle]
-  let failDerived = false, failPublication = false
+  let failDerived = false, failPublication = false, bindingsTable, bindingId
   const facility = { async open(definition) {
     const domain = await root.storageDomain.open(definition)
     return { close: () => domain.close(), table(name) {
       const table = domain.table(name)
       return new Proxy(table, { get(target, key) {
         if (key === 'put') return async (id, value) => {
+          if (definition.name === 'prompt_tool_soul_knowledge') { bindingsTable = table; bindingId = id }
           if (failPublication && value.publications?.length) { failPublication = false; throw new Error('injected publication CAS failure') }
           if (failDerived && value.records?.length > 1) { failDerived = false; throw new Error('injected derived persistence failure') }
           return target.put(id, value)
@@ -163,6 +164,61 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const commandEnabled = await command({ action: 'enable', expectedRevision: owner.status(dir).binding.revision })
   assert.equal(commandEnabled.kind, 'success', JSON.stringify(commandEnabled))
   const message = createUserMessage({ content: [{ type: 'text', text: 'keep this project decision' }], source: { kind: 'user' } })
+  await send(message)
+  const { createModuleRetrievalProvider } = await import('../../src/runtime/module-retrieval-tools.ts')
+  const retrieval = createModuleRetrievalProvider(host, loadKnowledgeSession, () => owner)
+  t.after(retrieval.mount(agent.ctx, { paths: [], sessions: [] }, { agent, sourceModuleId: 'alice', sourceModuleDir: dir }))
+  const search = async query => {
+    const callId = 'recall-' + query
+    agent.session.append('tool/call', { callId, name: 'module_search', arguments: JSON.stringify({ moduleId: 'alice', query }) })
+    const result = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'recall-' + query, name: 'module_search', arguments: JSON.stringify({ moduleId: 'alice', query }) }] })).results[0].result
+    assert.equal(result.isError, false, JSON.stringify(result))
+    agent.session.append('tool/result', { message: createToolResultMessage({ callId, content: [{ type: 'text', text: JSON.stringify(result.value) }], isError: false }) }, { surfaceOp: 'append' })
+    await owner.observe(dir, agent.session.id)
+    return result.value
+  }
+  const privateAssistant = agent.session.append('assistant/message', { message: createAssistantMessage({ source: { provider: 'fixture', model: 'normal' }, content: [{ type: 'reasoning', text: 'PRIVATE REASONING MARKER' }, { type: 'text', text: 'PUBLIC ASSISTANT MARKER' }] }), stream: [{ text: 'PRIVATE STREAM MARKER' }] }, { surfaceOp: 'append' })
+  const injected = agent.session.append('user/message', { id: 'injected-context', role: 'user', source: { kind: 'runtime-context' }, content: [{ type: 'text', text: 'DERIVED CONTEXT MARKER' }] }, { surfaceOp: 'append' })
+  agent.session.append('tool/call', { callId: 'external-fact', name: 'fixture_external', arguments: '{}' })
+  const external = agent.session.append('tool/result', { message: createToolResultMessage({ callId: 'external-fact', content: [{ type: 'text', text: 'EXTERNAL OBSERVATION MARKER' }], isError: false }) }, { surfaceOp: 'append' })
+  agent.session.append('tool/call', { callId: 'derived-state', name: 'soul_state', arguments: JSON.stringify({ action: 'learn' }) })
+  const derivedState = agent.session.append('tool/result', { message: createToolResultMessage({ callId: 'derived-state', content: [{ type: 'text', text: 'DERIVED LEARNING MARKER' }], isError: false }) }, { surfaceOp: 'append' })
+  await owner.observe(dir, agent.session.id)
+  assert.deepEqual((await search('PUBLIC ASSISTANT MARKER')).hits, [], '本回合助手输出不能被同回合搜索自召回')
+  const dirty = owner.status(dir).binding
+  const { revisionOf } = await import('../../src/host/module-write.ts')
+  dirty.histories.push({ id: 'legacy-derived-context', sessionId: agent.session.id, seqs: [injected.seq], versions: [revisionOf(JSON.stringify(injected))], scope: dirty.projects.find(row => row.sessionId === agent.session.id).identity, revoked: false, automatic: true })
+  dirty.histories.push({ id: 'legacy-derived-state', sessionId: agent.session.id, seqs: [derivedState.seq], versions: [revisionOf(JSON.stringify(derivedState))], scope: dirty.projects.find(row => row.sessionId === agent.session.id).identity, revoked: false, automatic: true })
+  await bindingsTable.put(bindingId, dirty)
+  await send(createUserMessage({ content: [{ type: 'text', text: 'next retrieval turn' }], source: { kind: 'user' } }))
+  const publicHits = (await search('PUBLIC ASSISTANT MARKER')).hits
+  assert.equal(publicHits.length, 1, '既有助手正常公开正文继续可回取')
+  assert.equal(publicHits[0].reference.seqs[0], privateAssistant.seq)
+  assert.doesNotMatch(publicHits[0].content, /PRIVATE REASONING|PRIVATE STREAM|tool-call/)
+  assert.deepEqual((await search('DERIVED CONTEXT MARKER')).hits, [], '旧automatic注入污染记录读时也排除')
+  assert.deepEqual((await search('PRIVATE REASONING MARKER')).hits, [])
+  assert.deepEqual((await search('PRIVATE STREAM MARKER')).hits, [])
+  assert.deepEqual((await search('DERIVED LEARNING MARKER')).hits, [])
+  const externalHits = (await search('EXTERNAL OBSERVATION MARKER')).hits
+  assert.deepEqual(externalHits.map(hit => hit.reference.seqs[0]), [external.seq], '真实工具执行观察保留且不接纳伪作者')
+  assert.match(externalHits[0].content, /fixture_external/)
+  assert.deepEqual((await search('next retrieval turn')).hits.map(hit => hit.reference.seqs[0]), [agent.session.snapshotEvents().findLast(event => event.type === 'user/message' && event.data.source?.kind === 'user').seq], '搜索回执不回灌为下一次搜索证据')
+  const open = async reference => (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'open-public', name: 'module_open', arguments: JSON.stringify({ moduleId: 'alice', reference }) }] })).results[0].result
+  const opened = await open(publicHits[0].reference)
+  assert.equal(opened.isError, false, JSON.stringify(opened))
+  assert.equal(opened.value.content, publicHits[0].content, '新引用回取与搜索使用相同公开投影')
+  const { makeSessionReference } = await import('../../engine/retrieval-reference.mjs')
+  const legacy = makeSessionReference('alice', agent.session.id, agent.session.snapshotEvents(), [privateAssistant.seq])
+  const legacyOpened = await open(legacy)
+  assert.equal(legacyOpened.isError, false, '既有显式原事件引用保持版本和偏移协议')
+  assert.equal(legacyOpened.value.content, JSON.stringify(privateAssistant))
+  const timelineResult = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'timeline-public', name: 'module_search', arguments: JSON.stringify({ moduleId: 'alice', mode: 'timeline', query: 'PUBLIC ASSISTANT MARKER' }) }] })).results[0].result
+  assert.equal(timelineResult.isError, false, JSON.stringify(timelineResult))
+  assert.deepEqual(timelineResult.value.hits.map(hit => hit.content), [publicHits[0].content])
+  const attachmentInput = createUserMessage({ content: [], source: { kind: 'user' } })
+  agent.session.append('user/message', attachmentInput, { surfaceOp: 'append' })
+  await owner.observe(dir, agent.session.id)
+  assert.equal(owner.status(dir).binding.participants.find(row => row.sessionId === agent.session.id).rootMessageId, attachmentInput.id, '无text真实输入仍推进用户根身份')
   await send(message)
   const fresh = await root.agents.create({ sessionId: 'record-new-main', agentOptions: { provider: 'fixture', model: 'normal' }, meta: { cwd: home } })
   handles.push(fresh)
@@ -494,6 +550,10 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(root.subagents.rootOf(child), agent)
   const childResult = (await root.tools.execute({ agent: child, signal, calls: [{ type: 'tool-call', id: 'child-fact', name: 'soul_ledger', arguments: JSON.stringify({ moduleId: 'alice', action: 'append', type: 'fact', text: 'task experience' }) }] })).results[0].result
   assert.equal(childResult.isError, false, JSON.stringify(childResult))
+  t.after(retrieval.mount(child.ctx, { paths: [], sessions: [] }, { agent: child, sourceModuleId: 'alice', sourceModuleDir: dir }))
+  const delegatedSearch = (await root.tools.execute({ agent: child, signal, calls: [{ type: 'tool-call', id: 'child-recall-input', name: 'module_search', arguments: JSON.stringify({ moduleId: 'alice', query: 'Task experience; this is not a new human input.' }) }] })).results[0].result
+  assert.equal(delegatedSearch.isError, false, JSON.stringify(delegatedSearch))
+  assert.ok(delegatedSearch.value.hits.some(hit => hit.reference.sessionId === childId), '子任务真实委派输入仍可检索，当前回合过滤仅针对助手和工具输出')
   const childLearning = await owner.learn(dir, childId, { text: 'delegate claims user preference', layer: 'expression', basis: 'explicit-long-term', ref: childResult.value.reference.entryId, expectedRevision: owner.status(dir).learningRevision }, signal)
   assert.equal(childLearning.state, 'candidate', '子任务委派提示不能充当用户长期意见')
   const childConfirmation = await command({ action: 'learning-confirm', sourceId: childLearning.id, expectedRevision: owner.status(dir).binding.revision }, child)
