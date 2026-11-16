@@ -7,6 +7,7 @@ import { markSoulState, readSoulState } from '../host/soul-state.ts'
 import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 import type { SessionVariableOwner } from '../host/session-variables.ts'
 import { readModuleVariables } from '../host/module-variables.ts'
+import type { SoulKnowledgeOwner } from '../host/soul-knowledge.ts'
 
 type Observation = string | number | boolean | null | Observation[] | { [key: string]: Observation }
 export interface SoulStateObservation {
@@ -14,7 +15,7 @@ export interface SoulStateObservation {
   check: (exec: ToolExecution, moduleId: string, includeUpgrade?: boolean) => Observation | Promise<Observation>
 }
 
-export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>, observe: SoulStateObservation | undefined, sessions: () => SessionVariableOwner | undefined): () => void {
+export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>, observe: SoulStateObservation | undefined, sessions: () => SessionVariableOwner | undefined, knowledge?: () => SoulKnowledgeOwner | undefined): () => void {
   const sessionOwner = (): SessionVariableOwner => {
     const owner = sessions?.()
     if (owner === undefined) throw new Error('会话变量持久化依赖不可用，不能读取当前状态')
@@ -32,6 +33,7 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       sessionId: { type: 'string' }, revision: { oneOf: [{ type: 'string' }, { type: 'null' }] },
       mark: { oneOf: [{ type: 'null' }, { type: 'object', additionalProperties: false, properties: { text: { type: 'string' }, recordedAt: { type: 'string' } } }] },
       observation: { type: 'json' },
+      knowledge: { type: 'json' },
       persisted: { type: 'boolean' }, publicationSuppressed: { type: 'boolean' },
     } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     execute: async (args, exec) => {
@@ -59,7 +61,7 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       const observation = observe ? await observe[args.action](exec, target.id, args.includeUpgrade) : undefined
       exec.signal.throwIfAborted()
       if (host.target(exec, args.moduleId).dir !== target.dir || exec.agent?.session.id !== sessionId) throw new Error('Soul状态来源或会话已变化')
-      return { sessionId, ...readSoulState(target.dir, sessionId, sessionOwner()), ...(observation === undefined ? {} : { observation }) }
+      return { sessionId, ...readSoulState(target.dir, sessionId, sessionOwner()), knowledge: knowledge?.()?.status(target.dir) ?? { state: 'unavailable', reason: '知识库持久状态不可用' }, ...(observation === undefined ? {} : { observation }) }
     },
   })))
   return () => { void fiber.dispose() }
