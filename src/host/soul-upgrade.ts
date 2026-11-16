@@ -10,6 +10,13 @@ import { expandModuleSource, exportModulePackage } from './module-package.ts'
 import type { AssetFile } from '../shared/asset-transfer.ts'
 import { decodeAssetFile } from './import-source.ts'
 import { isDeepStrictEqual } from 'node:util'
+import { createHash } from 'node:crypto'
+
+// 8431b2d7 有效提示资产基线；统一换行，用户未知正文必须先解决冲突。
+const ASSET_BASELINES: Record<string, string> = {
+  'assets/tools.md': '88f2f18d6f87777f2e8fc850b5938d063f68f5d9730066f62221ba2aa4cba557',
+  'assets/ledger.md': 'd386102c931a553e1c4d7e5516a8b0901ce560da66501c67c5f7b6daffb6084c',
+}
 
 const RULE_IDS = ['soul-ledger-open', 'soul-check']
 const VARIABLE_IDS = ['ledger_open', 'ledger_seq']
@@ -70,19 +77,29 @@ export async function readSoulUpgradePreview(moduleDir: string) {
   const seed = readFileSync(join(packageModulesDir(), 'soul/module.yml'), 'utf8')
   const preview = previewSoulUpgrade(source, BASELINE, seed)
   const result = { ...preview, expectedRevision: revisionOf(source), files: [] as AssetFile[],
-    apply: '仅预览；将完整files交给module_import模型工具正式预览，保留targetId并设overwrite:true；核对expectedRevision后携工具返回的两份凭据提交。该工具保留私有data、memory及既有技能资产并重建；不要用普通覆盖导入替代，不自动更新运行副本。' }
+    apply: '真实用户使用 /prompt-tool upgrade {"moduleId":"目标模块","action":"preview"} 审阅；确认时action=confirm并原样带回expectedRevision、expectedSourceDigest、expectedPreviewRevision。保留私有资产并重建；升级不授权知识库，不自动更新用户副本。' }
   if (!preview.candidate) return result
   const exported = await exportModulePackage(userModulesDir(), { id: basename(moduleDir), mode: 'zip' })
   const files = await expandModuleSource([{ path: 'soul.zip', content: exported.content, encoding: 'base64' }])
   const current = await exportModulePackage(userModulesDir(), { id: basename(moduleDir), mode: 'zip', preview: true })
   if (current.revision !== exported.revision) throw new Error('Soul升级资产已变化，请重新预览')
   if (revisionOf(readFileSync(file, 'utf8')) !== result.expectedRevision) throw new Error('Soul升级定义已变化，请重新预览')
-  const path = 'assets/retrieval-synonyms.json'
-  const content = readFileSync(join(packageModulesDir(), 'soul', path), 'utf8')
-  const previous = files.find(file => file.path === path)
-  if (previous && decodeAssetFile(previous).toString('utf8') !== content) return { ...result, status: 'conflict' as const, conflicts: [...result.conflicts, `${path}: 用户已修改近义表`], candidate: null }
   result.files = files.map(file => file.path === 'module.yml' ? { path: file.path, content: preview.candidate! } : file)
-  if (!previous) { result.files.push({ path, content }); result.changes.push({ id: path, before: null, after: '新增近义表资产' }) }
+  for (const path of ['assets/retrieval-synonyms.json', ...Object.keys(ASSET_BASELINES)]) {
+    const content = readFileSync(join(packageModulesDir(), 'soul', path), 'utf8')
+    const index = result.files.findIndex(file => file.path === path)
+    const before = index < 0 ? null : decodeAssetFile(result.files[index]!).toString('utf8')
+    const normalized = (text: string) => text.replaceAll('\r\n', '\n')
+    if (before !== null && normalized(before) === normalized(content)) continue
+    if (before !== null && createHash('sha256').update(normalized(before)).digest('hex') !== ASSET_BASELINES[path]) {
+      result.conflicts.push(`${path}: 用户已修改资产，请先审阅并解决差异`)
+      continue
+    }
+    if (index < 0) result.files.push({ path, content })
+    else result.files[index] = { path, content }
+    result.changes.push({ id: path, before, after: content })
+  }
+  if (result.conflicts.length) return { ...result, status: 'conflict' as const, candidate: null, files: [] }
   return result
 }
 type Rule = Record<string, unknown>
@@ -166,7 +183,7 @@ export function previewSoulUpgrade(source: string, baseline: string, newSeed: st
     const variables = document!.get('variables')
     if (isMap(variables) && variables.has(id)) { changes.push({ id, before: (expected.variables as Rule)?.[id], after: null }); variables.delete(id); delete (expected.variables as Rule)[id] }
   }
-  for (const [capability, keys] of [['retrieval', ['synonymsFile']], ['soul-maintenance', ['pressureThresholds']], ['generation-recovery', ['lineRepeatChars', 'crossCallRepeatChars', 'maxCycleChars']]] as const) {
+  for (const [capability, keys] of [['retrieval', ['synonymsFile']], ['soul-maintenance', ['pressureThresholds', 'assistedInputTarget', 'assistedOutputTokens', 'assistedTimeoutMs', 'assistedSessionTokens', 'assistedSessionMs', 'assistedBacklogTurns']], ['generation-recovery', ['lineRepeatChars', 'crossCallRepeatChars', 'maxCycleChars']]] as const) {
     for (const key of keys) {
       const path = ['moduleConfigs', capability, key]
       const fresh = seed!.getIn(path)

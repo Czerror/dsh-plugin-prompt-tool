@@ -1,10 +1,63 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, readFileSync, readdirSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tempDir } from '../fixtures/host-harness.mjs'
 import { registerModuleFileTools } from '../../src/runtime/module-file-tools.ts'
 import { resolveModuleToolTarget } from '../../src/host/module-tool-target.ts'
+
+test('用户升级：完整预览确认、目标变化拒绝、私有资产保留与用户正文冲突', async t => {
+  const { Context } = await import('@deepseek-ai/cordis')
+  const commands = await import('@deepseek-ai/dsh-commands')
+  const { registerTuiCommand } = await import('../../src/runtime/tui.ts')
+  const { packageModulesDir, userModulesDir } = await import('../../src/host/module-dirs.ts')
+  const { parse, stringify } = await import('yaml')
+  const home = tempDir('pt-upgrade-'), original = process.env.DSH_HOME
+  process.env.DSH_HOME = home
+  t.after(() => { if (original === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = original })
+  // 对照当前分发资源构造用户副本；不固定内置正文、模块数量或默认行为。
+  const seed = readdirSync(packageModulesDir()).map(id => join(packageModulesDir(), id)).find(dir => {
+    const value = parse(readFileSync(join(dir, 'module.yml'), 'utf8'))
+    return value.modules?.includes('soul-maintenance')
+  })
+  assert.ok(seed)
+  const id = 'upgrade-fixture', dir = join(userModulesDir(), id)
+  mkdirSync(userModulesDir(), { recursive: true }); cpSync(seed, dir, { recursive: true })
+  const definition = parse(readFileSync(join(dir, 'module.yml'), 'utf8'))
+  definition.id = id
+  delete definition.moduleConfigs['soul-maintenance'].assistedInputTarget
+  writeFileSync(join(dir, 'module.yml'), stringify(definition))
+  mkdirSync(join(dir, 'data'), { recursive: true })
+  writeFileSync(join(dir, 'data', 'SELF.src.md'), 'USER SKELETON')
+  writeFileSync(join(dir, 'data', 'private.jsonl'), 'PRIVATE LEDGER')
+  writeFileSync(join(dir, 'unknown.bin'), 'UNKNOWN')
+  const ctx = new Context(); let refreshes = 0
+  await ctx.plugin(commands.default); ctx.provide('settings', {})
+  await ctx.plugin({ name: 'upgrade-command-test', inject: ['commands'], apply(scope) {
+    registerTuiCommand(scope, 'test', () => ({}), () => ({}), async () => ({}), target => target === id ? dir : '', undefined, async () => { refreshes++ })
+  } })
+  t.after(() => ctx.fiber.dispose())
+  await new Promise(resolve => setImmediate(resolve))
+  const agent = { id: 'user', session: { id: 'upgrade-user', header: {}, snapshotEvents: () => [], append: () => ({}) } }
+  const run = async request => (await ctx.commands.execute(agent, '/prompt-tool upgrade ' + JSON.stringify({ moduleId: id, ...request }), [], new AbortController().signal)).result
+  const preview = JSON.parse((await run({ action: 'preview' })).text)
+  assert.equal(preview.status, 'ready')
+  assert.ok(preview.changes.some(change => change.id.endsWith('.assistedInputTarget')))
+  assert.equal(refreshes, 0)
+  const credentials = { expectedRevision: preview.expectedRevision, expectedSourceDigest: preview.expectedSourceDigest, expectedPreviewRevision: preview.expectedPreviewRevision }
+  writeFileSync(join(dir, 'unknown.bin'), 'CHANGED')
+  assert.equal((await run({ action: 'confirm', ...credentials })).kind, 'error')
+  const fresh = JSON.parse((await run({ action: 'preview' })).text)
+  assert.equal((await run({ action: 'confirm', expectedRevision: fresh.expectedRevision, expectedSourceDigest: fresh.expectedSourceDigest, expectedPreviewRevision: fresh.expectedPreviewRevision })).kind, 'success')
+  assert.equal(refreshes, 1)
+  assert.equal(readFileSync(join(dir, 'data', 'SELF.src.md'), 'utf8'), 'USER SKELETON')
+  assert.equal(readFileSync(join(dir, 'data', 'private.jsonl'), 'utf8'), 'PRIVATE LEDGER')
+  assert.equal(readFileSync(join(dir, 'unknown.bin'), 'utf8'), 'CHANGED')
+  writeFileSync(join(dir, 'assets', 'tools.md'), 'USER CUSTOM TOOLS')
+  const conflict = JSON.parse((await run({ action: 'preview' })).text)
+  assert.equal(conflict.status, 'conflict')
+  assert.equal(readFileSync(join(dir, 'assets', 'tools.md'), 'utf8'), 'USER CUSTOM TOOLS')
+})
 
 test('知识库接入：用户预览确认、部分授权和旧预览拒绝，不改旧资料', async t => {
   const { Context } = await import('@deepseek-ai/cordis')
@@ -39,6 +92,8 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   const agent = { id: 'user', session: { id: 'session-a', header: {}, snapshotEvents: () => [], append: () => ({}) } }
   agent.ctx = createScope(ctx, agent).ctx
   assert.ok(ctx.commands.find(agent, 'prompt-tool'), '用户命令必须正式注册')
+  const upgrade = (await ctx.commands.execute(agent, '/prompt-tool upgrade ' + JSON.stringify({ moduleId: 'missing', action: 'preview' }), [], new AbortController().signal)).result
+  assert.match(upgrade.text, /升级.*模块|模块.*升级/, '升级命令必须走用户专用入口并校验目标')
   const run = async request => (await ctx.commands.execute(agent, '/prompt-tool knowledge ' + JSON.stringify(request), [], new AbortController().signal)).result
   const beta = join(f.root, 'modules', 'beta')
   mkdirSync(beta)

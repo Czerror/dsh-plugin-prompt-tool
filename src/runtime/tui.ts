@@ -14,6 +14,9 @@ import { previewModuleDataImport, applyModuleDataImport, type ModuleDataImportRe
 import type { SoulKnowledgeOwner, SoulKnowledgeRequest } from '../host/soul-knowledge.ts'
 import { SOUL_SELF_SERVICE } from '../../engine/service-names.mjs'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { readSoulUpgradePreview } from '../host/soul-upgrade.ts'
+import { moduleImportPreview, installModulePackage } from '../host/module-package.ts'
+import { userModulesDir } from '../host/module-dirs.ts'
 
 /** dsh-tui 全局开关：键名与 settings 路径一致（settings mutate）。 */
 const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
@@ -122,8 +125,31 @@ export function registerTuiCommand(
     return sctx.commands.register({
       name: 'prompt-tool',
       description: '提示词工具：查看或切换本插件开关',
-      input: { hint: 'status | module [模块id] | knowledge <JSON> | data-import <JSON> | on/off/toggle <开关> | [module <模块id>] config <id> [on/off/toggle]' },
+      input: { hint: 'status | module [模块id] | knowledge <JSON> | upgrade <JSON> | data-import <JSON> | on/off/toggle <开关> | [module <模块id>] config <id> [on/off/toggle]' },
       handler: async (invocation): Promise<CommandResult> => {
+        const upgradeInput = /^upgrade\s+([\s\S]+)$/.exec(invocation.rawInput.trim())
+        if (upgradeInput) {
+          try {
+            const request = JSON.parse(upgradeInput[1]!) as Record<string, unknown>
+            if (!request || Object.keys(request).some(key => !['moduleId', 'action', 'expectedRevision', 'expectedSourceDigest', 'expectedPreviewRevision'].includes(key))
+              || typeof request.moduleId !== 'string' || !['preview', 'confirm'].includes(String(request.action))) throw new Error('升级必须显式声明模块moduleId和action=preview|confirm')
+            const directory = getModuleDirectory?.(request.moduleId)
+            if (!directory || !refreshModule) throw new Error('升级模块或重建入口不可用')
+            invocation.signal.throwIfAborted()
+            const candidate = await readSoulUpgradePreview(directory)
+            if (candidate.status !== 'ready' || !candidate.files.length) return { kind: 'error', text: JSON.stringify(candidate) }
+            const choices = { targetId: request.moduleId, overwrite: true }
+            const preview = moduleImportPreview(userModulesDir(), candidate.files, choices)
+            if (!('prepared' in preview)) throw new Error('升级候选需要额外选择')
+            if (request.action === 'preview') return { kind: 'success', text: JSON.stringify({ ...candidate, files: undefined, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision, summary: preview.summary }) }
+            if (request.expectedRevision !== candidate.expectedRevision || typeof request.expectedSourceDigest !== 'string' || typeof request.expectedPreviewRevision !== 'string') throw new Error('升级预览已过期或缺少确认凭据，请重新预览')
+            const installed = await installModulePackage(userModulesDir(), candidate.files, { ...choices, expectedSourceDigest: request.expectedSourceDigest, expectedPreviewRevision: request.expectedPreviewRevision }, { preserveAssets: true, signal: invocation.signal })
+            try { await refreshModule(request.moduleId) } catch (error) {
+              return { kind: 'error', text: JSON.stringify({ ...installed, persisted: true, publicationPending: true, reason: String((error as Error).message) }) }
+            }
+            return { kind: 'success', text: JSON.stringify({ ...installed, persisted: true, publicationPending: false, knowledgeAuthorizationChanged: false }) }
+          } catch (error) { return { kind: 'error', text: `升级模块拒绝：${String((error as Error).message)}` } }
+        }
         const knowledgeInput = /^knowledge\s+([\s\S]+)$/.exec(invocation.rawInput.trim())
         if (knowledgeInput) {
           try {
@@ -160,6 +186,7 @@ export function registerTuiCommand(
             '      /prompt-tool module <模块id>（声明本次会话主语，随后命令都作用在它上面）\n' +
             '      /prompt-tool module（显示当前声明）\n' +
             '      /prompt-tool knowledge <JSON>（显式moduleId；action=preview|confirm|status；确认须带预览expectedRevision）\n' +
+            '      /prompt-tool upgrade <JSON>（moduleId、action=preview|confirm；确认原样带回三份expected凭据，不改变知识库授权）\n' +
             '      /prompt-tool data-import <JSON>（moduleId + sourceDirectory/paths 或 initialize:true；预览后带 expectedRevision 应用，只补缺失）\n' +
             '      /prompt-tool module <模块id> on|off|toggle <模块参数>（单条命令前声明并执行）\n' +
             '      /prompt-tool config <id>（id 可含空格）\n' +
