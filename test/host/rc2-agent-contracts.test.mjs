@@ -94,6 +94,14 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     const events = session?.snapshotEvents().map(event => replaceEvidence && event.seq === replacedSeq ? { ...event, data: { ...event.data, replacement: true } } : event)
     return events && { id, snapshotEvents: () => events }
   }
+  const initializationError = new Error('injected knowledge open failure')
+  let assistedClosed = false
+  await assert.rejects(openSoulKnowledge({ async open(definition) {
+    if (definition.name === 'prompt_tool_soul_knowledge') throw initializationError
+    const opened = await root.storageDomain.open(definition)
+    return { table: name => opened.table(name), async close() { await opened.close(); assistedClosed = true; throw new Error('injected cleanup failure') } }
+  } }, loadKnowledgeSession), error => error === initializationError)
+  assert.equal(assistedClosed, true, '知识域初始化失败须释放已打开的真实辅助预算域')
   let owner = await openSoulKnowledge(facility, loadKnowledgeSession)
   const { openSessionVariables } = await import('../../src/host/session-variables.ts')
   const variables = await openSessionVariables(root.storageDomain)
@@ -144,6 +152,14 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     finally { toolSet.dispose() }
   }
   assert.match(await self(), /Keep answers concise/)
+  const recordsBeforeDisable = owner.records(dir, agent.session.id)
+  await manage({ action: 'disable' })
+  assert.deepEqual(owner.learning(dir, fresh.agent.session.id), [])
+  assert.doesNotMatch(await self(), /Keep answers concise/, '关闭同时撤回SELF和persona共享的学习贡献')
+  assert.equal(owner.learning(dir, fresh.agent.session.id, true).find(row => row.id === learned.id).text, 'Keep answers concise')
+  assert.deepEqual(owner.records(dir, agent.session.id), recordsBeforeDisable, '关闭保留正式原文及历史查询')
+  await manage({ action: 'enable' })
+  assert.match(await self(), /Keep answers concise/, '重新启用恢复仍有效来源的学习')
   await manage({ action: 'learning-withdraw', sourceId: learned.id })
   assert.doesNotMatch(await self(), /Keep answers concise/)
   assert.equal(first.value.derived.state, 'pending')
@@ -192,6 +208,11 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.deepEqual(owner.sources(dir, agent.session.id).documents.map(row => row.content), [oldPublication.text])
   assert.equal(owner.recording(dir, agent.session.id).pending, 1)
   assert.equal((await consolidate(publication)).state, 'published')
+  assert.equal(owner.sources(dir, agent.session.id).documents.at(-1).content, publication.text)
+  await manage({ action: 'disable' })
+  assert.equal(owner.sources(dir, agent.session.id).documents.length, 0, '关闭撤回自动整理贡献')
+  assert.ok(owner.sources(dir, agent.session.id).histories.length, '关闭保留合法历史查询')
+  await manage({ action: 'enable' })
   assert.equal(owner.sources(dir, agent.session.id).documents.at(-1).content, publication.text)
   assert.equal(owner.recording(dir, agent.session.id).pending, 0)
   assert.equal((await consolidate(publication)).state, 'published')
@@ -379,6 +400,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(owner.sources(dir, childId).histories.some(row => row.id === laterSource), false, '关闭不能丢失子任务范围上限')
   await manage({ action: 'enable' })
   assert.equal(owner.sources(dir, childId).histories.some(row => row.id === laterSource), false)
+  assert.doesNotMatch(await self(), /维修承诺结合零件与沟通需求|使用中文回答|Use detailed answers/, '重新启用不恢复失效来源的贡献')
   await root.subagents.drainDescendants([agent])
   excluded.add(agent.id)
   const beforeRelease = owner.status(dir).binding.histories.length
