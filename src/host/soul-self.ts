@@ -107,12 +107,16 @@ export function refreshSoulSelf(moduleDir: string, index: SoulIndexStatus, optio
   })
 }
 
-export function renderSoulSelf(moduleDir: string, agent: SoulSelfAgent, signal?: AbortSignal, budgetBytes = 12288, index?: SoulIndexStatus, runtimeLines: readonly string[] = [], template?: SoulSelfTemplate): string {
+export function renderSoulSelf(moduleDir: string, agent: SoulSelfAgent, signal?: AbortSignal, budgetBytes = 12288, index?: SoulIndexStatus, runtimeLines: readonly string[] = [], template?: SoulSelfTemplate, allowLegacyLedger = true): string {
   signal?.throwIfAborted()
   if (!agent?.session?.id) throw new Error('SELF 缺少实际 Agent 身份')
   for (const path of [SOUL_SELF_SOURCE, 'data/02-soul.jsonl', 'data/02-墨.jsonl']) assertNoModuleLinks(join(moduleDir, path))
   let prefix: string
-  try { prefix = deriveSoulSelf(moduleDir, index, budgetBytes, template).content }
+  if (!allowLegacyLedger) {
+    const source = readModuleFile(moduleDir, SOUL_SELF_SOURCE).content
+    if (!source.trim()) throw new Error('SELF 骨架缺失：data/SELF.src.md')
+    prefix = seal(template?.(source).text ?? source) + '\n- 持续记忆：旧账本待归类；新SELF未就绪，不使用旧自动派生贡献。\n'
+  } else try { prefix = deriveSoulSelf(moduleDir, index, budgetBytes, template).content }
   catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'EACCES' || code === 'EPERM' || code === 'SELF_TEMPLATE' || /链接|越界|超预算|不是普通文件/.test(String((error as Error).message))) throw error

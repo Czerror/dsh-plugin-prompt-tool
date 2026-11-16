@@ -6,8 +6,10 @@ import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 import { MODULE_ID_PARAM } from '../host/module-tool-target.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
 import { appendSoulLedger, closeSoulLedger, readSoulLedger, SOUL_LEDGER_TYPES } from '../host/soul-ledger.ts'
+import type { SoulKnowledgeOwner } from '../host/soul-knowledge.ts'
+import { join } from 'node:path'
 
-export function registerSoulLedgerTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>): () => void {
+export function registerSoulLedgerTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>, knowledge?: () => SoulKnowledgeOwner | undefined): () => void {
   const fiber = ctx.inject(['tools'], toolsCtx => {
     const offGate = toolsCtx.on('tools/pre-execute', async (exec, next) => {
       const decision = await next()
@@ -53,6 +55,12 @@ export function registerSoulLedgerTools(ctx: Context, host: Pick<ModuleToolHost,
       }
       if (args.targetId !== undefined || args.outcome !== undefined || args.reason !== undefined) throw new Error('只有收口接受 targetId、outcome 与 reason')
       if (args.action === 'list') {
+        if (knowledge) {
+          const owner = knowledge()
+          if (!owner) throw new Error('知识来源授权持久状态不可用')
+          if (owner.status(target.dir).state !== 'unbound') throw new Error('旧账本待归类，受控账本未就绪')
+          owner.assertFile(target.dir, join(target.dir, 'data', '02-soul.jsonl'), exec.agent?.session.id)
+        }
         if (args.text !== undefined || args['概要'] !== undefined || args.ref !== undefined || args.feel !== undefined) throw new Error('读取账本不接受写入字段')
         return readSoulLedger(target.dir, { limit: args.limit, type: args.type, view: args.view, cursor: args.cursor })
       }

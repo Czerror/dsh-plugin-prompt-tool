@@ -161,6 +161,10 @@ Soul 模块包含结构化账本、授权文件／历史检索、每步动态 SE
 
 知识库接入默认未完成。用户通过 `/prompt-tool knowledge {"moduleId":"soul","action":"preview","read":[],"write":["general","projects"]}` 预览原模块书房；可用绝对路径 `root` 选择其他目录或其已存在父目录下的新根。`read` 仅选择明确列出的旧资料相对文件，`write` 仅选择通用资料 `general` 和项目资料 `projects`。预览只读取文件元数据，最多2000项、8层；不读取正文或自动纳入历史。确认时保留相同请求，改为 `action:"confirm"` 并带返回的 `expectedRevision`；内容、模块或根身份变化须重新预览。仅补缺失目录，不搬迁或覆盖账本、SELF、运行状态及未知文件。`action:"status"` 和 `soul_state` 可查看未接入、已绑定或不可用；不可用时不切换到其他根。本机绑定由官方持久域按来源模块保存，不随模块导出、复制或导入转移。接入本身不启动自动整理、学习或跨项目授权。
 
+接入后，旧资料保持待归类。仍用上述用户命令：`action:"sources"` 查询来源、待归类资料和状态版本；`action:"project"` 带明确绝对 `projectDirectory` 和当前 `expectedRevision` 为实际会话绑定项目。Git 使用真实 common-dir，同仓 worktree 共享身份，同 remote 的独立克隆不共享；非 Git 使用用户所选目录，后续 cwd 变化不改变会话归属。`action:"source-preview"` 带 `path`（必须已在 read 范围内）或 `sessionId` 与明确 `seqs` 选择旧会话事件，并指定 `scope:"general"|"project"`；确认保持请求，改为 `source-confirm` 并带预览的 `expectedRevision`。`revoke` 带来源 `sourceId` 和当前版本立即撤权，保留原文。模型不能执行这些确认。
+
+`module_search/module_open` 返回知识引用绑定本机根、相对路径、版本与范围，回取和搜索返回前复核；通用模块文件入口不能绕过受管根授权。根重绑须重新选择来源，旧引用不复活。新接入后的旧账本尚未按真实来源归类时，旧自动 SELF/提醒贡献及 `soul_ledger list` 暂停，SELF 保留用户骨架并显示待归类；未接入用户的原行为保留。此阶段不自动纳入会话、不生成学习或摘要。
+
 SELF 每步读取当前骨架、账本投影和身份，业务事实不变时正文保持稳定；自动正文不携带采样时钟、活动/投递时间或精确 token 水位，避免每个工具步骤重复追加整份上下文。维护关闭或诊断快照陈旧仍能呈现当前事实；索引只报告最近成功观测，不逐步扫描历史。`soul_state status/mark/check` 提供当前会话状态、带版本的短标记及精确时间/水位诊断。未结提醒默认仅主会话，在集合变化或成功压缩后实际投递一次；候选装配不消费提醒。Soul 显式开启 45/60/80% 水位提示，自动正文只随级别更新行动提示，不自动压缩。用户模板显式引用时钟或精确水位仍逐次求值；升级不清理旧会话已累积的快照。
 
 `module_search` 支持全半角/大小写/千分位归一化、Soul 声明的有界近义表及 `mode: timeline` 时间线；命中标注方式，引用交给 `module_open` 重验授权与原文。历史会话仍只读白名单。维护默认每分钟更新索引与诊断快照，等待可取消，`wake` 独立且默认关闭。

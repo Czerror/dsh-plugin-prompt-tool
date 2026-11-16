@@ -58,7 +58,14 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       }
       if (args.action !== 'status' && args.action !== 'check') throw new Error('Soul状态action无效')
       if (args.text !== undefined || args.expectedRevision !== undefined) throw new Error('Soul状态读取不接受写入字段')
+      const assertUpgradeAllowed = () => {
+        if (!args.includeUpgrade || !knowledge) return
+        const owner = knowledge()
+        if (!owner || owner.status(target.dir).state !== 'unbound') throw new Error('受控知识库已接入或授权不可用，模型不能展开完整升级正文；请使用用户升级入口')
+      }
+      assertUpgradeAllowed()
       const observation = observe ? await observe[args.action](exec, target.id, args.includeUpgrade) : undefined
+      assertUpgradeAllowed()
       exec.signal.throwIfAborted()
       if (host.target(exec, args.moduleId).dir !== target.dir || exec.agent?.session.id !== sessionId) throw new Error('Soul状态来源或会话已变化')
       return { sessionId, ...readSoulState(target.dir, sessionId, sessionOwner()), knowledge: knowledge?.()?.status(target.dir) ?? { state: 'unavailable', reason: '知识库持久状态不可用' }, ...(observation === undefined ? {} : { observation }) }

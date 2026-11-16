@@ -132,7 +132,7 @@ export function registerTuiCommand(
             invocation.signal.throwIfAborted()
             const result = request.action === 'preview' ? owner.preview(directory, request)
               : request.action === 'confirm' ? await owner.confirm(directory, request, invocation.signal)
-                : request.action === 'status' ? owner.status(directory) : undefined
+                : request.action === 'status' ? owner.status(directory) : await owner.manage(directory, request, invocation.agent.session.id, invocation.signal)
             if (!result) throw new Error('知识库action无效')
             return { kind: 'success', text: JSON.stringify(result) }
           } catch (error) { return { kind: 'error', text: `知识库操作拒绝：${String((error as Error).message)}` } }

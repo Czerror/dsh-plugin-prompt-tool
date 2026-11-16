@@ -9,16 +9,23 @@ import { findModuleDir, packageModulesDir } from './module-dirs.ts'
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
 import { makeSessionReference, sessionReferenceText, MAX_REFERENCE_CHARS } from '../../engine/retrieval-reference.mjs'
 import type { RetrievalEvent, SessionReference } from '../../engine/retrieval-reference.mjs'
+import type { KnowledgeDocument } from './soul-knowledge.ts'
 
 export interface RetrievalSession { id: string; snapshotEvents: () => readonly RetrievalEvent[] }
 export type LoadRetrievalSession = (id: string) => Promise<RetrievalSession | undefined>
-export interface RetrievalScope { moduleId: string; dir: string; paths: readonly string[]; sessions?: readonly string[]; session?: RetrievalSession; synonymsFile?: string }
+export interface RetrievalScope { moduleId: string; dir: string; paths: readonly string[]; sessions?: readonly string[]; session?: RetrievalSession; synonymsFile?: string; knowledge?: readonly KnowledgeDocument[]; fileAllowed?: (path: string) => boolean; eventAllowed?: (id: string, event: RetrievalEvent) => boolean }
 export type FileReference = { kind: 'file'; moduleId: string; path: string; revision: string; start: number; end: number }
-export type RetrievalReference = FileReference | SessionReference
+export type KnowledgeReference = Omit<KnowledgeDocument, 'content'> & { start: number; end: number }
+export type RetrievalReference = FileReference | SessionReference | KnowledgeReference
 export type RetrievalHit = { reference: RetrievalReference; content: string; match?: 'exact' | 'normalized' | 'synonym'; time?: string | null; timeState?: 'known' | 'unknown' }
 export interface RetrievalQuery { query?: string; mode?: 'search' | 'timeline'; since?: string; until?: string; limit?: number; cursor?: string }
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const MAX_CHUNK = MAX_REFERENCE_CHARS
+function knowledgeContent(scope: RetrievalScope, reference: KnowledgeReference): string {
+  const item = scope.knowledge?.find(row => row.sourceId === reference.sourceId && row.root === reference.root && row.path === reference.path && row.scope === reference.scope && row.revision === reference.revision)
+  if (!item) throw new Error('知识来源引用已撤权或失效，请重新搜索')
+  return item.content
+}
 const normalize = (text: string): string => text.normalize('NFKC').toLowerCase().replace(/(?<![0-9,])[0-9]{1,3}(?:,[0-9]{3})+(?![0-9,])/g, value => value.replaceAll(',', ''))
 function includesQuery(text: string, query: string): boolean {
   let start = text.indexOf(query)
@@ -34,6 +41,7 @@ function matchKind(text: string, query: string): 'exact' | 'normalized' | undefi
 }
 function synonymTerms(scope: RetrievalScope, query: string): { terms: string[]; content?: string } {
   if (!scope.synonymsFile) return { terms: [] }
+  if (scope.fileAllowed && !scope.fileAllowed(scope.synonymsFile)) throw new Error('受管近义资料未授权')
   resolveModuleReadPath(scope.dir, scope.synonymsFile, ['assets', 'data'])
   const content = readModuleFile(scope.dir, scope.synonymsFile).content
   if (Buffer.byteLength(content) > 65536) throw new Error('检索近义表超过64 KiB')
@@ -51,6 +59,7 @@ function timeOf(value: unknown): number | undefined {
 }
 
 function fileContent(scope: RetrievalScope, path: string): string {
+  if (scope.fileAllowed && !scope.fileAllowed(path)) throw new Error('受管知识资料未授权')
   if (!scope.paths.some(allowed => allowed === path || (allowed.endsWith('/') && path.startsWith(allowed)))) throw new Error('检索来源未授权')
   resolveModuleReadPath(scope.dir, path, ['assets', 'data'], { allowRootMemory: true })
   return readModuleFile(scope.dir, path).content
@@ -88,7 +97,7 @@ function filePaths(scope: RetrievalScope): string[] {
     if (lstatSync(resolved).isDirectory() && !path.endsWith('/')) throw new Error('检索目录白名单必须以 / 结尾')
     walk(selected)
   }
-  return [...paths]
+  return [...paths].filter(path => !scope.fileAllowed || scope.fileAllowed(path))
 }
 
 export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession) {
@@ -105,7 +114,7 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
     try { session = await loadSession?.(id) } catch { throw new Error('授权会话不可读取') }
     assertSessionAuthorized(scope, id)
     if (!session || session.id !== id) throw new Error('授权会话不可读取')
-    return session
+    return { id: session.id, snapshotEvents: () => session!.snapshotEvents().filter(event => !scopeOf().eventAllowed || scopeOf().eventAllowed!(id, event)) }
   }
   async function indexSession(scope: RetrievalScope, id: string) {
     const session = await authorizedSession(scope, id), events = [...session.snapshotEvents()]
@@ -129,7 +138,14 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
     if (current.moduleId !== scope.moduleId || current.dir !== scope.dir) throw new Error('检索模块未授权')
     // 最后一次await后统一复核全部命中，先前收集的正文不能跨异步撤权返回。
     for (const { reference } of hits) {
-      if (reference.kind === 'session') assertSessionAuthorized(current, reference.sessionId)
+      if (reference.kind === 'session') {
+        assertSessionAuthorized(current, reference.sessionId)
+        if (current.eventAllowed) {
+          const events = indexes.get(reference.sessionId)?.events.filter(event => current.eventAllowed!(reference.sessionId, event)) ?? []
+          if (digest(sessionReferenceText(events, reference.seqs)) !== reference.revision) throw new Error('历史来源已撤权或失效')
+        }
+      }
+      else if (reference.kind === 'knowledge') knowledgeContent(current, reference)
       else if (digest(fileContent(current, reference.path)) !== reference.revision) throw new Error('检索引用已失效，请重新搜索')
     }
     const selected: RetrievalHit[] = []
@@ -190,7 +206,7 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
     const current = scopeOf()
     if (JSON.stringify([current.moduleId, current.dir, current.paths, [...sessionIds(current)]]) !== JSON.stringify([scope.moduleId, scope.dir, scope.paths, [...sessionIds(scope)]])) throw new Error('时间线来源声明已变化')
     for (const check of revalidate) check()
-    const sourceKey = (hit: RetrievalHit): string => hit.reference.kind === 'file' ? '0:' + hit.reference.path + ':' + String(hit.reference.start).padStart(12, '0') : '1:' + hit.reference.sessionId + ':' + String(hit.reference.seqs[0]).padStart(16, '0') + ':' + hit.reference.start
+    const sourceKey = (hit: RetrievalHit): string => hit.reference.kind !== 'session' ? '0:' + hit.reference.path + ':' + String(hit.reference.start).padStart(12, '0') : '1:' + hit.reference.sessionId + ':' + String(hit.reference.seqs[0]).padStart(16, '0') + ':' + hit.reference.start
     hits.sort((a, b) => (a.time === b.time ? 0 : a.time === null ? 1 : b.time === null ? -1 : a.time!.localeCompare(b.time!)) || sourceKey(a).localeCompare(sourceKey(b)))
     const version = digest(JSON.stringify([scope.moduleId, scope.dir, scope.paths, [...sessionIds(scope)], versions, input.query ?? null, since ?? null, until ?? null, limit]))
     let offset = 0
@@ -228,6 +244,13 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
         candidateBytes += Buffer.byteLength(hit.content)
         if (candidateBytes > MAX_ASSET_BYTES) throw new Error('检索候选超过64 MiB')
         candidates.push({ ...hit, ...(match ? { match } : {}) })
+      }
+      for (const document of scope.knowledge ?? []) {
+        const { content, ...reference } = document
+        for (let start = 0; start < content.length; start += MAX_CHUNK) {
+          const end = Math.min(content.length, start + MAX_CHUNK)
+          add({ reference: { ...reference, start, end }, content: content.slice(start, end) })
+        }
       }
       for (const path of filePaths(scope)) {
         const content = fileContent(scope, path), revision = digest(content)
@@ -275,7 +298,12 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
     async open(reference: RetrievalReference) {
       const scope = scopeOf()
       if (!reference || reference.moduleId !== scope.moduleId) throw new Error('检索引用未授权或无效')
-      if (Object.keys(reference).some(key => !['kind', 'moduleId', 'path', 'revision', 'start', 'end', 'sessionId', 'seqs'].includes(key))) throw new Error('检索引用含未知字段')
+      if (Object.keys(reference).some(key => !['kind', 'moduleId', 'path', 'revision', 'start', 'end', 'sessionId', 'seqs', 'root', 'scope', 'sourceId'].includes(key))) throw new Error('检索引用含未知字段')
+      if (reference.kind === 'knowledge') {
+        const content = knowledgeContent(scope, reference)
+        if (!Number.isSafeInteger(reference.start) || !Number.isSafeInteger(reference.end) || reference.start < 0 || reference.end <= reference.start || reference.end > content.length || reference.end - reference.start > MAX_CHUNK) throw new Error('检索引用范围无效')
+        return { reference, content: content.slice(reference.start, reference.end) }
+      }
       if (reference.kind === 'session') {
         const session = await authorizedSession(scope, reference.sessionId), events = session.snapshotEvents()
         assertSessionAuthorized(scope, reference.sessionId)

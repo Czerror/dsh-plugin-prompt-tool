@@ -5,6 +5,8 @@ import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 import { appendModuleLine, readModuleFile } from '../host/module-files.ts'
 import { MODULE_ID_PARAM } from '../host/module-tool-target.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
+import type { SoulKnowledgeOwner } from '../host/soul-knowledge.ts'
+import { resolveModuleReadPath } from '../host/module-file-path.ts'
 
 const PATH_PARAM = {
   type: 'string',
@@ -12,7 +14,7 @@ const PATH_PARAM = {
   description: '模块内相对路径。读取允许 memory.md、assets/、data/；追写允许 memory.md 与 data/。',
 } as const
 
-export function registerModuleFileTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>): () => void {
+export function registerModuleFileTools(ctx: Context, host: Pick<ModuleToolHost, 'target'>, knowledge?: () => SoulKnowledgeOwner | undefined): () => void {
   const fiber = ctx.inject(['tools'], toolsCtx => {
     const disposers = [
       toolsCtx.tools.register(defineTool({
@@ -34,7 +36,10 @@ export function registerModuleFileTools(ctx: Context, host: Pick<ModuleToolHost,
           if (Object.keys(args).some(key => !['moduleId', 'path'].includes(key))) throw new TypeError('模块文件读取含未知字段')
           if (typeof args?.path !== 'string' || args.path.trim().length === 0) throw new TypeError('模块文件读取需要非空 path')
           exec.signal?.throwIfAborted()
-          return readModuleFile(host.target(exec, args.moduleId).dir, args.path)
+          const target = host.target(exec, args.moduleId)
+          if (knowledge && !knowledge()) throw new Error('知识来源授权持久状态不可用')
+          knowledge?.()?.assertFile(target.dir, resolveModuleReadPath(target.dir, args.path, ['assets', 'data'], { allowRootMemory: true }), exec.agent?.session.id)
+          return readModuleFile(target.dir, args.path)
         },
       })),
       toolsCtx.tools.register(defineTool({
@@ -60,6 +65,8 @@ export function registerModuleFileTools(ctx: Context, host: Pick<ModuleToolHost,
           const hasEntry = args.entry !== undefined
           if (hasContent === hasEntry) throw new TypeError('模块文件追加需要 content 或 entry 之一，不能同时给')
           const target = host.target(exec, args.moduleId)
+          if (knowledge && !knowledge()) throw new Error('知识来源授权持久状态不可用')
+          knowledge?.()?.assertFile(target.dir, resolveModuleReadPath(target.dir, args.path, ['assets', 'data'], { allowRootMemory: true }), exec.agent?.session.id, true)
           exec.signal?.throwIfAborted()
           let line: string
           if (hasContent) {
