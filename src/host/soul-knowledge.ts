@@ -1,5 +1,5 @@
 /** 本机知识库授权：只由用户命令确认，模块导出不包含官方持久域。 */
-import { lstatSync, mkdirSync, readdirSync, realpathSync, readFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, readdirSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { basename, dirname, isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -14,25 +14,28 @@ import { readSoulLedgerProjection } from './soul-ledger.ts'
 
 const source = z.object({ id: z.string(), path: z.string(), scope: z.string(), version: z.string(), revoked: z.boolean() }).strict()
 const project = z.object({ sessionId: z.string(), path: z.string(), identity: z.string() }).strict()
-const history = z.object({ id: z.string(), sessionId: z.string(), seqs: z.array(z.number()), versions: z.array(z.string()), scope: z.string(), revoked: z.boolean() }).strict()
+const history = z.object({ id: z.string(), sessionId: z.string(), seqs: z.array(z.number()), versions: z.array(z.string()), scope: z.string(), revoked: z.boolean(), automatic: z.boolean().optional() }).strict()
 const participation = z.object({ sessionId: z.string(), boundary: z.number(), cursor: z.number(), scope: z.string(), generation: z.string(), parent: z.string().optional(), grants: z.array(z.string()), rootSessionId: z.string(), rootMessageId: z.string().optional() }).strict()
 const recorded = z.object({ operation: z.string(), entryId: z.string(), sourceId: z.string(), sessionId: z.string(), seq: z.number(), time: z.number(), version: z.string(), scope: z.string(), rootSessionId: z.string(), rootMessageId: z.string().optional(), pending: z.boolean() }).strict()
-const binding = z.object({ directory: z.string(), moduleIdentity: z.string(), root: z.string(), identity: z.string(), read: z.array(z.string()), write: z.array(z.string()), revision: z.string(), generation: z.string().optional(), sources: z.array(source).optional(), projects: z.array(project).optional(), histories: z.array(history).optional(), continuity: z.object({ enabled: z.boolean(), enabledAt: z.number(), generation: z.string() }).strict().optional(), participants: z.array(participation).optional(), records: z.array(recorded).optional() }).strict()
+const publication = z.object({ id: z.string(), path: z.string(), scope: z.string(), version: z.string(), roots: z.array(z.string()), rootVersions: z.array(z.string()), refs: z.array(z.string()) }).strict()
+const binding = z.object({ directory: z.string(), moduleIdentity: z.string(), root: z.string(), identity: z.string(), read: z.array(z.string()), write: z.array(z.string()), revision: z.string(), generation: z.string().optional(), sources: z.array(source).optional(), projects: z.array(project).optional(), histories: z.array(history).optional(), continuity: z.object({ enabled: z.boolean(), enabledAt: z.number(), generation: z.string() }).strict().optional(), participants: z.array(participation).optional(), records: z.array(recorded).optional(), publications: z.array(publication).optional() }).strict()
 const definition = defineDomain({ name: 'prompt_tool_soul_knowledge', version: 1, tables: { bindings: domainTable(binding) } })
 type Binding = z.infer<typeof binding>
 export interface SoulKnowledgeRequest { moduleId: string; action: 'status' | 'preview' | 'confirm' | 'sources' | 'source-preview' | 'source-confirm' | 'revoke' | 'project' | 'enable' | 'disable'; root?: string; read?: string[]; write?: string[]; expectedRevision?: string; path?: string; scope?: 'general' | 'project'; projectDirectory?: string; sourceId?: string; sessionId?: string; seqs?: number[] }
 export interface KnowledgeDocument { kind: 'knowledge'; moduleId: string; root: string; path: string; scope: string; sourceId: string; revision: string; content: string }
 export interface SoulKnowledgeOwner {
-  status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; reason?: string; entry: string }
+  status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; consolidationRevision?: string; reason?: string; entry: string }
   preview(directory: string, request: SoulKnowledgeRequest): Record<string, unknown>
   confirm(directory: string, request: SoulKnowledgeRequest, signal: AbortSignal): Promise<ReturnType<SoulKnowledgeOwner['status']>>
   sources(directory: string, sessionId: string): { state: string; documents: KnowledgeDocument[]; histories: z.infer<typeof history>[] }
+  refreshEvidence(directory: string): Promise<void>
   manage(directory: string, request: SoulKnowledgeRequest, sessionId: string, signal: AbortSignal): Promise<Record<string, unknown>>
   assertFile(directory: string, absolute: string, sessionId?: string, write?: boolean): void
   observe(directory: string, sessionId: string, eventSeq?: number, parentSessionId?: string, assertAuthorized?: () => void, attached?: boolean, cwd?: string): Promise<void>
   record(directory: string, sessionId: string, operation: string, commit: (source: ContinuitySource) => { entry: Record<string, unknown> }, signal: AbortSignal): Promise<Record<string, unknown>>
   records(directory: string, sessionId: string): z.infer<typeof recorded>[]
   recording(directory: string, sessionId: string): { persisted: number; pending: number; derivedFailed: number }
+  consolidate(directory: string, sessionId: string, request: { expectedRevision: string; text: string; refs: string[] }, signal: AbortSignal, assertAuthorized?: () => void): Promise<Record<string, unknown>>
   dispose(): Promise<void>
 }
 export interface ContinuitySource { sourceId: string; sessionId: string; seq: number; time: number; version: string; scope: string; operation: string; rootSessionId: string; rootMessageId?: string }
@@ -95,11 +98,21 @@ function rootSnapshot(root: string) {
 }
 export async function openSoulKnowledge(facility: DomainFacility, loadSession?: LoadRetrievalSession): Promise<SoulKnowledgeOwner> {
   const domain = await facility.open(definition), table = domain.table('bindings'), queue = createTargetQueue()
+  const evidenceSessions = new Map<string, Awaited<ReturnType<LoadRetrievalSession>>>()
+  const loadEvidence = async (id: string) => {
+    const session = await loadSession?.(id)
+    evidenceSessions.set(id, session)
+    return session
+  }
   let active = true
   const pending = new Set<Promise<unknown>>()
   const previews = new Map<string, string>()
   const key = (directory: string) => directoryKey(canonicalDirectory(directory))
   const assertActive = () => { if (!active) throw new Error('知识库持久状态已释放') }
+  const consolidationRevision = (value: Binding) => revisionOf(JSON.stringify({ ...value, revision: undefined,
+    participants: value.participants?.map(({ cursor: _cursor, grants: _grants, ...row }) => row),
+    histories: value.histories?.filter(row => !row.automatic || value.records?.some(record => record.sourceId === row.id) || row.revoked),
+  }))
   const status: SoulKnowledgeOwner['status'] = directory => {
     assertActive()
     const current = table.get(revisionOf(key(directory))), entry = '/prompt-tool knowledge <JSON：moduleId、action=preview|confirm|status>'
@@ -115,7 +128,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const stat = lstatSync(absolute)
         if (stat.isSymbolicLink() || current.read.includes(path) && !stat.isFile() || current.write.includes(path) && !stat.isDirectory()) throw new Error('授权资料类型已变化或被替换为链接')
       }
-      return { state: 'bound', binding: structuredClone(current), entry }
+      return { state: 'bound', binding: structuredClone(current), consolidationRevision: consolidationRevision(current), entry }
     } catch (error) { return { state: 'unavailable', reason: String((error as Error).message), entry } }
   }
   const prepare = (directory: string, request: SoulKnowledgeRequest) => {
@@ -164,6 +177,25 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     const inherited = (id: string) => !participant?.parent || participant.grants.includes(id)
     const documents = (value.sources ?? []).filter(item => !item.revoked && inherited(item.id) && (item.scope === 'general' || item.scope === project)).map(item => readSource(value, item))
     const histories = (value.histories ?? []).filter(item => !item.revoked && inherited(item.id) && (item.scope === 'general' || item.scope === project))
+    const allowed = new Set([...documents.map(row => row.sourceId), ...histories.map(row => row.id)])
+    for (const row of value.publications ?? []) {
+      if (!row.roots.every(id => allowed.has(id)) || row.scope !== 'general' && row.scope !== project) continue
+      if (row.roots.some((id, index) => revisionOf(JSON.stringify([...(value.sources ?? []), ...(value.histories ?? [])].find(source => source.id === id))) !== row.rootVersions[index])) continue
+      if (row.roots.some(id => {
+        const source = histories.find(source => source.id === id)
+        if (!source) return false
+        const session = evidenceSessions.get(source.sessionId)
+        return !session || source.seqs.some((seq, index) => revisionOf(JSON.stringify(session.snapshotEvents().find(event => event.seq === seq))) !== source.versions[index])
+      })) continue
+      try {
+        identity(dirname(join(value.root, row.path)))
+        const stat = lstatSync(join(value.root, row.path))
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) continue
+        const content = readFileSync(join(value.root, row.path), 'utf8')
+        if (revisionOf(content) !== row.version) continue
+        documents.push({ kind: 'knowledge', moduleId: basename(directory), root: revisionOf(JSON.stringify([value.identity, value.moduleIdentity, value.generation ?? null])), path: row.path, scope: row.scope, sourceId: row.id, revision: row.version, content })
+      } catch { /* 不可用的不可变版本停止使用，不扫描替代文件。 */ }
+    }
     return { state: project ? 'ready' : 'pending-classification', documents, histories }
   }
   const tracked = <T>(operation: Promise<T>): Promise<T> => {
@@ -187,7 +219,91 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   const owner: SoulKnowledgeOwner = {
     status,
     sources,
+    async refreshEvidence(directory) {
+      const value = requireBinding(directory), roots = new Set((value.publications ?? []).flatMap(row => row.roots))
+      for (const id of new Set((value.histories ?? []).filter(row => roots.has(row.id) && !row.revoked).map(row => row.sessionId))) await loadEvidence(id)
+      assertActive(); requireBinding(directory)
+    },
     records: visibleRecords,
+    async consolidate(directory, sessionId, request, signal, assertAuthorized) {
+      signal.throwIfAborted(); assertAuthorized?.()
+      await owner.refreshEvidence(directory)
+      signal.throwIfAborted(); assertAuthorized?.()
+      if (typeof request.text !== 'string' || !request.text.trim() || Buffer.byteLength(request.text) > 1024 * 1024 || !Array.isArray(request.refs) || !request.refs.length || request.refs.length > 200 || request.refs.some(ref => typeof ref !== 'string' || ref.length > 256) || typeof request.expectedRevision !== 'string') throw new Error('整理正文或引用非法、缺失或超限')
+      const value = requireBinding(directory), access = sources(directory, sessionId)
+      const id = revisionOf(JSON.stringify([sessionId, request.expectedRevision, request.text, request.refs]))
+      const prior = value.publications?.find(row => row.id === id)
+      if (prior) return { state: access.documents.some(row => row.sourceId === id) ? 'published' : 'inactive', candidateId: id }
+      if (!value.continuity?.enabled || consolidationRevision(value) !== request.expectedRevision) throw new Error('整理版本冲突或持续记忆已关闭')
+      const records = visibleRecords(directory, sessionId)
+      const available = new Set([...access.documents.map(row => row.sourceId), ...access.histories.map(row => row.id)])
+      const roots = new Set<string>(), scopes = new Set<string>(), processed = new Set<string>()
+      for (const ref of request.refs) {
+        const entry = records.find(row => row.entryId === ref)
+        const derived = value.publications?.find(row => row.id === ref && available.has(row.id))
+        const original = [...(value.sources ?? []), ...(value.histories ?? [])].find(row => row.id === ref && available.has(row.id))
+        if (original && 'automatic' in original && original.automatic && !records.some(row => row.sourceId === original.id)) throw new Error('自动会话材料须先登记稳定条目再整理')
+        if (entry) { roots.add(entry.sourceId); scopes.add(entry.scope); if (entry.pending) processed.add(entry.entryId) }
+        else if (derived) { derived.roots.forEach(root => roots.add(root)); scopes.add(derived.scope) }
+        else if (original) { roots.add(original.id); scopes.add(original.scope) }
+        else throw new Error('整理引用不存在、未发布、循环或已失效')
+      }
+      if (!processed.size) return { state: 'no-work' }
+      const project = scopeOf(value, sessionId), scope = scopes.size === 1 && scopes.has('general') ? 'general' : project
+      if (!scope || [...scopes].some(item => item !== 'general' && item !== scope)) throw new Error('整理来源跨越未授权项目')
+      const area = scope === 'general' ? 'general' : 'projects'
+      if (!value.write.includes(area)) throw new Error('整理目标区域未授权写入')
+      const verify = async () => {
+        signal.throwIfAborted(); assertAuthorized?.(); assertActive()
+        const current = requireBinding(directory)
+        if (consolidationRevision(current) !== request.expectedRevision || scopeOf(current, sessionId) !== project) throw new Error('整理版本、输入或授权已变化')
+        const currentAccess = sources(directory, sessionId)
+        const allowed = new Set([...currentAccess.documents.map(row => row.sourceId), ...currentAccess.histories.map(row => row.id)])
+        if (![...roots].every(root => allowed.has(root))) throw new Error('整理证据已失效')
+        const historyRoots = currentAccess.histories.filter(row => roots.has(row.id))
+        const participant = current.participants?.findLast(row => row.sessionId === sessionId && row.generation === current.continuity?.generation)
+        for (const source of historyRoots) await loadEvidence(source.sessionId)
+        await loadEvidence(sessionId)
+        const session = await loadEvidence(participant?.rootSessionId ?? sessionId)
+        for (const source of historyRoots) {
+          const original = evidenceSessions.get(source.sessionId)
+          if (!original || source.seqs.some((seq, index) => revisionOf(JSON.stringify(original.snapshotEvents().find(event => event.seq === seq))) !== source.versions[index])) throw new Error('整理原始事件版本已变化')
+        }
+        const finalAccess = sources(directory, sessionId)
+        const finalAllowed = new Set([...finalAccess.documents.map(row => row.sourceId), ...finalAccess.histories.map(row => row.id)])
+        if (![...roots].every(root => finalAllowed.has(root))) throw new Error('整理来源版本或授权已变化')
+        const latestInput = session?.snapshotEvents().findLast(event => {
+          const data = (event as unknown as { data?: { source?: { kind?: string } } }).data
+          return event.type === 'user/message' && data?.source?.kind === 'user'
+        }) as unknown as { data?: { id?: string } } | undefined
+        if (!participant || latestInput?.data?.id !== participant.rootMessageId) throw new Error('新输入已使整理候选失效')
+        signal.throwIfAborted(); assertAuthorized?.(); assertActive()
+        if (requireBinding(directory).revision !== current.revision) throw new Error('整理提交版本冲突')
+      }
+      await verify()
+      const path = area + '/soul-publication-' + id + '.md', absolute = join(value.root, path)
+      identity(dirname(absolute))
+      try { writeFileSync(absolute, request.text, { flag: 'wx', encoding: 'utf8' }) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        const stat = lstatSync(absolute)
+        if (!stat.isFile() || stat.isSymbolicLink() || readFileSync(absolute, 'utf8') !== request.text) throw new Error('候选版本已被替换，不能覆盖')
+      }
+      try {
+        return await tracked(queue.run(key(directory), async () => {
+          await verify()
+          if (readFileSync(absolute, 'utf8') !== request.text || lstatSync(absolute).isSymbolicLink()) throw new Error('候选正文版本已变化')
+          const next = structuredClone(requireBinding(directory))
+          const row = { id, path, scope, version: revisionOf(request.text), roots: [...roots], rootVersions: [...roots].map(id => revisionOf(JSON.stringify([...(next.sources ?? []), ...(next.histories ?? [])].find(source => source.id === id)))), refs: [...request.refs] }
+          ;(next.publications ??= []).push(row)
+          for (const record of next.records ?? []) if (processed.has(record.entryId)) record.pending = false
+          next.revision = revisionOf(randomUUID())
+          signal.throwIfAborted(); assertActive(); assertAuthorized?.()
+          await table.put(revisionOf(key(directory)), next)
+          return { state: 'published', candidateId: id, revision: next.revision, reference: row }
+        }))
+      } catch (error) { return { state: 'candidate', candidateId: id, path, persisted: true, active: false, error: String(error), recovery: '候选已保存但未生效；使用同一正文、引用及预期版本重验，不能覆盖新版本' } }
+    },
     recording(directory, sessionId) {
       const records = visibleRecords(directory, sessionId), allowed = new Set(sources(directory, sessionId).histories.map(row => row.id))
       const raw = readSoulLedgerProjection(directory).entries.filter(entry => {
@@ -200,7 +316,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       return tracked(queue.run(key(directory), async () => {
         const value = requireBinding(directory), control = value.continuity
         if (!control?.enabled) return
-        const session = await loadSession?.(sessionId)
+        const session = await loadEvidence(sessionId)
         if (!session) throw new Error('真实会话不可读取')
         const events = session.snapshotEvents()
         const next = structuredClone(value)
@@ -245,7 +361,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           const id = revisionOf(JSON.stringify([value.generation, sessionId, data.id ?? event.seq]))
           if (!participant.parent && event.type === 'user/message' && data.source?.kind === 'user' && typeof data.id === 'string') participant.rootMessageId = data.id
           if (next.histories?.some(row => row.id === id)) continue
-          ;(next.histories ??= []).push({ id, sessionId, seqs: [event.seq], versions: [revisionOf(JSON.stringify(event))], scope: participant.scope, revoked: false })
+          ;(next.histories ??= []).push({ id, sessionId, seqs: [event.seq], versions: [revisionOf(JSON.stringify(event))], scope: participant.scope, revoked: false, automatic: true })
           participant.grants.push(id)
         }
         reconcile(directory, next)
@@ -261,7 +377,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const value = requireBinding(directory), participant = value.participants?.find(row => row.sessionId === sessionId && row.generation === value.continuity?.generation)
         if (!value.continuity?.enabled || !participant) throw new Error('持续记忆未启用或会话未参与Soul')
         const allowed = sources(directory, sessionId).histories
-        const session = await loadSession?.(sessionId)
+        const session = await loadEvidence(sessionId)
         const source = allowed.findLast(row => row.sessionId === sessionId && participant.grants.includes(row.id) && session?.snapshotEvents().some(event => {
           const data = (event as unknown as { data?: { id?: string; source?: { kind?: string } } }).data
           return event.seq === row.seqs[0] && event.type === 'user/message' && (participant.parent || data?.source?.kind === 'user' && data.id === participant.rootMessageId)
@@ -315,7 +431,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           next.directory = canonicalDirectory(directory)
           next.continuity = request.action === 'enable' && value.continuity?.enabled ? value.continuity : { enabled: request.action === 'enable', enabledAt: Date.now(), generation: randomUUID() }
           if (request.action === 'enable' && !value.continuity?.enabled) {
-            const session = await loadSession?.(sessionId)
+            const session = await loadEvidence(sessionId)
             if (!session) throw new Error('无法核实启用会话界线')
             const boundary = session.snapshotEvents().reduce((max, event) => Math.max(max, event.seq), -1)
             ;(next.participants ??= []).push({ sessionId, scope: scopeOf(value, sessionId)!, boundary, cursor: boundary, generation: next.continuity.generation,
@@ -336,7 +452,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           if (!scope) throw new Error('会话尚未绑定项目')
           if (request.sessionId) {
             if (typeof request.sessionId !== 'string' || request.sessionId.length > 256 || !Array.isArray(request.seqs) || !request.seqs.length || request.seqs.length > 1000 || request.seqs.some(seq => !Number.isSafeInteger(seq) || seq < 0)) throw new Error('历史范围必须明确选择真实事件')
-            const session = await loadSession?.(request.sessionId)
+            const session = await loadEvidence(request.sessionId)
             if (!session || session.id !== request.sessionId || !Array.isArray(request.seqs) || !request.seqs.length || request.seqs.length > 1000 || request.seqs.some(seq => !Number.isSafeInteger(seq) || !session.snapshotEvents().some(event => event.seq === seq)) || new Set(request.seqs).size !== request.seqs.length) throw new Error('历史范围必须明确选择真实事件')
             const item = { id: revisionOf(JSON.stringify([request.sessionId, request.seqs])), sessionId: request.sessionId, seqs: request.seqs, versions: request.seqs.map(seq => revisionOf(JSON.stringify(session.snapshotEvents().find(event => event.seq === seq)))), scope, revoked: false }
             const revision = revisionOf(JSON.stringify([value.revision, sessionId, item, session.snapshotEvents().filter(event => request.seqs!.includes(event.seq))]))
@@ -347,6 +463,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
             previews.delete(previewKey)
           } else {
           if (!request.path) throw new Error('缺少资料路径')
+          if (request.path.split('/').some(part => part.startsWith('soul-publication-'))) throw new Error('候选资料只能经受控发布纳入')
           safePath(request.path)
           if (!value.read.includes(request.path)) throw new Error('来源不在已确认读取范围')
           identity(dirname(join(value.root, request.path)))
@@ -400,6 +517,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   for (const [id, value] of table.entries()) {
     try {
       const next = structuredClone(requireBinding(value.directory))
+      for (const id of new Set((next.histories ?? []).filter(row => !row.revoked).map(row => row.sessionId))) await loadEvidence(id)
       reconcile(value.directory, next)
       if (next.records?.length !== value.records?.length) {
         next.revision = revisionOf(randomUUID())

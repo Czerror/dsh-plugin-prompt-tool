@@ -23,10 +23,11 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
   }
   const fiber = ctx.inject(['tools'], toolsCtx => toolsCtx.tools.register(defineTool({
     name: MODULE_TOOL_NAMES.soulState,
-    description: '读取真实当前会话Soul状态或只读运行诊断；check显式includeUpgrade=true才展开完整升级文件候选。mark记录短状态及时间，需要status版本，首次null；标记时间不代表实际活动，不关闭账本事项。',
+    description: '读取真实当前会话Soul状态或只读运行诊断；check显式includeUpgrade=true才展开完整升级文件候选。mark记录短状态及时间，需要status版本，首次null；标记时间不代表实际活动，不关闭账本事项。阶段收尾consolidate提交text、已登记条目/来源refs及生成前knowledge.consolidationRevision作为expectedRevision；只整理新增材料，不额外调用模型；published才生效，candidate仅保存未生效。',
     parameters: {
-      moduleId: MODULE_ID_PARAM, action: { type: 'string', enum: ['status', 'mark', 'check'], required: true },
+      moduleId: MODULE_ID_PARAM, action: { type: 'string', enum: ['status', 'mark', 'check', 'consolidate'], required: true },
       text: { type: 'string' }, expectedRevision: { oneOf: [{ type: 'string' }, { type: 'null' }] },
+      refs: { type: 'array', items: { type: 'string' } },
       includeUpgrade: { type: 'boolean' },
     },
     output: { schema: { type: 'object', additionalProperties: false, properties: {
@@ -35,14 +36,26 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       observation: { type: 'json' },
       knowledge: { type: 'json' },
       recording: { type: 'json' },
+      publication: { type: 'json' },
       persisted: { type: 'boolean' }, publicationSuppressed: { type: 'boolean' },
     } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     execute: async (args, exec) => {
-      if (Object.keys(args).some(key => !['moduleId', 'action', 'text', 'expectedRevision', 'includeUpgrade'].includes(key))) throw new Error('Soul状态请求含未知字段，不能指定其他会话')
+      if (Object.keys(args).some(key => !['moduleId', 'action', 'text', 'expectedRevision', 'includeUpgrade', 'refs'].includes(key))) throw new Error('Soul状态请求含未知字段，不能指定其他会话')
       if (args.includeUpgrade !== undefined && (typeof args.includeUpgrade !== 'boolean' || args.action !== 'check')) throw new Error('只有check接受布尔includeUpgrade')
       exec.signal.throwIfAborted()
       const target = host.target(exec, args.moduleId), sessionId = exec.agent?.session.id
       if (!sessionId) throw new Error('Soul状态缺少实际会话身份')
+      if (args.refs !== undefined && args.action !== 'consolidate') throw new Error('只有整理接受来源引用')
+      if (args.action === 'consolidate') {
+        const owner = knowledge?.()
+        if (!owner) throw new Error('知识库持久状态不可用')
+        const assertAuthorized = () => {
+          exec.signal.throwIfAborted()
+          if (knowledge?.() !== owner || host.target(exec, args.moduleId).dir !== target.dir || exec.agent?.session.id !== sessionId) throw new Error('整理来源或会话已变化')
+        }
+        const publication = await owner.consolidate(target.dir, sessionId, { text: args.text as string, refs: args.refs as string[], expectedRevision: args.expectedRevision as string }, exec.signal, assertAuthorized)
+        return { sessionId, publication: publication as Observation }
+      }
       if (args.action === 'mark') {
         const owner = sessionOwner()
         const assertAuthorized = () => {

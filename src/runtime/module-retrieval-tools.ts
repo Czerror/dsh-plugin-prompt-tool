@@ -84,7 +84,12 @@ export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target
           knowledge: projection?.documents ?? [],
           eventAllowed: projection ? (id: string, event: import('../../engine/retrieval-reference.mjs').RetrievalEvent) => projection.histories.some(item => item.sessionId === id && item.seqs.some((seq, index) => seq === event.seq && item.versions[index] === revisionOf(JSON.stringify(event)))) : undefined,
           fileAllowed: owner ? (path: string) => { try { owner.assertFile(current.dir, resolveModuleReadPath(current.dir, path, ['assets', 'data'], { allowRootMemory: true }), agent.session.id); return true } catch { return false } } : undefined }
-      }, loadSession)
+      }, loadSession, async () => {
+        const current = [...(state.modules.get(moduleId)?.values() ?? [])].at(-1)
+        if (!current) throw new Error('检索模块未授权')
+        const owner = knowledge?.()
+        if (owner && owner.status(current.dir).state !== 'unbound') await owner.refreshEvidence(current.dir)
+      })
       state.indexes.set(moduleId, retrieval)
     }
     return retrieval

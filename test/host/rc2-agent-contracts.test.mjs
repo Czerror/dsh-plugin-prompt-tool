@@ -35,6 +35,8 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const { openSoulKnowledge } = await import('../../src/host/soul-knowledge.ts')
   const { installSoulRuntime } = await import('../../src/runtime/soul-runtime.ts')
   const { registerSoulLedgerTools } = await import('../../src/runtime/soul-ledger-tools.ts')
+  const { registerSoulStateTools } = await import('../../src/runtime/soul-state-tools.ts')
+  const { registerModuleFileTools } = await import('../../src/runtime/module-file-tools.ts')
   const { readSoulLedgerProjection } = await import('../../src/host/soul-ledger.ts')
   for (const plugin of [Llm, Sessions, Projections, Prompt, Tools, Native, Agents, storage.default]) await root.plugin(plugin)
   await root.plugin(json, { root: join(home, 'storage') })
@@ -58,13 +60,14 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const handle = await root.agents.create({ sessionId: 'record-parent', agentOptions: { provider: 'fixture', model: 'normal' }, meta: { cwd: home } })
   const agent = handle.agent
   const handles = [handle]
-  let failDerived = false
+  let failDerived = false, failPublication = false
   const facility = { async open(definition) {
     const domain = await root.storageDomain.open(definition)
     return { close: () => domain.close(), table(name) {
       const table = domain.table(name)
       return new Proxy(table, { get(target, key) {
         if (key === 'put') return async (id, value) => {
+          if (failPublication && value.publications?.length) { failPublication = false; throw new Error('injected publication CAS failure') }
           if (failDerived && value.records?.length > 1) { failDerived = false; throw new Error('injected derived persistence failure') }
           return target.put(id, value)
         }
@@ -73,12 +76,24 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
       } })
     } }
   } }
-  let owner = await openSoulKnowledge(facility, async id => root.sessions.get(id))
+  let replaceEvidence = false, replaceAfterLoads = 0, replacedSeq = -1
+  const loadKnowledgeSession = async id => {
+    if (replaceAfterLoads > 0 && --replaceAfterLoads === 0) replaceEvidence = true
+    const session = root.sessions.get(id)
+    const events = session?.snapshotEvents().map(event => replaceEvidence && event.seq === replacedSeq ? { ...event, data: { ...event.data, replacement: true } } : event)
+    return events && { id, snapshotEvents: () => events }
+  }
+  let owner = await openSoulKnowledge(facility, loadKnowledgeSession)
+  const { openSessionVariables } = await import('../../src/host/session-variables.ts')
+  const variables = await openSessionVariables(root.storageDomain)
+  t.after(() => variables.dispose())
   t.after(async () => { await root.subagents.drainDescendants([agent]); for (const handle of handles) await handle.dispose(); await owner.dispose(); await root.fiber.dispose(); rmSync(home, { recursive: true, force: true }) })
   const host = { root: join(home, 'modules'), target: () => ({ id: 'alice', dir }) }
   const excluded = new Set()
   installSoulRuntime(root, host, id => root.agents.get(id) && !excluded.has(id) ? ['alice'] : [], () => undefined, () => owner)
   registerSoulLedgerTools(root, host, () => owner)
+  registerSoulStateTools(root, host, undefined, () => variables, () => owner)
+  registerModuleFileTools(root, host, () => owner)
   await new Promise(resolve => setImmediate(resolve))
   const signal = new AbortController().signal
   const previewRequest = { moduleId: 'alice', action: 'preview', write: ['general', 'projects'] }
@@ -118,10 +133,47 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(partial.value.derived.state, 'failed')
   assert.deepEqual(owner.recording(dir, agent.session.id), { persisted: 2, pending: 1, derivedFailed: 1 })
   await owner.dispose()
-  owner = await openSoulKnowledge(facility, async id => root.sessions.get(id))
+  owner = await openSoulKnowledge(facility, loadKnowledgeSession)
   assert.equal(owner.records(dir, agent.session.id).length, 2, 'seed无需session/event即可恢复对账')
   assert.equal(readSoulLedgerProjection(dir).total, 2)
+  const publication = { expectedRevision: owner.status(dir).consolidationRevision, text: 'Authoritative project decision in detail.', refs: owner.records(dir, agent.session.id).map(row => row.entryId) }
+  const consolidate = async (request, expectError = false) => {
+    const result = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'publish', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'consolidate', ...request }) }] })).results[0].result
+    assert.equal(result.isError, expectError, JSON.stringify(result))
+    return expectError ? result : result.value.publication
+  }
+  const statusResult = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'publication-status', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'status' }) }] })).results[0].result
+  assert.equal(statusResult.isError, false, JSON.stringify(statusResult))
+  const toolEvent = agent.session.append({ type: 'tool/result', data: { id: 'publication-status', result: statusResult } })
+  await owner.observe(dir, agent.session.id, toolEvent.seq)
+  assert.equal(owner.status(dir).consolidationRevision, statusResult.value.knowledge.consolidationRevision, '工具结果不改变生成前整理依赖版本')
+  const oldPublication = { ...publication, refs: [publication.refs[0]], text: 'Previous authoritative decision.' }
+  assert.equal((await consolidate(oldPublication)).state, 'published')
+  publication.expectedRevision = owner.status(dir).consolidationRevision
+  replacedSeq = first.value.reference.seq
+  replaceAfterLoads = 2
+  await consolidate(publication, true)
+  assert.equal(owner.sources(dir, agent.session.id).documents.length, 0, '最后一次await期间来源变化同时停用既有派生版本')
+  replaceEvidence = false
+  failPublication = true
+  const failedPublication = await consolidate(publication)
+  assert.equal(failedPublication.state, 'candidate')
+  assert.deepEqual(owner.sources(dir, agent.session.id).documents.map(row => row.content), [oldPublication.text])
+  assert.equal(owner.recording(dir, agent.session.id).pending, 1)
+  assert.equal((await consolidate(publication)).state, 'published')
+  assert.equal(owner.sources(dir, agent.session.id).documents.at(-1).content, publication.text)
+  assert.equal(owner.recording(dir, agent.session.id).pending, 0)
+  assert.equal((await consolidate(publication)).state, 'published')
+  const publishedPath = 'data/' + owner.sources(dir, agent.session.id).documents.at(-1).path
+  replaceEvidence = true
+  const staleRead = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'stale-publication-read', name: 'module_file_read', arguments: JSON.stringify({ moduleId: 'alice', path: publishedPath }) }] })).results[0].result
+  assert.equal(staleRead.isError, true, '普通文件工具也刷新持久历史，拒绝失效派生正文')
+  await owner.refreshEvidence(dir)
+  assert.equal(owner.sources(dir, agent.session.id).documents.length, 0, '持久历史重新加载后拒绝旧派生正文')
+  replaceEvidence = false
+  await owner.refreshEvidence(dir)
   await manage({ action: 'revoke', sourceId: first.value.reference.sourceId })
+  assert.equal(owner.sources(dir, agent.session.id).documents.length, 0, '撤权立即停用混合派生正文')
   await send(createUserMessage({ content: [{ type: 'text', text: 'unrelated new decision' }], source: { kind: 'user' } }))
   assert.equal((await call('after-single-revoke')).isError, false)
   assert.equal(readSoulLedgerProjection(dir).total, 3, '单项撤权不阻断无关新材料')
