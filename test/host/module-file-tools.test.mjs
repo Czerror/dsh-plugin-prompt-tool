@@ -14,11 +14,18 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   const commands = await import('@deepseek-ai/dsh-commands')
   const { openSoulKnowledge } = await import('../../src/host/soul-knowledge.ts')
   const { registerTuiCommand } = await import('../../src/runtime/tui.ts')
+  const { createModuleRetrievalProvider } = await import('../../src/runtime/module-retrieval-tools.ts')
+  const { createScope } = await import('@deepseek-ai/dsh-scope')
+  const ToolRuntime = await import('@deepseek-ai/dsh-tools')
+  const SystemPrompt = await import('@deepseek-ai/dsh-system-prompt')
+  const NativeExecutor = await import('@deepseek-ai/dsh-tool-executor-native')
   const f = fixture(t), ctx = new Context()
   await ctx.plugin(storage.default)
   await ctx.plugin(json, { root: join(f.root, 'storage') })
   await ctx.plugin(domain, { backend: 'json' })
-  const owner = await openSoulKnowledge(ctx.storageDomain)
+  const events = [{ seq: 1, type: 'user/message', data: { text: 'HISTORY ONE' } }, { seq: 2, type: 'user/message', data: { text: 'HISTORY TWO' } }]
+  let onLoad = async () => {}
+  const owner = await openSoulKnowledge(ctx.storageDomain, async id => ({ id, snapshotEvents: () => events }))
   t.after(async () => { await owner.dispose(); await ctx.fiber.dispose() })
   await ctx.plugin(commands.default)
   ctx.provide('settings', {})
@@ -26,10 +33,17 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
     registerTuiCommand(scope, 'test', () => ({}), () => ({}), async () => ({}), id => id === 'alice' ? f.dir : '', undefined, undefined, () => owner)
   } })
   await new Promise(resolve => setImmediate(resolve))
-  const agent = { id: 'user', session: { append: () => ({}) } }
+  await ctx.plugin(SystemPrompt.default)
+  await ctx.plugin(ToolRuntime.default)
+  await ctx.plugin(NativeExecutor)
+  const agent = { id: 'user', session: { id: 'session-a', header: {}, snapshotEvents: () => [], append: () => ({}) } }
+  agent.ctx = createScope(ctx, agent).ctx
   assert.ok(ctx.commands.find(agent, 'prompt-tool'), '用户命令必须正式注册')
   const run = async request => (await ctx.commands.execute(agent, '/prompt-tool knowledge ' + JSON.stringify(request), [], new AbortController().signal)).result
-  const root = join(f.dir, 'data')
+  const beta = join(f.root, 'modules', 'beta')
+  mkdirSync(beta)
+  writeFileSync(join(beta, 'module.yml'), 'id: beta\nmodules: []\nrules: []\n')
+  const root = join(beta, 'data')
   mkdirSync(root)
   writeFileSync(join(root, 'old.md'), 'PRIVATE')
   writeFileSync(join(root, 'SELF.src.md'), 'MY SELF')
@@ -44,6 +58,72 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   const fresh = JSON.parse((await run(request)).text)
   assert.equal((await run({ ...request, action: 'confirm', expectedRevision: fresh.revision })).kind, 'success')
   assert.equal(owner.status(f.dir).state, 'bound')
+  assert.equal(owner.sources(f.dir, 'session-a').state, 'pending-classification')
+  const host = { target: (exec, id) => resolveModuleToolTarget(exec, join(f.root, 'modules'), () => ['alice', 'beta'], id) }
+  registerModuleFileTools(agent.ctx, host, () => owner)
+  const { registerSoulLedgerTools } = await import('../../src/runtime/soul-ledger-tools.ts')
+  registerSoulLedgerTools(agent.ctx, host, () => owner)
+  const retrieval = createModuleRetrievalProvider(host, async id => { await onLoad(id); return { id, snapshotEvents: () => events } }, () => owner)
+  const offRetrieval = retrieval.mount(agent.ctx, { paths: [], sessions: ['old'] }, { agent, sourceModuleId: 'alice', sourceModuleDir: f.dir })
+  t.after(offRetrieval)
+  await new Promise(resolve => setImmediate(resolve))
+  let calls = 0
+  const call = async (name, args) => (await ctx.tools.execute({ calls: [{ type: 'tool-call', id: 'knowledge-' + ++calls, name, arguments: JSON.stringify({ moduleId: 'alice', ...args }) }], agent, signal: new AbortController().signal })).results[0].result
+  const ok = async (name, args) => { const result = await call(name, args); assert.equal(result.isError, false, JSON.stringify(result)); return result.value }
+  assert.equal((await call('soul_ledger', { action: 'list' })).isError, true, '绑定后旧账本未归类不能绕过检索')
+  assert.equal((await call('module_file_read', { moduleId: 'beta', path: 'data/old.md' })).isError, true, '未绑定模块也不能绕过其他模块登记的根')
+  assert.equal((await call('module_file_append', { moduleId: 'beta', path: 'data/old.md', content: 'LEAK' })).isError, true)
+  assert.deepEqual((await ok('module_search', { query: 'CHANGED' })).hits, [])
+  const projectDirectory = join(f.root, 'project')
+  mkdirSync(projectDirectory)
+  const currentRevision = () => owner.status(f.dir).binding.revision
+  assert.equal((await run({ moduleId: 'alice', action: 'project', projectDirectory, expectedRevision: currentRevision() })).kind, 'success')
+  const select = async selection => {
+    const request = { moduleId: 'alice', action: 'source-preview', scope: 'project', ...selection }
+    const preview = JSON.parse((await run(request)).text)
+    assert.equal(preview.state, 'source-preview')
+    assert.equal((await run({ ...request, action: 'source-confirm', expectedRevision: preview.expectedRevision })).kind, 'success')
+    return preview.source.id
+  }
+  const selected = await select({ path: 'old.md' })
+  const hit = (await ok('module_search', { query: 'CHANGED' })).hits[0]
+  assert.equal(hit.reference.kind, 'knowledge')
+  assert.equal((await ok('module_open', { reference: hit.reference })).content, 'CHANGED')
+  assert.deepEqual(owner.sources(f.dir, 'other-session').documents, [], '未绑定其他项目不获得项目资料')
+  agent.session.header.cwd = join(f.root, 'other-cwd')
+  assert.equal((await ok('module_open', { reference: hit.reference })).content, 'CHANGED', 'cwd变化不改持久项目')
+  const oldSource = await select({ sessionId: 'old', seqs: [1] })
+  const historyHit = (await ok('module_search', { query: 'HISTORY ONE' })).hits[0]
+  assert.equal(historyHit.reference.kind, 'session')
+  assert.deepEqual((await ok('module_search', { query: 'HISTORY TWO' })).hits, [], '未选择历史事件不扫描')
+  await select({ sessionId: 'old', seqs: [2] })
+  await select({ sessionId: 'later', seqs: [1] })
+  onLoad = async id => {
+    if (id === 'later') {
+      onLoad = async () => {}
+      assert.equal((await run({ moduleId: 'alice', action: 'revoke', sourceId: oldSource, expectedRevision: currentRevision() })).kind, 'success')
+    }
+  }
+  assert.equal((await call('module_search', { query: 'HISTORY ONE', limit: 50 })).isError, true, '异步期间撤销seq1，seq2仍可读也不能返回旧seq1')
+  assert.equal((await call('module_open', { reference: historyHit.reference })).isError, true)
+  const { renderSoulSelf } = await import('../../src/host/soul-self.ts')
+  mkdirSync(join(f.dir, 'data'))
+  writeFileSync(join(f.dir, 'data', 'SELF.src.md'), 'USER SKELETON')
+  const self = renderSoulSelf(f.dir, agent, undefined, 12288, undefined, [], undefined, false)
+  assert.match(self, /USER SKELETON/)
+  assert.match(self, /待归类/)
+  assert.doesNotMatch(self, /OLD LEDGER/)
+  assert.equal((await run({ moduleId: 'alice', action: 'revoke', sourceId: selected, expectedRevision: currentRevision() })).kind, 'success')
+  assert.equal((await call('module_open', { reference: hit.reference })).isError, true, '旧引用撤权后立即拒绝')
+  assert.deepEqual((await ok('module_search', { query: 'CHANGED' })).hits, [])
+  assert.equal(readFileSync(join(root, 'old.md'), 'utf8'), 'CHANGED')
+  await select({ path: 'old.md' })
+  const beforeRebind = (await ok('module_search', { query: 'CHANGED' })).hits[0].reference
+  const rebound = JSON.parse((await run(request)).text)
+  assert.equal((await run({ ...request, action: 'confirm', expectedRevision: rebound.revision })).kind, 'success')
+  assert.equal((await run({ moduleId: 'alice', action: 'project', projectDirectory, expectedRevision: currentRevision() })).kind, 'success')
+  await select({ path: 'old.md' })
+  assert.equal((await call('module_open', { reference: beforeRebind })).isError, true, '同根重绑并重新授权也不复活上一绑定引用')
   mkdirSync(join(f.root, 'other'))
   assert.equal(owner.status(join(f.root, 'other')).state, 'unbound')
   assert.equal(readFileSync(join(root, 'old.md'), 'utf8'), 'CHANGED')

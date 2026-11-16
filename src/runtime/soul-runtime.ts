@@ -16,6 +16,7 @@ import { readSoulDiagnostics } from '../host/soul-diagnostics.ts'
 import { readSoulUpgradePreview } from '../host/soul-upgrade.ts'
 import { readModuleVariables } from '../host/module-variables.ts'
 import type { SessionVariableOwner } from '../host/session-variables.ts'
+import type { SoulKnowledgeOwner } from '../host/soul-knowledge.ts'
 import { evaluateTemplate } from '../../engine/template-evaluation.mjs'
 import { interpolateVariables, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
 import { readSoulPressure } from './soul-pressure.ts'
@@ -25,11 +26,11 @@ import { contextRuntimeOf } from '../../engine/context-provenance.mjs'
 import { recoveryObservationOf } from '../../engine/generation-recovery.mjs'
 import type { RuleSoulReminder } from '../../engine/rule-runtime.mjs'
 import { createModuleRetrievalProvider } from './module-retrieval-tools.ts'
-import type { RetrievalEvent } from '../../engine/retrieval-reference.mjs'
+import { loadKnowledgeSession } from './soul-knowledge.ts'
 import { createSoulMaintenanceProvider } from './soul-maintenance.ts'
 import { SOUL_MAINTENANCE_SERVICE, SOUL_SELF_SERVICE, toolServiceName } from '../../engine/service-names.mjs'
 
-export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds: (id: string) => readonly string[], sessions: () => SessionVariableOwner | undefined): SoulStateObservation {
+export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds: (id: string) => readonly string[], sessions: () => SessionVariableOwner | undefined, knowledge?: () => SoulKnowledgeOwner | undefined): SoulStateObservation {
   let active = true
   const sessionOwner = (): SessionVariableOwner => {
     const owner = sessions?.()
@@ -70,23 +71,19 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     budgets.set(dir, { stamp, checkedAt: performance.now(), value })
     return value
   }
-  const retrieval = createModuleRetrievalProvider(host, async id => {
-    const sessions = ctx.get('sessions') as { get(id: string): { id: string; snapshotEvents(): readonly RetrievalEvent[] } | undefined } | undefined
-    const live = sessions?.get(id)
-    if (live) return live
-    const persistence = ctx.get('sessionPersistence') as {
-      open(id: string, access: 'read'): Promise<{ read(offset: number, length: number): Promise<{ events: readonly RetrievalEvent[] }>; close(): Promise<void> }>
-    } | undefined
-    if (!persistence) throw new Error('历史会话持久服务不可用')
-    const handle = await persistence.open(id, 'read')
-    try {
-      const { events } = await handle.read(0, 100001)
-      if (events.length > 100000 || Buffer.byteLength(JSON.stringify(events)) > 32 * 1024 * 1024) throw new Error('授权会话超出检索预算')
-      return { id, snapshotEvents: () => events }
-    } finally { await handle.close() }
-  })
+  const retrieval = createModuleRetrievalProvider(host, id => loadKnowledgeSession(ctx, id), knowledge)
   const maintenance = createSoulMaintenanceProvider({ refreshRetrieval: (agent, id, signal) => retrieval.refresh(agent, id, signal) })
-  const reminder = createSoulReminder((id, agent) => readSoulLedgerProjection(source(id, agent as Agent)))
+  const legacyAllowed = (dir: string): boolean => {
+    if (!knowledge) return true
+    const owner = knowledge()
+    if (!owner) throw new Error('知识来源授权持久状态不可用')
+    return owner.status(dir).state === 'unbound'
+  }
+  const reminder = createSoulReminder((id, agent) => {
+    const dir = source(id, agent as Agent)
+    if (!legacyAllowed(dir)) throw new Error('旧账本待归类，停止自动提醒贡献')
+    return readSoulLedgerProjection(dir)
+  })
   const pressure = (dir: string, agent: Agent): SoulPressure | { state: 'disabled' } | { state: 'unknown'; reason: string } => {
     try {
       const thresholds = readModuleFacts(dir).effectiveConfigs?.['soul-maintenance']?.pressureThresholds
@@ -111,6 +108,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     if (key === 'clock.iso') return new Date().toISOString()
     if (key === 'clock.timeZone') return Intl.DateTimeFormat().resolvedOptions().timeZone
     if (key.startsWith('soul.')) {
+      if (!legacyAllowed(dir)) return undefined
       if (key === 'soul.mark' || key === 'soul.markAt') {
         const mark = readSoulState(dir, agent.session.id, sessionOwner()).mark
         return key === 'soul.mark' ? mark?.text : mark?.recordedAt
@@ -161,7 +159,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
           const result = evaluateTemplate(sourceText, { module: snapshot.module, global: snapshot.global, sessionVariables: session.variables,
             session: agent.session, readOnly: true, sourceId: `${id}:self`, readRuntime: key => readValue(id, key, agent, signal) })
           return { text: result.text, revision: JSON.stringify([snapshot.revisions, session.revision]) }
-        })
+        }, legacyAllowed(dir))
         source(id, agent, signal)
         if (rendered.size > 1024) rendered.delete(rendered.keys().next().value!)
         const key = keyOf(id, agent), candidates = [...(rendered.get(key)?.candidates ?? []), digest(text)].slice(-16)

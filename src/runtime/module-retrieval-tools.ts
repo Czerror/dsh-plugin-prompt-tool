@@ -8,6 +8,9 @@ import type { ModuleToolHost } from '../host/module-tool-target.ts'
 import { createModuleRetrieval } from '../host/module-retrieval.ts'
 import type { LoadRetrievalSession, RetrievalReference } from '../host/module-retrieval.ts'
 import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
+import type { SoulKnowledgeOwner } from '../host/soul-knowledge.ts'
+import { resolveModuleReadPath } from '../host/module-file-path.ts'
+import { revisionOf } from '../host/module-write.ts'
 
 export interface RetrievalConfig { paths: readonly string[]; sessions: readonly string[]; synonymsFile?: string }
 export interface RetrievalMount { agent: Agent; sourceModuleId: string; sourceModuleDir: string }
@@ -58,7 +61,7 @@ export function registerModuleRetrievalTools(ctx: Context, retrievalOf: (exec: T
   return dispose
 }
 
-export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target'>, loadSession?: LoadRetrievalSession) {
+export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target'>, loadSession?: LoadRetrievalSession, knowledge?: () => SoulKnowledgeOwner | undefined) {
   type Declaration = { config: RetrievalConfig; dir: string }
   type State = { modules: Map<string, Map<symbol, Declaration>>; indexes: Map<string, ReturnType<typeof createModuleRetrieval>>; observations: Map<string, RetrievalStatus>; dispose: () => void }
   const agents = new WeakMap<Agent, State>()
@@ -74,7 +77,13 @@ export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target
       retrieval = createModuleRetrieval(() => {
         const current = [...(state.modules.get(moduleId)?.values() ?? [])].at(-1)
         if (!current) throw new Error('检索模块未授权')
-        return { moduleId, dir: current.dir, paths: current.config.paths, sessions: current.config.sessions, synonymsFile: current.config.synonymsFile, session: agent.session }
+        if (knowledge && !knowledge()) throw new Error('知识来源授权持久状态不可用')
+        const owner = knowledge?.(), bound = owner?.status(current.dir).state !== 'unbound' && owner !== undefined
+        const projection = bound ? owner.sources(current.dir, agent.session.id) : undefined
+        return { moduleId, dir: current.dir, paths: current.config.paths, sessions: projection ? [...new Set(projection.histories.map(item => item.sessionId))] : current.config.sessions, synonymsFile: current.config.synonymsFile, session: bound ? undefined : agent.session,
+          knowledge: projection?.documents ?? [],
+          eventAllowed: projection ? (id: string, event: import('../../engine/retrieval-reference.mjs').RetrievalEvent) => projection.histories.some(item => item.sessionId === id && item.seqs.some((seq, index) => seq === event.seq && item.versions[index] === revisionOf(JSON.stringify(event)))) : undefined,
+          fileAllowed: owner ? (path: string) => { try { owner.assertFile(current.dir, resolveModuleReadPath(current.dir, path, ['assets', 'data'], { allowRootMemory: true }), agent.session.id); return true } catch { return false } } : undefined }
       }, loadSession)
       state.indexes.set(moduleId, retrieval)
     }

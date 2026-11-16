@@ -211,7 +211,7 @@ registerTuiCommand(
     })
     return () => { off(); offAutoDelegationTool(); autoDelegationRuntime.dispose(); roleDelegation.dispose() }
   }, 'prompt-tool role delegation')
-  const soulRuntime = installSoulRuntime(ctx, moduleToolHost, id => assembly?.moduleIds(id) ?? [], sessionVariables)
+  const soulRuntime = installSoulRuntime(ctx, moduleToolHost, id => assembly?.moduleIds(id) ?? [], sessionVariables, soulKnowledge)
   ctx.provide(toolServiceName('module-import-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleImportTools(scopeCtx, { ...moduleToolHost, rebuild: async id => { await assembly?.refresh(id) } }),
   })
@@ -219,14 +219,14 @@ registerTuiCommand(
     mount: (scopeCtx: Context): (() => void) => registerModuleRuleTools(scopeCtx, moduleToolHost),
   })
   ctx.provide(toolServiceName('module-file-tools'), {
-    mount: (scopeCtx: Context): (() => void) => registerModuleFileTools(scopeCtx, moduleToolHost),
+    mount: (scopeCtx: Context): (() => void) => registerModuleFileTools(scopeCtx, moduleToolHost, soulKnowledge),
   })
   ctx.provide(toolServiceName('module-manifest-tools'), {
     mount: (scopeCtx: Context): (() => void) => registerModuleManifestTools(scopeCtx, moduleToolHost),
   })
   ctx.provide(toolServiceName('soul-ledger'), {
     mount: (scopeCtx: Context): (() => void) => {
-      const ledger = registerSoulLedgerTools(scopeCtx, moduleToolHost)
+      const ledger = registerSoulLedgerTools(scopeCtx, moduleToolHost, soulKnowledge)
       try {
         const state = registerSoulStateTools(scopeCtx, moduleToolHost, soulRuntime, sessionVariables, soulKnowledge)
         return () => { state(); ledger() }
