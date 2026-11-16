@@ -31,7 +31,7 @@ export interface SoulKnowledgeOwner {
   confirm(directory: string, request: SoulKnowledgeRequest, signal: AbortSignal): Promise<ReturnType<SoulKnowledgeOwner['status']>>
   sources(directory: string, sessionId: string): { state: string; documents: KnowledgeDocument[]; histories: z.infer<typeof history>[] }
   refreshEvidence(directory: string): Promise<void>
-  learn(directory: string, sessionId: string, request: { text: string; layer: string; ref: string; refs?: string[]; assessment?: z.infer<typeof assessment>; expectedRevision: string; basis?: string; previous?: string }, signal: AbortSignal): Promise<Record<string, unknown>>
+  learn(directory: string, sessionId: string, request: { text: string; layer: string; ref: string; refs?: string[]; assessment?: z.infer<typeof assessment>; expectedRevision: string; basis?: string; previous?: string }, signal: AbortSignal, assertAuthorized?: () => void): Promise<Record<string, unknown>>
   learning(directory: string, sessionId: string, includeInactive?: boolean): z.infer<typeof learning>[]
   manage(directory: string, request: SoulKnowledgeRequest, sessionId: string, signal: AbortSignal): Promise<Record<string, unknown>>
   assertFile(directory: string, absolute: string, sessionId?: string, write?: boolean): void
@@ -247,7 +247,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       const rows = (value.learning ?? []).filter(row => row.state === 'adopted' && valid(row))
       return rows.filter(row => !rows.some(next => next.previous === row.id))
     },
-    learn(directory, sessionId, request, signal) {
+    learn(directory, sessionId, request, signal, assertAuthorized) {
       return tracked(queue.run(key(directory), async () => {
         signal.throwIfAborted()
         const parsed = z.object({ text: z.string().min(1).max(2048), layer: learning.shape.layer, ref: z.string(), refs: z.array(z.string()).max(200).optional(), assessment: assessment.optional(), expectedRevision: z.string(), basis: z.enum(['explicit-long-term', 'inference']).default('inference'), previous: z.string().optional() }).strict().parse(request)
@@ -265,13 +265,14 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         // 语义识别归模型；作者、长期范围和核心确认门由真实原始事件约束。
         const direct = parsed.basis === 'explicit-long-term' && !participant?.parent && event.type === 'user/message' && data.source?.kind === 'user' && typeof original === 'string' && /以后|今后|长期|始终|总是|from now on|always|going forward/i.test(original) && !/这次|本次|暂时|今天|当前任务|just this|this time|temporar/i.test(original) && !/身份|核心|原则|锁定|identity|principle|locked/i.test(original) && !['core', 'locked'].includes(parsed.layer)
         if (parsed.previous && !owner.learning(directory, sessionId).some(row => row.id === parsed.previous && row.layer === parsed.layer && row.scope === source.scope)) throw new Error('被替换学习不存在或不适用')
-        const access = sources(directory, sessionId), evidence = new Map<string, string>(), roots = new Set<string>(), supporting = new Set<string>()
+        const access = sources(directory, sessionId), evidence = new Map<string, string>(), roots = new Set<string>(), supporting = new Set<string>(), derivedRefs = new Set<string>()
         const refs = [...new Set([parsed.ref, ...(parsed.refs ?? [])])]
         const visit = async (ref: string, support: boolean, trail = new Set<string>()): Promise<void> => {
           if (trail.has(ref)) throw new Error('学习证据循环')
           const derived = value.publications?.find(row => row.id === ref)
           if (derived) {
             if (!access.documents.some(row => row.sourceId === ref)) throw new Error('学习派生来源失效')
+            derivedRefs.add(ref)
             for (const child of derived.refs) await visit(child, support, new Set([...trail, ref]))
             return
           }
@@ -294,11 +295,21 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         }
         for (const ref of refs) await visit(ref, true)
         for (const ref of parsed.assessment?.counterRefs ?? []) await visit(ref, false)
+        // 最后一次加载可能使已检查来源变化；提交前同步复核完整依赖。
+        const finalAccess = sources(directory, sessionId)
+        for (const [id, version] of evidence) {
+          const origin = finalAccess.histories.find(item => item.id === id), session = origin && evidenceSessions.get(origin.sessionId)
+          if (!origin || revisionOf(JSON.stringify(origin)) !== version || !session || origin.seqs.some((seq, index) => revisionOf(JSON.stringify(session.snapshotEvents().find(event => event.seq === seq))) !== origin.versions[index])) throw new Error('学习提交证据已变化或撤权')
+        }
+        for (const ref of derivedRefs) {
+          if (!finalAccess.documents.some(item => item.sourceId === ref)) throw new Error('学习提交派生来源已失效')
+        }
+        if (parsed.previous && !owner.learning(directory, sessionId).some(row => row.id === parsed.previous)) throw new Error('被替换学习已失效')
+        signal.throwIfAborted(); assertAuthorized?.(); assertActive()
+        if (requireBinding(directory).revision !== value.revision) throw new Error('学习提交版本冲突')
         const inferred = parsed.basis === 'inference' && supporting.size >= 2 && parsed.assessment?.decision === 'adopt' && !parsed.assessment.unresolved && !['core', 'locked'].includes(parsed.layer)
         const row = learning.parse({ id: revisionOf(JSON.stringify([refs, parsed.text, parsed.layer, parsed.previous, parsed.assessment])), text: parsed.text, layer: parsed.layer, sourceId: source.id, sourceVersion: revisionOf(JSON.stringify(source)), scope: source.scope, evidence: [...evidence].map(([id, version]) => ({ id, version })), roots: [...roots], refs, ...(parsed.assessment ? { assessment: parsed.assessment } : {}), state: direct || inferred ? 'adopted' : 'candidate', ...(parsed.previous ? { previous: parsed.previous } : {}) })
         if (value.learning?.some(item => item.id === row.id)) return value.learning.find(item => item.id === row.id)!
-        if (requireBinding(directory).revision !== value.revision) throw new Error('学习提交版本冲突')
-        signal.throwIfAborted(); assertActive()
         await table.put(revisionOf(key(directory)), { ...value, learning: [...(value.learning ?? []), row], revision: revisionOf(randomUUID()) })
         return row
       }))

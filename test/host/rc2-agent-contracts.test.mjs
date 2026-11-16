@@ -207,6 +207,11 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const judgment = await propose({ text: '承诺维修时间前先核实零件交期', layer: 'judgment', basis: 'explicit-long-term', ref: planning.value.reference.entryId })
   assert.equal(judgment.value.learning.state, 'adopted', '通用长期判断反馈无需逐项确认')
   const inference = { text: '维修承诺结合零件与沟通需求', layer: 'experience', basis: 'inference', ref: planning.value.reference.entryId, refs: [feedback.value.reference.entryId, planning.value.reference.entryId], assessment: { decision: 'adopt', reason: '两次独立反馈支持此项目中的沟通安排', unresolved: false, counterRefs: [] } }
+  replacedSeq = planning.value.reference.seq
+  replaceAfterLoads = 3
+  assert.equal((await propose({ ...inference, text: '在途证据不可采纳' })).isError, true, '最后一次await替换先前证据时拒绝提交')
+  replaceEvidence = false
+  await owner.refreshEvidence(dir)
   const inferred = await propose(inference)
   assert.equal(inferred.isError, false, JSON.stringify(inferred))
   assert.equal(inferred.value.learning.state, 'adopted')

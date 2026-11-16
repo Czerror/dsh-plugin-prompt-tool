@@ -52,7 +52,11 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       if (args.action === 'learn') {
         const owner = knowledge?.()
         if (!owner) throw new Error('知识库持久状态不可用')
-        const learning = await owner.learn(target.dir, sessionId, { text: args.text as string, layer: args.layer as string, ref: args.ref as string, expectedRevision: args.expectedRevision as string, ...(args.refs === undefined ? {} : { refs: args.refs as string[] }), ...(args.assessment === undefined ? {} : { assessment: args.assessment as Parameters<SoulKnowledgeOwner['learn']>[2]['assessment'] }), ...(args.basis === undefined ? {} : { basis: args.basis as string }), ...(args.previous === undefined ? {} : { previous: args.previous as string }) }, exec.signal)
+        const assertAuthorized = () => {
+          exec.signal.throwIfAborted()
+          if (knowledge?.() !== owner || host.target(exec, args.moduleId).dir !== target.dir || exec.agent?.session.id !== sessionId) throw new Error('学习来源或会话已变化')
+        }
+        const learning = await owner.learn(target.dir, sessionId, { text: args.text as string, layer: args.layer as string, ref: args.ref as string, expectedRevision: args.expectedRevision as string, ...(args.refs === undefined ? {} : { refs: args.refs as string[] }), ...(args.assessment === undefined ? {} : { assessment: args.assessment as Parameters<SoulKnowledgeOwner['learn']>[2]['assessment'] }), ...(args.basis === undefined ? {} : { basis: args.basis as string }), ...(args.previous === undefined ? {} : { previous: args.previous as string }) }, exec.signal, assertAuthorized)
         return { sessionId, learning: learning as Observation }
       }
       if (args.layer !== undefined || args.ref !== undefined || args.previous !== undefined || args.basis !== undefined || args.assessment !== undefined) throw new Error('只有learn接受学习字段')
