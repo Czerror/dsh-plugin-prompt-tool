@@ -834,6 +834,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       installToolStepAssembly(ctx, {
         knows: agent => knownAgents.has(agent), ensureFresh,
         assemble: (context, invoke) => withAgent(context.agent!, async () => {
+          const soul = ctx.get(SOUL_SELF_SERVICE) as { refresh?: (id: string, agent: Agent) => Promise<void> } | undefined
+          for (const id of mounts.get(context.agent!.id)?.moduleIds ?? []) await soul?.refresh?.(id, context.agent!)
           try { mounts.get(context.agent!.id)?.rules.prepareAssembly(context) } catch (error) {
             if (error !== null && typeof error === 'object' && 'recoveryFailed' in error && error.recoveryFailed === true) await releaseNow(context.agent!.id, context.agent)
             warn(error)
