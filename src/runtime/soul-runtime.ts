@@ -180,12 +180,22 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
         const state = readSoulState(dir, agent.session.id, sessionOwner())
         const water = pressure(dir, agent)
         const assistedState = assisted.status(id, agent)
+        const handoff: string[] = []
+        if (owner?.status(dir).binding?.continuity?.enabled) {
+          const allowed = new Set(owner.records(dir, agent.session.id).map(row => row.entryId))
+          const ledger = readSoulLedgerProjection(dir)
+          const items = [...ledger.items.filter(item => item.status === 'open' && allowed.has(item.id)).map(item => ({ id: item.id, entry: item.entry, status: item.status })),
+            ...ledger.entries.filter(entry => entry.type === 'container' && allowed.has(entry.id)).reverse().map(entry => ({ id: entry.id, entry, status: 'container' }))]
+          for (const item of items.slice(0, 3)) handoff.push(`- [${item.status}] ${item.id}；${item.entry.by}；${item.entry.t}：${item.entry['概要']}${item.entry.ref ? `；出处：${item.entry.ref}` : ''}`)
+          if (items.length > 3) handoff.push(`- 未注入交接：${items.length - 3}；可用 soul_ledger list 按授权回取。`)
+        }
         const text = renderSoulSelf(dir, agent, signal, budget, retrieval.status(agent, id), [
           `- 显式状态：${state.mark?.text ?? '尚未标记'}；标记时刻：${state.mark?.recordedAt ?? '无'}`,
           ...(typeof assistedState.notice === 'string' ? [`- 整理提示：${assistedState.notice}`] : []),
           ...(water.state === 'disabled' ? [] : [water.state === 'known'
             ? `- 上下文水位：${water.guidance}。此为提示，不自动压缩。`
             : `- 上下文水位：未知；${water.reason}`]),
+          ...handoff,
         ], sourceText => {
           if (!sourceText.includes('{{')) return { text: sourceText, revision: '' }
           const snapshot = readModuleVariables(dir, { runtime: true })

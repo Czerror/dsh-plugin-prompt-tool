@@ -115,7 +115,7 @@ export function renderSoulSelf(moduleDir: string, agent: SoulSelfAgent, signal?:
   if (!allowLegacyLedger) {
     const source = readModuleFile(moduleDir, SOUL_SELF_SOURCE).content
     if (!source.trim()) throw new Error('SELF 骨架缺失：data/SELF.src.md')
-    prefix = seal(template?.(source).text ?? source) + '\n- 持续记忆：仅使用当前有效学习；旧账本待归类。\n'
+    prefix = seal(template?.(source).text ?? source) + '\n- 持续记忆：仅使用当前有效学习与已授权交接；旧账本待归类。\n'
     const core = learning.filter(row => row.protected)
     if (core.length) prefix += '\n## 已确认核心与锁定偏好\n' + core.map(row => seal(row.text)).join('\n') + '\n'
   } else try { prefix = deriveSoulSelf(moduleDir, index, budgetBytes, template).content }
