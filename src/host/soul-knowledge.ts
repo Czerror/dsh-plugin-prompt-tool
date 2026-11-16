@@ -235,7 +235,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   }
   const visibleRecords = (directory: string, sessionId: string) => {
     const value = requireBinding(directory), allowed = new Set(sources(directory, sessionId).histories.map(row => row.id))
-    return (value.records ?? []).filter(row => allowed.has(row.sourceId))
+    return (value.records ?? []).filter(row => allowed.has(row.sourceId) && revisionOf(JSON.stringify(evidenceSessions.get(row.sessionId)?.snapshotEvents().find(event => event.seq === row.seq))) === row.version)
   }
   const reconcile = (directory: string, value: Binding) => {
     for (const entry of readSoulLedgerProjection(directory).entries) {
@@ -353,7 +353,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       }))
     },
     async refreshEvidence(directory) {
-      const value = requireBinding(directory), roots = new Set([...(value.publications ?? []).flatMap(row => row.roots), ...(value.learning ?? []).flatMap(row => [row.sourceId, ...(row.evidence ?? []).map(item => item.id)])])
+      const value = requireBinding(directory), roots = new Set([...(value.records ?? []).map(row => row.sourceId), ...(value.publications ?? []).flatMap(row => row.roots), ...(value.learning ?? []).flatMap(row => [row.sourceId, ...(row.evidence ?? []).map(item => item.id)])])
       for (const id of new Set((value.histories ?? []).filter(row => roots.has(row.id) && !row.revoked).map(row => row.sessionId))) await loadEvidence(id)
       assertActive(); requireBinding(directory)
     },
@@ -410,6 +410,10 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           return event.type === 'user/message' && data?.source?.kind === 'user'
         }) as unknown as { data?: { id?: string } } | undefined
         if (!participant || latestInput?.data?.id !== participant.rootMessageId) throw new Error('新输入已使整理候选失效')
+        const entries = readSoulLedgerProjection(directory).entries
+        for (const record of records.filter(row => request.refs.includes(row.entryId))) {
+          if (!entries.some(entry => entry.id === record.entryId && (entry.origin as unknown as ContinuitySource | undefined)?.operation === record.operation)) throw new Error('整理账本条目已变化')
+        }
         signal.throwIfAborted(); assertAuthorized?.(); assertActive()
         if (requireBinding(directory).revision !== current.revision) throw new Error('整理提交版本冲突')
       }

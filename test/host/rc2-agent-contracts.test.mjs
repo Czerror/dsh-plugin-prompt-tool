@@ -3,7 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -233,6 +233,10 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await owner.observe(dir, agent.session.id, toolEvent.seq)
   assert.equal(owner.status(dir).consolidationRevision, statusResult.value.knowledge.consolidationRevision, '工具结果不改变生成前整理依赖版本')
   const oldPublication = { ...publication, refs: [publication.refs[0]], text: 'Previous authoritative decision.' }
+  const ledgerBeforeChange = readFileSync(join(dir, 'data', '02-soul.jsonl'), 'utf8')
+  learningObservation = async () => writeFileSync(join(dir, 'data', '02-soul.jsonl'), ledgerBeforeChange.replace('project decision', 'replaced decision'))
+  try { await consolidate(oldPublication, true) }
+  finally { writeFileSync(join(dir, 'data', '02-soul.jsonl'), ledgerBeforeChange) }
   assert.equal((await consolidate(oldPublication)).state, 'published')
   publication.expectedRevision = owner.status(dir).consolidationRevision
   replacedSeq = first.value.reference.seq
@@ -353,10 +357,42 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const withdrawnSource = audit.learning.find(row => row.id === adopted.value.learning.id)
   assert.ok(withdrawnSource.inactiveReason, '来源失效后保留审阅元信息')
   assert.doesNotMatch(withdrawnSource.text, /使用中文回答/, '审计不回放撤权正文')
+  await send(createUserMessage({ content: [{ type: 'text', text: '保留本轮最小交接' }], source: { kind: 'user' } }))
+  const handoffTool = async (id, args) => (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id, name: 'soul_ledger', arguments: JSON.stringify({ moduleId: 'alice', ...args }) }] })).results[0].result
+  const shelved = await handoffTool('handoff-open', { action: 'append', type: 'shelved', text: '刷新验证仍待运行' })
+  const handoff = await handoffTool('handoff-container', { action: 'append', type: 'container', text: '交接：下一步核对刷新日志' })
+  assert.equal(shelved.isError, false, JSON.stringify(shelved))
+  assert.equal(handoff.isError, false, JSON.stringify(handoff))
+  assert.match(await self(), /刷新验证仍待运行/)
+  assert.match(await self(), /交接：下一步核对刷新日志/)
+  assert.ok((await self()).includes(shelved.value.reference.entryId), '未结交接保留稳定条目引用')
+  mkdirSync(join(home, 'other-project'))
+  const otherProject = await root.agents.create({ sessionId: 'other-project', agentOptions: { provider: 'fixture', model: 'normal' }, meta: { cwd: join(home, 'other-project') } })
+  handles.push(otherProject)
+  assert.equal((await command({ action: 'project', projectDirectory: join(home, 'other-project'), expectedRevision: owner.status(dir).binding.revision }, otherProject.agent)).kind, 'success')
+  const otherRules = createRuleRuntime(otherProject.agent.ctx, { agent: otherProject.agent })
+  t.after(() => otherRules.dispose())
+  otherRules.replace([{ moduleId: 'alice', rules: compileRules([{ id: 'self', then: [{ id: 'self', kind: 'inject-text', config: { layer: 'runtime-context', strategy: 'placeholder', fill: 'soul-self' } }] }], { moduleId: 'alice' }) }])
+  const otherContext = { agent: otherProject.agent, scope: scopeOf(otherProject.agent.ctx), signal }
+  const otherTools = await otherProject.agent.ctx.tools.resolve(otherContext)
+  try { assert.doesNotMatch(JSON.stringify(await otherProject.agent.ctx.systemPrompt.assemble({ ...otherContext, toolSet: otherTools })), /刷新验证仍待运行|交接：下一步核对刷新日志/, '另一项目不能通过SELF读取同根账本交接') }
+  finally { otherTools.dispose() }
+  const closed = await handoffTool('handoff-close', { action: 'close', targetId: shelved.value.reference.entryId, outcome: 'completed', reason: '验证已经完成' })
+  assert.equal(closed.isError, false, JSON.stringify(closed))
+  assert.doesNotMatch(await self(), /刷新验证仍待运行/, '已收口事项不能在新会话重新打开')
+  await manage({ action: 'disable' })
+  assert.doesNotMatch(await self(), /交接：下一步核对刷新日志/, '关闭撤回交接贡献')
+  await manage({ action: 'enable' })
+  await manage({ action: 'revoke', sourceId: handoff.value.reference.sourceId })
+  assert.doesNotMatch(await self(), /交接：下一步核对刷新日志/, '撤权后下一次装配停止交接贡献')
+  await send(createUserMessage({ content: [{ type: 'text', text: '排查刷新失败' }], source: { kind: 'user' } }))
+  const resolved = await handoffTool('record-result', { action: 'append', type: 'fact', text: '刷新因缓存键冲突失败，已通过隔离缓存键解决' })
+  assert.equal(resolved.isError, false, JSON.stringify(resolved))
   const { renderSoulSelf } = await import('../../src/host/soul-self.ts')
-  const budgeted = renderSoulSelf(dir, fresh.agent, signal, 12288, undefined, [], undefined, false, Array.from({ length: 3 }, () => ({ text: '学'.repeat(2048), protected: false })))
+  const budgeted = renderSoulSelf(dir, fresh.agent, signal, 12288, undefined, ['- [open] ' + '交接'.repeat(8192)], undefined, false, Array.from({ length: 3 }, () => ({ text: '学'.repeat(2048), protected: false })))
   assert.ok(Buffer.byteLength(budgeted) <= 12288)
   assert.match(budgeted, /未注入学习/)
+  assert.match(budgeted, /未注入其余状态/, '学习优先，交接省略说明同样计入总预算')
   const auxiliaryRules = createRuleRuntime(agent.ctx, { agent })
   t.after(() => auxiliaryRules.dispose())
   auxiliaryRules.replace([{ moduleId: 'alice', rules: compileRules([{ id: 'ordinary-stream-actions', then: [
@@ -377,6 +413,13 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(auxiliary[0].purpose, 'soul-continuity-organize')
   assert.equal(auxiliary[0].maxTokens, 1024)
   assert.deepEqual(auxiliary[0].tools, [])
+  const organized = JSON.parse(auxiliary[0].messages[0].content[0].text)
+  const resultMaterial = organized.materials.find(row => row.ref === resolved.value.reference.entryId)
+  assert.equal(resultMaterial?.record?.['概要'], '刷新因缓存键冲突失败，已通过隔离缓存键解决', '完整已记录结果必须交给辅助模型，不能只交原请求便标已处理')
+  assert.equal(resultMaterial.record.by, agent.session.id)
+  assert.match(JSON.stringify(resultMaterial.material), /排查刷新失败/)
+  assert.doesNotMatch(JSON.stringify(resultMaterial.material), /缓存键冲突/, '用户原请求与模型记录结果分别保留来源')
+  assert.equal(owner.records(dir, agent.session.id).find(row => row.entryId === resultMaterial.ref).pending, false)
   assert.equal(assisted.budget.attempts[0].tokens, 23, '结算包含缓存读写输入')
   assert.equal(assisted.budget.attempts[0].estimated, false)
   assert.equal(owner.recording(dir, agent.session.id).pending, 0)
