@@ -64,6 +64,12 @@ moduleConfigs:
     wake: false
     audience: all
     budgetBytes: 12288
+    assistedInputTarget: 4096
+    assistedOutputTokens: 1024
+    assistedTimeoutMs: 20000
+    assistedSessionTokens: 32768
+    assistedSessionMs: 120000
+    assistedBacklogTurns: 3
     pressureThresholds:
       - 0.45
       - 0.6
