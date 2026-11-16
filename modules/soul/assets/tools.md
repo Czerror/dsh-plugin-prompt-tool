@@ -1,6 +1,6 @@
 # soul 工具速查
 
-工具可能被工具面裁剪：先用 `tool_search({"toolNames":[...]})` 解锁，下一轮生效。
+工具可能被工具面裁剪：仅本次提供 `tool_search` 入口时，才用 `tool_search({"toolNames":[...]})` 解锁，下一轮生效；否则按现有工具处理。缺少写工具时跳过依赖它的记录与装配，继续回答用户。
 
 - `soul_ledger`（moduleId: soul）：`action: list` 读账本（limit 1–100）；`action: append` 追加，必填 `type` 与 `概要`（一句话索引，不写长文），建议带 `ref`。type 八种：fact / gain / loss / shelved / promise / persona / container / lead。`promise` 仅最后 lead 署名会话可写，`lead` 需用户指定并审批；t/by 由宿主生成，不能改历史。
 - `module_search`（moduleId: soul）→ 用命中的 `reference` 调 `module_open`（moduleId: soul）回取原文；引用会重新校验授权与版本，不是访问凭据。

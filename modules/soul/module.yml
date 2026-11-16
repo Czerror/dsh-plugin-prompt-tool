@@ -297,6 +297,10 @@ rules:
     layer: pre-step
     if:
       all:
+        - tool:
+            name: module_variables
+        - tool:
+            name: module_manifest
         - variable:
             key: plan_step
             op: eq
@@ -327,6 +331,10 @@ rules:
     layer: pre-step
     if:
       all:
+        - tool:
+            name: module_variables
+        - tool:
+            name: module_manifest
         - variable:
             key: scaffold_done
             op: eq
