@@ -70,6 +70,16 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   let calls = 0
   const call = async (name, args) => (await ctx.tools.execute({ calls: [{ type: 'tool-call', id: 'knowledge-' + ++calls, name, arguments: JSON.stringify({ moduleId: 'alice', ...args }) }], agent, signal: new AbortController().signal })).results[0].result
   const ok = async (name, args) => { const result = await call(name, args); assert.equal(result.isError, false, JSON.stringify(result)); return result.value }
+  mkdirSync(join(f.dir, 'data', '.soul'), { recursive: true })
+  writeFileSync(join(f.dir, 'data', '02-soul.jsonl'), 'EXTERNAL ROOT OLD PRIVATE')
+  writeFileSync(join(f.dir, 'data', '.soul', 'SELF.md'), 'OLD DERIVED PRIVATE')
+  assert.equal((await call('module_file_read', { path: 'data/02-soul.jsonl' })).isError, true, '外部根不能使原账本退回普通文件')
+  assert.equal((await call('module_file_read', { path: 'data/.soul/SELF.md' })).isError, true, '旧SELF快照同受控')
+  const { registerSoulStateTools } = await import('../../src/runtime/soul-state-tools.ts')
+  let upgradeRead = false
+  registerSoulStateTools(agent.ctx, host, { status: () => ({}), check: () => { upgradeRead = true; return { upgrade: { files: [{ content: 'PRIVATE UPGRADE' }] } } } }, () => undefined, () => owner)
+  assert.equal((await call('soul_state', { action: 'check', includeUpgrade: true })).isError, true, '模型升级预览不能泄露已绑定资料正文')
+  assert.equal(upgradeRead, false, '必须在生成含正文升级候选之前拒绝')
   assert.equal((await call('soul_ledger', { action: 'list' })).isError, true, '绑定后旧账本未归类不能绕过检索')
   assert.equal((await call('module_file_read', { moduleId: 'beta', path: 'data/old.md' })).isError, true, '未绑定模块也不能绕过其他模块登记的根')
   assert.equal((await call('module_file_append', { moduleId: 'beta', path: 'data/old.md', content: 'LEAK' })).isError, true)
@@ -107,7 +117,6 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   assert.equal((await call('module_search', { query: 'HISTORY ONE', limit: 50 })).isError, true, '异步期间撤销seq1，seq2仍可读也不能返回旧seq1')
   assert.equal((await call('module_open', { reference: historyHit.reference })).isError, true)
   const { renderSoulSelf } = await import('../../src/host/soul-self.ts')
-  mkdirSync(join(f.dir, 'data'))
   writeFileSync(join(f.dir, 'data', 'SELF.src.md'), 'USER SKELETON')
   const self = renderSoulSelf(f.dir, agent, undefined, 12288, undefined, [], undefined, false)
   assert.match(self, /USER SKELETON/)

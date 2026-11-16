@@ -186,11 +186,13 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   return { status: observe, check: async (exec, id, includeUpgrade) => {
     if (!exec.agent) throw new Error('Soul状态缺少实际Agent')
     const agent = exec.agent, dir = source(id, agent), key = keyOf(id, agent)
+    if (includeUpgrade && !legacyAllowed(dir)) throw new Error('受控知识库已接入，模型不能展开完整升级正文；请使用用户升级入口')
     const diagnostics = readSoulDiagnostics(dir, { index: retrieval.status(agent, id),
       selfRenderedAt: rendered.get(key)?.at, selfDeliveredAt: delivered.get(key),
       maintenance: maintenance.status(id), context: contextRuntimeOf(agent)?.status(), recovery: recoveryObservationOf(agent) })
     const sessionId = agent.session.id
     const upgrade = includeUpgrade ? await readSoulUpgradePreview(dir) : { status: 'not-applicable' as const }
+    if (includeUpgrade && !legacyAllowed(dir)) throw new Error('知识来源授权已变化，不能返回升级正文')
     if (source(id, agent, exec.signal) !== dir || agent.session.id !== sessionId) throw new Error('Soul诊断来源或会话已变化')
     return { ...diagnostics, checks: diagnostics.checks.map(check => ({ ...check })),
       upgrade: upgrade.status === 'not-applicable' ? { status: includeUpgrade ? upgrade.status : 'not-requested', expectedRevision: null, conflicts: [], candidate: null, files: [], apply: null } : { status: upgrade.status, expectedRevision: upgrade.expectedRevision, conflicts: upgrade.conflicts,

@@ -161,6 +161,8 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     sources,
     assertFile(directory, absolute, sessionId, write = false) {
       assertActive()
+      const local = relative(directory, absolute).split('\\').join('/').toLowerCase()
+      if (table.get(revisionOf(key(directory))) && ['data/02-soul.jsonl', 'data/02-墨.jsonl', 'data/.soul/self.md'].includes(local)) throw new Error('旧账本及SELF诊断快照待归类，不能经普通文件入口使用')
       const managed = [...table.entries()].map(([, value]) => value).filter(value => {
         const path = relative(value.root, absolute)
         return path === '' || path !== '..' && !path.startsWith('..' + (process.platform === 'win32' ? '\\' : '/')) && !isAbsolute(path)
