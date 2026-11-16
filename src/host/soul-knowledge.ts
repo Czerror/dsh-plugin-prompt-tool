@@ -29,7 +29,7 @@ export interface KnowledgeDocument { kind: 'knowledge'; moduleId: string; root: 
 export interface SoulKnowledgeOwner {
   assisted: Awaited<ReturnType<typeof openAssistedBudget>>
   onChange(listener: () => void): () => void
-  status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; consolidationRevision?: string; reason?: string; entry: string }
+  status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; consolidationRevision?: string; learningRevision?: string; reason?: string; entry: string }
   preview(directory: string, request: SoulKnowledgeRequest): Record<string, unknown>
   confirm(directory: string, request: SoulKnowledgeRequest, signal: AbortSignal): Promise<ReturnType<SoulKnowledgeOwner['status']>>
   sources(directory: string, sessionId: string): { state: string; documents: KnowledgeDocument[]; histories: z.infer<typeof history>[] }
@@ -141,7 +141,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const stat = lstatSync(absolute)
         if (stat.isSymbolicLink() || current.read.includes(path) && !stat.isFile() || current.write.includes(path) && !stat.isDirectory()) throw new Error('授权资料类型已变化或被替换为链接')
       }
-      return { state: 'bound', binding: structuredClone(current), consolidationRevision: consolidationRevision(current), entry }
+      return { state: 'bound', binding: structuredClone(current), consolidationRevision: consolidationRevision(current), learningRevision: consolidationRevision(current), entry }
     } catch (error) { return { state: 'unavailable', reason: String((error as Error).message), entry } }
   }
   const prepare = (directory: string, request: SoulKnowledgeRequest) => {
@@ -263,7 +263,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         signal.throwIfAborted()
         const parsed = z.object({ text: z.string().min(1).max(2048), layer: learning.shape.layer, ref: z.string(), refs: z.array(z.string()).max(200).optional(), assessment: assessment.optional(), expectedRevision: z.string(), basis: z.enum(['explicit-long-term', 'inference']).default('inference'), previous: z.string().optional() }).strict().parse(request)
         const value = requireBinding(directory)
-        if (!value.continuity?.enabled || value.revision !== parsed.expectedRevision) throw new Error('学习版本冲突或持续记忆关闭')
+        if (!value.continuity?.enabled || consolidationRevision(value) !== parsed.expectedRevision) throw new Error('学习版本冲突或持续记忆关闭')
         const record = visibleRecords(directory, sessionId).find(row => row.entryId === parsed.ref)
         const source = sources(directory, sessionId).histories.find(row => row.id === record?.sourceId)
         if (!source) throw new Error('学习必须引用有效正式记录')
@@ -273,8 +273,10 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const data = (event as unknown as { data: { source?: { kind?: string }; content?: Array<{ type: string; text?: string }> } }).data
         const participant = value.participants?.findLast(row => row.sessionId === source.sessionId)
         const original = data.content?.filter(row => row.type === 'text').map(row => row.text ?? '').join('\n')
+        // 否定临时范围的表述不构成临时限制，其他临时措辞仍阻止直接采纳。
+        const scopeText = original?.replace(/(?:不|并非|绝非|不是)(?:只|仅仅|仅)?(?:是|限于|限)?(?:这次|本次|暂时|今天|当前任务)|not (?:just |only )?(?:this time|temporar\w*)/gi, '')
         // 语义识别归模型；作者、长期范围和核心确认门由真实原始事件约束。
-        const direct = parsed.basis === 'explicit-long-term' && !participant?.parent && event.type === 'user/message' && data.source?.kind === 'user' && typeof original === 'string' && /以后|今后|长期|始终|总是|from now on|always|going forward/i.test(original) && !/这次|本次|暂时|今天|当前任务|just this|this time|temporar/i.test(original) && !/身份|核心|原则|锁定|identity|principle|locked/i.test(original) && !['core', 'locked'].includes(parsed.layer)
+        const direct = parsed.basis === 'explicit-long-term' && !participant?.parent && event.type === 'user/message' && data.source?.kind === 'user' && typeof scopeText === 'string' && /以后|今后|长期|始终|总是|from now on|always|going forward/i.test(scopeText) && !/这次|本次|暂时|今天|当前任务|just this|this time|temporar/i.test(scopeText) && !/身份|核心|原则|锁定|identity|principle|locked/i.test(original!) && !['core', 'locked'].includes(parsed.layer)
         if (parsed.previous && !owner.learning(directory, sessionId).some(row => row.id === parsed.previous && row.layer === parsed.layer && row.scope === source.scope)) throw new Error('被替换学习不存在或不适用')
         const access = sources(directory, sessionId), evidence = new Map<string, string>(), roots = new Set<string>(), supporting = new Set<string>(), derivedRefs = new Set<string>()
         const refs = [...new Set([parsed.ref, ...(parsed.refs ?? [])])]

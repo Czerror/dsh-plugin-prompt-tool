@@ -129,7 +129,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(first.isError, false, JSON.stringify(first))
   assert.equal(first.value.persisted, true)
   assert.equal(first.value.reference.rootMessageId, message.id)
-  const learned = await owner.learn(dir, agent.session.id, { text: 'Keep answers concise', layer: 'core', ref: first.value.reference.entryId, expectedRevision: owner.status(dir).binding.revision }, signal)
+  const learned = await owner.learn(dir, agent.session.id, { text: 'Keep answers concise', layer: 'core', ref: first.value.reference.entryId, expectedRevision: owner.status(dir).learningRevision }, signal)
   assert.equal(learned.state, 'candidate', '模型不能确认核心变化')
   assert.equal(owner.learning(dir, fresh.agent.session.id).length, 0)
   await manage({ action: 'learning-confirm', sourceId: learned.id })
@@ -211,12 +211,20 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(readSoulLedgerProjection(dir).total, 3, '单项撤权不阻断无关新材料')
   await send(createUserMessage({ content: [{ type: 'text', text: '长期反馈：使用中文回答' }], source: { kind: 'user' } }))
   const feedback = await call('explicit-feedback')
-  const propose = async args => (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'learn-feedback', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'learn', expectedRevision: owner.status(dir).binding.revision, ...args }) }] })).results[0].result
+  const propose = async args => {
+    const status = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'learning-status', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'status' }) }] })).results[0].result
+    assert.equal(status.isError, false, JSON.stringify(status))
+    const event = agent.session.append({ type: 'tool/result', data: { id: 'learning-status', result: status } })
+    await owner.observe(dir, agent.session.id, event.seq)
+    return (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'learn-feedback', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'learn', expectedRevision: status.value.knowledge.learningRevision, ...args }) }] })).results[0].result
+  }
   const adopted = await propose({ text: '长期反馈：使用中文回答', layer: 'expression', basis: 'explicit-long-term', ref: feedback.value.reference.entryId })
   assert.equal(adopted.isError, false, JSON.stringify(adopted))
   assert.equal(adopted.value.learning.state, 'adopted')
   assert.match(await self(), /使用中文回答/)
-  await send(createUserMessage({ content: [{ type: 'text', text: '今后规划维修时，先核对零件到货日期，再承诺安装时间。' }], source: { kind: 'user' } }))
+  const beforeNewInput = owner.status(dir).learningRevision
+  await send(createUserMessage({ content: [{ type: 'text', text: '今后规划维修时，先核对零件到货日期，再承诺安装时间。这是长期习惯，绝非只限本次。' }], source: { kind: 'user' } }))
+  assert.notEqual(owner.status(dir).learningRevision, beforeNewInput, '未登记的新用户输入也使旧学习版本失效')
   const planning = await call('planning-feedback')
   const judgment = await propose({ text: '承诺维修时间前先核实零件交期', layer: 'judgment', basis: 'explicit-long-term', ref: planning.value.reference.entryId })
   assert.equal(judgment.value.learning.state, 'adopted', '通用长期判断反馈无需逐项确认')
@@ -350,7 +358,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(root.subagents.rootOf(child), agent)
   const childResult = (await root.tools.execute({ agent: child, signal, calls: [{ type: 'tool-call', id: 'child-fact', name: 'soul_ledger', arguments: JSON.stringify({ moduleId: 'alice', action: 'append', type: 'fact', text: 'task experience' }) }] })).results[0].result
   assert.equal(childResult.isError, false, JSON.stringify(childResult))
-  const childLearning = await owner.learn(dir, childId, { text: 'delegate claims user preference', layer: 'expression', basis: 'explicit-long-term', ref: childResult.value.reference.entryId, expectedRevision: owner.status(dir).binding.revision }, signal)
+  const childLearning = await owner.learn(dir, childId, { text: 'delegate claims user preference', layer: 'expression', basis: 'explicit-long-term', ref: childResult.value.reference.entryId, expectedRevision: owner.status(dir).learningRevision }, signal)
   assert.equal(childLearning.state, 'candidate', '子任务委派提示不能充当用户长期意见')
   const childParticipation = owner.status(dir).binding.participants.findLast(row => row.sessionId === childId)
   assert.equal(childParticipation.rootSessionId, agent.session.id)
