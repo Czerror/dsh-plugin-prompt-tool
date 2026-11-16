@@ -1,13 +1,9 @@
-# 13 份 soul 正文 + 2 份 ECHO 权威文档（外部来源）
+# Soul 资产来源与适配
 
-Source: `D:\AI\GitHub\dsh-agent-soul\soul\` 与 `docs\`（MIT；soul 正文 2026-10-24 导入，2026-10-25 同步 ECHO 权威口径，2026-11-02 同步 04/05/06/07，源提交 `cd58d6d`）
-用途：模块文件工具按需读取的完整知识，例如 `module_file_read` 的 `path: assets/reference/05-doctor.md`。
+来源：[cyanwell/dsh-agent-soul](https://github.com/cyanwell/dsh-agent-soul)。原项目的 package.json 与 README 声明 MIT；本地核对版本中未发现独立 LICENSE 文件。
 
-适配边界：
+旧参考正文镜像以 `cd58d6d` 为同步基线。本次对照原项目本地版本 `482fb3fd5664a034a542dadbd6865994ea56035f`（2026-11-13），并以旧作者稿删除前的 `57c487da8d7239f6ed8309c2fce541d97126b1c5` 核对概念。当前上游已转为独立软件，不再保留旧作者稿目录；本目录是提炼后的插件适配文档，不是该版本的原文镜像。
 
-- 本项目不安装 dsh-agent-soul 插件，也不分发它的 kit/CLI。正文里出现的 `ECHO_SOUL`、`kit/echo/*.mjs`、`plugins/*` 等路径与命令只描述原项目的运行时；在本模块里，用户数据根是模块目录的 `data/`，读写走 `module_file_read/append`，装配走 `module_manifest`。
-- `04-manifest.json` 与 `07-bundle.json` 是外部安装清单，本项目不使用，只作参考。
-- 正文保持原文，未逐份改写；与模块规则冲突时，以 `module.yml` 与 `assets/manifest.yml` 为准。
-- 2026-10-25 同步：更新 `00-layers`、`02-echo`、`05-doctor`、`10-echo-anatomy`，新增 `ECHO-权威口径.md`（L0–L5 唯一权威）与 `ECHO六层与mnemon协同说明书.md`；源仓库当天删除的错误版《记忆三层联用说明书》不收录。
-- 2026-11-02 同步：更新 `04-manifest`（2.0.0，补「身份面 / 自我层」一格）、`05-doctor`（换气治疗层）、`06-reference`（能力关系声明）、`07-bundle`（2.0.0，仓库地址、MCP hub 与全局必装）；其余 9 份正文与上游一致。
-- 模块内路径对照：源正文的 `../docs/ECHO-权威口径.md` 对应 `assets/reference/ECHO-权威口径.md`；源账本名 `02-墨.jsonl` 在模块内为 `data/02-soul.jsonl`，以 `module.yml` 与 `assets/manifest.yml` 为准。
+[精简 ECHO 说明](ECHO-权威口径.md) 保留内部分层、来源回取和自检原则。整体功能分层见 [layers.md](../layers.md)，实际操作见 [tools.md](../tools.md) 与 [ledger.md](../ledger.md)。
+
+本插件使用自身模块规则与宿主工具，不分发上游独立运行时、kit、CLI 或安装流程，也不要求安装 mnemon。具体工具、授权、账本与预算语义以当前模块实现为准。资产更新不授权改写已有用户副本、账本、SELF 骨架或外部知识库。
