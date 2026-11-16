@@ -6,6 +6,7 @@ import type { ToolExecutionSuccess } from '@deepseek-ai/dsh-tools'
 import { ensureDataDirectory, resolveModuleFilePath } from './module-file-path.ts'
 import { MAX_DATA_FILE_BYTES, readModuleFile } from './module-files.ts'
 import { canonicalDirectory, withModuleLock } from './module-write.ts'
+import type { ContinuitySource } from './soul-knowledge.ts'
 
 export const SOUL_LEDGER_PATH = 'data/02-soul.jsonl'
 export const SOUL_LEDGER_TYPES = ['lead', 'promise', 'fact', 'shelved', 'gain', 'loss', 'persona', 'container'] as const
@@ -70,7 +71,7 @@ export function readSoulLedgerProjection(moduleDir: string) {
     pendingVersion: hash(JSON.stringify(pending.map(item => [item.id, item.status]))), lead: entries.findLast(entry => entry.type === 'lead') }
 }
 
-export function closeSoulLedger(moduleDir: string, input: { targetId: string; outcome: string; reason: string; ref?: string }, caller: { sessionId: string | undefined; signal?: AbortSignal }): { entry: SoulLedgerEntry } {
+export function closeSoulLedger(moduleDir: string, input: { targetId: string; outcome: string; reason: string; ref?: string }, caller: { sessionId: string | undefined; signal?: AbortSignal; origin?: ContinuitySource }): { entry: SoulLedgerEntry } {
   if (!caller.sessionId?.trim()) throw new Error('账本写入需要真实会话身份')
   if (Object.keys(input).some(key => !['targetId', 'outcome', 'reason', 'ref'].includes(key))) throw new Error('收口包含未知字段')
   if (typeof input.targetId !== 'string' || !/^[a-f0-9]{64}$/.test(input.targetId)) throw new Error('账本引用无效')
@@ -90,7 +91,7 @@ export function closeSoulLedger(moduleDir: string, input: { targetId: string; ou
       return { entry: entry as SoulLedgerEntry }
     }
     const previous = readModuleFile(moduleDir, SOUL_LEDGER_PATH).content
-    const entry: SoulLedgerEntry = { t: new Date().toISOString(), by: caller.sessionId!, type: 'close', '概要': input.reason, targetId: input.targetId, outcome: input.outcome, ...(input.ref === undefined ? {} : { ref: input.ref }) }
+    const entry: SoulLedgerEntry = { t: new Date().toISOString(), by: caller.sessionId!, type: 'close', '概要': input.reason, targetId: input.targetId, outcome: input.outcome, ...(caller.origin ? { origin: { ...caller.origin } } : {}), ...(input.ref === undefined ? {} : { ref: input.ref }) }
     persistEntry(moduleDir, previous, entry, caller.signal)
     return { entry }
   })
@@ -116,7 +117,7 @@ function rowsOf(content: string): SoulLedgerEntry[] {
   })
 }
 
-export function readSoulLedger(moduleDir: string, options: { limit?: number; type?: string; view?: string; cursor?: string } = {}): { entries: SoulLedgerEntry[]; total: number; nextCursor?: string; initialized: boolean; revision: string } {
+export function readSoulLedger(moduleDir: string, options: { limit?: number; type?: string; view?: string; cursor?: string } = {}, allowedIds?: ReadonlySet<string>): { entries: SoulLedgerEntry[]; total: number; nextCursor?: string; initialized: boolean; revision: string } {
   const limit = options.limit ?? 30
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('账本读取 limit 必须为 1–100')
   if (options.type !== undefined && ![...SOUL_LEDGER_TYPES, 'close'].includes(options.type)) throw new Error('未知账本类型')
@@ -124,7 +125,8 @@ export function readSoulLedger(moduleDir: string, options: { limit?: number; typ
   if (!['history', 'pending', 'open', 'pending-review'].includes(view)) throw new Error('未知账本视图')
   const projection = readSoulLedgerProjection(moduleDir)
   const all = view === 'history' ? projection.entries : projection.items.filter(item => view === 'pending' || item.status === view).map(item => item.entry)
-  const rows = options.type === undefined ? all : all.filter(row => row.type === options.type)
+  const visible = allowedIds ? all.filter(row => allowedIds.has(String(row.id))) : all
+  const rows = options.type === undefined ? visible : visible.filter(row => row.type === options.type)
   const filter = JSON.stringify([view, options.type ?? null, limit])
   let offset = view === 'history' && options.cursor === undefined ? Math.max(0, rows.length - limit) : 0
   if (options.cursor !== undefined) {
@@ -141,7 +143,7 @@ export function readSoulLedger(moduleDir: string, options: { limit?: number; typ
   return { entries, total: rows.length, initialized: projection.initialized, revision: projection.revision, ...(nextCursor ? { nextCursor } : {}) }
 }
 
-export function appendSoulLedger(moduleDir: string, input: SoulLedgerInput, caller: { sessionId: string | undefined; signal?: AbortSignal }): { entry: SoulLedgerEntry } {
+export function appendSoulLedger(moduleDir: string, input: SoulLedgerInput, caller: { sessionId: string | undefined; signal?: AbortSignal; origin?: ContinuitySource }): { entry: SoulLedgerEntry } {
   if (!caller.sessionId?.trim()) throw new Error('账本写入需要真实会话身份')
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['type', 'text', '概要', 'ref', 'feel'].includes(key))) throw new Error('账本写入包含未知字段，作者和时间由宿主提供')
   if (!SOUL_LEDGER_TYPES.includes(input.type as typeof SOUL_LEDGER_TYPES[number])) throw new Error('未知账本类型')
@@ -155,9 +157,16 @@ export function appendSoulLedger(moduleDir: string, input: SoulLedgerInput, call
     caller.signal?.throwIfAborted()
     const previous = readModuleFile(moduleDir, SOUL_LEDGER_PATH).content
     const rows = readSoulLedgerProjection(moduleDir).entries
+    if (caller.origin) {
+      const existing = rows.find(row => (row.origin as unknown as ContinuitySource | undefined)?.operation === caller.origin!.operation)
+      if (existing) {
+        if (existing.by !== caller.sessionId || existing.type !== input.type || existing['概要'] !== summary || existing.ref !== input.ref || existing.feel !== input.feel) throw new Error('同一账本操作身份不能替换内容')
+        return { entry: existing }
+      }
+    }
     if (input.type === 'promise' && rows.findLast(row => row.type === 'lead')?.by !== caller.sessionId) throw new Error('只有最后一条 lead 署名的主导会话可以写 promise')
     const entry: SoulLedgerEntry = { t: new Date().toISOString(), by: caller.sessionId!, type: input.type, '概要': summary,
-      ...(input.ref === undefined ? {} : { ref: input.ref }), ...(input.feel === undefined ? {} : { feel: input.feel }) }
+      ...(input.ref === undefined ? {} : { ref: input.ref }), ...(input.feel === undefined ? {} : { feel: input.feel }), ...(caller.origin ? { origin: { ...caller.origin } } : {}) }
     persistEntry(moduleDir, previous, entry, caller.signal)
     return { entry }
   })

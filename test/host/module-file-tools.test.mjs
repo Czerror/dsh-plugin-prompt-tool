@@ -88,6 +88,8 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   mkdirSync(projectDirectory)
   const currentRevision = () => owner.status(f.dir).binding.revision
   assert.equal((await run({ moduleId: 'alice', action: 'project', projectDirectory, expectedRevision: currentRevision() })).kind, 'success')
+  assert.equal((await run({ moduleId: 'alice', action: 'enable', expectedRevision: currentRevision() })).kind, 'success')
+  assert.equal(owner.status(f.dir).binding.continuity.enabled, true)
   const select = async selection => {
     const request = { moduleId: 'alice', action: 'source-preview', scope: 'project', ...selection }
     const preview = JSON.parse((await run(request)).text)

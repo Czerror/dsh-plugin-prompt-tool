@@ -21,7 +21,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SystemPrompt, { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptSection } from '@deepseek-ai/dsh-system-prompt'
 import { scopeChainOf, scopeOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
-import { MANIFEST_CHECK_SERVICE } from '../../engine/service-names.mjs'
+import { MANIFEST_CHECK_SERVICE, SOUL_SELF_SERVICE } from '../../engine/service-names.mjs'
 import { packageEngineDir, resolveModuleDir } from '../host/module-dirs.ts'
 import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { loadModuleSpec, readModulesRevision } from '../host/module-spec.ts'
@@ -571,6 +571,11 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         ...prepared.filter(item => !record.prepared.includes(item)).map(item => item.moduleId)])])
       record.prepared = prepared
       record.stamp = stamp; record.content = content; record.committed = true
+      const soul = ctx.get(SOUL_SELF_SERVICE) as { attached?: (id: string, agent: Agent, boundary: number) => Promise<void> } | undefined
+      const boundary = agent.session.snapshotEvents().reduce((max, event) => Math.max(max, event.seq), -1)
+      for (const id of record.moduleIds) if (!previousModuleIds.includes(id)) {
+        void soul?.attached?.(id, agent, boundary).catch(error => warnOnce(`Soul参与界线登记失败：${String(error)}`))
+      }
       for (const item of duplicateIdentities) {
         const where = item.channel === 'kind' ? `显式 sourceKind ${JSON.stringify(item.identity)}` : `去重身份 ${JSON.stringify(item.identity)}`
         warnOnce(item.suspectedCopy

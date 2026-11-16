@@ -10,14 +10,17 @@ import { createTargetQueue } from '../shared/target-queue.ts'
 import { canonicalDirectory, directoryKey, revisionOf } from './module-write.ts'
 import { assertModuleSnapshotSource } from './module-install.ts'
 import type { LoadRetrievalSession } from './module-retrieval.ts'
+import { readSoulLedgerProjection } from './soul-ledger.ts'
 
 const source = z.object({ id: z.string(), path: z.string(), scope: z.string(), version: z.string(), revoked: z.boolean() }).strict()
 const project = z.object({ sessionId: z.string(), path: z.string(), identity: z.string() }).strict()
 const history = z.object({ id: z.string(), sessionId: z.string(), seqs: z.array(z.number()), versions: z.array(z.string()), scope: z.string(), revoked: z.boolean() }).strict()
-const binding = z.object({ directory: z.string(), moduleIdentity: z.string(), root: z.string(), identity: z.string(), read: z.array(z.string()), write: z.array(z.string()), revision: z.string(), generation: z.string().optional(), sources: z.array(source).optional(), projects: z.array(project).optional(), histories: z.array(history).optional() }).strict()
+const participation = z.object({ sessionId: z.string(), boundary: z.number(), cursor: z.number(), scope: z.string(), generation: z.string(), parent: z.string().optional(), grants: z.array(z.string()), rootSessionId: z.string(), rootMessageId: z.string().optional() }).strict()
+const recorded = z.object({ operation: z.string(), entryId: z.string(), sourceId: z.string(), sessionId: z.string(), seq: z.number(), time: z.number(), version: z.string(), scope: z.string(), rootSessionId: z.string(), rootMessageId: z.string().optional(), pending: z.boolean() }).strict()
+const binding = z.object({ directory: z.string(), moduleIdentity: z.string(), root: z.string(), identity: z.string(), read: z.array(z.string()), write: z.array(z.string()), revision: z.string(), generation: z.string().optional(), sources: z.array(source).optional(), projects: z.array(project).optional(), histories: z.array(history).optional(), continuity: z.object({ enabled: z.boolean(), enabledAt: z.number(), generation: z.string() }).strict().optional(), participants: z.array(participation).optional(), records: z.array(recorded).optional() }).strict()
 const definition = defineDomain({ name: 'prompt_tool_soul_knowledge', version: 1, tables: { bindings: domainTable(binding) } })
 type Binding = z.infer<typeof binding>
-export interface SoulKnowledgeRequest { moduleId: string; action: 'status' | 'preview' | 'confirm' | 'sources' | 'source-preview' | 'source-confirm' | 'revoke' | 'project'; root?: string; read?: string[]; write?: string[]; expectedRevision?: string; path?: string; scope?: 'general' | 'project'; projectDirectory?: string; sourceId?: string; sessionId?: string; seqs?: number[] }
+export interface SoulKnowledgeRequest { moduleId: string; action: 'status' | 'preview' | 'confirm' | 'sources' | 'source-preview' | 'source-confirm' | 'revoke' | 'project' | 'enable' | 'disable'; root?: string; read?: string[]; write?: string[]; expectedRevision?: string; path?: string; scope?: 'general' | 'project'; projectDirectory?: string; sourceId?: string; sessionId?: string; seqs?: number[] }
 export interface KnowledgeDocument { kind: 'knowledge'; moduleId: string; root: string; path: string; scope: string; sourceId: string; revision: string; content: string }
 export interface SoulKnowledgeOwner {
   status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; reason?: string; entry: string }
@@ -26,8 +29,13 @@ export interface SoulKnowledgeOwner {
   sources(directory: string, sessionId: string): { state: string; documents: KnowledgeDocument[]; histories: z.infer<typeof history>[] }
   manage(directory: string, request: SoulKnowledgeRequest, sessionId: string, signal: AbortSignal): Promise<Record<string, unknown>>
   assertFile(directory: string, absolute: string, sessionId?: string, write?: boolean): void
+  observe(directory: string, sessionId: string, eventSeq?: number, parentSessionId?: string, assertAuthorized?: () => void, attached?: boolean, cwd?: string): Promise<void>
+  record(directory: string, sessionId: string, operation: string, commit: (source: ContinuitySource) => { entry: Record<string, unknown> }, signal: AbortSignal): Promise<Record<string, unknown>>
+  records(directory: string, sessionId: string): z.infer<typeof recorded>[]
+  recording(directory: string, sessionId: string): { persisted: number; pending: number; derivedFailed: number }
   dispose(): Promise<void>
 }
+export interface ContinuitySource { sourceId: string; sessionId: string; seq: number; time: number; version: string; scope: string; operation: string; rootSessionId: string; rootMessageId?: string }
 const protectedPath = (path: string) => path.split('/').some(part => /^(?:\.soul|\.runtime|02-(?:soul|墨)\.jsonl|SELF(?:\..*)?|AGENTS\.md|CLAUDE\.md|ledger(?:\..*)?|state(?:-.*)?\.json)$/i.test(part))
 function safePath(path: unknown): asserts path is string {
   if (typeof path !== 'string' || !path || path.includes('\\') || path.includes(':') || path.includes('\0') || isAbsolute(path) || path.split('/').some(p => !p || p === '.' || p === '..') || protectedPath(path)) throw new Error('知识库资料范围非法或属于保护区域')
@@ -131,7 +139,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   }
   const requireBinding = (directory: string) => {
     const value = status(directory)
-    if (value.state !== 'bound' || !value.binding) throw new Error('知识库未接入或授权不可用')
+    if (value.state !== 'bound' || !value.binding) throw new Error('知识库未接入或授权不可用：' + (value.reason ?? value.state))
     return value.binding
   }
   const scopeOf = (value: Binding, sessionId: string) => {
@@ -152,13 +160,132 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   }
   const sources: SoulKnowledgeOwner['sources'] = (directory, sessionId) => {
     const value = requireBinding(directory), project = scopeOf(value, sessionId)
-    const documents = (value.sources ?? []).filter(item => !item.revoked && (item.scope === 'general' || item.scope === project)).map(item => readSource(value, item))
-    const histories = (value.histories ?? []).filter(item => !item.revoked && (item.scope === 'general' || item.scope === project))
+    const participant = value.participants?.findLast(row => row.sessionId === sessionId)
+    const inherited = (id: string) => !participant?.parent || participant.grants.includes(id)
+    const documents = (value.sources ?? []).filter(item => !item.revoked && inherited(item.id) && (item.scope === 'general' || item.scope === project)).map(item => readSource(value, item))
+    const histories = (value.histories ?? []).filter(item => !item.revoked && inherited(item.id) && (item.scope === 'general' || item.scope === project))
     return { state: project ? 'ready' : 'pending-classification', documents, histories }
   }
-  return {
+  const tracked = <T>(operation: Promise<T>): Promise<T> => {
+    pending.add(operation)
+    void operation.then(() => pending.delete(operation), () => pending.delete(operation))
+    return operation
+  }
+  const visibleRecords = (directory: string, sessionId: string) => {
+    const value = requireBinding(directory), allowed = new Set(sources(directory, sessionId).histories.map(row => row.id))
+    return (value.records ?? []).filter(row => allowed.has(row.sourceId))
+  }
+  const reconcile = (directory: string, value: Binding) => {
+    for (const entry of readSoulLedgerProjection(directory).entries) {
+      const origin = entry.origin as unknown as ContinuitySource | undefined
+      if (!origin || typeof origin.operation !== 'string' || value.records?.some(row => row.operation === origin.operation)) continue
+      const source = value.histories?.find(row => row.id === origin.sourceId && row.sessionId === origin.sessionId && row.seqs.includes(origin.seq))
+      if (!source || source.versions[source.seqs.indexOf(origin.seq)] !== origin.version || source.scope !== origin.scope) continue
+      ;(value.records ??= []).push({ ...origin, entryId: entry.id, pending: true })
+    }
+  }
+  const owner: SoulKnowledgeOwner = {
     status,
     sources,
+    records: visibleRecords,
+    recording(directory, sessionId) {
+      const records = visibleRecords(directory, sessionId), allowed = new Set(sources(directory, sessionId).histories.map(row => row.id))
+      const raw = readSoulLedgerProjection(directory).entries.filter(entry => {
+        const origin = entry.origin as unknown as ContinuitySource | undefined
+        return origin && allowed.has(origin.sourceId)
+      })
+      return { persisted: raw.length, pending: records.filter(row => row.pending).length, derivedFailed: raw.filter(entry => !records.some(row => row.entryId === entry.id)).length }
+    },
+    observe(directory, sessionId, eventSeq, parentSessionId, assertAuthorized, attached, cwd) {
+      return tracked(queue.run(key(directory), async () => {
+        const value = requireBinding(directory), control = value.continuity
+        if (!control?.enabled) return
+        const session = await loadSession?.(sessionId)
+        if (!session) throw new Error('真实会话不可读取')
+        const events = session.snapshotEvents()
+        const next = structuredClone(value)
+        if (!parentSessionId && !next.projects?.some(row => row.sessionId === sessionId) && cwd) {
+          try {
+            const current = projectIdentity(cwd)
+            const matches = (value.projects ?? []).filter(row => row.identity === current.identity && projectIdentity(row.path).identity === row.identity)
+            if (new Set(matches.map(row => row.identity)).size === 1) (next.projects ??= []).push({ sessionId, ...current })
+          } catch { /* 目录不能匹配已声明项目时保持待归类。 */ }
+        }
+        let participant = next.participants?.find(row => row.sessionId === sessionId && row.generation === control.generation)
+        if (participant && attached && eventSeq !== undefined) participant.cursor = Math.max(participant.cursor, eventSeq - 1)
+        if (!participant) {
+          const parent = parentSessionId && next.participants?.find(row => row.sessionId === parentSessionId && row.generation === control.generation)
+          const scope = parent ? parent.scope : scopeOf(next, sessionId)
+          if (!scope || parentSessionId && !parent) return
+          const boundary = eventSeq === undefined ? events.reduce((max, row) => Math.max(max, row.seq), -1) : eventSeq - 1
+          participant = { sessionId, scope, generation: control.generation, boundary,
+            cursor: boundary, grants: parent ? [...sources(directory, parent.sessionId).documents, ...sources(directory, parent.sessionId).histories].map(row => 'sourceId' in row ? row.sourceId : row.id) : [...(value.histories ?? []), ...(value.sources ?? [])].filter(row => !row.revoked && (row.scope === 'general' || row.scope === scope)).map(row => row.id),
+            rootSessionId: parent ? parent.rootSessionId : sessionId, ...(parent ? { parent: parent.sessionId, rootMessageId: parent.rootMessageId } : {}) }
+          const priorTask = next.participants?.findLast(row => row.sessionId === sessionId && row.parent)
+          if (priorTask) {
+            participant.grants = participant.grants.filter(id => priorTask.grants.includes(id))
+            participant.rootSessionId = priorTask.rootSessionId
+            participant.rootMessageId = priorTask.rootMessageId
+          }
+          ;(next.participants ??= []).push(participant)
+          if (parent) {
+            const project = value.projects?.find(row => row.sessionId === parent.sessionId)
+            if (project) (next.projects ??= []).push({ ...project, sessionId })
+          }
+        }
+        if (participant.parent) {
+          const parent = next.participants?.find(row => row.sessionId === participant!.parent && row.generation === control.generation)
+          if (!parent) return
+        }
+        for (const event of events.filter(row => row.seq > participant!.cursor)) {
+          participant.cursor = event.seq
+          if (!['user/message', 'assistant/message', 'tool/result'].includes(event.type)) continue
+          const data = (event as unknown as { data: { id?: string; source?: { kind?: string } } }).data
+          if (!data || data.source?.kind === 'runtime-context' || event.time === undefined || event.time < control.enabledAt) continue
+          const id = revisionOf(JSON.stringify([value.generation, sessionId, data.id ?? event.seq]))
+          if (!participant.parent && event.type === 'user/message' && data.source?.kind === 'user' && typeof data.id === 'string') participant.rootMessageId = data.id
+          if (next.histories?.some(row => row.id === id)) continue
+          ;(next.histories ??= []).push({ id, sessionId, seqs: [event.seq], versions: [revisionOf(JSON.stringify(event))], scope: participant.scope, revoked: false })
+          participant.grants.push(id)
+        }
+        reconcile(directory, next)
+        if (requireBinding(directory).revision !== value.revision) throw new Error('知识来源版本已变化')
+        assertActive(); assertAuthorized?.()
+        next.revision = revisionOf(randomUUID())
+        await table.put(revisionOf(key(directory)), next)
+      }))
+    },
+    record(directory, sessionId, operation, commit, signal) {
+      return tracked(queue.run(key(directory), async () => {
+        signal.throwIfAborted()
+        const value = requireBinding(directory), participant = value.participants?.find(row => row.sessionId === sessionId && row.generation === value.continuity?.generation)
+        if (!value.continuity?.enabled || !participant) throw new Error('持续记忆未启用或会话未参与Soul')
+        const allowed = sources(directory, sessionId).histories
+        const session = await loadSession?.(sessionId)
+        const source = allowed.findLast(row => row.sessionId === sessionId && participant.grants.includes(row.id) && session?.snapshotEvents().some(event => {
+          const data = (event as unknown as { data?: { id?: string; source?: { kind?: string } } }).data
+          return event.seq === row.seqs[0] && event.type === 'user/message' && (participant.parent || data?.source?.kind === 'user' && data.id === participant.rootMessageId)
+        }))
+        if (!source) throw new Error('缺少当前已授权真实来源')
+        const event = session?.snapshotEvents().find(row => row.seq === source.seqs[0])
+        if (!event || event.time === undefined || revisionOf(JSON.stringify(event)) !== source.versions[0]) throw new Error('原始事件版本已变化')
+        signal.throwIfAborted(); assertActive()
+        if (requireBinding(directory).revision !== value.revision) throw new Error('知识来源版本已变化')
+        const origin = { operation, sourceId: source.id, sessionId, seq: event.seq, time: event.time, version: source.versions[0]!, scope: source.scope, rootSessionId: participant.rootSessionId, ...(participant.rootMessageId ? { rootMessageId: participant.rootMessageId } : {}) }
+        const result = commit(origin)
+        try {
+          const next = structuredClone(requireBinding(directory))
+          reconcile(directory, next)
+          next.revision = revisionOf(randomUUID())
+          signal.throwIfAborted(); assertActive()
+          await table.put(revisionOf(key(directory)), next)
+          const actualOperation = (result.entry.origin as ContinuitySource | undefined)?.operation ?? operation
+          const record = next.records?.find(row => row.operation === actualOperation)
+          if (!record) throw new Error('原始条目未能关联有效来源')
+          return { ...result, persisted: true, reference: record ?? null, derived: { state: 'pending' } }
+        } catch (error) { return { ...result, persisted: true, derived: { state: 'failed', error: String(error), recovery: '原始记录已保存；恢复会补登记，不要重放事实' } } }
+      }))
+    },
     assertFile(directory, absolute, sessionId, write = false) {
       assertActive()
       const local = relative(directory, absolute).split('\\').join('/').toLowerCase()
@@ -183,7 +310,18 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         if (request.action === 'sources') return { ...sources(directory, sessionId), registrations: [...(value.sources ?? []), ...(value.histories ?? [])], pending: value.read.filter(path => !value.sources?.some(item => item.path === path)), project: value.projects?.find(item => item.sessionId === sessionId) ?? null, revision: value.revision }
         if (request.expectedRevision !== value.revision && !['source-preview'].includes(request.action)) throw new Error('知识库状态版本冲突，请重新查询')
         const next = structuredClone(value)
-        if (request.action === 'project') {
+        if (request.action === 'enable' || request.action === 'disable') {
+          if (!scopeOf(value, sessionId)) throw new Error('启用持续记忆前必须明确选择项目')
+          next.directory = canonicalDirectory(directory)
+          next.continuity = request.action === 'enable' && value.continuity?.enabled ? value.continuity : { enabled: request.action === 'enable', enabledAt: Date.now(), generation: randomUUID() }
+          if (request.action === 'enable' && !value.continuity?.enabled) {
+            const session = await loadSession?.(sessionId)
+            if (!session) throw new Error('无法核实启用会话界线')
+            const boundary = session.snapshotEvents().reduce((max, event) => Math.max(max, event.seq), -1)
+            ;(next.participants ??= []).push({ sessionId, scope: scopeOf(value, sessionId)!, boundary, cursor: boundary, generation: next.continuity.generation,
+              rootSessionId: sessionId, grants: [...(value.sources ?? []), ...(value.histories ?? [])].filter(row => !row.revoked && (row.scope === 'general' || row.scope === scopeOf(value, sessionId))).map(row => row.id) })
+          }
+        } else if (request.action === 'project') {
           if (!request.projectDirectory) throw new Error('必须明确选择项目目录')
           const chosen = projectIdentity(request.projectDirectory), prior = next.projects?.find(item => item.sessionId === sessionId)
           if (prior && prior.identity !== chosen.identity) throw new Error('会话已绑定其他项目，不能静默改变归属')
@@ -247,7 +385,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         if (!request.expectedRevision || request.expectedRevision !== value.revision || previews.get(key(directory)) !== value.revision) throw new Error('知识库预览已失效，请重新预览确认')
         if (!value.snapshot.identity) mkdirSync(value.root)
         for (const path of value.write) if (!value.snapshot.entries.some(item => item.path === path)) mkdirSync(join(value.root, path))
-        const next = { directory: key(directory), moduleIdentity: identity(directory), root: realpathSync(value.root), identity: identity(value.root), read: value.read, write: value.write, revision: revisionOf(randomUUID()), generation: randomUUID() }
+        const next = { directory: canonicalDirectory(directory), moduleIdentity: identity(directory), root: realpathSync(value.root), identity: identity(value.root), read: value.read, write: value.write, revision: revisionOf(randomUUID()), generation: randomUUID() }
         signal.throwIfAborted(); assertActive()
         await table.put(revisionOf(key(directory)), next)
         previews.delete(key(directory))
@@ -259,4 +397,15 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     },
     async dispose() { active = false; previews.clear(); await Promise.allSettled(pending); await domain.close() },
   }
+  for (const [id, value] of table.entries()) {
+    try {
+      const next = structuredClone(requireBinding(value.directory))
+      reconcile(value.directory, next)
+      if (next.records?.length !== value.records?.length) {
+        next.revision = revisionOf(randomUUID())
+        await table.put(id, next)
+      }
+    } catch { /* 不可用来源保持原状；不扫描释放期间的新会话材料。 */ }
+  }
+  return owner
 }
