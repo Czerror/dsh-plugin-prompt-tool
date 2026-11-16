@@ -45,13 +45,21 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await root.plugin(Persistence, { root: join(home, 'sessions'), compression: 'none' })
   await root.plugin(Loop, { agents: [] })
   let modelCalls = 0
+  const auxiliary = []
+  let heldAuxiliary = false, omitUsage = false
   class Model extends LlmAdapter {
     async resolveModel(provider, id) { return { provider, id, name: id } }
     async *stream(request) {
       modelCalls++
+      if (request.purpose) auxiliary.push(request)
+      if (request.purpose && heldAuxiliary) await new Promise((_, reject) => {
+        if (request.signal.aborted) reject(request.signal.reason)
+        else request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true })
+      })
       yield { type: 'block-start', index: 0, blockType: 'text' }
       if (request.model === 'held') await new Promise((_, reject) => request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true }))
       yield { type: 'block-end', index: 0, block: { type: 'text', text: 'fixture response' } }
+      if (request.purpose && !omitUsage) yield { type: 'usage', usage: { inputTokens: 13, outputTokens: 3, cacheReadTokens: 5, cacheWriteTokens: 2, totalTokens: 23 } }
       yield { type: 'finish', reason: { kind: 'stop' } }
     }
   }
@@ -165,8 +173,8 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const callsBeforePublication = modelCalls
   const statusResult = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'publication-status', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'status' }) }] })).results[0].result
   assert.equal(statusResult.isError, false, JSON.stringify(statusResult))
-  assert.equal(statusResult.value.knowledge.assistedConsolidation?.state, 'unavailable', '缺少可靠计量时明确禁用额外模型整理，直接记录及发布继续可用')
-  assert.ok(statusResult.value.knowledge.assistedConsolidation.reason, '不可用必须返回原因')
+  assert.equal(statusResult.value.assistedConsolidation?.state, 'idle')
+  assert.equal(statusResult.value.assistedConsolidation.budget.attempts.length, 0)
   const toolEvent = agent.session.append({ type: 'tool/result', data: { id: 'publication-status', result: statusResult } })
   await owner.observe(dir, agent.session.id, toolEvent.seq)
   assert.equal(owner.status(dir).consolidationRevision, statusResult.value.knowledge.consolidationRevision, '工具结果不改变生成前整理依赖版本')
@@ -232,6 +240,88 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const budgeted = renderSoulSelf(dir, fresh.agent, signal, 12288, undefined, [], undefined, false, Array.from({ length: 3 }, () => ({ text: '学'.repeat(2048), protected: false })))
   assert.ok(Buffer.byteLength(budgeted) <= 12288)
   assert.match(budgeted, /未注入学习/)
+  const auxiliaryRules = createRuleRuntime(agent.ctx, { agent })
+  t.after(() => auxiliaryRules.dispose())
+  auxiliaryRules.replace([{ moduleId: 'alice', rules: compileRules([{ id: 'ordinary-stream-actions', then: [
+    { id: 'replace', kind: 'stream-output', mode: 'replace', text: 'ordinary replacement' },
+    { id: 'retry', kind: 'request-retry', text: 'ordinary retry' },
+  ] }]) }])
+  const assistTool = async action => (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'assist-' + action, name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action }) }] })).results[0].result
+  assert.equal((await assistTool('assist')).isError, false)
+  let assisted
+  for (let tries = 0; tries < 200; tries++) {
+    assisted = (await assistTool('status')).value.assistedConsolidation
+    if (!['preparing', 'generating', 'candidate'].includes(assisted.state) && assisted.budget.attempts.every(row => row.state !== 'reserved')) break
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  assert.equal(assisted.state, 'published', JSON.stringify(assisted))
+  assert.equal(auxiliary.length, 1)
+  assert.equal(auxiliary[0].sessionId, agent.session.id)
+  assert.equal(auxiliary[0].purpose, 'soul-continuity-organize')
+  assert.equal(auxiliary[0].maxTokens, 1024)
+  assert.deepEqual(auxiliary[0].tools, [])
+  assert.equal(assisted.budget.attempts[0].tokens, 23, '结算包含缓存读写输入')
+  assert.equal(assisted.budget.attempts[0].estimated, false)
+  assert.equal(owner.recording(dir, agent.session.id).pending, 0)
+  await assistTool('assist')
+  assert.equal(auxiliary.length, 1, '没有新增材料不重复整理')
+  assert.equal((await call('same-root-more-material')).isError, false)
+  await assistTool('assist')
+  for (let tries = 0; tries < 200; tries++) {
+    assisted = (await assistTool('status')).value.assistedConsolidation
+    if (assisted.state === 'deferred') break
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  assert.equal(assisted.state, 'deferred', JSON.stringify(assisted))
+  assert.equal(auxiliary.length, 1, '同根用户回合新增条目也不获得第二次辅助额度')
+  const originalCancel = agent.cancel, originalCancelDescriptor = Object.getOwnPropertyDescriptor(agent, 'cancel')
+  heldAuxiliary = true
+  await send(createUserMessage({ content: [{ type: 'text', text: 'new round for interruption' }], source: { kind: 'user' } }))
+  await assistTool('assist')
+  for (let tries = 0; tries < 200 && auxiliary.length < 2; tries++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(auxiliary.length, 2)
+  const cancelledWrapper = agent.cancel
+  assert.notEqual(cancelledWrapper, originalCancel)
+  assert.equal(agent.status, 'idle')
+  agent.cancel({ kind: 'user' }, { keepInbox: true })
+  for (let tries = 0; tries < 200; tries++) {
+    assisted = (await assistTool('status')).value.assistedConsolidation
+    if (assisted.budget.attempts.at(-1)?.state === 'cancelled') break
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  assert.equal(assisted.state, 'cancelled', JSON.stringify(assisted))
+  assert.equal(assisted.budget.attempts.at(-1).estimated, true, '取消或缺usage保留预留')
+  assert.equal(agent.cancel, originalCancel)
+  assert.deepEqual(Object.getOwnPropertyDescriptor(agent, 'cancel'), originalCancelDescriptor)
+  assert.ok(owner.recording(dir, agent.session.id).pending > 0)
+  await send(createUserMessage({ content: [{ type: 'text', text: 'new round for input priority' }], source: { kind: 'user' } }))
+  await assistTool('assist')
+  for (let tries = 0; tries < 200 && auxiliary.length < 3; tries++) await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(auxiliary.length, 3)
+  cancelledWrapper.call(agent, { kind: 'user' }, { keepInbox: true })
+  assert.equal(auxiliary[2].signal.aborted, false, '已卸载旧wrapper不取消新请求')
+  await send(createUserMessage({ content: [{ type: 'text', text: 'new input while auxiliary still held' }], source: { kind: 'user' } }))
+  assert.equal(auxiliary[2].signal.aborted, true)
+  assert.ok(agent.session.snapshotEvents().some(event => event.type === 'user/message' && event.data.content?.some(block => block.text === 'new input while auxiliary still held')))
+  for (let tries = 0; tries < 200; tries++) {
+    assisted = (await assistTool('status')).value.assistedConsolidation
+    if (assisted.budget.attempts.at(-1)?.state === 'cancelled') break
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  heldAuxiliary = false; omitUsage = true
+  await assistTool('assist')
+  for (let tries = 0; tries < 200; tries++) {
+    assisted = (await assistTool('status')).value.assistedConsolidation
+    if (assisted.state === 'published' && assisted.budget.attempts.at(-1)?.state === 'published') break
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  assert.equal(assisted.state, 'published', JSON.stringify(assisted))
+  assert.equal(assisted.budget.attempts.at(-1).estimated, true)
+  assert.ok(assisted.budget.attempts.at(-1).tokens >= 1024)
+  await owner.dispose()
+  owner = await openSoulKnowledge(facility, loadKnowledgeSession)
+  assert.equal((await assistTool('status')).value.assistedConsolidation.budget.attempts.length, 4, '恢复不重置根会话预算')
+  auxiliaryRules.dispose()
   const parentSourceIds = owner.sources(dir, agent.session.id).histories.map(row => row.id)
   const context = { agent, scope: scopeOf(agent.ctx), signal }
   const toolSet = await root.tools.resolve(context)
@@ -249,6 +339,10 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const childParticipation = owner.status(dir).binding.participants.findLast(row => row.sessionId === childId)
   assert.equal(childParticipation.rootSessionId, agent.session.id)
   assert.equal(childResult.value.reference.rootMessageId, owner.status(dir).binding.participants.findLast(row => row.sessionId === agent.session.id).rootMessageId)
+  const childAssist = await root.tools.execute({ agent: child, signal, calls: [{ type: 'tool-call', id: 'child-assist', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'assist' }) }] })
+  assert.equal(childAssist.results[0].result.isError, false)
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(auxiliary.length, 4, '子代理共享根回合已消费额度，不能委派绕过')
   assert.ok(parentSourceIds.every(id => childParticipation.grants.includes(id)))
   await send(createUserMessage({ content: [{ type: 'text', text: 'later private parent input' }], source: { kind: 'user' } }))
   const laterSource = owner.sources(dir, agent.session.id).histories.findLast(row => row.sessionId === agent.session.id).id

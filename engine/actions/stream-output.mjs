@@ -14,7 +14,7 @@ export function prepareStreamOutput(action, plugin) {
   if (action.text !== undefined && typeof action.text !== 'string') throw new TypeError(`${plugin}: ${label}.text must be a string`)
   const text = action.text ?? ''
   return (ctx, { on, collect, take, warnOnce }) => collect(on('llm/stream', (options, next) => {
-    if (mode !== 'replace' || text.length === 0) return next()
+    if (options?.purpose !== undefined || mode !== 'replace' || text.length === 0) return next()
     try {
       const agent = subjectOf('llm/stream', [options], warnOnce, ctx).agent
       if (take({ agent })) return replacedStream(text)

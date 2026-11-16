@@ -169,7 +169,9 @@ Soul 模块包含结构化账本、授权文件／历史检索、每步动态 SE
 
 正常会话阶段收尾可用 `soul_state consolidate` 提交 `text`、已登记来源或条目 `refs` 和生成前 `knowledge.consolidationRevision` 对应的 `expectedRevision`；该版本仅用于整理，不能代替用户接入授权版本，不发起额外模型调用。至少包含一条待整理条目才发布，无新增材料返回 `no-work`。正文只保存到已授权区域的不可变版本，原账本短条目作为索引，状态保存关联引用及去重后的原始证据根。来源缺失、未发布候选、跨项目引用均拒绝；撤权或来源版本变化立即停用整个受影响正文。候选保存后状态提交失败返回 `candidate`（已保存但未生效），原正文及 pending 保留；同正文、引用和预期版本可重验恢复，版本冲突不能覆盖新提交。仅 `published` 推进 pending，成功重试不重复写正文或事实。候选文件不会自动纳入检索，也不能经普通来源登记绕过发布。
 
-额外模型辅助整理当前不可用：已安装发布包缺少可验证的完整请求输入计量，真实路由的输出硬上限也尚未验证。`soul_state` 的 `knowledge.assistedConsolidation` 与 `/prompt-tool knowledge` 的 `action:"status"` 返回相同原因；不会以字符估算或事后 usage 放行调用。正常对话、已获准直接记录与上述正常会话内整理可继续使用。根回合持久预算、辅助生成及取消调度尚未交付，不能将此安全降级状态视为完整辅助整理功能。
+持续记忆已启用且存在待整理材料时，阶段结束可请求当前会话路由进行一次无工具辅助整理；`soul_state assist` 手动请求共用同一预算，立即返回状态。每个真实根用户 MessageId 的主子代理合计最多一次，调用前持久预留；失败、取消、重放或恢复不返次数。完整材料与引用不截断，4096 tokens 是选材目标；完整输入使用明确标识的估算，预留估算输入与最多1024输出，根会话累计预算32768 tokens/120秒，单次生成最多20秒。可靠 usage 包含缓存读写结算；缺失或生成失败保留预留，真实超限停后续辅助，不能保证估算不会低估实际用量。预算参数位于 `soul-maintenance` 的 `assisted*` 字段。
+
+辅助生成不占长维护锁，新用户输入、原生取消、模块释放及授权/来源变化请求取消并拒绝迟到候选；模型端无法及时停止时，已消费资源不能收回。发布仍复用上述版本校验和不可变正文提交。`soul_state` 与 `/prompt-tool knowledge` 的 `action:"status"` 分别呈现 `assistedConsolidation` 状态、候选/发布、失败原因、预留/实际用量与积压；连续三个新用户回合积压集中提示，清空后重置。普通对话与已获准直接记录不依赖辅助整理成功。
 
 `soul_state learn` 使用 `text`、`layer`（experience/judgment/expression/core/locked）、正式记录 `ref` 与当前 `knowledge.binding.revision` 作为 `expectedRevision` 提议学习。模型识别明确长期反馈时提交 `basis:"explicit-long-term"`；宿主核实真实用户、事件版本及长期范围，临时要求、推断或层级不明只保留候选，子任务不能冒充用户反馈。核心和锁定项始终须用户 `/prompt-tool knowledge` 的 `learning-confirm` 确认。用户以 `learning-list` 查看来源、范围和变更；以条目 id 作为 `sourceId`、当前绑定版本操作 `learning-forget` 或 `learning-withdraw`。可选 `previous` 声明同层同范围的替换，撤回仅恢复此前仍有效的学习，忘记停用目标及后续依赖；保留原始证据与无关学习，不声称收回已经投递的文本。
 

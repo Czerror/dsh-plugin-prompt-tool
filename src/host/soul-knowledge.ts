@@ -11,6 +11,7 @@ import { canonicalDirectory, directoryKey, revisionOf } from './module-write.ts'
 import { assertModuleSnapshotSource } from './module-install.ts'
 import type { LoadRetrievalSession } from './module-retrieval.ts'
 import { readSoulLedgerProjection } from './soul-ledger.ts'
+import { openAssistedBudget } from './soul-assisted-budget.ts'
 
 const source = z.object({ id: z.string(), path: z.string(), scope: z.string(), version: z.string(), revoked: z.boolean() }).strict()
 const project = z.object({ sessionId: z.string(), path: z.string(), identity: z.string() }).strict()
@@ -25,7 +26,9 @@ type Binding = z.infer<typeof binding>
 export interface SoulKnowledgeRequest { moduleId: string; action: 'status' | 'preview' | 'confirm' | 'sources' | 'source-preview' | 'source-confirm' | 'revoke' | 'project' | 'enable' | 'disable' | 'learning-list' | 'learning-confirm' | 'learning-forget' | 'learning-withdraw'; root?: string; read?: string[]; write?: string[]; expectedRevision?: string; path?: string; scope?: 'general' | 'project'; projectDirectory?: string; sourceId?: string; sessionId?: string; seqs?: number[] }
 export interface KnowledgeDocument { kind: 'knowledge'; moduleId: string; root: string; path: string; scope: string; sourceId: string; revision: string; content: string }
 export interface SoulKnowledgeOwner {
-  status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; consolidationRevision?: string; reason?: string; entry: string; assistedConsolidation: { state: 'unavailable'; reason: string } }
+  assisted: Awaited<ReturnType<typeof openAssistedBudget>>
+  onChange(listener: () => void): () => void
+  status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; consolidationRevision?: string; reason?: string; entry: string }
   preview(directory: string, request: SoulKnowledgeRequest): Record<string, unknown>
   confirm(directory: string, request: SoulKnowledgeRequest, signal: AbortSignal): Promise<ReturnType<SoulKnowledgeOwner['status']>>
   sources(directory: string, sessionId: string): { state: string; documents: KnowledgeDocument[]; histories: z.infer<typeof history>[] }
@@ -100,7 +103,13 @@ function rootSnapshot(root: string) {
   return { identity: rootIdentity, parent: identity(dirname(root)), entries }
 }
 export async function openSoulKnowledge(facility: DomainFacility, loadSession?: LoadRetrievalSession): Promise<SoulKnowledgeOwner> {
+  const assisted = await openAssistedBudget(facility)
+  const changeListeners = new Set<() => void>()
   const domain = await facility.open(definition), table = domain.table('bindings'), queue = createTargetQueue()
+  const saveBinding = async (id: string, value: Binding) => {
+    await table.put(id, value)
+    for (const listener of changeListeners) { try { listener() } catch { /* 通知失败不撤销已持久化事实。 */ } }
+  }
   const evidenceSessions = new Map<string, Awaited<ReturnType<LoadRetrievalSession>>>()
   const loadEvidence = async (id: string) => {
     const session = await loadSession?.(id)
@@ -119,8 +128,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   const status: SoulKnowledgeOwner['status'] = directory => {
     assertActive()
     const current = table.get(revisionOf(key(directory))), entry = '/prompt-tool knowledge <JSON：moduleId、action=preview|confirm|status>'
-    const assistedConsolidation = { state: 'unavailable' as const, reason: '当前发布包缺少可验证的完整辅助请求输入计量，且未验证路由输出硬上限；不运行辅助整理。正常会话及已获准的直接记录、整理仍可用。' }
-    if (!current) return { state: 'unbound', entry, assistedConsolidation }
+    if (!current) return { state: 'unbound', entry }
     try {
       assertModuleSnapshotSource(dirname(directory), basename(directory))
       if (identity(directory) !== current.moduleIdentity) throw new Error('来源模块身份已变化，请重新预览确认')
@@ -132,8 +140,8 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const stat = lstatSync(absolute)
         if (stat.isSymbolicLink() || current.read.includes(path) && !stat.isFile() || current.write.includes(path) && !stat.isDirectory()) throw new Error('授权资料类型已变化或被替换为链接')
       }
-      return { state: 'bound', binding: structuredClone(current), consolidationRevision: consolidationRevision(current), entry, assistedConsolidation }
-    } catch (error) { return { state: 'unavailable', reason: String((error as Error).message), entry, assistedConsolidation } }
+      return { state: 'bound', binding: structuredClone(current), consolidationRevision: consolidationRevision(current), entry }
+    } catch (error) { return { state: 'unavailable', reason: String((error as Error).message), entry } }
   }
   const prepare = (directory: string, request: SoulKnowledgeRequest) => {
     assertActive()
@@ -221,6 +229,8 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     }
   }
   const owner: SoulKnowledgeOwner = {
+    assisted,
+    onChange(listener) { changeListeners.add(listener); return () => { changeListeners.delete(listener) } },
     status,
     sources,
     learning(directory, sessionId, includeInactive = false) {
@@ -260,7 +270,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         if (value.learning?.some(item => item.id === row.id)) return value.learning.find(item => item.id === row.id)!
         if (requireBinding(directory).revision !== value.revision) throw new Error('学习提交版本冲突')
         signal.throwIfAborted(); assertActive()
-        await table.put(revisionOf(key(directory)), { ...value, learning: [...(value.learning ?? []), row], revision: revisionOf(randomUUID()) })
+        await saveBinding(revisionOf(key(directory)), { ...value, learning: [...(value.learning ?? []), row], revision: revisionOf(randomUUID()) })
         return row
       }))
     },
@@ -344,7 +354,11 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           for (const record of next.records ?? []) if (processed.has(record.entryId)) record.pending = false
           next.revision = revisionOf(randomUUID())
           signal.throwIfAborted(); assertActive(); assertAuthorized?.()
-          await table.put(revisionOf(key(directory)), next)
+          await saveBinding(revisionOf(key(directory)), next)
+          const root = next.participants?.findLast(row => row.sessionId === sessionId && row.generation === next.continuity?.generation)?.rootSessionId
+          try {
+            if (root && !visibleRecords(directory, sessionId).some(row => row.pending)) await assisted.clearBacklog(JSON.stringify([directory, next.moduleIdentity, root]))
+          } catch { /* 发布已生效，提示重置失败不能撤销正文。 */ }
           return { state: 'published', candidateId: id, revision: next.revision, reference: row }
         }))
       } catch (error) { return { state: 'candidate', candidateId: id, path, persisted: true, active: false, error: String(error), recovery: '候选已保存但未生效；使用同一正文、引用及预期版本重验，不能覆盖新版本' } }
@@ -413,7 +427,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         if (requireBinding(directory).revision !== value.revision) throw new Error('知识来源版本已变化')
         assertActive(); assertAuthorized?.()
         next.revision = revisionOf(randomUUID())
-        await table.put(revisionOf(key(directory)), next)
+        await saveBinding(revisionOf(key(directory)), next)
       }))
     },
     record(directory, sessionId, operation, commit, signal) {
@@ -439,7 +453,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           reconcile(directory, next)
           next.revision = revisionOf(randomUUID())
           signal.throwIfAborted(); assertActive()
-          await table.put(revisionOf(key(directory)), next)
+          await saveBinding(revisionOf(key(directory)), next)
           const actualOperation = (result.entry.origin as ContinuitySource | undefined)?.operation ?? operation
           const record = next.records?.find(row => row.operation === actualOperation)
           if (!record) throw new Error('原始条目未能关联有效来源')
@@ -545,7 +559,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         if (requireBinding(directory).revision !== value.revision) throw new Error('知识库状态版本冲突，请重新查询')
         next.revision = revisionOf(randomUUID())
         signal.throwIfAborted(); assertActive()
-        await table.put(revisionOf(key(directory)), next)
+        await saveBinding(revisionOf(key(directory)), next)
         return { state: 'persisted', revision: next.revision }
       })
       pending.add(operation)
@@ -566,7 +580,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         for (const path of value.write) if (!value.snapshot.entries.some(item => item.path === path)) mkdirSync(join(value.root, path))
         const next = { directory: canonicalDirectory(directory), moduleIdentity: identity(directory), root: realpathSync(value.root), identity: identity(value.root), read: value.read, write: value.write, revision: revisionOf(randomUUID()), generation: randomUUID() }
         signal.throwIfAborted(); assertActive()
-        await table.put(revisionOf(key(directory)), next)
+        await saveBinding(revisionOf(key(directory)), next)
         previews.delete(key(directory))
         return status(directory)
       })
@@ -574,7 +588,12 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       void operation.then(() => pending.delete(operation), () => pending.delete(operation))
       return operation
     },
-    async dispose() { active = false; previews.clear(); await Promise.allSettled(pending); await domain.close() },
+    async dispose() {
+      active = false
+      for (const listener of changeListeners) { try { listener() } catch { /* 释放继续清理其余监听。 */ } }
+      changeListeners.clear(); previews.clear()
+      await Promise.allSettled(pending); await assisted.dispose(); await domain.close()
+    },
   }
   for (const [id, value] of table.entries()) {
     try {
@@ -583,7 +602,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       reconcile(value.directory, next)
       if (next.records?.length !== value.records?.length) {
         next.revision = revisionOf(randomUUID())
-        await table.put(id, next)
+        await saveBinding(id, next)
       }
     } catch { /* 不可用来源保持原状；不扫描释放期间的新会话材料。 */ }
   }
