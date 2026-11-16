@@ -23,9 +23,11 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
   }
   const fiber = ctx.inject(['tools'], toolsCtx => toolsCtx.tools.register(defineTool({
     name: MODULE_TOOL_NAMES.soulState,
-    description: '读取真实当前会话Soul状态或只读运行诊断；check显式includeUpgrade=true才展开完整升级文件候选。mark记录短状态及时间，需要status版本，首次null；标记时间不代表实际活动，不关闭账本事项。阶段收尾consolidate提交text、已登记条目/来源refs及生成前knowledge.consolidationRevision作为expectedRevision；只整理新增材料，不额外调用模型；published才生效，candidate仅保存未生效。',
+    description: '读取真实当前会话Soul状态或只读运行诊断；check显式includeUpgrade=true才展开完整升级文件候选。mark记录短状态及时间，需要status版本，首次null；标记时间不代表实际活动，不关闭账本事项。阶段收尾consolidate提交text、已登记条目/来源refs及生成前knowledge.consolidationRevision作为expectedRevision；只整理新增材料，不额外调用模型；published才生效，candidate仅保存未生效。learn提交text、layer、正式条目ref和knowledge.binding.revision作为expectedRevision；明确长期用户反馈可标basis=explicit-long-term，推断用inference。核心/锁定变化仅候选，交用户knowledge命令确认；可用previous声明同层学习替换，不能自报确认或作者。',
     parameters: {
-      moduleId: MODULE_ID_PARAM, action: { type: 'string', enum: ['status', 'mark', 'check', 'consolidate'], required: true },
+      moduleId: MODULE_ID_PARAM, action: { type: 'string', enum: ['status', 'mark', 'check', 'consolidate', 'learn'], required: true },
+      layer: { type: 'string', enum: ['expression', 'judgment', 'experience', 'core', 'locked'] }, ref: { type: 'string' }, previous: { type: 'string' },
+      basis: { type: 'string', enum: ['explicit-long-term', 'inference'] },
       text: { type: 'string' }, expectedRevision: { oneOf: [{ type: 'string' }, { type: 'null' }] },
       refs: { type: 'array', items: { type: 'string' } },
       includeUpgrade: { type: 'boolean' },
@@ -37,14 +39,22 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       knowledge: { type: 'json' },
       recording: { type: 'json' },
       publication: { type: 'json' },
+      learning: { type: 'json' },
       persisted: { type: 'boolean' }, publicationSuppressed: { type: 'boolean' },
     } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     execute: async (args, exec) => {
-      if (Object.keys(args).some(key => !['moduleId', 'action', 'text', 'expectedRevision', 'includeUpgrade', 'refs'].includes(key))) throw new Error('Soul状态请求含未知字段，不能指定其他会话')
+      if (Object.keys(args).some(key => !['moduleId', 'action', 'text', 'expectedRevision', 'includeUpgrade', 'refs', 'layer', 'ref', 'previous', 'basis'].includes(key))) throw new Error('Soul状态请求含未知字段，不能指定其他会话')
       if (args.includeUpgrade !== undefined && (typeof args.includeUpgrade !== 'boolean' || args.action !== 'check')) throw new Error('只有check接受布尔includeUpgrade')
       exec.signal.throwIfAborted()
       const target = host.target(exec, args.moduleId), sessionId = exec.agent?.session.id
       if (!sessionId) throw new Error('Soul状态缺少实际会话身份')
+      if (args.action === 'learn') {
+        const owner = knowledge?.()
+        if (!owner) throw new Error('知识库持久状态不可用')
+        const learning = await owner.learn(target.dir, sessionId, { text: args.text as string, layer: args.layer as string, ref: args.ref as string, expectedRevision: args.expectedRevision as string, ...(args.basis === undefined ? {} : { basis: args.basis as string }), ...(args.previous === undefined ? {} : { previous: args.previous as string }) }, exec.signal)
+        return { sessionId, learning: learning as Observation }
+      }
+      if (args.layer !== undefined || args.ref !== undefined || args.previous !== undefined || args.basis !== undefined) throw new Error('只有learn接受学习字段')
       if (args.refs !== undefined && args.action !== 'consolidate') throw new Error('只有整理接受来源引用')
       if (args.action === 'consolidate') {
         const owner = knowledge?.()
@@ -83,6 +93,7 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       exec.signal.throwIfAborted()
       if (host.target(exec, args.moduleId).dir !== target.dir || exec.agent?.session.id !== sessionId) throw new Error('Soul状态来源或会话已变化')
       const owner = knowledge?.(), access = owner?.status(target.dir)
+      if (access?.binding) access.binding.learning = owner!.learning(target.dir, sessionId, true)
       const recording = access?.state === 'bound' ? owner!.recording(target.dir, sessionId) : { persisted: 0, pending: 0, derivedFailed: 0 }
       return { sessionId, ...readSoulState(target.dir, sessionId, sessionOwner()), knowledge: access ?? { state: 'unavailable', reason: '知识库持久状态不可用' }, recording, ...(observation === undefined ? {} : { observation }) }
     },

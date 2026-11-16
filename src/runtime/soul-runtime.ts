@@ -122,6 +122,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     if (key === 'clock.iso') return new Date().toISOString()
     if (key === 'clock.timeZone') return Intl.DateTimeFormat().resolvedOptions().timeZone
     if (key.startsWith('soul.')) {
+      if (key === 'soul.learning' && !legacyAllowed(dir)) return knowledge?.()?.learning(dir, agent.session.id).map(row => row.text).join('\n')
       if (!legacyAllowed(dir)) return undefined
       if (key === 'soul.mark' || key === 'soul.markAt') {
         const mark = readSoulState(dir, agent.session.id, sessionOwner()).mark
@@ -146,6 +147,13 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   }
   ctx.provide(SOUL_SELF_SERVICE, {
     status,
+    async refresh(id: string, agent: Agent) {
+      const dir = source(id, agent), owner = knowledge?.()
+      if (knowledge && !owner || owner?.status(dir).state === 'unavailable') throw new Error('学习授权不可用，停止本次装配')
+      if (owner?.status(dir).state === 'bound') await owner.refreshEvidence(dir)
+      if (knowledge?.() !== owner) throw new Error('学习持久状态已变化')
+      source(id, agent)
+    },
     admit,
     attached: (id: string, agent: Agent, boundary: number) => admit(id, agent, boundary + 1, true),
     assertParticipating: source,
@@ -159,7 +167,10 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     },
     render: (id: string, agent: Agent, signal?: AbortSignal): Promise<string> => {
       const dir = source(id, agent, signal), budget = readSelfBudget(dir)
-      return Promise.resolve().then(() => {
+      return Promise.resolve().then(async () => {
+        const owner = knowledge?.()
+        if (owner && owner.status(dir).state === 'bound') await owner.refreshEvidence(dir)
+        if (knowledge?.() !== owner) throw new Error('SELF学习持久状态已变化')
         if (source(id, agent, signal) !== dir) throw new Error('SELF来源发生变化')
         const state = readSoulState(dir, agent.session.id, sessionOwner())
         const water = pressure(dir, agent)
@@ -176,7 +187,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
           const result = evaluateTemplate(sourceText, { module: snapshot.module, global: snapshot.global, sessionVariables: session.variables,
             session: agent.session, readOnly: true, sourceId: `${id}:self`, readRuntime: key => readValue(id, key, agent, signal) })
           return { text: result.text, revision: JSON.stringify([snapshot.revisions, session.revision]) }
-        }, legacyAllowed(dir))
+        }, legacyAllowed(dir), owner?.status(dir).state === 'bound' ? owner.learning(dir, agent.session.id).map(row => ({ text: `- ${row.text}`, protected: row.layer === 'core' || row.layer === 'locked' })) : [])
         source(id, agent, signal)
         if (rendered.size > 1024) rendered.delete(rendered.keys().next().value!)
         const key = keyOf(id, agent), candidates = [...(rendered.get(key)?.candidates ?? []), digest(text)].slice(-16)
