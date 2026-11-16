@@ -183,14 +183,14 @@ export function moduleImportPreview(root: string, files: AssetFile[], request: A
 
 /** 同一进程的同目标安装串行；磁盘版本复检保护其他写入者。 */
 const installs = createTargetQueue()
-export async function installModulePackage(root: string, files: AssetFile[], request: AssetImportRequest, options: { preserveAssets?: boolean; signal?: AbortSignal } = {}): Promise<{ id: string; backupPath?: string }> {
+export async function installModulePackage(root: string, files: AssetFile[], request: AssetImportRequest, options: { preserveAssets?: boolean; signal?: AbortSignal; beforeCommit?: () => void; commit?: () => Promise<void> } = {}): Promise<{ id: string; backupPath?: string }> {
   options.signal?.throwIfAborted()
   root = canonicalModulesRoot(root, true)
   // 唯一一次全量转换：转换只取决于上传内容，链内与锁内重跑它只是白烧解码、规则编译与目录遍历。
   const preview = moduleImportPreview(root, files, request)
   if (!('prepared' in preview)) throw new Error('请先完成来源和顺序组选择')
   const chainKey = join(root, preview.summary.targetId)
-  return installs.run(chainKey, () => {
+  return installs.run(chainKey, async () => {
     options.signal?.throwIfAborted()
     // 目标事实在链内重解：上一个安装可能刚创建或改动了目标（-copy 后缀与目录版本都会变）。
     const id = targetId(root, request.targetId ?? preview.prepared.spec.id, request)
@@ -200,11 +200,13 @@ export async function installModulePackage(root: string, files: AssetFile[], req
       || request.expectedSourceDigest !== preview.sourceDigest) stale()
     const exists = version !== null
     if (exists && request.overwrite !== true) throw new Error('目标已存在，请明确选择更新或另存')
-    const outcome = installModuleDirectory({
+    const outcome = await installModuleDirectory({
       root,
       id,
       expectedVersion: version,
       signal: options.signal,
+      beforeCommit: options.beforeCommit,
+      ...(options.commit ? { commit: options.commit } : {}),
       build: (candidate) => {
         if (exists) {
           // 整树保留只发生在角色来源或显式 preserveAssets；普通包覆盖只保留 data/（与 memory.md 同规则）。
@@ -237,7 +239,7 @@ export async function installModulePackage(root: string, files: AssetFile[], req
     })
     if (outcome.state === 'conflict') stale()
     if (outcome.state === 'recovery-required') {
-      throw new AssetTransferError('module-recovery-required', `安装失败且恢复未完成，原目录保留在 ${outcome.backupPath}`)
+      throw new AssetTransferError('module-recovery-required', `安装或状态提交结果无法确认，当前目录与原目录备份均已保留；请停止重试，重新打开持久状态并核对绑定身份后恢复匹配目录。原目录备份：${outcome.backupPath}`)
     }
     invalidateModuleSpec(target)
     // 备份清理失败不会把已经成功的安装说成失败；保留路径供诊断。

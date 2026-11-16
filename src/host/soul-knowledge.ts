@@ -1,7 +1,7 @@
 /** 本机知识库授权：只由用户命令确认，模块导出不包含官方持久域。 */
 import { lstatSync, mkdirSync, readdirSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { basename, dirname, isAbsolute, join, parse, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -12,6 +12,8 @@ import { assertModuleSnapshotSource } from './module-install.ts'
 import type { LoadRetrievalSession } from './module-retrieval.ts'
 import { readSoulLedgerProjection } from './soul-ledger.ts'
 import { openAssistedBudget } from './soul-assisted-budget.ts'
+import { installModulePackage } from './module-package.ts'
+import type { AssetFile, AssetImportRequest } from '../shared/asset-transfer.ts'
 
 const source = z.object({ id: z.string(), path: z.string(), scope: z.string(), version: z.string(), revoked: z.boolean() }).strict()
 const project = z.object({ sessionId: z.string(), path: z.string(), identity: z.string() }).strict()
@@ -21,7 +23,7 @@ const recorded = z.object({ operation: z.string(), entryId: z.string(), sourceId
 const publication = z.object({ id: z.string(), path: z.string(), scope: z.string(), version: z.string(), roots: z.array(z.string()), rootVersions: z.array(z.string()), refs: z.array(z.string()) }).strict()
 const assessment = z.object({ decision: z.enum(['adopt', 'candidate']), reason: z.string().trim().min(1).max(2048), unresolved: z.boolean(), counterRefs: z.array(z.string()).max(200) }).strict()
 const learning = z.object({ id: z.string(), text: z.string(), layer: z.enum(['expression', 'judgment', 'experience', 'core', 'locked']), sourceId: z.string(), sourceVersion: z.string(), scope: z.string(), state: z.enum(['candidate', 'adopted', 'forgotten', 'withdrawn']), evidence: z.array(z.object({ id: z.string(), version: z.string() }).strict()).optional(), roots: z.array(z.string()).optional(), refs: z.array(z.string()).optional(), assessment: assessment.optional(), previous: z.string().optional(), confirmation: z.object({ sessionId: z.string(), revision: z.string() }).strict().optional(), inactiveReason: z.string().optional() }).strict()
-const binding = z.object({ directory: z.string(), moduleIdentity: z.string(), root: z.string(), identity: z.string(), read: z.array(z.string()), write: z.array(z.string()), revision: z.string(), generation: z.string().optional(), sources: z.array(source).optional(), projects: z.array(project).optional(), histories: z.array(history).optional(), continuity: z.object({ enabled: z.boolean(), enabledAt: z.number(), generation: z.string() }).strict().optional(), participants: z.array(participation).optional(), records: z.array(recorded).optional(), publications: z.array(publication).optional(), learning: z.array(learning).optional() }).strict()
+const binding = z.object({ directory: z.string(), moduleIdentity: z.string(), assistedIdentity: z.string().optional(), root: z.string(), identity: z.string(), read: z.array(z.string()), write: z.array(z.string()), revision: z.string(), generation: z.string().optional(), sources: z.array(source).optional(), projects: z.array(project).optional(), histories: z.array(history).optional(), continuity: z.object({ enabled: z.boolean(), enabledAt: z.number(), generation: z.string() }).strict().optional(), participants: z.array(participation).optional(), records: z.array(recorded).optional(), publications: z.array(publication).optional(), learning: z.array(learning).optional() }).strict()
 const definition = defineDomain({ name: 'prompt_tool_soul_knowledge', version: 1, tables: { bindings: domainTable(binding) } })
 type Binding = z.infer<typeof binding>
 export interface SoulKnowledgeRequest { moduleId: string; action: 'status' | 'preview' | 'confirm' | 'sources' | 'source-preview' | 'source-confirm' | 'revoke' | 'project' | 'enable' | 'disable' | 'learning-list' | 'learning-confirm' | 'learning-forget' | 'learning-withdraw'; root?: string; read?: string[]; write?: string[]; expectedRevision?: string; path?: string; scope?: 'general' | 'project'; projectDirectory?: string; sourceId?: string; sessionId?: string; seqs?: number[] }
@@ -32,6 +34,7 @@ export interface SoulKnowledgeOwner {
   status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; consolidationRevision?: string; learningRevision?: string; reason?: string; entry: string }
   preview(directory: string, request: SoulKnowledgeRequest): Record<string, unknown>
   confirm(directory: string, request: SoulKnowledgeRequest, signal: AbortSignal): Promise<ReturnType<SoulKnowledgeOwner['status']>>
+  upgrade(directory: string, files: AssetFile[], request: AssetImportRequest, expectedBindingRevision: string | null, signal: AbortSignal): Promise<{ id: string; backupPath?: string }>
   sources(directory: string, sessionId: string): { state: string; documents: KnowledgeDocument[]; histories: z.infer<typeof history>[] }
   refreshEvidence(directory: string): Promise<void>
   learn(directory: string, sessionId: string, request: { text: string; layer: string; ref: string; refs?: string[]; assessment?: z.infer<typeof assessment>; expectedRevision: string; basis?: string; previous?: string }, signal: AbortSignal, assertAuthorized?: () => void): Promise<Record<string, unknown>>
@@ -251,6 +254,34 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     onChange(listener) { changeListeners.add(listener); return () => { changeListeners.delete(listener) } },
     status,
     sources,
+    upgrade(directory, files, request, expectedBindingRevision, signal) {
+      const operation = queue.run(key(directory), async () => {
+        signal.throwIfAborted(); assertActive()
+        const current = status(directory)
+        if (current.state === 'unavailable' || (current.binding?.revision ?? null) !== expectedBindingRevision) throw new Error('升级知识库状态已变化，请重新预览')
+        const previous = current.binding
+        return installModulePackage(dirname(directory), files, request, { preserveAssets: true, signal,
+          beforeCommit: () => {
+            signal.throwIfAborted(); assertActive()
+            const latest = status(directory)
+            if (latest.state !== current.state || (latest.binding?.revision ?? null) !== expectedBindingRevision) throw new Error('升级知识库授权或身份已变化，请重新预览')
+          },
+          commit: async () => {
+            if (!previous) return
+            assertActive()
+            const path = relative(directory, previous.root)
+            const internal = path === '' || !isAbsolute(path) && path !== '..' && !path.startsWith('..' + sep)
+            const rootIdentity = identity(previous.root)
+            if (!internal && rootIdentity !== previous.identity) throw new Error('升级期间知识库真实身份已变化')
+            const next = { ...previous, moduleIdentity: identity(directory), identity: internal ? rootIdentity : previous.identity, assistedIdentity: previous.assistedIdentity ?? previous.moduleIdentity, revision: revisionOf(randomUUID()) }
+            await saveBinding(revisionOf(key(directory)), next)
+          },
+        })
+      })
+      pending.add(operation)
+      void operation.then(() => pending.delete(operation), () => pending.delete(operation))
+      return operation
+    },
     learning(directory, sessionId, includeInactive = false) {
       const value = requireBinding(directory), access = sources(directory, sessionId)
       if (!includeInactive && !value.continuity?.enabled) return []
@@ -439,7 +470,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           await saveBinding(revisionOf(key(directory)), next)
           const root = next.participants?.findLast(row => row.sessionId === sessionId && row.generation === next.continuity?.generation)?.rootSessionId
           try {
-            if (root && !visibleRecords(directory, sessionId).some(row => row.pending)) await assisted.clearBacklog(JSON.stringify([directory, next.moduleIdentity, root]))
+            if (root && !visibleRecords(directory, sessionId).some(row => row.pending)) await assisted.clearBacklog(JSON.stringify([directory, next.assistedIdentity ?? next.moduleIdentity, root]))
           } catch { /* 发布已生效，提示重置失败不能撤销正文。 */ }
           return { state: 'published', candidateId: id, revision: next.revision, reference: row }
         }))
