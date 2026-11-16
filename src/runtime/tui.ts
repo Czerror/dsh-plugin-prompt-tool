@@ -12,6 +12,8 @@ import { ENGINE_PARAM_DEFINITIONS, type EngineParamKey } from '../shared/engine-
 import { modulesEnabledOps } from '../shared/module-settings.ts'
 import { previewModuleDataImport, applyModuleDataImport, type ModuleDataImportRequest } from '../host/module-data-import.ts'
 import type { SoulKnowledgeOwner, SoulKnowledgeRequest } from '../host/soul-knowledge.ts'
+import { SOUL_SELF_SERVICE } from '../../engine/service-names.mjs'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 
 /** dsh-tui 全局开关：键名与 settings 路径一致（settings mutate）。 */
 const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
@@ -132,7 +134,7 @@ export function registerTuiCommand(
             invocation.signal.throwIfAborted()
             const result = request.action === 'preview' ? owner.preview(directory, request)
               : request.action === 'confirm' ? await owner.confirm(directory, request, invocation.signal)
-                : request.action === 'status' ? owner.status(directory) : await owner.manage(directory, request, invocation.agent.session.id, invocation.signal)
+                : request.action === 'status' ? { ...owner.status(directory), assistedConsolidation: (sctx.get(SOUL_SELF_SERVICE) as { assistedStatus?: (id: string, agent: Agent) => Record<string, unknown> } | undefined)?.assistedStatus?.(request.moduleId, invocation.agent) ?? { state: 'unavailable', reason: 'Soul运行时未装配' } } : await owner.manage(directory, request, invocation.agent.session.id, invocation.signal)
             if (!result) throw new Error('知识库action无效')
             return { kind: 'success', text: JSON.stringify(result) }
           } catch (error) { return { kind: 'error', text: `知识库操作拒绝：${String((error as Error).message)}` } }

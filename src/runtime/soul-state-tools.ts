@@ -8,6 +8,8 @@ import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 import type { SessionVariableOwner } from '../host/session-variables.ts'
 import { readModuleVariables } from '../host/module-variables.ts'
 import type { SoulKnowledgeOwner } from '../host/soul-knowledge.ts'
+import { SOUL_SELF_SERVICE } from '../../engine/service-names.mjs'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 
 type Observation = string | number | boolean | null | Observation[] | { [key: string]: Observation }
 export interface SoulStateObservation {
@@ -23,9 +25,9 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
   }
   const fiber = ctx.inject(['tools'], toolsCtx => toolsCtx.tools.register(defineTool({
     name: MODULE_TOOL_NAMES.soulState,
-    description: '读取真实当前会话Soul状态或只读运行诊断；check显式includeUpgrade=true才展开完整升级文件候选。mark记录短状态及时间，需要status版本，首次null；标记时间不代表实际活动，不关闭账本事项。阶段收尾consolidate提交text、已登记条目/来源refs及生成前knowledge.consolidationRevision作为expectedRevision；只整理新增材料，不额外调用模型；published才生效，candidate仅保存未生效。learn提交text、layer、正式条目ref和knowledge.binding.revision作为expectedRevision；明确长期用户反馈可标basis=explicit-long-term，推断用inference，refs补充独立经历的条目/已发布摘要；assessment含decision(adopt/candidate)、reason(采纳/替代/保留及反证处理依据)、unresolved(是否尚有未解反证)、counterRefs(反证引用数组)。至少两次独立真实经历、同范围且有理由采纳无未解反证才生效；同源摘要不能重复计数，不能将推断称为用户意见或将局部经历推广全局，不确定保留candidate。核心/锁定变化仅候选，交用户knowledge命令确认；可用previous声明同层学习替换，不能自报确认或作者。',
+    description: '读取真实当前会话Soul状态或只读运行诊断；check显式includeUpgrade=true才展开完整升级文件候选。mark记录短状态及时间，需要status版本，首次null；标记时间不代表实际活动，不关闭账本事项。阶段收尾consolidate提交text、已登记条目/来源refs及生成前knowledge.consolidationRevision作为expectedRevision；只整理新增材料，不额外调用模型；published才生效，candidate仅保存未生效。learn提交text、layer、正式条目ref和knowledge.binding.revision作为expectedRevision；明确长期用户反馈可标basis=explicit-long-term，推断用inference，refs补充独立经历的条目/已发布摘要；assessment含decision(adopt/candidate)、reason(采纳/替代/保留及反证处理依据)、unresolved(是否尚有未解反证)、counterRefs(反证引用数组)。至少两次独立真实经历、同范围且有理由采纳无未解反证才生效；同源摘要不能重复计数，不能将推断称为用户意见或将局部经历推广全局，不确定保留candidate。核心/锁定变化仅候选，交用户knowledge命令确认；可用previous声明同层学习替换，不能自报确认或作者。assist在当前根用户回合共享预算内请求一次无工具辅助整理，立即返回排队状态；status查看生成、发布、取消、失败和预算，不接受自报来源或用量。',
     parameters: {
-      moduleId: MODULE_ID_PARAM, action: { type: 'string', enum: ['status', 'mark', 'check', 'consolidate', 'learn'], required: true },
+      moduleId: MODULE_ID_PARAM, action: { type: 'string', enum: ['status', 'mark', 'check', 'consolidate', 'learn', 'assist'], required: true },
       layer: { type: 'string', enum: ['expression', 'judgment', 'experience', 'core', 'locked'] }, ref: { type: 'string' }, previous: { type: 'string' },
       basis: { type: 'string', enum: ['explicit-long-term', 'inference'] },
       assessment: { type: 'json' },
@@ -41,6 +43,7 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       recording: { type: 'json' },
       publication: { type: 'json' },
       learning: { type: 'json' },
+      assistedConsolidation: { type: 'json' },
       persisted: { type: 'boolean' }, publicationSuppressed: { type: 'boolean' },
     } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     execute: async (args, exec) => {
@@ -60,6 +63,11 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
         return { sessionId, learning: learning as Observation }
       }
       if (args.layer !== undefined || args.ref !== undefined || args.previous !== undefined || args.basis !== undefined || args.assessment !== undefined) throw new Error('只有learn接受学习字段')
+      const assisted = ctx.get(SOUL_SELF_SERVICE) as { requestAssisted?: (id: string, agent: Agent) => Promise<Record<string, unknown>>; assistedStatus?: (id: string, agent: Agent) => Record<string, unknown> } | undefined
+      if (args.action === 'assist') {
+        if (args.text !== undefined || args.expectedRevision !== undefined || args.refs !== undefined || !exec.agent || !assisted?.requestAssisted) throw new Error('辅助整理只接受当前真实会话和模块，不接受自报材料或预算')
+        return { sessionId, assistedConsolidation: await assisted.requestAssisted(target.id, exec.agent) as Observation }
+      }
       if (args.refs !== undefined && args.action !== 'consolidate') throw new Error('只有整理接受来源引用')
       if (args.action === 'consolidate') {
         const owner = knowledge?.()
@@ -100,7 +108,7 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       const owner = knowledge?.(), access = owner?.status(target.dir)
       if (access?.binding) access.binding.learning = owner!.learning(target.dir, sessionId, true)
       const recording = access?.state === 'bound' ? owner!.recording(target.dir, sessionId) : { persisted: 0, pending: 0, derivedFailed: 0 }
-      return { sessionId, ...readSoulState(target.dir, sessionId, sessionOwner()), knowledge: access ?? { state: 'unavailable', reason: '知识库持久状态不可用' }, recording, ...(observation === undefined ? {} : { observation }) }
+      return { sessionId, ...readSoulState(target.dir, sessionId, sessionOwner()), knowledge: access ?? { state: 'unavailable', reason: '知识库持久状态不可用' }, assistedConsolidation: exec.agent && assisted?.assistedStatus?.(target.id, exec.agent) as Observation, recording, ...(observation === undefined ? {} : { observation }) }
     },
   })))
   return () => { void fiber.dispose() }

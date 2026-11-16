@@ -452,6 +452,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (current === undefined) return
     if (agent !== undefined && current.agent !== agent) return
     mounts.delete(sessionId)
+    const soul = ctx.get(SOUL_SELF_SERVICE) as { detached?: (id: string, agent: Agent) => void } | undefined
+    for (const id of current.moduleIds) soul?.detached?.(id, current.agent)
     ruleDiagnostics.invalidateIdentity(current.moduleIds)
     await current.fiber.dispose()
   }
@@ -571,7 +573,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         ...prepared.filter(item => !record.prepared.includes(item)).map(item => item.moduleId)])])
       record.prepared = prepared
       record.stamp = stamp; record.content = content; record.committed = true
-      const soul = ctx.get(SOUL_SELF_SERVICE) as { attached?: (id: string, agent: Agent, boundary: number) => Promise<void> } | undefined
+      const soul = ctx.get(SOUL_SELF_SERVICE) as { attached?: (id: string, agent: Agent, boundary: number) => Promise<void>; detached?: (id: string, agent: Agent) => void } | undefined
+      for (const id of previousModuleIds) if (!record.moduleIds.includes(id)) soul?.detached?.(id, agent)
       const boundary = agent.session.snapshotEvents().reduce((max, event) => Math.max(max, event.seq), -1)
       for (const id of record.moduleIds) if (!previousModuleIds.includes(id)) {
         void soul?.attached?.(id, agent, boundary).catch(error => warnOnce(`Soul参与界线登记失败：${String(error)}`))
