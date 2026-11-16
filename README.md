@@ -169,6 +169,8 @@ Soul 模块包含结构化账本、授权文件／历史检索、每步动态 SE
 
 正常会话阶段收尾可用 `soul_state consolidate` 提交 `text`、已登记来源或条目 `refs` 和生成前 `knowledge.consolidationRevision` 对应的 `expectedRevision`；该版本仅用于整理，不能代替用户接入授权版本，不发起额外模型调用。至少包含一条待整理条目才发布，无新增材料返回 `no-work`。正文只保存到已授权区域的不可变版本，原账本短条目作为索引，状态保存关联引用及去重后的原始证据根。来源缺失、未发布候选、跨项目引用均拒绝；撤权或来源版本变化立即停用整个受影响正文。候选保存后状态提交失败返回 `candidate`（已保存但未生效），原正文及 pending 保留；同正文、引用和预期版本可重验恢复，版本冲突不能覆盖新提交。仅 `published` 推进 pending，成功重试不重复写正文或事实。候选文件不会自动纳入检索，也不能经普通来源登记绕过发布。
 
+推断学习使用 `basis:"inference"`，以 `refs` 补充正式条目或已发布摘要引用，提交 `assessment:{decision:"adopt"|"candidate",reason,unresolved,counterRefs:[]}` 表达模型的判断、处理理由与反证。宿主沿摘要核实实际原始消息，至少两次独立真实用户经历、同一范围且模型明确采纳并无未解反证才可生效；同源摘要不重复计数，不把项目经历晋升为通用偏好。身份核心与锁定项仍须确认。变更记录保存引用、证据根和处理依据，必要证据撤权或版本变化后停止注入，审计隐藏失效正文及理由；不按时间自动衰减或删除。
+
 `soul_state learn` 使用 `text`、`layer`（experience/judgment/expression/core/locked）、正式记录 `ref` 与当前 `knowledge.binding.revision` 作为 `expectedRevision` 提议学习。模型识别明确长期反馈时提交 `basis:"explicit-long-term"`；宿主核实真实用户、事件版本及长期范围，临时要求、推断或层级不明只保留候选，子任务不能冒充用户反馈。核心和锁定项始终须用户 `/prompt-tool knowledge` 的 `learning-confirm` 确认。用户以 `learning-list` 查看来源、范围和变更；以条目 id 作为 `sourceId`、当前绑定版本操作 `learning-forget` 或 `learning-withdraw`。可选 `previous` 声明同层同范围的替换，撤回仅恢复此前仍有效的学习，忘记停用目标及后续依赖；保留原始证据与无关学习，不声称收回已经投递的文本。
 
 绑定知识库后的 SELF 使用原用户骨架、当前授权的有效学习与真实会话身份，旧账本与诊断快照不会自动复活。启用模板求值的普通 persona 可通过 `{{runtime.get::soul.learning}}` 读取相同有效投影。默认总预算 12288 UTF-8 字节，骨架、确认核心/锁定偏好和真实身份优先，普通学习与运行状态按剩余预算注入，省略说明计入预算；受保护核心本身超限明确失败，原文仍按授权引用回取。未绑定时保留原 SELF 行为。`soul_state status/mark/check` 提供当前会话短状态和运行诊断；短状态不被转为长期学习。

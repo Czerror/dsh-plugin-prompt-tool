@@ -23,11 +23,12 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
   }
   const fiber = ctx.inject(['tools'], toolsCtx => toolsCtx.tools.register(defineTool({
     name: MODULE_TOOL_NAMES.soulState,
-    description: '读取真实当前会话Soul状态或只读运行诊断；check显式includeUpgrade=true才展开完整升级文件候选。mark记录短状态及时间，需要status版本，首次null；标记时间不代表实际活动，不关闭账本事项。阶段收尾consolidate提交text、已登记条目/来源refs及生成前knowledge.consolidationRevision作为expectedRevision；只整理新增材料，不额外调用模型；published才生效，candidate仅保存未生效。learn提交text、layer、正式条目ref和knowledge.binding.revision作为expectedRevision；明确长期用户反馈可标basis=explicit-long-term，推断用inference。核心/锁定变化仅候选，交用户knowledge命令确认；可用previous声明同层学习替换，不能自报确认或作者。',
+    description: '读取真实当前会话Soul状态或只读运行诊断；check显式includeUpgrade=true才展开完整升级文件候选。mark记录短状态及时间，需要status版本，首次null；标记时间不代表实际活动，不关闭账本事项。阶段收尾consolidate提交text、已登记条目/来源refs及生成前knowledge.consolidationRevision作为expectedRevision；只整理新增材料，不额外调用模型；published才生效，candidate仅保存未生效。learn提交text、layer、正式条目ref和knowledge.binding.revision作为expectedRevision；明确长期用户反馈可标basis=explicit-long-term，推断用inference，refs补充独立经历的条目/已发布摘要；assessment含decision(adopt/candidate)、reason(采纳/替代/保留及反证处理依据)、unresolved(是否尚有未解反证)、counterRefs(反证引用数组)。至少两次独立真实经历、同范围且有理由采纳无未解反证才生效；同源摘要不能重复计数，不能将推断称为用户意见或将局部经历推广全局，不确定保留candidate。核心/锁定变化仅候选，交用户knowledge命令确认；可用previous声明同层学习替换，不能自报确认或作者。',
     parameters: {
       moduleId: MODULE_ID_PARAM, action: { type: 'string', enum: ['status', 'mark', 'check', 'consolidate', 'learn'], required: true },
       layer: { type: 'string', enum: ['expression', 'judgment', 'experience', 'core', 'locked'] }, ref: { type: 'string' }, previous: { type: 'string' },
       basis: { type: 'string', enum: ['explicit-long-term', 'inference'] },
+      assessment: { type: 'json' },
       text: { type: 'string' }, expectedRevision: { oneOf: [{ type: 'string' }, { type: 'null' }] },
       refs: { type: 'array', items: { type: 'string' } },
       includeUpgrade: { type: 'boolean' },
@@ -43,7 +44,7 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       persisted: { type: 'boolean' }, publicationSuppressed: { type: 'boolean' },
     } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     execute: async (args, exec) => {
-      if (Object.keys(args).some(key => !['moduleId', 'action', 'text', 'expectedRevision', 'includeUpgrade', 'refs', 'layer', 'ref', 'previous', 'basis'].includes(key))) throw new Error('Soul状态请求含未知字段，不能指定其他会话')
+      if (Object.keys(args).some(key => !['moduleId', 'action', 'text', 'expectedRevision', 'includeUpgrade', 'refs', 'layer', 'ref', 'previous', 'basis', 'assessment'].includes(key))) throw new Error('Soul状态请求含未知字段，不能指定其他会话')
       if (args.includeUpgrade !== undefined && (typeof args.includeUpgrade !== 'boolean' || args.action !== 'check')) throw new Error('只有check接受布尔includeUpgrade')
       exec.signal.throwIfAborted()
       const target = host.target(exec, args.moduleId), sessionId = exec.agent?.session.id
@@ -51,10 +52,10 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       if (args.action === 'learn') {
         const owner = knowledge?.()
         if (!owner) throw new Error('知识库持久状态不可用')
-        const learning = await owner.learn(target.dir, sessionId, { text: args.text as string, layer: args.layer as string, ref: args.ref as string, expectedRevision: args.expectedRevision as string, ...(args.basis === undefined ? {} : { basis: args.basis as string }), ...(args.previous === undefined ? {} : { previous: args.previous as string }) }, exec.signal)
+        const learning = await owner.learn(target.dir, sessionId, { text: args.text as string, layer: args.layer as string, ref: args.ref as string, expectedRevision: args.expectedRevision as string, ...(args.refs === undefined ? {} : { refs: args.refs as string[] }), ...(args.assessment === undefined ? {} : { assessment: args.assessment as Parameters<SoulKnowledgeOwner['learn']>[2]['assessment'] }), ...(args.basis === undefined ? {} : { basis: args.basis as string }), ...(args.previous === undefined ? {} : { previous: args.previous as string }) }, exec.signal)
         return { sessionId, learning: learning as Observation }
       }
-      if (args.layer !== undefined || args.ref !== undefined || args.previous !== undefined || args.basis !== undefined) throw new Error('只有learn接受学习字段')
+      if (args.layer !== undefined || args.ref !== undefined || args.previous !== undefined || args.basis !== undefined || args.assessment !== undefined) throw new Error('只有learn接受学习字段')
       if (args.refs !== undefined && args.action !== 'consolidate') throw new Error('只有整理接受来源引用')
       if (args.action === 'consolidate') {
         const owner = knowledge?.()
