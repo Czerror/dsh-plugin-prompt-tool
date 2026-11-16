@@ -106,7 +106,11 @@ function rootSnapshot(root: string) {
 export async function openSoulKnowledge(facility: DomainFacility, loadSession?: LoadRetrievalSession): Promise<SoulKnowledgeOwner> {
   const assisted = await openAssistedBudget(facility)
   const changeListeners = new Set<() => void>()
-  const domain = await facility.open(definition), table = domain.table('bindings'), queue = createTargetQueue()
+  const domain = await facility.open(definition).catch(async error => {
+    await assisted.dispose().catch(() => {})
+    throw error
+  })
+  const table = domain.table('bindings'), queue = createTargetQueue()
   const saveBinding = async (id: string, value: Binding) => {
     await table.put(id, value)
     for (const listener of changeListeners) { try { listener() } catch { /* 通知失败不撤销已持久化事实。 */ } }
@@ -192,6 +196,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     const histories = (value.histories ?? []).filter(item => !item.revoked && inherited(item.id) && (item.scope === 'general' || item.scope === project))
     const allowed = new Set([...documents.map(row => row.sourceId), ...histories.map(row => row.id)])
     for (const row of value.publications ?? []) {
+      if (!value.continuity?.enabled) continue
       if (!row.roots.every(id => allowed.has(id)) || row.scope !== 'general' && row.scope !== project) continue
       if (row.roots.some((id, index) => revisionOf(JSON.stringify([...(value.sources ?? []), ...(value.histories ?? [])].find(source => source.id === id))) !== row.rootVersions[index])) continue
       if (row.roots.some(id => {
@@ -236,6 +241,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     sources,
     learning(directory, sessionId, includeInactive = false) {
       const value = requireBinding(directory), access = sources(directory, sessionId)
+      if (!includeInactive && !value.continuity?.enabled) return []
       const allowed = new Set(access.histories.map(row => row.id))
       const valid = (row: z.infer<typeof learning>, trail = new Set<string>()): boolean => {
         if (trail.has(row.id)) return false
