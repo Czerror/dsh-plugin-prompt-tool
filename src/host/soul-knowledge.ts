@@ -130,6 +130,21 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     participants: value.participants?.map(({ cursor: _cursor, grants: _grants, ...row }) => row),
     histories: value.histories?.filter(row => !row.automatic || value.records?.some(record => record.sourceId === row.id) || row.revoked),
   }))
+  // Observation cursors and automatically indexed events are derived state;
+  // they must not invalidate a user command's control-version CAS token.
+  const observationControlSnapshot = (value: Binding) => {
+    const copy = structuredClone(value)
+    // Session/project discovery is derived from the current cwd; explicit project commands still CAS in manage().
+    delete copy.projects
+    copy.participants = copy.participants?.map(row => {
+      const stable = { ...row } as Record<string, unknown>
+      delete stable.cursor
+      delete stable.grants
+      return stable as typeof row
+    })
+    copy.histories = copy.histories?.filter(row => !row.automatic || row.revoked)
+    return JSON.stringify({ ...copy, revision: undefined })
+  }
   const status: SoulKnowledgeOwner['status'] = directory => {
     assertActive()
     const current = table.get(revisionOf(key(directory))), entry = '/prompt-tool knowledge <JSON：moduleId、action=preview|confirm|status>'
@@ -485,7 +500,8 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         reconcile(directory, next)
         if (requireBinding(directory).revision !== value.revision) throw new Error('知识来源版本已变化')
         assertActive(); assertAuthorized?.()
-        next.revision = revisionOf(randomUUID())
+        if (observationControlSnapshot(next) !== observationControlSnapshot(value)) next.revision = revisionOf(randomUUID())
+        else next.revision = value.revision
         await saveBinding(revisionOf(key(directory)), next)
       }))
     },
