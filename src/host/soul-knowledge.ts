@@ -274,7 +274,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const participant = value.participants?.findLast(row => row.sessionId === source.sessionId)
         const original = data.content?.filter(row => row.type === 'text').map(row => row.text ?? '').join('\n')
         // 否定临时范围的表述不构成临时限制，其他临时措辞仍阻止直接采纳。
-        const scopeText = original?.replace(/(?:不|并非|绝非|不是)(?:只|仅仅|仅)?(?:是|限于|限)?(?:这次|本次|暂时|今天|当前任务)|not (?:just |only )?(?:this time|temporar\w*)/gi, '')
+        const scopeText = original?.replace(/(?:不|并非|绝非|不是)(?:只|仅仅|仅)?(?:是|限于|限)?(?:这次|本次|暂时|今天|当前任务)|not (?:just |only )(?:this time|temporar\w*)/gi, '')
         // 语义识别归模型；作者、长期范围和核心确认门由真实原始事件约束。
         const direct = parsed.basis === 'explicit-long-term' && !participant?.parent && event.type === 'user/message' && data.source?.kind === 'user' && typeof scopeText === 'string' && /以后|今后|长期|始终|总是|from now on|always|going forward/i.test(scopeText) && !/这次|本次|暂时|今天|当前任务|just this|this time|temporar/i.test(scopeText) && !/身份|核心|原则|锁定|identity|principle|locked/i.test(original!) && !['core', 'locked'].includes(parsed.layer)
         if (parsed.previous && !owner.learning(directory, sessionId).some(row => row.id === parsed.previous && row.layer === parsed.layer && row.scope === source.scope)) throw new Error('被替换学习不存在或不适用')
