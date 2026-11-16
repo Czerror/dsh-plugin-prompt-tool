@@ -171,7 +171,9 @@ Soul 模块包含结构化账本、授权文件／历史检索、每步动态 SE
 
 额外模型辅助整理当前不可用：已安装发布包缺少可验证的完整请求输入计量，真实路由的输出硬上限也尚未验证。`soul_state` 的 `knowledge.assistedConsolidation` 与 `/prompt-tool knowledge` 的 `action:"status"` 返回相同原因；不会以字符估算或事后 usage 放行调用。正常对话、已获准直接记录与上述正常会话内整理可继续使用。根回合持久预算、辅助生成及取消调度尚未交付，不能将此安全降级状态视为完整辅助整理功能。
 
-SELF 每步读取当前骨架、账本投影和身份，业务事实不变时正文保持稳定；自动正文不携带采样时钟、活动/投递时间或精确 token 水位，避免每个工具步骤重复追加整份上下文。维护关闭或诊断快照陈旧仍能呈现当前事实；索引只报告最近成功观测，不逐步扫描历史。`soul_state status/mark/check` 提供当前会话状态、带版本的短标记及精确时间/水位诊断。未结提醒默认仅主会话，在集合变化或成功压缩后实际投递一次；候选装配不消费提醒。Soul 显式开启 45/60/80% 水位提示，自动正文只随级别更新行动提示，不自动压缩。用户模板显式引用时钟或精确水位仍逐次求值；升级不清理旧会话已累积的快照。
+`soul_state learn` 使用 `text`、`layer`（experience/judgment/expression/core/locked）、正式记录 `ref` 与当前 `knowledge.binding.revision` 作为 `expectedRevision` 提议学习。模型识别明确长期反馈时提交 `basis:"explicit-long-term"`；宿主核实真实用户、事件版本及长期范围，临时要求、推断或层级不明只保留候选，子任务不能冒充用户反馈。核心和锁定项始终须用户 `/prompt-tool knowledge` 的 `learning-confirm` 确认。用户以 `learning-list` 查看来源、范围和变更；以条目 id 作为 `sourceId`、当前绑定版本操作 `learning-forget` 或 `learning-withdraw`。可选 `previous` 声明同层同范围的替换，撤回仅恢复此前仍有效的学习，忘记停用目标及后续依赖；保留原始证据与无关学习，不声称收回已经投递的文本。
+
+绑定知识库后的 SELF 使用原用户骨架、当前授权的有效学习与真实会话身份，旧账本与诊断快照不会自动复活。启用模板求值的普通 persona 可通过 `{{runtime.get::soul.learning}}` 读取相同有效投影。默认总预算 12288 UTF-8 字节，骨架、确认核心/锁定偏好和真实身份优先，普通学习与运行状态按剩余预算注入，省略说明计入预算；受保护核心本身超限明确失败，原文仍按授权引用回取。未绑定时保留原 SELF 行为。`soul_state status/mark/check` 提供当前会话短状态和运行诊断；短状态不被转为长期学习。
 
 `module_search` 支持全半角/大小写/千分位归一化、Soul 声明的有界近义表及 `mode: timeline` 时间线；命中标注方式，引用交给 `module_open` 重验授权与原文。历史会话仍只读白名单。维护默认每分钟更新索引与诊断快照，等待可取消，`wake` 独立且默认关闭。
 
