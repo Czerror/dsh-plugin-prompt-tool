@@ -91,9 +91,10 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
       } })
     } }
   } }
-  let replaceEvidence = false, replaceAfterLoads = 0, replacedSeq = -1, commandObservation
+  let replaceEvidence = false, replaceAfterLoads = 0, replacedSeq = -1, commandObservation, learningObservation
   const loadKnowledgeSession = async id => {
     if (id === 'command-cas' && commandObservation) await commandObservation()
+    if (learningObservation) { const observe = learningObservation; learningObservation = undefined; await observe() }
     if (replaceAfterLoads > 0 && --replaceAfterLoads === 0) replaceEvidence = true
     const session = root.sessions.get(id)
     const events = session?.snapshotEvents().map(event => replaceEvidence && event.seq === replacedSeq ? { ...event, data: { ...event.data, replacement: true } } : event)
@@ -288,6 +289,25 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(adopted.isError, false, JSON.stringify(adopted))
   assert.equal(adopted.value.learning.state, 'adopted')
   assert.match(await self(), /使用中文回答/)
+  const interruptLearning = async (target, ref) => {
+    const entered = Promise.withResolvers(), released = Promise.withResolvers()
+    const expectedRevision = owner.status(dir).learningRevision
+    learningObservation = async () => { entered.resolve(); await released.promise }
+    const pending = root.tools.execute({ agent: target, signal, calls: [{ type: 'tool-call', id: 'stale-learning', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'learn', expectedRevision, text: '迟到学习不得生效', layer: 'expression', basis: 'explicit-long-term', ref }) }] })
+    try {
+      await Promise.race([entered.promise, pending.then(() => assert.fail('学习必须经过真实来源读取'))])
+      const input = createUserMessage({ content: [{ type: 'text', text: '纠正：今后先解释原因，再给操作步骤。' }], source: { kind: 'user' } })
+      agent.send(input, 'next-turn', true)
+      await agent.whenIdle()
+      assert.ok(agent.session.snapshotEvents().some(event => event.type === 'user/message' && event.data.id === input.id), '学习读取未结束时真实新输入已可处理')
+      assert.equal(owner.status(dir).learningRevision, expectedRevision, '观察排队期间不能只靠学习版本识别新输入')
+    } finally { learningObservation = undefined; released.resolve() }
+    const result = (await pending).results[0].result
+    assert.equal(result.isError, true, '根会话的新真实输入必须阻止迟到学习提交')
+    assert.equal(owner.learning(dir, target.session.id, true).some(row => row.text === '迟到学习不得生效'), false, '迟到候选不能持久化')
+    await owner.observe(dir, agent.session.id)
+  }
+  await interruptLearning(agent, feedback.value.reference.entryId)
   const beforeNewInput = owner.status(dir)
   await send(createUserMessage({ content: [{ type: 'text', text: '今后规划维修时，先核对零件到货日期，再承诺安装时间。这是长期习惯，绝非只限本次。' }], source: { kind: 'user' } }))
   assert.notEqual(owner.status(dir).learningRevision, beforeNewInput.learningRevision, '未登记的新用户输入也使旧学习版本失效')
@@ -444,6 +464,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await new Promise(resolve => setTimeout(resolve, 20))
   assert.equal(auxiliary.length, 4, '子代理共享根回合已消费额度，不能委派绕过')
   assert.ok(parentSourceIds.every(id => childParticipation.grants.includes(id)))
+  await interruptLearning(child, childResult.value.reference.entryId)
   await send(createUserMessage({ content: [{ type: 'text', text: 'later private parent input' }], source: { kind: 'user' } }))
   const laterSource = owner.sources(dir, agent.session.id).histories.findLast(row => row.sessionId === agent.session.id).id
   assert.equal(owner.sources(dir, childId).histories.some(row => row.id === laterSource), false)
