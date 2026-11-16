@@ -100,7 +100,7 @@ function filePaths(scope: RetrievalScope): string[] {
   return [...paths].filter(path => !scope.fileAllowed || scope.fileAllowed(path))
 }
 
-export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession) {
+export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession, refreshEvidence?: () => Promise<void>) {
   const indexes = new Map<string, { events: readonly RetrievalEvent[]; rows: { seq: number; content: string }[] }>()
   const assertSessionAuthorized = (scope: RetrievalScope, id: string): void => {
     const current = scopeOf()
@@ -133,7 +133,8 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
     return { events, rows, session }
   }
   const sessionIds = (scope: RetrievalScope) => new Set([...(scope.session ? [scope.session.id] : []), ...(scope.sessions ?? [])])
-  const resultOf = (scope: RetrievalScope, hits: RetrievalHit[]) => {
+  const resultOf = async (scope: RetrievalScope, hits: RetrievalHit[]) => {
+    await refreshEvidence?.()
     const current = scopeOf()
     if (current.moduleId !== scope.moduleId || current.dir !== scope.dir) throw new Error('检索模块未授权')
     // 最后一次await后统一复核全部命中，先前收集的正文不能跨异步撤权返回。
@@ -202,7 +203,7 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
         }
       }
     }
-    resultOf(scope, hits)
+    await resultOf(scope, hits)
     const current = scopeOf()
     if (JSON.stringify([current.moduleId, current.dir, current.paths, [...sessionIds(current)]]) !== JSON.stringify([scope.moduleId, scope.dir, scope.paths, [...sessionIds(scope)]])) throw new Error('时间线来源声明已变化')
     for (const check of revalidate) check()
@@ -228,6 +229,7 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
   }
   return {
     async search(input: RetrievalQuery) {
+      await refreshEvidence?.()
       if (input.mode !== undefined && input.mode !== 'search' && input.mode !== 'timeline') throw new Error('检索模式无效')
       if ((input.query !== undefined || input.mode !== 'timeline') && (typeof input.query !== 'string' || input.query.trim().length === 0 || input.query.length > 1024)) throw new Error('检索 query 必须为1–1024字符')
       const limit = input.limit ?? 20
@@ -296,6 +298,7 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
       return resultOf(scope, selected)
     },
     async open(reference: RetrievalReference) {
+      await refreshEvidence?.()
       const scope = scopeOf()
       if (!reference || reference.moduleId !== scope.moduleId) throw new Error('检索引用未授权或无效')
       if (Object.keys(reference).some(key => !['kind', 'moduleId', 'path', 'revision', 'start', 'end', 'sessionId', 'seqs', 'root', 'scope', 'sourceId'].includes(key))) throw new Error('检索引用含未知字段')
@@ -321,6 +324,7 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
       return { reference, content: content.slice(reference.start, reference.end) }
     },
     async refresh() {
+      await refreshEvidence?.()
       const scope = scopeOf(), files = filePaths(scope)
       for (const path of files) fileContent(scope, path)
       let events = 0
