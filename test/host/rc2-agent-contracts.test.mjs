@@ -91,8 +91,9 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
       } })
     } }
   } }
-  let replaceEvidence = false, replaceAfterLoads = 0, replacedSeq = -1
+  let replaceEvidence = false, replaceAfterLoads = 0, replacedSeq = -1, commandObservation
   const loadKnowledgeSession = async id => {
+    if (id === 'command-cas' && commandObservation) await commandObservation()
     if (replaceAfterLoads > 0 && --replaceAfterLoads === 0) replaceEvidence = true
     const session = root.sessions.get(id)
     const events = session?.snapshotEvents().map(event => replaceEvidence && event.seq === replacedSeq ? { ...event, data: { ...event.data, replacement: true } } : event)
@@ -119,20 +120,39 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await owner.confirm(dir, { ...previewRequest, action: 'confirm', expectedRevision: preview.revision }, signal)
   const manage = async action => owner.manage(dir, { moduleId: 'alice', ...action, expectedRevision: owner.status(dir).binding.revision }, agent.session.id, signal)
   await manage({ action: 'project', projectDirectory: home })
+  const send = async message => { agent.send(message, 'next-turn', true); await agent.whenIdle(); await owner.observe(dir, agent.session.id) }
+  await send(createUserMessage({ content: [{ type: 'text', text: 'OLD HISTORY' }], source: { kind: 'user' } }))
+  await manage({ action: 'enable' })
+  await owner.observe(dir, agent.session.id)
   // Commands.execute appends command lifecycle events; the runtime observes them
   // before the command handler reaches the knowledge CAS queue.
   const commandAgentHandle = await root.agents.create({ sessionId: 'command-cas', agentOptions: { provider: 'fixture', model: 'normal' }, meta: { cwd: home } })
   handles.push(commandAgentHandle)
   const commandAgent = commandAgentHandle.agent
-  const command = async request => (await root.commands.execute(commandAgent, '/prompt-tool knowledge ' + JSON.stringify({ moduleId: 'alice', ...request }), [], signal)).result
-  const commandRevision = owner.status(dir).binding.revision
-  const commandProject = await command({ action: 'project', projectDirectory: home, expectedRevision: commandRevision })
+  const command = async (request, target = commandAgent) => (await root.commands.execute(target, '/prompt-tool knowledge ' + JSON.stringify({ moduleId: 'alice', ...request }), [], signal)).result
+  const commandStatus = await command({ action: 'status' }, agent)
+  assert.equal(commandStatus.kind, 'success', JSON.stringify(commandStatus))
+  const commandRevision = JSON.parse(commandStatus.text).binding.revision
+  assert.equal(owner.status(dir).binding.participants.some(row => row.sessionId === commandAgent.session.id), false)
+  let observedCommand, releaseCommand
+  const commandObserved = new Promise(resolve => { observedCommand = resolve })
+  const commandReleased = new Promise(resolve => { releaseCommand = resolve })
+  commandObservation = async () => { observedCommand(); await commandReleased }
+  let commandSettled = false
+  const pendingCommand = command({ action: 'project', projectDirectory: home, expectedRevision: commandRevision }).finally(() => { commandSettled = true })
+  let commandStart
+  try {
+    await Promise.race([commandObserved, pendingCommand.then(() => assert.fail('命令未经过开启后的observe'))])
+    commandStart = commandAgent.session.snapshotEvents().find(event => event.type === 'command/run')
+    assert.ok(commandStart, '持续记忆开启后的真实command/run必须进入observe的会话读取')
+    assert.equal(commandSettled, false, '管理命令必须等待前面的观察队列')
+  } finally { commandObservation = undefined; releaseCommand() }
+  const commandProject = await pendingCommand
   assert.equal(commandProject.kind, 'success', JSON.stringify(commandProject))
+  assert.ok(owner.status(dir).binding.participants.find(row => row.sessionId === commandAgent.session.id).cursor >= commandStart.seq, '新会话观察必须实际持久化')
   assert.equal((await command({ action: 'enable', expectedRevision: commandRevision })).kind, 'error', '真实命令生命周期后的旧控制版本必须拒绝')
-  const send = async message => { agent.send(message, 'next-turn', true); await agent.whenIdle(); await owner.observe(dir, agent.session.id) }
-  await send(createUserMessage({ content: [{ type: 'text', text: 'OLD HISTORY' }], source: { kind: 'user' } }))
-  await manage({ action: 'enable' })
-  await owner.observe(dir, agent.session.id)
+  const commandEnabled = await command({ action: 'enable', expectedRevision: owner.status(dir).binding.revision })
+  assert.equal(commandEnabled.kind, 'success', JSON.stringify(commandEnabled))
   const message = createUserMessage({ content: [{ type: 'text', text: 'keep this project decision' }], source: { kind: 'user' } })
   await send(message)
   const fresh = await root.agents.create({ sessionId: 'record-new-main', agentOptions: { provider: 'fixture', model: 'normal' }, meta: { cwd: home } })
@@ -221,7 +241,15 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(owner.sources(dir, agent.session.id).documents.length, 0, '持久历史重新加载后拒绝旧派生正文')
   replaceEvidence = false
   await owner.refreshEvidence(dir)
+  const beforeRevoke = owner.status(dir)
+  assert.equal(beforeRevoke.binding.histories.find(row => row.id === first.value.reference.sourceId).automatic, true)
   await manage({ action: 'revoke', sourceId: first.value.reference.sourceId })
+  assert.notEqual(owner.status(dir).binding.revision, beforeRevoke.binding.revision, '自动历史撤权仍刷新控制版本')
+  assert.notEqual(owner.status(dir).learningRevision, beforeRevoke.learningRevision, '撤权使旧学习依赖失效')
+  assert.notEqual(owner.status(dir).consolidationRevision, beforeRevoke.consolidationRevision, '撤权使旧整理依赖失效')
+  const staleRevoke = await command({ action: 'enable', expectedRevision: beforeRevoke.binding.revision })
+  assert.equal(staleRevoke.kind, 'error')
+  assert.match(staleRevoke.text, /版本冲突/)
   assert.equal(owner.sources(dir, agent.session.id).documents.length, 0, '撤权立即停用混合派生正文')
   await send(createUserMessage({ content: [{ type: 'text', text: 'unrelated new decision' }], source: { kind: 'user' } }))
   assert.equal((await call('after-single-revoke')).isError, false)
@@ -239,9 +267,12 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(adopted.isError, false, JSON.stringify(adopted))
   assert.equal(adopted.value.learning.state, 'adopted')
   assert.match(await self(), /使用中文回答/)
-  const beforeNewInput = owner.status(dir).learningRevision
+  const beforeNewInput = owner.status(dir)
   await send(createUserMessage({ content: [{ type: 'text', text: '今后规划维修时，先核对零件到货日期，再承诺安装时间。这是长期习惯，绝非只限本次。' }], source: { kind: 'user' } }))
-  assert.notEqual(owner.status(dir).learningRevision, beforeNewInput, '未登记的新用户输入也使旧学习版本失效')
+  assert.notEqual(owner.status(dir).learningRevision, beforeNewInput.learningRevision, '未登记的新用户输入也使旧学习版本失效')
+  assert.notEqual(owner.status(dir).consolidationRevision, beforeNewInput.consolidationRevision, '未登记的新用户输入也使旧整理版本失效')
+  await assert.rejects(owner.learn(dir, agent.session.id, { text: 'stale candidate', layer: 'core', ref: feedback.value.reference.entryId, expectedRevision: beforeNewInput.learningRevision }, signal), /版本冲突/)
+  await consolidate({ ...publication, expectedRevision: beforeNewInput.consolidationRevision }, true)
   const planning = await call('planning-feedback')
   const judgment = await propose({ text: '承诺维修时间前先核实零件交期', layer: 'judgment', basis: 'explicit-long-term', ref: planning.value.reference.entryId })
   assert.equal(judgment.value.learning.state, 'adopted', '通用长期判断反馈无需逐项确认')
@@ -381,6 +412,9 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(childResult.isError, false, JSON.stringify(childResult))
   const childLearning = await owner.learn(dir, childId, { text: 'delegate claims user preference', layer: 'expression', basis: 'explicit-long-term', ref: childResult.value.reference.entryId, expectedRevision: owner.status(dir).learningRevision }, signal)
   assert.equal(childLearning.state, 'candidate', '子任务委派提示不能充当用户长期意见')
+  const childConfirmation = await command({ action: 'learning-confirm', sourceId: childLearning.id, expectedRevision: owner.status(dir).binding.revision }, child)
+  assert.equal(childConfirmation.kind, 'error')
+  assert.match(childConfirmation.text, /子任务不能确认或管理用户学习/, '忽略观察参与者不能绕过真实子任务权限')
   const childParticipation = owner.status(dir).binding.participants.findLast(row => row.sessionId === childId)
   assert.equal(childParticipation.rootSessionId, agent.session.id)
   assert.equal(childResult.value.reference.rootMessageId, owner.status(dir).binding.participants.findLast(row => row.sessionId === agent.session.id).rootMessageId)
