@@ -132,7 +132,8 @@
     "modules",
     "skills",
     "templates",
-    "README.md"
+    "README.md",
+    "readme/assets/hero.svg"
   ],
   "scripts": {
     "build": "tsdown",

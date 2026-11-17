@@ -8,19 +8,9 @@
 
 回退适配的普通按序追加沿原生增量路径，保持宿主的帧调度与历史节点身份；回退标记、乱序、替窗、分页及标记后同轮续写才进行必要的过滤重放，新一轮恢复增量。回复结算同步清除同次尝试的瞬时缓存，防止后续回放复活已结算片段；会话作用域释放时移除本插件的方法覆盖和历史缓存，保留后来第三方的覆盖，插件卸载只处理仍在场的适配器。服务端适配在同一 Session 的最后一个 Agent 释放时撤销；历史回退标记首次读取后仅扫描新增事件，没有标记时直接使用原生消息结果。
 
-宿主能力卡提供“Messages 当前系统正文”（Messages current system body），选择 `messages-current-system` 后使用布尔 `value: true`。它沿普通规则草稿、保存版本与 `host:messages-current-system` 诊断展示，默认开启，独立于每步当前系统正文开关；不新增正文编辑入口。实际效果及 early 重启要求见[引擎指南](engine-reuse.md)。
+宿主能力统一沿规则草稿、保存版本与 `host:<capability>` 诊断展示；选项、初始值及诊断通道由 `data/host-control-policy.ts` 持有。布尔能力使用 `value: true`，Hook 决定透传使用 `provider-hook-decisions` 对象中的 `claude-code` / `codex`。开启仅表示配置意图，不保证 early 接缝或真实 caller 就绪；运行行为、默认值和重启条件见[引擎指南](engine-reuse.md)。界面不另建能力正文、待办编辑器或状态库。
 
-宿主能力卡提供独立的“移除 OAuth 自动身份首段”（Remove automatic OAuth identity prefix）与“按原生服务域名映射系统角色”（Map system role by native provider hostname），分别选择 `oauth-identity-prefix`、`provider-system-role` 并使用布尔 `value: true`。沿普通规则草稿、版本保存、受众与分支编辑；卡片只展示当前保存版本对应 `host:<capability>` 的必要 owner 缺失原因。开启表示选择意图，实际接入范围与 early 重启要求见[引擎指南](engine-reuse.md)。
-
-宿主能力卡另提供“系统段与消息形状容错”（System sections and message shape guards），选择 message-shape-guards 时使用布尔 value: true。沿 host:message-shape-guards 展示当前保存版本的必要 owner 缺失原因；启停、受众和分支沿普通规则草稿与保存，不增加独立存储入口。
-
-宿主能力卡提供“每步当前系统正文与完整性”（Current system body and integrity per step），选择 `current-system-snapshot` 时使用布尔 `value: true`。卡片依赖诊断沿 `host:current-system-snapshot` 展示当前保存版本的缺失 early owner 原因；正文、受众和启停仍由普通规则编辑，不新增独立正文入口。默认开启与运行契约见 [引擎复用](engine-reuse.md)。
-
-Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 对象，选择 `claude-code: true` / `codex: true`；两张内置卡默认开启。依赖诊断使用 `host:provider-hook-decisions`，运行与恢复契约见 [引擎复用](engine-reuse.md)。
-
-规则卡头部七个字段紧凑左对齐，列宽由内容决定，不按剩余空间均分；每个字段保持标签一行、控件一行。宽容器横向排列，760px及以下按字段整体自然换行，手机端不依赖横向滚动。移除常驻机制长说明，不可用原因复用状态文字上的说明浮窗并支持键盘聚焦。宿主能力下拉提供“会话回退”（`session-rewind`），切换使用布尔 `value: true`，保存版本诊断沿 `host:session-rewind` 展示。
-
-升级动作编辑沿现有规则卡：`escalation-criteria`、`escalation-grant`、`escalation-outcome` 均使用布尔 value，分别显示当前能力诊断；开启意图不等于真实 caller 就绪，运行契约见 [引擎复用](engine-reuse.md)。
+规则卡头部七个字段按内容宽度左对齐，标签与控件各占一行；760px 及以下按字段整体换行。不可用原因复用状态说明浮窗，支持键盘聚焦。
 
 > 适用范围：dsh-plugin-prompt-tool 的 src/client/ 结构、宿主 SlotRegistry 接入、工作台页面编排、客户端状态与 bridge 边界、共享交互和样式所有权。
 > 本文描述当前实现，不是实施计划；与代码不一致时以代码为准。
@@ -38,7 +28,7 @@ Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 
 - 现有 seam 深化：继续使用 SlotRegistry、ConfigForms、official remote/sessions 和 loopback bridge。
 - 领域文件归位：工作台壳、数据层、业务 feature、共享 UI 各自拥有清晰的变化原因。
 - 最小抽象：只维护实际使用的控件与交互，不复制完整组件库或新增路由、状态框架。
-- 确定性行为：页面顺序、slot 注册、保存保护、键盘操作和错误载荷均由契约测试锁定。
+- 确定性行为：保存保护和错误载荷由核心测试验证，键盘、焦点与布局按需在真实浏览器验收。
 
 本层不做：
 
@@ -80,160 +70,21 @@ Hook 决定透传沿现有宿主能力规则卡编辑 `provider-hook-decisions` 
 
 ## 3. 当前目录结构
 
-以下树以当前源码为准；没有列出的目录不代表预留扩展点，新增目录必须先有真实 owner。
+源码路径与分层职责如下，具体文件以仓库为准：
 
-    src/client/
-    ├─ app/
-    │  ├─ workbench/
-    │  │  ├─ NativeWorkspace.tsx
-    │  │  ├─ native-workspace-state.ts
-    │  │  ├─ register-workbench.tsx
-    │  │  └─ WorkbenchSidebarEntry.tsx
-    │  └─ workspace/
-    │     ├─ PromptWorkspace.module.css
-    │     ├─ PromptWorkspace.tsx
-    │     ├─ WorkspaceFrame.tsx
-    │     ├─ WorkspaceNavigation.tsx
-    │     ├─ pages/
-    │     │  ├─ AudiencePage.tsx
-    │     │  ├─ InjectionPointsPanel.tsx
-    │     │  ├─ ModulesWorkspacePage.tsx
-    │     │  └─ layer-settings.module.css
-    │     ├─ workspace-browse-state.ts
-    │     └─ workspace-pages.ts
-    ├─ data/
-    │  ├─ asset-import.ts
-    │  ├─ bridge-client.ts
-    │  ├─ bridge-transport.ts
-    │  ├─ dirty-state.ts
-    │  ├─ host-api.ts
-    │  ├─ import-files.ts
-    │  ├─ instruction-cards.ts
-    │  ├─ instruction-drafts.ts
-    │  ├─ instruction-editor.ts
-    │  ├─ instruction-policy.ts
-    │  ├─ layer-cards.ts
-    │  ├─ module-actions.ts
-    │  ├─ module-subject.ts
-    │  ├─ module-variables.ts
-    │  ├─ param-editor.ts
-    │  ├─ param-overrides.ts
-    │  ├─ prompt-config-content.ts
-    │  ├─ prompt-config-order.ts
-    │  ├─ prompt-tool-fields.ts
-    │  ├─ prompt-tool-view.ts
-    │  ├─ resource-track.ts
-    │  ├─ rule-drafts.ts
-    │  ├─ rule-facts.ts
-    │  ├─ save-queue.ts
-    │  ├─ session-id-source.ts
-    │  ├─ session-model-face.ts
-    │  ├─ session-preset-face.ts
-    │  ├─ store-ports.ts
-    │  ├─ template-rule-writer.ts
-    │  ├─ tools-editor.ts
-    │  ├─ use-autosave.ts
-    │  ├─ use-import-preview-flow.ts
-    │  ├─ use-module-config-order.ts
-    │  ├─ use-prompt-tool-fields.ts
-    │  ├─ use-prompt-tool-store.ts
-    │  ├─ rule-diagnostics-session.ts
-    │  ├─ WorkspaceStoreOwner.tsx
-    │  ├─ workspace-state.ts
-    │  ├─ use-rule-editor.ts
-    │  └─ workspace-drafts.ts
-    ├─ features/
-    │  ├─ characters/
-    │  │  └─ character-card.ts
-    │  ├─ models/
-    │  │  ├─ CurrentSessionModel.tsx
-    │  │  └─ model-options.ts
-    │  ├─ modules/
-    │  │  ├─ EngineModuleList.tsx
-    │  │  ├─ EngineParamFields.tsx
-    │  │  ├─ ModuleExportDialog.tsx
-    │  │  ├─ ModuleSwitcher.tsx
-    │  │  └─ ModulesPage.tsx
-    │  ├─ prompts/
-    │  │  ├─ ContextActivationDiagnosticsCard.tsx
-    │  │  ├─ ModulePersonaCard.tsx
-    │  │  ├─ PromptConfigCard.tsx
-    │  │  ├─ PromptConfigFields.tsx
-    │  │  ├─ PromptConfigForm.tsx
-    │  │  ├─ PromptConfigsEditor.tsx
-    │  │  ├─ RuleCard.tsx
-    │  │  ├─ RuleFields.tsx
-    │  │  ├─ RuleJsonField.tsx
-    │  │  ├─ RuleStepCard.tsx
-    │  │  ├─ RuleSteps.tsx
-    │  │  ├─ RuleSurfaceFields.tsx
-    │  │  ├─ RulesWorkspace.tsx
-    │  │  ├─ prompt-config-policy.ts
-    │  │  ├─ prompts.module.css
-    │  │  ├─ rule-labels.ts
-    │  │  ├─ rule-steps.ts
-    │  │  ├─ rules.module.css
-    │  │  ├─ textarea-resize.ts
-    │  │  └─ useTemplatePicker.tsx
-    │  └─ tools/
-    │     ├─ CustomToolEditor.tsx
-    │     ├─ CustomToolsCard.tsx
-    │     ├─ ToolSurfaceView.tsx
-    │     ├─ ToolsPreviewPage.tsx
-    │     ├─ custom-tool-parameters.ts
-    │     ├─ official-preset-sources.ts
-    │     ├─ tool-surface-request.ts
-    │     └─ tools.module.css
-    ├─ index.ts
-    ├─ locales-cards.ts
-    ├─ locales-params.ts
-    ├─ locales-prompts.ts
-    ├─ locales-rules.ts
-    ├─ locales-triggers.ts
-    ├─ locales.ts
-    ├─ prompt-tool-types.ts
-    ├─ styles.ts
-    └─ ui/
-       ├─ AutoSaveSelection.ts
-       ├─ Button.tsx
-       ├─ CollapsibleCard.tsx
-       ├─ ConfirmDialog.tsx
-       ├─ DialogSurface.tsx
-       ├─ EngineModuleCard.tsx
-       ├─ FormField.tsx
-       ├─ HintTooltip.module.css
-       ├─ HintTooltip.tsx
-       ├─ ImportDialog.module.css
-       ├─ ImportDialog.tsx
-       ├─ ImportFileButton.tsx
-       ├─ ImportPreviewCard.tsx
-       ├─ Menu.module.css
-       ├─ Menu.tsx
-       ├─ MenuSelect.tsx
-       ├─ PromptConfigNavigation.tsx
-       ├─ SearchInput.module.css
-       ├─ SearchInput.tsx
-       ├─ StatusBadge.module.css
-       ├─ StatusBadge.tsx
-       ├─ StatusDot.module.css
-       ├─ StatusDot.tsx
-       ├─ Switch.tsx
-       ├─ TagInput.tsx
-       ├─ TemplatePicker.tsx
-       ├─ TextInput.tsx
-       ├─ anchored-popover-fit.ts
-       ├─ anchored-popover.ts
-       ├─ config-navigation.module.css
-       ├─ controls.module.css
-       ├─ dialog-focus.ts
-       ├─ hint-tooltip-focus.ts
-       ├─ hint-tooltip-position.ts
-       ├─ icons.tsx
-       ├─ outside-pointer.ts
-       ├─ primitives.module.css
-       ├─ reveal-card.ts
-       └─ tab-key.ts
-共享控件还包括 `ui/Button.tsx`、`Switch.tsx`、`Menu.tsx`、`icons.tsx` 和 `outside-pointer.ts`。生成目录 lib/ 不属于源码 owner，不手工编辑。客户端样式已按 owner 分开。
+| 路径 | 维护入口 |
+|---|---|
+| `src/client/index.ts` | 宿主适配、样式与 locale 生命周期、数据 owner 装配 |
+| `app/workbench/` | 原生工作台入口、可见性与会话绑定 |
+| `app/workspace/` | 工作台壳、页面元数据与跨领域组合 |
+| `app/register-rewind.tsx` | 会话回退槽及瞬时结果 owner |
+| `data/` | bridge、保存队列、字段与领域草稿、store 端口 |
+| `features/` | 模块、规则、人设、模型与工具视图 |
+| `ui/` | 共享控件、焦点、定位和交互 helper |
+| `locales*.ts` | 同一命名空间的中英文词条 |
+| `src/shared/bridge-contract.ts` | client/host 共用载荷契约 |
+
+生成目录 `lib/` 不属于源码 owner，不手工编辑；样式归属见[样式所有权](#10-样式所有权)。
 
 ## 4. 宿主接入与生命周期
 
@@ -284,7 +135,7 @@ slot 使用 ctx.slots.inject() 等待声明，再调用 ctx.slots.register()。�
 - 渲染时才求值（`t('key', params)`），不做模块级缓存；语言切换由 renderer 订阅 locale revision 后整体重渲染跟进。
 - 不进字典的内容：provider/model id、文件路径、用户内容、协议 code 与 bridge 错误码；动态拼接用 `{name}` 占位参数。
 - 已迁移：工作台外壳、三个原生入口（label 经 locale thunk）、四页外壳、手动诊断、引擎参数卡与模块列表（标签按 shared 键推导成 `param.<键>` 词条）、规则与人设区、模块页的素材区、自定义工具卡、导入预览卡。用户定义的规则与模块名称保持原值，不作为词条翻译。
-- 仍未迁移：`ui/` 控件的回退文案（`MenuSelect` / `TagInput` / `DialogSurface`），以及 `features/models/**` 与 `data/**` 的状态提示（这两个目录属模型路由任务的文件边界）。
+- 回退文案和数据层状态提示仍需按实际调用核对，不以目录归属推定词条已迁移。
 
 ### 4.3 入口与关闭行为
 
@@ -849,11 +700,12 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
     pnpm --dir $Repo typecheck
     pnpm --dir $Repo lint
     pnpm --dir $Repo test
+    pnpm --dir $Repo build
     git -C $Repo diff --check
 
 测试从临时 cwd 与临时 DSH_HOME 执行，不接触当前运行中的 DSH 服务。
 
-本文只列 seam 级覆盖，不在文档里复制易变的用例名录。
+自动化检查不替代真实浏览器和桌面交互验收。
 
 ## 13. 维护清单
 
@@ -861,12 +713,12 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 
 1. 先确定 owner：宿主适配放 index/data，跨页组合放 app，单领域行为放 feature，共享呈现放 ui。
 2. 若新卡要读 store，先在 `src/client/data/store-ports.ts` 挑端口并在 props 上写交叉；两个受众页是同一个参数化 `AudiencePage`，受众差异只加在它的参数表里。
-2. 若涉及 bridge，先修改 src/shared/bridge-contract.ts，再同步 host 注册、client 调用和契约测试。
-3. 若涉及 Fields、参数或保存，先核对 [architecture-params.md](architecture-params.md) 的空值、优先级和写盘语义。
-4. 若涉及引擎层或插入点，核对 [engine-reuse.md](engine-reuse.md)，不要用 UI 顺序推导运行时顺序。
-5. 若涉及 SillyTavern、角色卡或世界书，遵循 [SillyTavern.md](SillyTavern.md) 的转换契约。
-6. 新 selector 必须有明确 CSS owner；新交互必须同时考虑键盘、焦点、错误和 reduced-motion。
-7. 新增或改造面向用户的文案时，同步更新 zh/en 两份字典；改动结构、接线或发布面时，按 §12.1 的 seam 表跑对应契约测试。
-8. 完成 typecheck、lint、test、build 和 diff --check 后再提交；不要停止或重启当前 DSH 服务。
+3. 若涉及 bridge，先修改 src/shared/bridge-contract.ts，再同步 host 注册、client 调用和契约测试。
+4. 若涉及 Fields、参数或保存，先核对 [architecture-params.md](architecture-params.md) 的空值、优先级和写盘语义。
+5. 若涉及引擎层或插入点，核对 [engine-reuse.md](engine-reuse.md)，不要用 UI 顺序推导运行时顺序。
+6. 若涉及 SillyTavern、角色卡或世界书，遵循 [SillyTavern.md](SillyTavern.md) 的转换契约。
+7. 新 selector 必须有明确 CSS owner；新交互必须同时考虑键盘、焦点、错误和 reduced-motion。
+8. 新增或改造面向用户的文案时，同步更新 zh/en 两份字典；改动结构、接线或发布面时，按 §12.1 的 seam 表跑对应契约测试。
+9. 完成 typecheck、lint、test、build 和 diff --check 后再提交；不要停止或重启当前 DSH 服务。
 
 本文是客户端结构的长期权威文档；本地 `.scratch/<feature>/` 跟踪当前规格与票据，稳定结论沉淀回本文及对应领域文档。
