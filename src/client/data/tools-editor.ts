@@ -34,7 +34,7 @@ export interface ToolsReader {
 export interface ToolsEditorDependencies {
   reader: ToolsReader
   request: (body: BridgeRequestMap['customTools']) => Promise<BridgeResult<BridgeValueMap['customTools']>>
-  /** 这张卡是否仍挂在当前视图上；应答回来时已卸载即不改状态。 */
+  /** 这张卡是否仍挂在当前视图上；只控制视图回调，不控制共享草稿接纳。 */
   isCurrent: () => boolean
   changed: () => void
   /** 创建模式下首次成功写盘后回调：调用方据此重读 `/meta`。 */
@@ -63,40 +63,44 @@ const fieldsDiffer = (draft: ToolsEditorDraft): boolean =>
   [...draft.fields.values()].some((field) => field.text !== field.source || field.error.length > 0)
 
 export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, deps: ToolsEditorDependencies) {
-  const isCurrentStep = (sequence: number): boolean => deps.isCurrent() && isLatest(draft, sequence)
+  const changed = (): void => {
+    if (draft.refresh !== undefined) draft.refresh()
+    else if (deps.isCurrent()) deps.changed()
+  }
   /** 读取落地：load 与 insertTemplate 共用同一读守卫、迟到判定与错误落点。 */
   const loadFrom = async (request: NonNullable<ReturnType<ToolsEditorDependencies['reader']['load']>>): Promise<boolean> => {
     const sequence = beginLatest(draft)
     const reading = draft.tools
     const result = await request
     // 迟到的应答既不落地也不改状态。
-    if (!isCurrentStep(sequence)) return false
+    if (!isLatest(draft, sequence)) return false
     if (!result.ok) {
       draft.error = result.message ?? 'customTools.loadFailed'
-      deps.changed()
+      changed()
       return false
     }
     // 读期间用户改过草稿（或字段有未落地的输入）时不覆盖：草稿优先。
     if (draft.tools !== reading || fieldsDiffer(draft)) {
       draft.error = ''
       draft.loaded = true
-      deps.changed()
+      changed()
       return true
     }
     draft.tools = (result.value.customTools ?? []).map(asToolDraft)
     draft.saved = draft.tools
     draft.loaded = true
     draft.error = ''
-    deps.changed()
+    changed()
     return true
   }
   const load = async (): Promise<boolean> => {
+    if (draft.saving) return false
     if (draft.loaded) return true
     const request = deps.reader.load()
     if (request === undefined) {
       draft.loaded = true
       draft.error = ''
-      deps.changed()
+      changed()
       return true
     }
     return loadFrom(request)
@@ -104,7 +108,7 @@ export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, dep
   const mutate = (next: ToolDraft[]): void => {
     if (draft.saving) return
     draft.tools = next
-    deps.changed()
+    changed()
   }
   const applyPatch = (index: number, patch: Partial<ToolDraft>): void => {
     if (draft.saving) return
@@ -119,17 +123,17 @@ export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, dep
       }
     }
     draft.tools = draft.tools.map((tool, at) => at === index ? { ...tool, ...patch } : tool)
-    deps.changed()
+    changed()
   }
   const save = async (): Promise<BridgeResult<BridgeValueMap['customTools']> | undefined> => {
     if (draft.saving) return undefined
     const submitted = cleanTools(draft.tools)
     const sequence = beginLatest(draft)
     draft.saving = true
-    deps.changed()
+    changed()
     try {
       const result = await deps.request({ customTools: submitted, expectedModuleId: moduleId })
-      if (!isCurrentStep(sequence)) return undefined
+      if (!isLatest(draft, sequence)) return undefined
       // 保存失败只把结果交给调用方去提示：草稿的 `error` 属读取态，不被写失败污染（与原实现一致）。
       if (result.ok) {
         draft.saved = submitted
@@ -140,9 +144,9 @@ export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, dep
       deps.onDeclared?.()
       return result
     } finally {
-      if (isCurrentStep(sequence)) {
+      if (isLatest(draft, sequence)) {
         draft.saving = false
-        deps.changed()
+        changed()
       }
     }
   }
@@ -151,10 +155,10 @@ export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, dep
     if (draft.saving) return undefined
     const sequence = beginLatest(draft)
     draft.saving = true
-    deps.changed()
+    changed()
     try {
       const result = await deps.request({ expectedModuleId: moduleId, refreshOnly: true })
-      if (!isCurrentStep(sequence)) return undefined
+      if (!isLatest(draft, sequence)) return undefined
       if (result.ok) {
         const publication = readPublication(result.value)
         draft.publicationPending = publication.pending
@@ -162,22 +166,24 @@ export function createToolsEditor(moduleId: string, draft: ToolsEditorDraft, dep
       }
       return result
     } finally {
-      if (isCurrentStep(sequence)) {
+      if (isLatest(draft, sequence)) {
         draft.saving = false
-        deps.changed()
+        changed()
       }
     }
   }
   const insertTemplate = async (spec: Record<string, unknown>): Promise<'inserted' | 'duplicate' | 'failed'> => {
+    if (draft.saving) return 'failed'
     if (!draft.loaded) {
       const request = deps.reader.load()
       // 声明面未声明（＝创建模式）：这次读构造不出来，与原实现一样判为插入失败。
       if (request === undefined) return 'failed'
       if (!(await loadFrom(request))) return 'failed'
     }
+    if (draft.saving) return 'failed'
     if (draft.tools.some((tool) => tool.id === spec.id)) return 'duplicate'
     draft.tools = [...draft.tools, JSON.parse(JSON.stringify(spec)) as ToolDraft]
-    deps.changed()
+    changed()
     return 'inserted'
   }
   return { load, mutate, applyPatch, save, retryPublication, insertTemplate }
