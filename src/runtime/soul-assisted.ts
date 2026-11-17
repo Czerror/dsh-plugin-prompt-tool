@@ -71,7 +71,7 @@ export function createSoulAssisted(ctx: Context, knowledge: () => SoulKnowledgeO
   const request = async (id: string, agent: Agent): Promise<Record<string, unknown>> => {
     await admit(id, agent)
     const initial = identity(id, agent), { directory, owner, participant, key } = initial
-    const assertControl = owner.control(directory)
+    const assertControl = owner.control(directory, agent.session.id)
     if (!active) throw new Error('辅助整理已释放')
     if (running.has(key)) return status(id, agent)
     const controller = new AbortController(), signal = controller.signal
@@ -94,7 +94,7 @@ export function createSoulAssisted(ctx: Context, knowledge: () => SoulKnowledgeO
         if (rootSession && latestHuman?.data?.id !== participant.rootMessageId) throw new Error('子任务所属根用户回合已失效')
       }
       try {
-        await owner.refreshEvidence(directory); valid()
+        await owner.refreshEvidence(directory, signal, agent.session.id); valid()
         const records = owner.records(directory, agent.session.id).filter(row => row.pending)
         if (!records.length) { observation.state = 'no-work'; await owner.assisted.backlog(key, participant.rootMessageId!, false, limits); return }
         if (await owner.assisted.backlog(key, participant.rootMessageId!, true, limits)) observation.notice = '持续三个新用户回合仍有待整理材料，请查看整理状态；正常记录已保留。'

@@ -152,7 +152,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     async refresh(id: string, agent: Agent) {
       const dir = source(id, agent), owner = knowledge?.()
       if (knowledge && !owner || owner?.status(dir).state === 'unavailable') throw new Error('学习授权不可用，停止本次装配')
-      if (owner?.status(dir).state === 'bound') await owner.refreshEvidence(dir)
+      if (owner?.status(dir).state === 'bound') await owner.refreshEvidence(dir, undefined, agent.session.id)
       if (knowledge?.() !== owner) throw new Error('学习持久状态已变化')
       source(id, agent)
     },
@@ -174,7 +174,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
       const dir = source(id, agent, signal), budget = readSelfBudget(dir)
       return Promise.resolve().then(async () => {
         const owner = knowledge?.()
-        if (owner && owner.status(dir).state === 'bound') await owner.refreshEvidence(dir)
+        if (owner && owner.status(dir).state === 'bound') await owner.refreshEvidence(dir, signal, agent.session.id)
         if (knowledge?.() !== owner) throw new Error('SELF学习持久状态已变化')
         if (source(id, agent, signal) !== dir) throw new Error('SELF来源发生变化')
         const state = readSoulState(dir, agent.session.id, sessionOwner())
