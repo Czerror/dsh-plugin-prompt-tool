@@ -15,6 +15,19 @@
 - 导入 SillyTavern 预设、角色卡和世界书，转换为模块
 - 在模块中按需配置账本、知识检索与持续记忆；知识库接入与持续记忆需另行授权
 
+## 开始使用
+
+完成下方[安装](#安装)后，从侧栏打开 **提示词工具**：
+
+1. 在 **模块** 页新建模块，或导入已有文件。
+2. 启用模块，并确认模块运行总开关已打开。
+3. 在 **主会话** 或 **子代理** 页编辑模块规则，设置正文、条件和动作后保存，按需启用规则。
+4. 需要排查效果时，点击 **诊断一次**，查看规则与当前会话的诊断结果。
+
+导入支持 [YAML](https://yaml.org/)／[JSON](https://www.json.org/json-en.html) 模块文件、目录／[ZIP 压缩包](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT)，以及 SillyTavern 预设、[PNG 图像](https://www.w3.org/TR/png/)／JSON 角色卡和世界书。新建和导入的模块默认不启用；SillyTavern 功能的转换范围见 [导入说明](docs/SillyTavern.md)。
+
+保存后再刷新页面，未保存草稿不保证恢复。终端界面可通过 `/prompt-tool` 操作模块，`/settings` 中的 **提示词工具** 提供模块运行总开关。
+
 ## 安装
 
 需要 DSH `0.2.2-rc.2` 或更高版本。使用命令行界面（CLI）时，还需要 Node.js `24.9.0+` 和 PATH 中可用的 pnpm；完整要求见 [package.json](package.json)。
@@ -37,19 +50,6 @@ dsh --profile web
 ```
 
 已有其他 CLI profile 时，把两处 `web` 换为它的名称。若该 profile 正在运行，安装后重启它。桌面端使用上面的插件管理页。更多安装方式见 [官方插件指南](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)。
-
-## 开始使用
-
-安装后，从侧栏打开 **提示词工具**：
-
-1. 在 **模块** 页新建模块，或导入已有文件。
-2. 启用模块，并确认模块运行总开关已打开。
-3. 在 **主会话** 或 **子代理** 页编辑模块规则，设置正文、条件和动作后保存，按需启用规则。
-4. 需要排查效果时，点击 **诊断一次**，查看规则与当前会话的诊断结果。
-
-导入支持 [YAML](https://yaml.org/)／[JSON](https://www.json.org/json-en.html) 模块文件、目录／[ZIP 压缩包](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT)，以及 SillyTavern 预设、[PNG 图像](https://www.w3.org/TR/png/)／JSON 角色卡和世界书。新建和导入的模块默认不启用；SillyTavern 功能的转换范围见 [导入说明](docs/SillyTavern.md)。
-
-保存后再刷新页面，未保存草稿不保证恢复。终端界面可通过 `/prompt-tool` 操作模块，`/settings` 中的 **提示词工具** 提供模块运行总开关。
 
 ## 数据与升级
 

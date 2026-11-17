@@ -15,6 +15,19 @@ In the Prompt Tool workspace, you can:
 - Import SillyTavern presets, character cards, and world books as modules
 - Configure ledgers, knowledge retrieval, and continuous memory in modules as needed; knowledge access and continuous memory require separate authorization
 
+## Start using modules
+
+After [installing the plugin](#install-the-plugin) below, open **Prompt Tool** from the sidebar:
+
+1. Create a module on the **Modules** page, or import existing files.
+2. Enable the module on the **Modules** page and confirm the module runtime switch is on.
+3. Edit the module’s rules on **Main session** or **Subagent**. Save the text, conditions, and actions, and enable rules as needed.
+4. To check the result, click **Run diagnostics once** for rule and current-session diagnostics.
+
+You can import [YAML](https://yaml.org/)/[JSON](https://www.json.org/json-en.html) module files, folders/[ZIP archives](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), SillyTavern presets, [PNG images](https://www.w3.org/TR/png/)/JSON character cards, and world books. New and imported modules start disabled. See [SillyTavern import details](docs/SillyTavern.md) for conversion limits.
+
+Save before refreshing the page: unsaved drafts may be lost. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
+
 ## Install the plugin
 
 Requires DSH `0.2.2-rc.2` or later. For the command-line interface (CLI), you also need Node.js `24.9.0+` and pnpm on your PATH. See [package.json](package.json) for all requirements.
@@ -37,19 +50,6 @@ dsh --profile web
 ```
 
 For another CLI profile, replace `web` in both commands with its name. Restart that profile if it’s already running. For Desktop, use the plugin manager above. See the [official plugin guide](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.md) for other installation options.
-
-## Start using modules
-
-After installation, open **Prompt Tool** from the sidebar:
-
-1. Create a module on the **Modules** page, or import existing files.
-2. Enable the module on the **Modules** page and confirm the module runtime switch is on.
-3. Edit the module’s rules on **Main session** or **Subagent**. Save the text, conditions, and actions, and enable rules as needed.
-4. To check the result, click **Run diagnostics once** for rule and current-session diagnostics.
-
-You can import [YAML](https://yaml.org/)/[JSON](https://www.json.org/json-en.html) module files, folders/[ZIP archives](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), SillyTavern presets, [PNG images](https://www.w3.org/TR/png/)/JSON character cards, and world books. New and imported modules start disabled. See [SillyTavern import details](docs/SillyTavern.md) for conversion limits.
-
-Save before refreshing the page: unsaved drafts may be lost. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
 
 ## Data and upgrades
 
