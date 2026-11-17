@@ -1,243 +1,88 @@
-# dsh-plugin-prompt-tool — 提示词注入引擎
+# dsh-plugin-prompt-tool
 
-通过普通模块声明注入内容、插入点、时机、受众与动作。规则统一走 `compileRules → mountRuleSources`，对接九个独立官方插入点；六层可注入，agent-request、llm-stream、tool-pipeline 分别使用请求、流输出与工具动作。模块与官方会话预设分开，不分发或替换官方预设。
+中文 | [English](README.en.md)
 
-能力来源包括 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)（MIT）、[dsh-router-standard](https://github.com/yjh051108/dsh-router-standard) 与 [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)。锚定、晋升、PTC 与模型增强保持可选，不作为默认工作流。
+为 [DeepSeek Harness（DSH）](https://deepseek-harness.github.io/deepseek-harness/) 管理提示词与规则。用模块决定注入什么内容、何时触发，以及作用于主会话还是子代理；继续使用原有的官方会话预设。
+
+## 能做什么
+
+在提示词工具工作台中，你可以：
+
+- 编辑提示词、人设、触发条件、变量和主会话／子代理的模型参数
+- 新建、启停、复制和分享模块，预览当前可用工具
+- 导入 SillyTavern 预设、角色卡和世界书，转换为模块
+- 按需启用 Soul 账本、知识检索和持续记忆；知识库接入与持续记忆需另行授权
 
 ## 安装
 
-通过 DSH 官方插件管理流程安装。新 profile 可从 web 模板初始化；已有 profile 跳过初始化：
+需要 DSH `0.2.2-rc.2` 或更高版本。使用 CLI 时，还需要 Node.js `24.9.0+` 和 PATH 中可用的 pnpm；完整要求见 [package.json](package.json)。
 
-```bash
-dsh --profile prompt-tool --from-default-profile web
-dsh plugin --profile prompt-tool add dsh-plugin-prompt-tool
-dsh --profile prompt-tool
+### 桌面端或 Web
+
+通过宿主的插件管理页安装到当前使用的配置环境（profile）：
+
+1. 打开侧栏的 **插件**，选择 **添加插件**。
+2. 输入 `dsh-plugin-prompt-tool`，点击 **安装**，按提示完成检查与安装。
+3. 安装完成后选择 **立即启用**；若宿主提示需要重启，重启对应的 DSH 应用或服务。
+
+### CLI
+
+以下命令安装到 `web` profile，然后启动 Web 界面：
+
+```sh
+dsh plugin --profile web add dsh-plugin-prompt-tool
+dsh --profile web
 ```
 
-本地开发可将安装来源换为 `link:<本仓库绝对路径>`。插件只诊断缺失的 Web 能力，不改 profile manifest、包链接或重启服务。版本要求以 [package.json](package.json) 为准：5.x 最低 DSH 为 `0.2.2-rc.2`，Node 为 `24.9.0`，Cordis 为 `4.1.0`。旧宿主由 DSH 兼容检查拒绝或跳过加载；不保留旧宿主兼容层，也不承诺裸 `pnpm install` 必定拒绝。宿主接入以实际安装的公开包验证，不能仅凭 peer 范围推断所有未来版本已验收。
+已有其他 CLI profile 时，把两处 `web` 换为它的名称。若该 profile 正在运行，安装后重启它。桌面端使用上面的插件管理页。更多安装方式见 [官方插件指南](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/develop/basic/publish.zh.md)。
 
-**升级代码、bundle 或 cordis.patch.yml 后，需要用户重启 DSH 服务。** 人设由主插件在会话作用域管理，不改变官方服务的启动依赖：在每个 Agent 自己的 scope 注册同名段，遮蔽部署人设与预设 persona 行，不接管任何官方 fiber。AgentSetup 窗口内注册的同层声明会被撤换（插件人设优先），窗口外的同层声明撤不掉时装配失败并保留旧装配。
+## 开始使用
 
-## 模块与工作台
+安装后，从侧栏打开 **提示词工具**：
 
-```text
-$DSH_HOME/.prompt-tool/
-├─ config.yml                # 规则模块启用集合与全局层参数
-├─ variables.yml             # 全局变量，variables 映射
-├─ instructions.yml          # 独立指令策略
-└─ modules/<id>/
-   ├─ module.yml             # 唯一完整定义
-   ├─ rules/                 # 已验证的物化切片
-   ├─ memory.md              # 模块私有记忆，按需读取
-   └─ data/                  # 模块私有用户数据（账本等）：不导出、覆盖保留
-```
+1. 在 **模块** 页新建模块，或导入已有文件。
+2. 启用模块，并确认模块运行总开关已打开。
+3. 在 **主会话** 或 **子代理** 页编辑模块规则，设置正文、条件和动作后保存，按需启用规则。
+4. 需要排查效果时，点击 **诊断一次**，查看规则与当前会话的诊断结果。
 
-module.yml 支持 UI 保存与直接手改。rules/ 从完整定义分解，手改或失配会单向恢复；无效完整定义拒绝加载，不以切片反写。未知用户资产保留，模块关闭只撤回贡献。
+导入支持原生 YAML／JSON、目录／ZIP，以及 SillyTavern 预设、PNG／JSON 角色卡和世界书。新建和导入的模块默认不启用；SillyTavern 功能的转换范围见 [导入说明](docs/SillyTavern.md)。
 
-工作台提供三个宿主原生入口：左侧栏「提示词工具」主面板、右侧工作台和会话中的「提示词工具」分页，包含主会话、子代理、工具预览和模块四页。入口共用业务草稿与保存状态，隐藏时卸载编辑视图，不使用悬浮图标或抽屉。模块页统一新建、启停、复制、导出、导入和删除。启用模块将其规则加入运行时装配，停用撤回其运行贡献并保留模块定义与资产。编辑模块通过请求头选择，不切换官方会话预设。
+保存后再刷新页面，未保存草稿不保证恢复。终端界面可通过 `/prompt-tool` 操作模块，`/settings` 中的 **提示词工具** 提供模块运行总开关。
 
-诊断集中在模块页顶部一张概览卡，打开、保存、切页和恢复窗口都不自动诊断。唯一“诊断一次”按钮读取规则诊断及当前会话的上下文激活诊断，无会话时只读取规则。执行中按钮禁用，结果按分区展示最近成功时间、错误和可展开详情；配置变化后标记为待重新诊断。未保存草稿保留在客户端插件生命周期内，刷新页面或卸载插件不承诺恢复。
+## 数据与升级
 
-在 dsh-tui 中，`/settings` 的「常规」页有一节「提示词工具」，只含模块运行总开关（settings 文档里唯一的部署轴）；模块参数与规则仍走 `/prompt-tool` 命令或工作台。
+模块定义保存在 `$DSH_HOME/.prompt-tool/modules/<id>/module.yml`。停用模块会撤回它的运行贡献，并保留定义与数据；导出不包含私有 `memory.md`、`data/` 或全局变量。
 
-删除模块先在同卷隐藏 stage 里 rename，锁外再清理：rename 失败时原目录完整保留；清理失败时模块已移出，提示里会给出残留目录路径（清理未完成，内容可能不完整），刷新失败只影响列表、删除仍按成功处理。内置模块的用户副本删除后，重启会按缺失补建，这不是删除失败。若进程在 rename 后、清理前退出，隐藏残留目录会留在磁盘上，不会自动过期。
+升级插件后，重启对应的 DSH 应用或服务以加载新代码。升级不会覆盖已有模块定义或私有数据；需要新版内置模块配置时，请显式更新用户副本。旧版内容模块也不会自动移除，升级后请检查已启用的模块。
 
-每张规则卡编辑完整条件树与动作；then/else 可嵌套，未知事实不当成否定成立。正文、状态分别做 CAS，后台刷新和请求期间的新输入保留。跨模块规则按配置序号排列，同组互斥由显式启用事务决定，排序不替作者选赢家。
+旧模块格式的转换与数据迁移见 [参数说明](docs/architecture-params.md#旧格式与显式转换) 和 [资产交换](docs/asset-transfer.md)。
 
-人设与其他规则共用规则草稿和保存事务；工具、变量与指令策略保留各自的保存边界。布局、无障碍、locale 和 typed bridge 规范见 [UI 框架](docs/ui-architecture.md)。
+## 进一步配置
 
-破限／无限制／红队三个内容模块已移出本插件（存档在本地知识库 `03_Knowledge/archived-modules/prompt-tool-20261114`），本仓库只保留注入引擎：规则、条件、动作、插入点、组合、模块写盘与导入导出。内容改由外部内容插件提供，口径固定：模块目录 id 必须是 `redteam`（`ROLE_MODULE_ID`），角色规则 id 为 `role-<role>`（`plan`／`recon`／`assess`／`vuln-scan`／`exploit`／`internal`），协议用 `protocol-redteam`／`protocol-official` 占 `capability-protocol` 互斥组，自动派工总开关用 `auto-delegation`。缺这些内容时自动派工报 `AUTO_DELEGATION_DISABLED`，角色正文不投递并给出一次可见告警，不把「启动成功」当成「角色已生效」。**升级提示**：播种只补缺失、不删多余，已安装的旧副本会继续装配投递，需要收紧时自行删除 `$DSH_HOME/modules` 下的 `limit-breaker`、`redteam`、`unrestricted` 三个目录。
+按需查阅对应文档：
 
+| 任务 | 文档 |
+| --- | --- |
+| 编写模块、查看 YAML 示例 | [模块编写指南](skills/dsh-module/SKILL.md) · [字段参考](module.yml) |
+| 配置变量、人设、指令策略与 Soul | [参数与存储](docs/architecture-params.md) |
+| 配置注入位置、工具与高级动作 | [引擎指南](docs/engine-reuse.md) · [插入点契约](docs/injection-point-contracts.md) |
+| 导入角色卡、世界书或分享模块 | [SillyTavern 转换](docs/SillyTavern.md) · [资产交换](docs/asset-transfer.md) |
 
+## 本地开发
 
-团队角色委派沿官方 Team 与官方 subagent 完成。启动前登记一次性 intent 与唯一 token，子会话在 `agent/created`（宿主 await，早于首个 assemble）消费并写入会话级角色事实；角色正文仍由外部内容模块的 `role-*` 规则与 `assets/` 提供，名称、描述与任务文本不授予角色。五个执行角色默认叶子（恒显式 `maxDepth: 1`，缺 `depthLimit` 即明确不可用而不启动），`plan` 只作用于真实根 Agent，派给子代理报 `ROLE_NOT_EXECUTABLE`。任务、依赖与版本由官方 Team 拥有，结果只在真实运行 `stopReason: completed`、有输出且归属匹配时标完成，一轮结束不等于任务完成；取消的启动不留可复用资格。关闭派工只撤回后续派工，不删官方任务、不中断其他来源。自动派工默认关闭、需显式开启，开启时选择红队协议，关闭时不自动切回普通协议。
+在仓库目录安装依赖并执行检查。Node.js 与 pnpm 版本以 [package.json](package.json) 为准：
 
-官方指令预算通过普通人设动作的 `instructionsMaxBytes` 编辑，沿既有数字草稿、规则保存与发布。启动时在官方入口前加载 `node --import dsh-plugin-prompt-tool/early <官方入口>`；指令字节预算只验证官方 `@deepseek-ai/dsh-agent-instructions@0.2.2-rc.2` 的指定发行指纹，瞬时请求额度另验证同版本agent-loop的指定指纹。缺早期入口、已缓存或产物失配时，对应预算及同分支依赖正文暂停，无关规则继续；官方原预算透传。代码及早期入口变更需用户重启DSH服务生效，不自动重启。
-
-## 原生模块格式
-
-```yaml
-id: project-rules
-name: 项目规则
-modules: [rule-engine]
-variables: {}
-rules:
-  - id: project-context
-    enabled: false
-    then:
-      - id: inject
-        kind: inject-text
-        config:
-          layer: pre-step
-          strategy: static
-          position: after-user
-          dedupe: session
-          text: 请依据用户确认的项目约束执行。
-```
-
-规则是唯一行为源；人设使用 persona 动作，共享模型与能力参数保存于 layerSettings，变量与自定义工具各有独立顶层段。根 [module.yml](module.yml) 从权威目录生成九层及27个共享参数参考，示例默认关闭。
-
-单个模块装配失败时，首次加载跳过它，更新时恢复它的上次有效贡献；其他正常模块继续加载和更新。晚到服务的初始化失败也按此处理，等待中的新版本不会覆盖最后成功版本。故障仍会报告，修正该模块定义或显式刷新后重试。全局配置和跨模块独占冲突仍明确拒绝，不自动选择赢家；完整边界见[运行时装配](docs/engine-reuse.md)。
-
-- 条件使用 if，动作用 then，另有 else；动作身份在完整规则树中唯一。
-- 注入正文策略为 static、placeholder、context-activation；文本与长度分类、确认、工具名和受众由通用条件承担，正文、投递、请求与流控制由动作组合。
-- 工具提示通过 tool-catalog 只读引用同规则工具可见面声明，自动列出常驻名单与发现工具；提示正文和投递由模块规则控制。
-- 九个插入点没有跨层全局顺序；order 属于该官方位置，configOrder 管同点跨模块顺序。
-- `dedupe: session` 看当前模型可见上下文，旧消息被压缩/替换遮蔽后可再次注入。
-- 主/子模型卡各有5个路由/采样参数，在装配时生成受众限定请求规则；也可显式编辑 request-params，不回写宿主全局默认。
-
-字段、空值、保存和安全边界见 [参数框架](docs/architecture-params.md)，通道与生命周期见 [引擎指南](docs/engine-reuse.md) 和 [九层契约](docs/injection-point-contracts.md)。
-
-需要“先发锚句、确认后注入正文”时，在同规则中用 `anchor.after.action` 引用锚句动作；确认只读取实际投递后的当前可见输出。默认持续等待、下次正常请求再注入；兜底次数和续跑均须显式声明。示例见 [模板16](templates/16-custom-fallback.yml)，直接匹配本批用户消息见 [模板14](templates/14-first-turn-anchor.yml)。旧专用策略与参数已直接替换，不提供兼容入口，也不自动改写已有用户模块。
-
-## 持久变量与运行事实
-
-模块 variables 覆盖同一 DSH_HOME 的全局变量。空字符串是有效值，删除模块键才回落全局。同模块的主会话与子代理共享，结束会话、压缩、卸载或重挂不清空。变量内容更新不重挂 Agent，下一求值读取新快照。
-
-会话变量按来源模块＋真实当前会话隔离，裸引用优先级为会话→模块→全局。它们使用官方 `storageDomain` 持久化，需宿主提供该能力及后端；插件不另建存储引擎或修改 profile。会话数据不随 fork 或会话日志导出，工作台仍只编辑模块/全局。
-
-**普通规则手动建立变量；ST 导入才自动登记缺失裸引用为空占位。** 模板 WHO、stateKeys 等需在变量卡建立；动作 config.variables 已退役。全局值不随模块导出。
-
-需要赋值时显式设置 `params.templateEvaluation: true`，使用 module/global/session 的 set/get/add/inc/dec。一张模板可读多域但只写一域，实际读取的持久域都校验版本。session 赋值仅在异步规则和模型工具中提交，人设同步出口可读取但不能赋值 session。资格、解析和预算检查先于提交；同一次真实执行跨 assembly/pre-step/重挂不重复自增。发布失败只重试发布，不承诺任意跨进程崩溃后的 exactly-once。
-
-SELF骨架支持普通变量和 `{{runtime.get::soul.open}}` 等只读事实；runtime 不可被同名用户值覆盖，失败保持不可用。会话键 `soul.mark` 与旧 `soul_state mark` 共用限长、版本和宿主时间戳；旧 mark 首读零写、首次合法写自动迁入且保留原件。详见 [变量事务](docs/architecture-params.md#持久变量事务) 和 [SELF](docs/engine-reuse.md#self动态内容与维护心跳)。
-
-## 动态人设规则
-
-```yaml
-rules:
-  - id: project-persona
-    if: { variable: { key: mode, value: coding } }
-    then:
-      - id: identity
-        kind: persona
-        audience: main
-        prefix: 你是项目助手。
-        complete: false
-```
-
-所有启用模块的命中人设按既有规则排序、动作声明顺序分别拼接 prefix 与 suffix，非空片段以两个换行连接。动作 audience 可为 main/subagent，省略作用于两者；主子按真实 Agent 分别判定条件。人设卡是普通规则中 persona 动作的编辑视图，正文、条件、启停和排序共用规则草稿与 `/rules` 事务。
-
-某字段所有命中动作都省略时才继承官方；显式空串阻止该字段继承，但不清空其他动作已提供的正文。complete/includeRuntimeContext 的显式布尔值必须一致，冲突拒绝候选并保留旧贡献。includeRuntimeContext:false 增加本插件抑制；true 只撤回本插件抑制，不能强开祖先 scope 的上下文。
-
-原官方 assemble 前准备并提交完整候选，同一次装配固定该候选。全部失配或事实不可用撤回本插件人设并回官方；配置、解析或注册错误保留最后有效贡献并报告。自定义正文按所属规则模块读取变量与 runtime，继承官方正文不重新求模板；session setter 仍拒绝。旧顶层 persona 和 personaSources 已退役，读取根明确拒绝，用户须手工重建规则并移除旧字段，插件不自动迁移。
-
-## 按需工具
-
-| 能力 | 工具 |
-|---|---|
-| module-rule-tools | module_rules_read / module_rules_edit |
-| module-variable-tools | module_variables |
-| module-file-tools | module_file_read / module_file_append |
-| module-manifest-tools | module_manifest |
-| module-import-tools | module_import |
-| soul-ledger | soul_ledger / soul_state |
-| retrieval | module_search / module_open |
-| tool-config-engine | customTools 中的实际工具 |
-
-完整规则工具先读原始树与版本，再提交合法完整候选；删除整规则需显式 rule:null。变量工具提供 global/module/session 的 list/get/set/delete，set 必须显式字符串；session 只能访问真实当前会话，写入携带 revisions.session。模块私有文件（memory.md、assets/ 只读、data/ 只追加）由 module_file_read/append 读写，不自动注入；module_manifest 按 assets/manifest.yml 做 next/check/apply，只写 data/、不覆盖。
-
-内置模块首次补建或同 ID 新建只复制 `module.yml`，`rules/` 照常派生；`assets/` 留在插件包内。资产逐文件按完整 `moduleId` 查找：用户目录优先，缺失才读包内同名模块；空文件是有效覆盖，读取错误或链接不回退。注入模板、工具读取、初始化清单/模板与检索共用此规则，`memory.md`、`data/` 不回退。改名复制/另存会补齐包内资产并保留用户覆盖，成为独立用户模块；不从 `-copy` 名称推断来源。已有资产不自动清理，移除本地覆盖后才使用包内版本。
-
-工具目录仅注册已声明能力，晚到 provider 与 disposer 按原生命周期处理。模块工具的主语由**这次调用显式声明的 `moduleId`** 决定：不传即没有目标、直接拒绝，不回退装配记录首项或包内默认模块；执行 Agent 已启用的规则模块只作拒绝文案里的候选提示，不是目标。`expectedModuleId` 是桥端对请求头声明的一致性复核，与工具侧的主语选择是两套独立判据。工具只能读写模块存储根下 `module.yml` 所在的既有模块；模块内文件限定 memory.md、assets/（只读）、data/（只追加），不访问任意路径。自定义工具继续支持 shell/http/delegate/fs/ask-user，并保留官方批准、拒绝与取消管线。
-
-## SillyTavern 与资产交换
-
-ST JSON 预设、PNG/JSON 角色卡和独立世界书，经统一预览/确认/原子候选安装成为普通模块。默认同名另存，不自动启用。来源变化、目标变化或预览过期须重读，不能重放旧确认。
-
-世界书生成 context-activation，显式 batch/history 扫描、具名副键逻辑、概率、候选组、递归及时间窗；来源字段只在 source.original 记录。ST 变量宏转为原生模板操作，导入期不执行赋值。
-
-outlet/vectorized/triggers 不能等价执行，相关规则禁用并报告；角色过滤、自动化、深度插入、预算、群聊和脚本都有明确限制。完整映射及报告边界见 [SillyTavern 导入](docs/SillyTavern.md)。
-
-模块导出分享完整定义和允许的附件，不分享全局变量、私有 memory.md 或 data/。旧私有记忆标记必须显式处理，不靠删除标记继续导出。路径、链接、体积、覆盖和备份边界见 [资产交换](docs/asset-transfer.md)。
-
-书房数据通过 `/prompt-tool data-import <JSON>` 显式导入。先指定 `moduleId`、来源书房根 `sourceDirectory` 和相对文件列表 `paths`，预览创建、跳过与冲突项；确认后在相同 JSON 中加上返回的 `expectedRevision`（值取预览的 `revision`）应用。只补缺失文件，冲突项保留目标，源文件不动；旧 `02-墨.jsonl` 映射到 `data/02-soul.jsonl`。新建书房用 `{"moduleId":"soul","initialize":true}` 预览模块自己的清单，也须带预览版本应用。完整例子与限制见 [数据导入](docs/architecture-params.md#书房数据预览与导入)。
-
-Soul 模块包含结构化账本、授权文件／历史检索、每步动态 SELF、上下文压缩与裁剪溯源、生成恢复和维护心跳。SELF 由 `rule-engine` 的内置动态内容源提供（`strategy: placeholder`、`fill: soul-self`），无需模块附带策略 JS。先用上述初始化预览补齐 `SELF.src.md` 骨架；已有模块副本须显式更新，包升级不会覆盖用户定义或私有数据，旧副本仍可使用自身保留的自定义策略。
-
-`soul_ledger` 自动署名真实会话；`lead` 需宿主审批，`promise` 仅当前主导会话追加/收口，`shelved` 可由原作者或当前主导收口。`close` 通过稳定 `targetId` 追加完成/取消及依据，保留历史原行；`list` 的 `pending/open/pending-review` 视图提供版本分页。升级前历史事项标为待核对，不猜测已完成。
-
-常驻 Soul 工具速查要求在完成重要任务、重要定案、踩坑和退场时主动判断是否记账，周期自检每 12 轮核对遗漏；不等用户专门提醒。只记有依据的一句话索引，排除过程流水、可重建事实与无出处断言，遵守唯一记录归属和现有写入权限。这是模型指令，不是后台自动写账本。
-计划与装配的首轮操作提示仅在当前工具面同时提供 `module_variables`、`module_manifest` 时投递。工具被裁剪时按实际能力回答，不要求调用不存在的写工具或 `tool_search`；信息不足时仍可说明未知并请求必要条件。
-
-知识库接入默认未完成。用户通过 `/prompt-tool knowledge {"moduleId":"soul","action":"preview","read":[],"write":["general","projects"]}` 预览原模块书房；可用绝对路径 `root` 选择其他目录或其已存在父目录下的新根。`read` 仅选择明确列出的旧资料相对文件，`write` 仅选择通用资料 `general` 和项目资料 `projects`。预览只读取文件元数据，最多2000项、8层；不读取正文或自动纳入历史。确认时保留相同请求，改为 `action:"confirm"` 并带返回的 `expectedRevision`；内容、模块或根身份变化须重新预览。仅补缺失目录，不搬迁或覆盖账本、SELF、运行状态及未知文件。`action:"status"` 和 `soul_state` 可查看未接入、已绑定或不可用；不可用时不切换到其他根。本机绑定由官方持久域按来源模块保存，不随模块导出、复制或导入转移。接入本身不启动自动整理、学习或跨项目授权。
-
-接入后，旧资料保持待归类。仍用上述用户命令：`action:"sources"` 查询来源、待归类资料和状态版本；`action:"project"` 带明确绝对 `projectDirectory` 和当前 `expectedRevision` 为实际会话绑定项目。Git 使用真实 common-dir，同仓 worktree 共享身份，同 remote 的独立克隆不共享；非 Git 使用用户所选目录，后续 cwd 变化不改变会话归属。`action:"source-preview"` 带 `path`（必须已在 read 范围内）或 `sessionId` 与明确 `seqs` 选择旧会话事件，并指定 `scope:"general"|"project"`；确认保持请求，改为 `source-confirm` 并带预览的 `expectedRevision`。`revoke` 带来源 `sourceId` 和当前版本立即撤权，保留原文。模型不能执行这些确认。
-
-绑定项目后，用户用 `action:"enable"` 和当前 `expectedRevision` 明确启用持续记忆；`disable` 停止新处理，保留历史。启用当前会话及实际新挂载 Soul 时保存事件界线，只纳入之后的新材料；旧历史仍须手选。正式 `soul_ledger` 写入关联真实来源、项目、根用户 MessageId 与稳定条目，原文成功后自动登记待整理；同操作重试不重复追加。原文成功而派生登记失败分别返回 `persisted:true`、`derived.state:"failed"`，恢复只补登记，不重写事实。`soul_state.recording` 分别报告原始成功、待整理与派生失败数。子代理按官方委派关系继承当时任务范围与根用户输入，后续父会话新资料不会自动扩大该范围；工具和自动 followup 不成为新用户根。
-
-关闭持续记忆同时撤回新闭环的学习与自动整理贡献；正式原文、合法历史查询及学习审计保留。重新启用仅恢复来源仍有效的贡献。
-
-`module_search/module_open` 返回知识引用绑定本机根、相对路径、版本与范围，回取和搜索返回前复核；通用模块文件入口不能绕过受管根授权。根重绑须重新选择来源，旧引用不复活。新接入后的旧账本尚未按真实来源归类时，旧自动 SELF/提醒贡献暂停，SELF 保留用户骨架并显示待归类；`soul_ledger list` 只返回当前获授权的新记录，未接入用户的原行为保留。记录待整理不代表已生成摘要或已学会。
-
-正常会话阶段收尾可用 `soul_state consolidate` 提交 `text`、已登记来源或条目 `refs` 和生成前 `knowledge.consolidationRevision` 对应的 `expectedRevision`；该版本仅用于整理，不能代替用户接入授权版本，不发起额外模型调用。至少包含一条待整理条目才发布，无新增材料返回 `no-work`。正文只保存到已授权区域的不可变版本，原账本短条目作为索引，状态保存关联引用及去重后的原始证据根。来源缺失、未发布候选、跨项目引用均拒绝；撤权或来源版本变化立即停用整个受影响正文。候选保存后状态提交失败返回 `candidate`（已保存但未生效），原正文及 pending 保留；同正文、引用和预期版本可重验恢复，版本冲突不能覆盖新提交。仅 `published` 推进 pending，成功重试不重复写正文或事实。候选文件不会自动纳入检索，也不能经普通来源登记绕过发布。
-
-持续记忆已启用且存在待整理材料时，阶段结束可请求当前会话路由进行一次无工具辅助整理；`soul_state assist` 手动请求共用同一预算，立即返回状态。输入分别保留完整的已记录账本结果及其真实原始来源事件与作者，不把用户请求冒充完成结果，或把助手记录当作用户意见。每个真实根用户 MessageId 的主子代理合计最多一次，调用前持久预留；失败、取消、重放或恢复不返次数。完整材料与引用不截断，4096 tokens 是选材目标；完整输入使用明确标识的估算，预留估算输入与最多1024输出，根会话累计预算32768 tokens/120秒，单次生成最多20秒。可靠 usage 包含缓存读写结算；缺失或生成失败保留预留，真实超限停后续辅助，不能保证估算不会低估实际用量。预算参数位于 `soul-maintenance` 的 `assisted*` 字段。
-
-辅助生成不占长维护锁，新用户输入、原生取消、模块释放及授权/来源变化请求取消并拒绝迟到候选；模型端无法及时停止时，已消费资源不能收回。发布仍复用上述版本校验和不可变正文提交。`soul_state` 与 `/prompt-tool knowledge` 的 `action:"status"` 分别呈现 `assistedConsolidation` 状态、候选/发布、失败原因、预留/实际用量与积压；连续三个新用户回合积压集中提示，清空后重置。普通对话与已获准直接记录不依赖辅助整理成功。
-推断学习使用 `basis:"inference"`，以 `refs` 补充正式条目或已发布摘要引用，提交 `assessment:{decision:"adopt"|"candidate",reason,unresolved,counterRefs:[]}` 表达模型的判断、处理理由与反证。宿主沿摘要核实实际原始消息，至少两次独立真实用户经历、同一范围且模型明确采纳并无未解反证才可生效；同源摘要不重复计数，不把项目经历晋升为通用偏好。身份核心与锁定项仍须确认。变更记录保存引用、证据根和处理依据，必要证据撤权或版本变化后停止注入，审计隐藏失效正文及理由；不按时间自动衰减或删除。
-
-`soul_state learn` 使用 `text`、`layer`（experience/judgment/expression/core/locked）、正式记录 `ref` 与当前 `knowledge.learningRevision` 作为 `expectedRevision` 提议学习。该版本复用整理的稳定依赖投影，工具结果记录与观察游标推进不使其失效；新用户输入、来源、授权或学习状态变化仍使旧版本失效。接入与用户管理操作仍使用绑定版本。模型识别明确长期反馈时提交 `basis:"explicit-long-term"`；宿主核实真实用户、事件版本及长期范围，临时要求、推断或层级不明只保留候选，子任务不能冒充用户反馈。核心和锁定项始终须用户 `/prompt-tool knowledge` 的 `learning-confirm` 确认。用户以 `learning-list` 查看来源、范围和变更；以条目 id 作为 `sourceId`、当前绑定版本操作 `learning-forget` 或 `learning-withdraw`。可选 `previous` 声明同层同范围的替换，撤回仅恢复此前仍有效的学习，忘记停用目标及后续依赖；保留原始证据与无关学习，不声称收回已经投递的文本。
-
-绑定知识库后的 SELF 使用原用户骨架、当前授权的有效学习与真实会话身份；持续记忆启用时再按当前项目和来源装配最多三条有效未结事项及最近交接，已收口事项不重开，关闭或撤权立即停止贡献。旧账本与诊断快照不会自动复活。启用模板求值的普通 persona 可通过 `{{runtime.get::soul.learning}}` 读取相同有效投影。默认总预算 12288 UTF-8 字节，骨架、确认核心/锁定偏好和真实身份优先，普通学习、当前运行状态、交接依次按剩余预算注入，省略说明计入预算；受保护核心本身超限明确失败，原文仍按授权引用回取。未绑定时保留原 SELF 行为。`soul_state status/mark/check` 提供当前会话短状态和运行诊断；短状态不被转为长期学习。
-
-`module_search` 支持全半角/大小写/千分位归一化、Soul 声明的有界近义表及 `mode: timeline` 时间线；命中标注方式，引用交给 `module_open` 重验授权与原文。历史会话仍只读白名单。维护默认每分钟更新索引与诊断快照，等待可取消，`wake` 独立且默认关闭。
-会话搜索与时间线只索引公开正文，排除插件注入、推理/流式传输以及本插件工具回执；真实用户、助手公开回答和可核对调用身份的外部工具结果保留。自动来源的当前回合助手/工具输出不参与即时召回，既有派生回执也在读取时过滤，原日志不改写。新会话引用使用 `public1:` 版本标识绑定原事件与公开正文；已授权的旧原文引用继续按原版本和偏移回取，其读回结果不会再次成为自动来源。无关流事件不触发知识状态观察、写盘或变更通知，重复观察不重复写入。
-
-`generation-recovery` 的通用默认只截断；Soul 显式启用空回合检测和有界恢复，主会话额度 3、子代理 1，每会话独立且重挂不清零。维护压缩和扩大范围默认关闭。配置与边界见 [引擎运行时](docs/engine-reuse.md#重复输出安全截断)、[账本与SELF](docs/architecture-params.md#soul账本与派生快照)。
-
-这些运行能力由本插件实现，不需要源项目 `dsh-agent-soul` 的仓库、插件或后台服务；上下文治理仍要求宿主提供[官方能力包](docs/engine-reuse.md#上下文运行时与溯源)。未提供向量库、规模持久索引、压缩帧直取、附属面板、源安装体系或恢复补额/惩罚。`assets/reference/` 保留源背景文档，其 CLI 不代表本插件接口。
-
-已有 Soul 副本由真实用户执行 `/prompt-tool upgrade {"moduleId":"soul","action":"preview"}`，审阅规则、能力参数与有效提示正文的变化。确认时改为 `action:"confirm"` 并原样带回 `expectedRevision`、`expectedSourceDigest`、`expectedPreviewRevision`；目标、资产或知识库控制状态变化使旧预览失效。用户自定义正文或不同参数明确报告冲突，不强覆盖。确认复用正式导入与重建，保留私有数据、账本、自定义骨架和未知资产，以及原知识库授权、项目、记录、学习、持续记忆开关和已消费辅助额度；模块内知识根随受控更新交接目录身份，普通目录替换仍拒绝。知识库状态保存失败时恢复原模块与绑定，可重新预览重试；存储结果无法确认或目录恢复失败时保留当前目录及原目录备份，按错误中的备份路径核对恢复，不重新接入覆盖状态。已持久化但重建失败显示 `publicationPending:true`，修复后重新装配。包种子只补缺失，未确认的已有副本不会自动升级；升级不替代知识库接入、项目选择或持续记忆启用。模型不能代替用户确认，绑定后的完整升级包仍不可经模型工具读取。
-
-有效记忆职责只使用 Soul 与已授权本地知识库：关键长期反馈、决定和完成事项实际调用账本，长期反馈/独立多证据调用学习，阶段收尾用正式引用整理；不要求安装、写入或迁移 mnemon。保留上游作者参考稿及适配说明，其中原项目命令不是当前已安装工具。新会话读取有效SELF并按需回取证据，未知经历不得编造；提示接线不代表模型行为验收已经通过。
-
-恢复旧版本前，先在绑定项目的用户会话执行 `/prompt-tool knowledge {"moduleId":"soul","action":"disable","expectedRevision":"当前绑定版本"}`，确认停止新处理，再关闭或卸下模块的新写入能力、SELF和提醒贡献，待辅助请求取消后由用户切换版本。历史数据保留，不静默迁移或回滚新控制格式。包含 `close` 的账本要求支持账本 v2 的程序；旧版会忽略收口且仍能写入，不具备新隔离保证，不能删除 close 行迁就旧版。升级后当前进程需加载新版插件；不自动重启现役 DSH，重启由用户决定。
-
-上下文能力按包名白名单从 DSH 自带包解析，不增加插件依赖，运行期不校验版本；仅包缺失或未登记时拒绝该能力装配。包代码更新需要用户重启 DSH 加载；加载后修改模块启停／参数沿运行时刷新，不改官方 preset 或 profile patch。
-
-## 升级与旧格式
-
-原生格式是破坏性切换：旧 world-book/ST 运行字段、动作局部变量、旧工具能力以及全部顶层 persona 和 config.yml.personaSources 明确拒绝。重新导入原始标准来源，或使用内置 [dsh-module 技能](skills/dsh-module/SKILL.md) 在用户授权下显式转换。插件不扫描改写用户目录、不恢复历史ST会话变量；旧Soul mark仅按上述首次合法写契约迁移。其它历史参数的白名单边界见 [旧格式与显式转换](docs/architecture-params.md#旧格式与显式转换)。
-
-## 指令文件
-
-AGENTS.md/CLAUDE.md 及 local 变体正文属于用户文件。编辑需上下文白名单、用户授权和字节版本一致；读取失败不能当空文件覆盖。显示名和后续注入开关归独立策略，关闭只拦未来可识别官方消息，不撤历史、不补官方预算，不复制正文到模块。
-
-## 开发与验证
-
-开发与 CI 使用 npm 已发布的官方 `0.2.2-rc.2` 包，以 Node 26.13.0、pnpm 11.28.5 执行：
-
-```powershell
+```sh
 pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+git diff --check
 ```
 
-依赖版本与 registry 完整性由 `pnpm-lock.yaml` 锁定，冷 checkout 可直接安装，无需官方源码、桌面打包配置或本地 `.scratch` 产物。PI 保留已验证的 `1.3.0` 及 [官方补丁](patches/pi-ai-1.3.0.patch)，由 pnpm 安装时应用。CI 使用 frozen 安装，依赖图不一致时失败；升级官方基线需同时更新声明与锁文件并重新验证。
+涉及宿主接入或发布包时，再执行 `pnpm verify:host` 和 `pnpm verify:pack`。构建后可在 DSH 插件管理页用 `link:` 加仓库绝对路径安装本地版本；更新代码后重启宿主。
 
-在本仓库按 AGENTS.md 从隔离目录启动命令：
+## 许可与来源
 
-```powershell
-$Repo = 'D:\AI\GitHub\dsh-plugin-prompt-tool'
-$env:TEMP = 'D:\AI\workspase\_temp'; $env:TMP = $env:TEMP; $env:TMPDIR = $env:TEMP
-Set-Location 'D:\AI\workspase\_temp'
-pnpm --dir $Repo typecheck
-pnpm --dir $Repo lint
-pnpm --dir $Repo test
-git -C $Repo diff --check
-```
-
-涉及分发或宿主接入另执行 `verify:host`、`verify:pack`。`verify:host` 校验官方包名版本、registry 锁记录、根 node_modules 真实解析、依赖与 peer 图、导入约束及官方档位，拒绝链接到仓库外的源码。`verify:pack` 在临时项目安装真实 tarball，以相同官方开发依赖版本执行安装冒烟；临时安装配置不进入发布包。失败阻断交付，不自动追新或降级。
-
-参考模板用 `rebuild:module-template`，追加 `-- --check` 检查漂移。test 脚本先 build，再以独立 cwd/TEMP/TMP/DSH_HOME 运行 Node 测试。发布流程复用测试构建，`verify:pack` 通过 `npm pack` 的 `prepare` 重建并验证分发包，最终 `npm publish --ignore-scripts` 复用已验证产物。类型、单测和包检查通过不代表真实发布宿主与桌面 UI 已验收；隔离发布 CLI 的 headless/web 验证和用户桌面验收分别记录。
-
-源文件通过 package scripts 生成 lib 和 YAML vendor 快照，不手改构建产物。测试只保留核心规则执行、真实宿主接入、写盘与请求安全、保存冲突及回退行为；类型与发布完整性由各自检查负责。不固定内置模块的名称、数量、正文或默认规则，模块机制使用自建小夹具验证；分发检查只核对仓库当前资源是否完整入包。字段穷举、界面快照、源码字符串及重复辅助函数测试不进入常驻套件，新增回归优先并入已有核心用例。
-
-## 排障
-
-随包委托模板只影响后续插入，不覆盖已保存到用户 `customTools` 的副本。旧规则读取/变量读取工具需要在 parameters 声明必填字符串 `moduleId`，并在 execute.args 传入 `'{{args.moduleId}}'`；旧规则编辑工具应将 execute.args 的 `expectedModuleId` 键改为 `moduleId`，保留 `expectedRevisions` 和 `edits`。可在自定义工具编辑器显式修改后保存，或保留自定义内容后删除旧条目并重新插入对应模板；读取规则取得新版本再编辑。不要同时给模型工具传两个主语键，bridge 的 `expectedModuleId` 不受此修正影响。
-
-`skipping profile bundle` 表示插件未加载，补建和工作台也不会运行。先检查官方插件清单与依赖解析；`pnpm --dir $Repo repair:profile -- --profile <name> --dry-run` 只做体检，修复走官方插件管理器。插件不会自行改 manifest、包链接、停止或重启服务。
-
-## 许可
-
-插件本体 MIT（Czerror）。移植能力的上游版权和许可保存在 [engine/THIRD_PARTY_LICENSES](engine/THIRD_PARTY_LICENSES)，随包发布。上游预设本体不随本包分发。
+本项目采用 [MIT 许可](LICENSE)。部分能力参考或移植自 [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard)、[dsh-router-standard](https://github.com/yjh051108/dsh-router-standard) 和 [dsh-super-injector](https://github.com/yjh051108/dsh-super-injector)；版权与许可见 [第三方许可](engine/THIRD_PARTY_LICENSES)。
