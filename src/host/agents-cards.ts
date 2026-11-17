@@ -6,9 +6,10 @@
  * 本模块拥有本地卡片的文件身份、读取快照与读写校验；读取失败与空文件严格区分。
  */
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { dshHome } from './paths.ts'
+import { dshHome, storageRoot } from './paths.ts'
+import { ModuleWriteError, withModuleLock } from './module-write.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { replaceVersionedText } from './versioned-text.ts'
 import { createTargetQueue } from '../shared/target-queue.ts'
@@ -247,7 +248,19 @@ export async function writeAgentsFileChecked(options: {
 }): Promise<AgentsFileWriteOutcome> {
   const { file, content, expectedRevision } = options
   const key = CASE_INSENSITIVE_PLATFORM ? file.realPath.toLowerCase() : file.realPath
-  return writeQueues.run(key, () => writeCheckedNow())
+  return writeQueues.run(key, async () => {
+    try {
+      const root = storageRoot()
+      mkdirSync(root, { recursive: true })
+      return await withModuleLock(root, 'agents-file-' + sha256(key), writeCheckedNow)
+    } catch (error) {
+      if (error instanceof ModuleWriteError && error.code === 'rules-conflict') {
+        return { ok: false, status: 409, code: 'agents-file-conflict', message: '指令文件正在保存或锁不可用；请重新读取后再保存' }
+      }
+      const message = error instanceof Error ? error.message : String(error)
+      return { ok: false, status: 409, code: 'agents-file-write-failed', message: `写盘失败：${message}` }
+    }
+  })
 
   async function writeCheckedNow(): Promise<AgentsFileWriteOutcome> {
     const bytes = Buffer.from(content, 'utf8')
