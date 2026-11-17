@@ -64,7 +64,7 @@ These reference documents are in Chinese:
 | Task | Documentation |
 | --- | --- |
 | Write modules and find YAML examples | [Module authoring guide](skills/dsh-module/SKILL.md) · [Field reference](module.yml) |
-| Configure variables, personas, instruction policies, and Soul | [Parameters and storage](docs/architecture-params.md) |
+| Configure variables, personas, instruction policies, and Soul | [Parameters and storage](docs/architecture-params.md) · [Soul authorization and continuous memory](docs/architecture-params.md#知识库授权与持续记忆) |
 | Configure injection points, tools, and advanced actions | [Engine guide](docs/engine-reuse.md) · [Injection point contracts](docs/injection-point-contracts.md) |
 | Import character cards and world books, or share modules | [SillyTavern conversion](docs/SillyTavern.md) · [Asset transfer](docs/asset-transfer.md) |
 

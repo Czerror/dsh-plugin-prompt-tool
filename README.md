@@ -64,7 +64,7 @@ dsh --profile web
 | 任务 | 文档 |
 | --- | --- |
 | 编写模块、查看 YAML 示例 | [模块编写指南](skills/dsh-module/SKILL.md) · [字段参考](module.yml) |
-| 配置变量、人设、指令策略与 Soul | [参数与存储](docs/architecture-params.md) |
+| 配置变量、人设、指令策略与 Soul | [参数与存储](docs/architecture-params.md) · [Soul 授权与持续记忆](docs/architecture-params.md#知识库授权与持续记忆) |
 | 配置注入位置、工具与高级动作 | [引擎指南](docs/engine-reuse.md) · [插入点契约](docs/injection-point-contracts.md) |
 | 导入角色卡、世界书或分享模块 | [SillyTavern 转换](docs/SillyTavern.md) · [资产交换](docs/asset-transfer.md) |
 
