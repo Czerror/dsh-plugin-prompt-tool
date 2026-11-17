@@ -286,7 +286,9 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(statusResult.value.assistedConsolidation?.state, 'idle')
   assert.equal(statusResult.value.assistedConsolidation.budget.attempts.length, 0)
   const toolEvent = agent.session.append({ type: 'tool/result', data: { id: 'publication-status', result: statusResult } })
+  const unchangedControl = owner.control(dir)
   await owner.observe(dir, agent.session.id, toolEvent.seq)
+  assert.doesNotThrow(unchangedControl, 'cursor和无关自动历史不失效控制凭据')
   assert.equal(owner.status(dir).consolidationRevision, statusResult.value.knowledge.consolidationRevision, '工具结果不改变生成前整理依赖版本')
   const oldPublication = { ...publication, refs: [publication.refs[0]], text: 'Previous authoritative decision.' }
   const ledgerBeforeChange = readFileSync(join(dir, 'data', '02-soul.jsonl'), 'utf8')
@@ -324,8 +326,10 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   replaceEvidence = false
   await owner.refreshEvidence(dir)
   const beforeRevoke = owner.status(dir)
+  const revokedControl = owner.control(dir)
   assert.equal(beforeRevoke.binding.histories.find(row => row.id === first.value.reference.sourceId).automatic, true)
   await manage({ action: 'revoke', sourceId: first.value.reference.sourceId })
+  assert.throws(revokedControl, /版本已变化/, '撤权立即失效已获取的控制凭据')
   assert.notEqual(owner.status(dir).binding.revision, beforeRevoke.binding.revision, '自动历史撤权仍刷新控制版本')
   assert.notEqual(owner.status(dir).learningRevision, beforeRevoke.learningRevision, '撤权使旧学习依赖失效')
   assert.notEqual(owner.status(dir).consolidationRevision, beforeRevoke.consolidationRevision, '撤权使旧整理依赖失效')
@@ -517,8 +521,12 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(auxiliary.length, 3)
   cancelledWrapper.call(agent, { kind: 'user' }, { keepInbox: true })
   assert.equal(auxiliary[2].signal.aborted, false, '已卸载旧wrapper不取消新请求')
-  await send(createUserMessage({ content: [{ type: 'text', text: 'new input while auxiliary still held' }], source: { kind: 'user' } }))
-  assert.equal(auxiliary[2].signal.aborted, true)
+  agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'unrelated automatic context' }], source: { kind: 'runtime-context' } }), { surfaceOp: 'append' })
+  await owner.observe(dir, agent.session.id)
+  assert.equal(auxiliary[2].signal.aborted, false, '自动索引和cursor推进不取消辅助流')
+  agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'new input while auxiliary still held' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+  assert.equal(auxiliary[2].signal.aborted, true, '真实根输入立即取消，不等待异步observe')
+  await owner.observe(dir, agent.session.id)
   assert.ok(agent.session.snapshotEvents().some(event => event.type === 'user/message' && event.data.content?.some(block => block.text === 'new input while auxiliary still held')))
   for (let tries = 0; tries < 200; tries++) {
     assisted = (await assistTool('status')).value.assistedConsolidation
