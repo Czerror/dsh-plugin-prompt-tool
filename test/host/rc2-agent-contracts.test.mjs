@@ -302,6 +302,27 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], signal, async () => {
       firstReady(); await secondEntered
       assert.equal(owner.records(dir, agent.session.id).length, 2)
+      const nestedCancel = new AbortController()
+      let enteredNested, releaseNested, checkedNested
+      const nestedEntered = new Promise(resolve => { enteredNested = resolve })
+      const nestedGate = new Promise(resolve => { releaseNested = resolve })
+      const nestedChecked = new Promise(resolve => { checkedNested = resolve })
+      const nested = owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], nestedCancel.signal, async () => {
+        enteredNested(); await nestedGate
+        const outcomes = await Promise.allSettled([
+          Promise.resolve().then(() => owner.records(dir, agent.session.id)),
+          owner.readEvidence(agent.session.id),
+        ])
+        checkedNested(outcomes.map(result => result.status))
+      })
+      await nestedEntered
+      nestedCancel.abort(new Error('nested cancelled'))
+      await assert.rejects(nested, /nested cancelled/)
+      const loadsBeforeLate = evidenceLoads
+      releaseNested()
+      assert.deepEqual(await nestedChecked, ['rejected', 'rejected'], '子操作取消后迟到投影与原文读取均拒绝')
+      assert.equal(evidenceLoads, loadsBeforeLate)
+      assert.equal(owner.records(dir, agent.session.id).length, 2, '子取消不撤销父消费资格')
       assert.throws(() => owner.sources(dir, fresh.agent.session.id), /未准备/, '并发会话不串用证据scope')
       await assert.rejects(owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], signal, () => {}), /额外材料/, '嵌套不扩张固定集合')
     }),
@@ -373,6 +394,17 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal((await consolidate(publication)).state, 'published')
   const publishedPath = 'data/' + (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.at(-1).path
   assert.equal(modelCalls, callsBeforePublication, '不可用状态查询和直接整理不额外调用模型')
+  const searchLoads = new Map()
+  evidenceObservation = async sessionId => {
+    const count = (searchLoads.get(sessionId) ?? 0) + 1
+    searchLoads.set(sessionId, count)
+    if (sessionId !== agent.session.id && count === 2) replaceEvidence = true
+  }
+  try {
+    const changedDuringSearch = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'changed-publication-search', name: 'module_search', arguments: JSON.stringify({ moduleId: 'alice', query: publication.text }) }] })).results[0].result
+    assert.equal(replaceEvidence, true, '读取后一个会话时替换先前派生来源原文')
+    assert.equal(changedDuringSearch.isError, true, '检索返回前拒绝原文已变化的派生正文')
+  } finally { evidenceObservation = undefined; replaceEvidence = false }
   replaceEvidence = true
   const staleRead = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'stale-publication-read', name: 'module_file_read', arguments: JSON.stringify({ moduleId: 'alice', path: publishedPath }) }] })).results[0].result
   assert.equal(staleRead.isError, true, '普通文件工具也刷新持久历史，拒绝失效派生正文')

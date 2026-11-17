@@ -5,7 +5,7 @@ import { createRetrievalEventProjection, retrievalEventRevision } from './module
 
 export interface EvidenceSelection { key: string; histories: readonly { sessionId: string; seqs: readonly number[] }[] }
 interface Reference { version: string; public: boolean }
-interface Operation { active: boolean; keys: Set<string>; references: Map<string, Map<number, Reference>>; selected: Map<string, Set<number>>; signal: AbortSignal }
+interface Operation { active: boolean; keys: Set<string>; references: Map<string, Map<number, Reference>>; selected: Map<string, Set<number>>; signal: AbortSignal; parent?: Operation }
 
 export function createSoulEvidence(loadSession?: LoadRetrievalSession) {
   const storage = new AsyncLocalStorage<Operation>()
@@ -14,8 +14,11 @@ export function createSoulEvidence(loadSession?: LoadRetrievalSession) {
   const current = () => {
     lifetime.signal.throwIfAborted()
     const operation = storage.getStore()
-    if (!operation?.active) throw new Error('当前操作证据未准备或已释放')
-    operation.signal.throwIfAborted()
+    if (!operation) throw new Error('当前操作证据未准备或已释放')
+    for (let scope: Operation | undefined = operation; scope; scope = scope.parent) {
+      if (!scope.active) throw new Error('当前操作证据未准备或已释放')
+      scope.signal.throwIfAborted()
+    }
     return operation
   }
   const wait = async <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {
@@ -30,7 +33,7 @@ export function createSoulEvidence(loadSession?: LoadRetrievalSession) {
     } finally { signal.removeEventListener('abort', abort) }
   }
   const capture = (operation: Operation, id: string, session: RetrievalSession | undefined) => {
-    if (!operation.active || operation.signal.aborted) throw new Error('证据操作已结束')
+    current()
     if (!session || session.id !== id) throw new Error('授权会话证据暂不可用')
     const seqs = operation.selected.get(id)
     if (!seqs) throw new Error('嵌套读取需要额外材料，请结束当前证据操作后重试')
@@ -50,6 +53,18 @@ export function createSoulEvidence(loadSession?: LoadRetrievalSession) {
     },
     reference(id: string, seq: number): Reference | undefined { return current().references.get(id)?.get(seq) },
     includes(id: string, seq: number): boolean { return current().selected.get(id)?.has(seq) ?? false },
+    async verify(): Promise<void> {
+      const operation = current()
+      for (const [id, seqs] of operation.selected) {
+        if (!seqs.size) continue
+        const expected = operation.references.get(id)
+        const session = await wait(Promise.resolve().then(() => loadSession?.(id, operation.signal)), operation.signal)
+        capture(operation, id, session)
+        const actual = operation.references.get(id)!
+        if ([...seqs].some(seq => expected?.get(seq)?.version !== actual.get(seq)?.version || expected?.get(seq)?.public !== actual.get(seq)?.public)) throw new Error('原始证据已变化，请重新准备')
+      }
+      current()
+    },
     async load(id: string, signal?: AbortSignal): Promise<RetrievalSession | undefined> {
       const operation = current()
       const combined = signal ? AbortSignal.any([signal, operation.signal]) : operation.signal
@@ -70,7 +85,11 @@ export function createSoulEvidence(loadSession?: LoadRetrievalSession) {
       if (parent) {
         current()
         if (selections.some(selection => !parent.keys.has(selection.key)) || [...selected].some(([id, seqs]) => !parent.selected.has(id) || [...seqs].some(seq => !parent.selected.get(id)!.has(seq)))) throw new Error('嵌套读取需要额外材料，请结束当前证据操作后重试')
-        return wait(Promise.resolve().then(callback), signal ? AbortSignal.any([parent.signal, signal]) : parent.signal)
+        const nested: Operation = { ...parent, parent, active: true, signal: signal ? AbortSignal.any([parent.signal, signal]) : parent.signal }
+        return storage.run(nested, async () => {
+          try { return await wait(Promise.resolve().then(() => { current(); return callback() }), nested.signal) }
+          finally { nested.active = false }
+        })
       }
       const operation: Operation = { active: true, keys: new Set(selections.map(selection => selection.key)), selected, references: new Map(), signal: signal ? AbortSignal.any([signal, lifetime.signal]) : lifetime.signal }
       operations.add(operation)

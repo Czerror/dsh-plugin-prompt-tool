@@ -39,7 +39,7 @@ export interface SoulKnowledgeOwner {
   confirm(directory: string, request: SoulKnowledgeRequest, signal: AbortSignal): Promise<ReturnType<SoulKnowledgeOwner['status']>>
   upgrade(directory: string, files: AssetFile[], request: AssetImportRequest, expectedBindingRevision: string | null, signal: AbortSignal): Promise<{ id: string; backupPath?: string }>
   sources(directory: string, sessionId: string): { state: string; documents: KnowledgeDocument[]; histories: z.infer<typeof history>[] }
-  withEvidence<T>(scopes: readonly { directory: string; sessionId: string }[], signal: AbortSignal | undefined, callback: () => T | Promise<T>): Promise<T>
+  withEvidence<T>(scopes: readonly { directory: string; sessionId: string }[], signal: AbortSignal | undefined, callback: (verify: () => Promise<void>) => T | Promise<T>): Promise<T>
   readEvidence: LoadRetrievalSession
   learn(directory: string, sessionId: string, request: { text: string; layer: string; ref: string; refs?: string[]; assessment?: z.infer<typeof assessment>; expectedRevision: string; basis?: string; previous?: string }, signal: AbortSignal, assertAuthorized?: () => void): Promise<Record<string, unknown>>
   learning(directory: string, sessionId: string, includeInactive?: boolean): z.infer<typeof learning>[]
@@ -421,7 +421,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const histories = (value.histories ?? []).filter(row => !row.revoked && (row.scope === 'general' || row.scope === project) && (!participant?.parent || participant.grants.includes(row.id)))
         selections.push({ key: JSON.stringify([key(directory), sessionId]), histories: [...histories, { sessionId, seqs: [] }, ...(participant ? [{ sessionId: participant.rootSessionId, seqs: [] }] : [])] })
       }
-      return evidence.run(selections, signal, callback)
+      return evidence.run(selections, signal, () => callback(evidence.verify))
     },
     records: visibleRecords,
     async consolidate(directory, sessionId, request, signal, assertAuthorized) {

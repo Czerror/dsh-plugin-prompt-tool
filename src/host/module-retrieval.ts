@@ -140,14 +140,14 @@ function filePaths(scope: RetrievalScope): string[] {
   return [...paths].filter(path => !scope.fileAllowed || scope.fileAllowed(path))
 }
 
-export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession, withEvidence: <T>(callback: () => Promise<T>, signal?: AbortSignal) => Promise<T> = callback => callback()) {
+export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession, withEvidence: <T>(callback: (verify?: () => Promise<void>) => Promise<T>, signal?: AbortSignal) => Promise<T> = callback => callback()) {
   return {
-    search: (input: RetrievalQuery, signal?: AbortSignal) => withEvidence(() => createRetrievalOperation(scopeOf, loadSession).search(input), signal),
-    open: (reference: RetrievalReference, signal?: AbortSignal) => withEvidence(() => createRetrievalOperation(scopeOf, loadSession).open(reference), signal),
-    refresh: (signal?: AbortSignal) => withEvidence(() => createRetrievalOperation(scopeOf, loadSession).refresh(), signal),
+    search: (input: RetrievalQuery, signal?: AbortSignal) => withEvidence(verify => createRetrievalOperation(scopeOf, loadSession, verify).search(input), signal),
+    open: (reference: RetrievalReference, signal?: AbortSignal) => withEvidence(verify => createRetrievalOperation(scopeOf, loadSession, verify).open(reference), signal),
+    refresh: (signal?: AbortSignal) => withEvidence(verify => createRetrievalOperation(scopeOf, loadSession, verify).refresh(), signal),
   }
 }
-function createRetrievalOperation(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession) {
+function createRetrievalOperation(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession, verifyEvidence?: () => Promise<void>) {
   const indexes = new Map<string, { events: readonly RetrievalEvent[]; rows: { seq: number; content: string }[] }>()
   const projectors = new Map<string, ReturnType<typeof createRetrievalEventProjection>>()
   const project = (id: string, events: readonly RetrievalEvent[]) => {
@@ -193,6 +193,7 @@ function createRetrievalOperation(scopeOf: () => RetrievalScope, loadSession?: L
   }
   const sessionIds = (scope: RetrievalScope) => new Set([...(scope.session ? [scope.session.id] : []), ...(scope.sessions ?? [])])
   const resultOf = async (scope: RetrievalScope, hits: RetrievalHit[]) => {
+    await verifyEvidence?.()
     const current = scopeOf()
     if (current.moduleId !== scope.moduleId || current.dir !== scope.dir) throw new Error('检索模块未授权')
     // 最后一次await后统一复核全部命中，先前收集的正文不能跨异步撤权返回。
@@ -401,6 +402,7 @@ function createRetrievalOperation(scopeOf: () => RetrievalScope, loadSession?: L
       let events = 0
       const ids = sessionIds(scope)
       for (const id of ids) events += (await indexSession(scope, id)).rows.length
+      await verifyEvidence?.()
       for (const id of indexes.keys()) if (!ids.has(id)) indexes.delete(id)
       return { state: 'ready' as const, files: files.length, sessions: ids.size, events }
     },
