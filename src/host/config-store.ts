@@ -106,10 +106,14 @@ export function updateStorageConfig(moduleRoot: string, expectedRevision: string
  * `enabled` 还没有启用语义，当成启用会让历史键意外参与装配。
  */
 export function enabledModuleIds(moduleRoot: string): string[] {
-  let doc: ReturnType<typeof parseDocument>
-  try { doc = readStorageConfig(moduleRoot).doc } catch { return [] }
-  if (Number(doc.get('schemaVersion')) < ENABLE_TABLE_SCHEMA) return []
-  const list: unknown = doc.toJS()?.enabled
+  let source: Record<string, unknown>
+  try { source = readStorageConfig(moduleRoot).source } catch { return [] }
+  return enabledIdsFromSource(source)
+}
+
+function enabledIdsFromSource(source: Record<string, unknown>): string[] {
+  if (Number(source.schemaVersion) < ENABLE_TABLE_SCHEMA) return []
+  const list: unknown = source.enabled
   if (!Array.isArray(list)) return []
   return [...new Set(list.filter((id): id is string => typeof id === 'string' && id.trim().length > 0).map((id) => id.trim()))]
 }
@@ -139,10 +143,14 @@ export function resolveRequestedModuleDir(modulesDir: string, subject: string | 
  * 顺序即装配顺序，新模块追加在末尾（同键参数的覆盖顺序因此可预测）。
  */
 export function validateModuleEnabled(moduleRoot: string, id: string, enabled: boolean): void {
+  validateEnabledCandidate(moduleRoot, id, enabled, enabledModuleIds(moduleRoot))
+}
+
+function validateEnabledCandidate(moduleRoot: string, id: string, enabled: boolean, current: string[]): void {
   assertModuleId(id)
   if (typeof enabled !== 'boolean') throw new TypeError('enabled 必须是布尔值')
-  if (enabled && !enabledModuleIds(moduleRoot).includes(id)) {
-    const next = [...enabledModuleIds(moduleRoot), id]
+  if (enabled && !current.includes(id)) {
+    const next = [...current, id]
     assertCrossModuleParticipantPaths(moduleRoot, next)
     const rules = new Map<string, readonly RuleDefinition[]>()
     for (const moduleId of next) {
@@ -158,7 +166,8 @@ export function validateModuleEnabled(moduleRoot: string, id: string, enabled: b
 export function setModuleEnabled(moduleRoot: string, id: string, enabled: boolean): void {
   validateModuleEnabled(moduleRoot, id, enabled)
   updateStorageConfig(moduleRoot, undefined, (doc, source) => {
-    const current = enabledModuleIds(moduleRoot)
+    const current = enabledIdsFromSource(source)
+    validateEnabledCandidate(moduleRoot, id, enabled, current)
     const next = enabled ? current.includes(id) ? current : [...current, id] : current.filter(existing => existing !== id)
     if (isDeepStrictEqual(current, next)) return source
     doc.set('schemaVersion', ENABLE_TABLE_SCHEMA)

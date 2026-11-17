@@ -1,7 +1,9 @@
 // 自建模块验证真实装配的主子隔离、热更新和故障恢复，不固定内置模块内容。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
@@ -216,6 +218,46 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   await h.runtime.refresh()
   assert.deepEqual(await injected(), ['USER'])
   assert.deepEqual(h.runtime.moduleIds(agent.id), [])
+})
+
+test('模块启用在预检后遇到另一提交时拒绝互斥集合，保留原配置', async () => {
+  const { setModuleEnabled, enabledModuleIds, enableTablePath } = await import('../../src/host/config-store.ts')
+  for (const id of ['race-a', 'race-b']) {
+    const dir = writeModuleFixture(id, { modules: ['rule-engine'] })
+    writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
+      id, modules: ['rule-engine'], rules: [{
+        ...fixtureRule({ id, text: id }), group: 'race', groupScope: 'cross-module', exclusive: true,
+      }],
+    })}\n`)
+  }
+  const config = enableTablePath(moduleRoot)
+  writeFileSync(config, '# keep comment\nschemaVersion: 3\nenabled: []\ncustom: stay\n')
+  const original = fs.readFileSync
+  let reads = 0
+  let interleaved = false
+  fs.readFileSync = function (file, ...args) {
+    if (String(file) === config && ++reads === 2) {
+      fs.readFileSync = original
+      syncBuiltinESMExports()
+      setModuleEnabled(moduleRoot, 'race-a', true)
+      interleaved = true
+    }
+    return original.call(this, file, ...args)
+  }
+  syncBuiltinESMExports()
+  try {
+    assert.throws(() => setModuleEnabled(moduleRoot, 'race-b', true), /跨模块互斥组/)
+  } finally {
+    fs.readFileSync = original
+    syncBuiltinESMExports()
+  }
+  assert.equal(interleaved, true, '另一提交发生在预检与锁内读取之间')
+  assert.deepEqual(enabledModuleIds(moduleRoot), ['race-a'])
+  assert.match(original(config, 'utf8'), /^# keep comment\n/)
+  assert.match(original(config, 'utf8'), /custom: stay/)
+  setModuleEnabled(moduleRoot, 'race-a', true)
+  setModuleEnabled(moduleRoot, 'race-b', false)
+  assert.deepEqual(enabledModuleIds(moduleRoot), ['race-a'])
 })
 
 function writeModuleFixture(id, { modules, promptConfigs = [], variables }) {
