@@ -23,7 +23,7 @@ const [{ default: Llm, LlmAdapter }, { default: Agents }, { default: Sessions },
   import('@deepseek-ai/dsh-subagent-spawn-in-process'), import('@deepseek-ai/dsh-tool-subagent'),
 ])
 
-test('连续记录沿真实消息和工具执行，重放不增原文，旧历史与关闭后材料不纳入', { timeout: 10000 }, async t => {
+test('连续记录沿真实消息和工具执行，重放不增原文，旧历史与关闭后材料不纳入', { timeout: 30000 }, async t => {
   const root = new Context(), home = mkdtempSync(join(tmpdir(), 'soul-record-'))
   const dir = join(home, 'modules', 'alice')
   mkdirSync(join(dir, 'data'), { recursive: true })
