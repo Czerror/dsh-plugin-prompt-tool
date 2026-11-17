@@ -22,7 +22,7 @@ async function waitForIdle(agent: Agent, signal: AbortSignal): Promise<void> {
   } finally { signal.removeEventListener('abort', aborted) }
 }
 
-export function createSoulMaintenanceProvider(options: { refreshRetrieval: (agent: Agent, moduleId: string, signal: AbortSignal) => Promise<SoulIndexStatus> }) {
+export function createSoulMaintenanceProvider(options: { refreshRetrieval: (agent: Agent, moduleId: string, signal: AbortSignal) => Promise<SoulIndexStatus>; withEvidence: <T>(moduleId: string, agent: Agent, signal: AbortSignal, callback: () => Promise<T>) => Promise<T> }) {
   const states = new Map<string, State>()
   const status = (id: string): { state: string; error?: string } => {
     const state = states.get(id)
@@ -45,7 +45,7 @@ export function createSoulMaintenanceProvider(options: { refreshRetrieval: (agen
         await waitForIdle(owner.agent, signal)
         if (!valid()) return
         let entered = false
-        try { await owner.agent.runMaintenance(async activitySignal => {
+        try { await options.withEvidence(id, owner.agent, signal, () => owner.agent.runMaintenance(async activitySignal => {
           entered = true
           state.state = 'running'
           signal = AbortSignal.any([controller.signal, activitySignal])
@@ -54,7 +54,7 @@ export function createSoulMaintenanceProvider(options: { refreshRetrieval: (agen
           const index = await options.refreshRetrieval(owner.agent, id, signal)
           if (!valid()) return
           refreshSoulSelf(owner.sourceModuleDir, index, { expectedRevision: revision, signal, budgetBytes: owner.config.budgetBytes })
-        }) } catch (error) {
+        })) } catch (error) {
           // 宿主在回调进入前同步拒绝占用竞争；按间隔重试，不忙等。
           if (!entered && valid()) { state.state = 'waiting'; return }
           throw error

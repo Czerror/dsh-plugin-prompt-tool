@@ -90,8 +90,8 @@ test('用户升级：完整预览确认、目标变化拒绝、私有资产保�
   assert.equal(owner.status(dir).state, 'bound', '用户确认升级必须保留知识库绑定')
   const after = owner.status(dir).binding
   for (const key of ['root', 'identity', 'read', 'write', 'generation', 'sources', 'projects', 'histories', 'continuity', 'participants', 'records', 'publications', 'learning']) assert.deepEqual(after[key], preserved[key], key)
-  assert.equal(owner.learning(dir, agent.session.id)[0].state, 'adopted')
-  assert.equal(owner.sources(dir, agent.session.id).documents[0].content, 'AUTHORIZED SOURCE')
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.learning(dir, agent.session.id)))[0].state, 'adopted')
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents[0].content, 'AUTHORIZED SOURCE')
   const upgradedBudgetKey = JSON.stringify([dir, after.assistedIdentity ?? after.moduleIdentity, agent.session.id])
   assert.equal(upgradedBudgetKey, budgetKey)
   assert.equal((await owner.assisted.reserve(upgradedBudgetKey, 'human-1', 10, limits)).state, 'deferred', '升级不能重获已消费回合额度')
@@ -117,16 +117,16 @@ test('用户升级：完整预览确认、目标变化拒绝、私有资产保�
   const internalAfter = owner.status(dir).binding
   assert.notEqual(internalAfter.identity, internalBefore.identity, '模块内根身份随受控目录交换')
   for (const key of ['root', 'read', 'write', 'generation', 'sources', 'projects', 'histories', 'continuity', 'participants', 'records', 'learning']) assert.deepEqual(internalAfter[key], internalBefore[key], key)
-  assert.equal(owner.sources(dir, agent.session.id).documents[0].content, 'INTERNAL SOURCE')
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents[0].content, 'INTERNAL SOURCE')
   await owner.dispose()
   owner = await openSoulKnowledge(ctx.storageDomain, async sessionId => ({ id: sessionId, snapshotEvents: () => events }))
   assert.equal(owner.status(dir).state, 'bound')
-  assert.equal(owner.learning(dir, agent.session.id)[0].state, 'adopted')
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.learning(dir, agent.session.id)))[0].state, 'adopted')
   writeFileSync(join(dir, 'assets', 'tools.md'), 'USER CUSTOM TOOLS')
   const conflict = JSON.parse((await run({ action: 'preview' })).text)
   assert.equal(conflict.status, 'conflict')
   assert.equal(readFileSync(join(dir, 'assets', 'tools.md'), 'utf8'), 'USER CUSTOM TOOLS')
-  const learningId = owner.learning(dir, agent.session.id)[0].id
+  const learningId = (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.learning(dir, agent.session.id)))[0].id
   renameSync(project, project + '-missing')
   await assert.rejects(owner.manage(dir, { moduleId: id, action: 'learning-forget', sourceId: learningId, expectedRevision: owner.status(dir).binding.revision }, 'unrelated-session', signal), /无权/, '减权不能跨会话项目归属')
   const forgotten = await Promise.allSettled([manage({ action: 'learning-forget', sourceId: learningId })])
@@ -157,7 +157,7 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   await ctx.plugin(domain, { backend: 'json' })
   const events = [{ seq: 1, type: 'user/message', data: { text: 'HISTORY ONE' } }, { seq: 2, type: 'user/message', data: { text: 'HISTORY TWO' } }]
   let onLoad = async () => {}
-  const owner = await openSoulKnowledge(ctx.storageDomain, async id => ({ id, snapshotEvents: () => events }))
+  const owner = await openSoulKnowledge(ctx.storageDomain, async id => { await onLoad(id); return { id, snapshotEvents: () => events } })
   t.after(async () => { await owner.dispose(); await ctx.fiber.dispose() })
   await ctx.plugin(commands.default)
   ctx.provide('settings', {})
@@ -192,7 +192,7 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   const fresh = JSON.parse((await run(request)).text)
   assert.equal((await run({ ...request, action: 'confirm', expectedRevision: fresh.revision })).kind, 'success')
   assert.equal(owner.status(f.dir).state, 'bound')
-  assert.equal(owner.sources(f.dir, 'session-a').state, 'pending-classification')
+  assert.equal((await owner.withEvidence([{ directory: f.dir, sessionId: 'session-a' }], undefined, () => owner.sources(f.dir, 'session-a'))).state, 'pending-classification')
   const host = { target: (exec, id) => resolveModuleToolTarget(exec, join(f.root, 'modules'), () => ['alice', 'beta'], id) }
   registerModuleFileTools(agent.ctx, host, () => owner)
   const { registerSoulLedgerTools } = await import('../../src/runtime/soul-ledger-tools.ts')
@@ -231,15 +231,15 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   assert.throws(assertProjectControl, /变化/, '项目身份替换立即使控制凭据失效')
   renameSync(projectDirectory, projectDirectory + '-replacement')
   renameSync(projectDirectory + '-original', projectDirectory)
-  await owner.refreshEvidence(f.dir)
+  await owner.withEvidence([{ directory: f.dir, sessionId: 'session-a' }], undefined, () => {})
   assert.throws(assertProjectControl, /变化/, '恢复原目录也不能恢复旧控制凭据')
   const unrelatedProject = join(f.root, 'unrelated-project')
   mkdirSync(unrelatedProject)
   await owner.manage(f.dir, { moduleId: 'alice', action: 'project', projectDirectory: unrelatedProject, expectedRevision: currentRevision() }, 'unrelated-session', new AbortController().signal)
   renameSync(unrelatedProject, unrelatedProject + '-moved')
-  await owner.refreshEvidence(f.dir, undefined, 'session-a')
+  await owner.withEvidence([{ directory: f.dir, sessionId: 'session-a' }], undefined, () => {})
   owner.control(f.dir, 'session-a')()
-  assert.equal(owner.sources(f.dir, 'session-a').state, 'ready', '其他会话项目丢失不阻止当前合法项目')
+  assert.equal((await owner.withEvidence([{ directory: f.dir, sessionId: 'session-a' }], undefined, () => owner.sources(f.dir, 'session-a'))).state, 'ready', '其他会话项目丢失不阻止当前合法项目')
   assert.equal((await call('module_file_read', { path: 'memory.md' })).isError, false, '文件工具按真实会话准备，不受其他项目丢失影响')
   renameSync(unrelatedProject + '-moved', unrelatedProject)
   const select = async selection => {
@@ -253,7 +253,7 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   const hit = (await ok('module_search', { query: 'CHANGED' })).hits[0]
   assert.equal(hit.reference.kind, 'knowledge')
   assert.equal((await ok('module_open', { reference: hit.reference })).content, 'CHANGED')
-  assert.deepEqual(owner.sources(f.dir, 'other-session').documents, [], '未绑定其他项目不获得项目资料')
+  assert.deepEqual((await owner.withEvidence([{ directory: f.dir, sessionId: 'other-session' }], undefined, () => owner.sources(f.dir, 'other-session'))).documents, [], '未绑定其他项目不获得项目资料')
   agent.session.header.cwd = join(f.root, 'other-cwd')
   assert.equal((await ok('module_open', { reference: hit.reference })).content, 'CHANGED', 'cwd变化不改持久项目')
   const oldSource = await select({ sessionId: 'old', seqs: [1] })
@@ -262,8 +262,9 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   assert.deepEqual((await ok('module_search', { query: 'HISTORY TWO' })).hits, [], '未选择历史事件不扫描')
   await select({ sessionId: 'old', seqs: [2] })
   await select({ sessionId: 'later', seqs: [1] })
+  let laterLoads = 0
   onLoad = async id => {
-    if (id === 'later') {
+    if (id === 'later' && ++laterLoads === 2) {
       onLoad = async () => {}
       assert.equal((await run({ moduleId: 'alice', action: 'revoke', sourceId: oldSource, expectedRevision: currentRevision() })).kind, 'success')
     }

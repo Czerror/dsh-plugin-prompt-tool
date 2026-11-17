@@ -4,6 +4,8 @@ Soul 辅助整理在开始时从知识 owner 固定控制凭据；流式片段�
 
 项目身份缓存归知识 owner 生命周期。显式绑定、恢复、cwd 推导及 SELF／检索／学习的异步准备解析 Git，保留超时与取消；同步模板冷读明确不可用。稳定读取只复核真实目录与祖先、`.git`、gitdir／commondir 指针和目标的文件系统身份，不启动 Git；合法主仓库与 worktree 仍共享 common-dir。身份变化立即拒绝并使同一控制凭据失效，异步重验完成前再次核对足迹，释放或目录变化后的迟到结果不能恢复旧授权。
 
+Soul 启动仅按账本 origin 与持久来源元数据恢复登记，不预载历史正文。知识 owner 的 `withEvidence` 接收真实会话与本次完整模块集合，在装配、维护和写入锁之外准备紧凑引用验证材料；同步 sources、records、learning 和模板只消费当前操作，未准备明确不可用。不同会话的操作互相隔离，嵌套只能复用固定集合；结束、取消或 owner 释放后不可继续消费。原文仍按业务需要读取并复核 raw/public 引用版本及授权，历史 Session、事件和检索投影不作为长期验证缓存。读取失败与取消不删除记录、清 pending 或恢复已撤回学习；辅助生成与等待 Agent 空闲不占用证据操作。
+
 `compaction-tool-result-pruner` 按宿主解析的官方构造器身份发现全部存活 Fiber，并在各 owner 自己的 Context 等待、门控原 Pruner；正式 standard 组合内层 isolate 不影响发现。就绪与停用资格按当前 Agent 的官方 scope 和真实 session 身份核对，其他 Agent 的 owner 不提供就绪。晚到或重挂后在后续正常装配重判，释放立即使旧门控失活；关闭规则恢复官方裁剪，第三方外层包装保留。不复制裁剪算法，也不修改预设。
 
 `host-control / session-rewind-todos` 独立默认开启，按回退提交时真实 Agent 的规则判定。开启时预览及历史标记提交前核对当前作用域的官方 `todos` 投影；owner 未注册或释放时明确拒绝，正常暂无清单（null）允许，恢复后在下次正常请求重判，关闭时不依赖 todo owner。历史标记提交后，读取官方 `todos` standing-plan 投影（`turn/start` 后无清单即不写），仅将 completed 改为 pending，保持 in_progress、pending、正文与顺序；沿官方 Session 的 `todo/write` 全量事件持久化并更新同一投影，不建立第二状态库。历史重放只解释，不补写待办。标记已提交而待办写入失败时返回带 markerId 的失败目标，明确历史已提交；原边界重试只补待办，不重复回退，已进入新轮则拒绝。关闭、释放不逆转已写结果，后续不再更新。

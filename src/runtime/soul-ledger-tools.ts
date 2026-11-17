@@ -66,7 +66,6 @@ export function registerSoulLedgerTools(ctx: Context, host: Pick<ModuleToolHost,
       if (args.action === 'close') {
         if (args.type !== undefined || args.text !== undefined || args['概要'] !== undefined || args.feel !== undefined || args.limit !== undefined || args.view !== undefined || args.cursor !== undefined) throw new Error('收口不接受追加或读取字段')
         if (!args.targetId || !args.outcome || !args.reason) throw new Error('收口需要 targetId、outcome 与 reason')
-        if (controlled && !knowledge?.()?.records(target.dir, exec.agent?.session.id ?? '').some(row => row.entryId === args.targetId)) throw new Error('收口目标不在当前有效授权范围')
         return save(origin => closeSoulLedger(target.dir, { targetId: args.targetId!, outcome: args.outcome!, reason: args.reason!, ...(args.ref === undefined ? {} : { ref: args.ref }) }, { sessionId: exec.agent?.session.id, signal: exec.signal, origin }))
       }
       if (args.targetId !== undefined || args.outcome !== undefined || args.reason !== undefined) throw new Error('只有收口接受 targetId、outcome 与 reason')
@@ -76,10 +75,12 @@ export function registerSoulLedgerTools(ctx: Context, host: Pick<ModuleToolHost,
           const owner = knowledge()
           if (!owner) throw new Error('知识来源授权持久状态不可用')
           if (owner.status(target.dir).state !== 'unbound') {
-            const records = owner.records(target.dir, exec.agent?.session.id ?? '')
-            if (!records.length) throw new Error('旧账本待归类，无受控账本来源')
-            const allowed = new Set(records.map(row => row.entryId))
-            return readSoulLedger(target.dir, { limit: args.limit, type: args.type, view: args.view, cursor: args.cursor }, allowed)
+            return owner.withEvidence([{ directory: target.dir, sessionId: exec.agent?.session.id ?? '' }], exec.signal, () => {
+              const records = owner.records(target.dir, exec.agent?.session.id ?? '')
+              if (!records.length) throw new Error('旧账本待归类，无受控账本来源')
+              const allowed = new Set(records.map(row => row.entryId))
+              return readSoulLedger(target.dir, { limit: args.limit, type: args.type, view: args.view, cursor: args.cursor }, allowed)
+            })
           }
           owner.assertFile(target.dir, join(target.dir, 'data', '02-soul.jsonl'), exec.agent?.session.id)
         }

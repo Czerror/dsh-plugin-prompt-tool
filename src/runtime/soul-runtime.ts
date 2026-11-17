@@ -47,6 +47,17 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     return assertModuleSnapshotSource(host.root, id)
   }
   const keyOf = (id: string, agent: Agent): string => JSON.stringify([id, agent.session.id])
+  const withEvidence = async <T>(ids: readonly string[], agent: Agent, signal: AbortSignal | undefined, callback: () => T | Promise<T>): Promise<T> => {
+    const owner = knowledge?.()
+    if (knowledge && !owner) throw new Error('学习授权持久状态不可用')
+    const scopes = ids.map(id => ({ directory: source(id, agent, signal), sessionId: agent.session.id })).filter(scope => owner?.status(scope.directory).state !== 'unbound')
+    const consume = () => {
+      if (knowledge?.() !== owner) throw new Error('学习持久状态已变化')
+      for (const id of ids) source(id, agent, signal)
+      return callback()
+    }
+    return owner && scopes.length ? owner.withEvidence(scopes, signal, consume) : consume()
+  }
   const admit = async (id: string, agent: Agent, seq?: number, attached = false) => {
     const dir = source(id, agent), owner = knowledge?.()
     if (!owner || owner.status(dir).state === 'unbound') return
@@ -88,7 +99,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     return value
   }
   const retrieval = createModuleRetrievalProvider(host, id => loadKnowledgeSession(ctx, id), knowledge)
-  const maintenance = createSoulMaintenanceProvider({ refreshRetrieval: (agent, id, signal) => retrieval.refresh(agent, id, signal) })
+  const maintenance = createSoulMaintenanceProvider({ refreshRetrieval: (agent, id, signal) => retrieval.refresh(agent, id, signal), withEvidence: (id, agent, signal, callback) => withEvidence([id], agent, signal, callback) })
   const legacyAllowed = (dir: string): boolean => {
     if (!knowledge) return true
     const owner = knowledge()
@@ -149,13 +160,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   }
   ctx.provide(SOUL_SELF_SERVICE, {
     status,
-    async refresh(id: string, agent: Agent) {
-      const dir = source(id, agent), owner = knowledge?.()
-      if (knowledge && !owner || owner?.status(dir).state === 'unavailable') throw new Error('学习授权不可用，停止本次装配')
-      if (owner?.status(dir).state === 'bound') await owner.refreshEvidence(dir, undefined, agent.session.id)
-      if (knowledge?.() !== owner) throw new Error('学习持久状态已变化')
-      source(id, agent)
-    },
+    withEvidence,
     assistedStatus: assisted.status,
     requestAssisted: assisted.request,
     detached: assisted.detached,
@@ -172,9 +177,8 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     },
     render: (id: string, agent: Agent, signal?: AbortSignal): Promise<string> => {
       const dir = source(id, agent, signal), budget = readSelfBudget(dir)
-      return Promise.resolve().then(async () => {
+      return withEvidence([id], agent, signal, () => {
         const owner = knowledge?.()
-        if (owner && owner.status(dir).state === 'bound') await owner.refreshEvidence(dir, signal, agent.session.id)
         if (knowledge?.() !== owner) throw new Error('SELF学习持久状态已变化')
         if (source(id, agent, signal) !== dir) throw new Error('SELF来源发生变化')
         const state = readSoulState(dir, agent.session.id, sessionOwner())

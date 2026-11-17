@@ -36,7 +36,7 @@ export function registerModuleRetrievalTools(ctx: Context, retrievalOf: (exec: T
         execute: async (args, exec) => {
           if (Object.keys(args).some(key => !['moduleId', 'query', 'mode', 'since', 'until', 'cursor', 'limit'].includes(key))) throw new Error('检索请求含未知字段')
           exec.signal?.throwIfAborted()
-          const value = await retrievalOf(exec, args.moduleId).search({ query: args.query, mode: args.mode, since: args.since, until: args.until, cursor: args.cursor, limit: args.limit })
+          const value = await retrievalOf(exec, args.moduleId).search({ query: args.query, mode: args.mode, since: args.since, until: args.until, cursor: args.cursor, limit: args.limit }, exec.signal)
           exec.signal?.throwIfAborted()
           retrievalOf(exec, args.moduleId)
           return value
@@ -50,7 +50,7 @@ export function registerModuleRetrievalTools(ctx: Context, retrievalOf: (exec: T
         execute: async (args, exec) => {
           if (Object.keys(args).some(key => !['moduleId', 'reference'].includes(key))) throw new Error('回取请求含未知字段')
           exec.signal?.throwIfAborted()
-          const value = await retrievalOf(exec, args.moduleId).open(args.reference as unknown as RetrievalReference)
+          const value = await retrievalOf(exec, args.moduleId).open(args.reference as unknown as RetrievalReference, exec.signal)
           exec.signal?.throwIfAborted()
           retrievalOf(exec, args.moduleId)
           return value
@@ -73,14 +73,13 @@ export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target
   const retrievalFor = (state: Pick<State, 'modules' | 'indexes'>, moduleId: string, agent: Agent) => {
     let retrieval = state.indexes.get(moduleId)
     if (retrieval === undefined) {
-      const projectCurrent = createRetrievalEventProjection()
       retrieval = createModuleRetrieval(() => {
         const current = [...(state.modules.get(moduleId)?.values() ?? [])].at(-1)
         if (!current) throw new Error('检索模块未授权')
         if (knowledge && !knowledge()) throw new Error('知识来源授权持久状态不可用')
         const owner = knowledge?.(), bound = owner?.status(current.dir).state !== 'unbound' && owner !== undefined
         const projection = bound ? owner.sources(current.dir, agent.session.id) : undefined
-        const currentTurn = projectCurrent(agent.session.snapshotEvents()).latestUser
+        const currentTurn = createRetrievalEventProjection()(agent.session.snapshotEvents()).latestUser
         const allowedEvents = new Map<string, Map<number, { versions: Set<string>; automatic: boolean }>>()
         for (const item of projection?.histories ?? []) {
           let selected = allowedEvents.get(item.sessionId)
@@ -99,11 +98,18 @@ export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target
             return !!allowed && !(allowed.automatic && id === agent.session.id && event.seq > currentTurn && ['assistant/message', 'tool/result'].includes(event.type)) && allowed.versions.has(retrievalEventRevision(event))
           } : undefined,
           fileAllowed: owner ? (path: string) => { try { owner.assertFile(current.dir, resolveModuleReadPath(current.dir, path, ['assets', 'data'], { allowRootMemory: true }), agent.session.id); return true } catch { return false } } : undefined }
-      }, loadSession, async () => {
+      }, (id, signal) => {
         const current = [...(state.modules.get(moduleId)?.values() ?? [])].at(-1)
         if (!current) throw new Error('检索模块未授权')
         const owner = knowledge?.()
-        if (owner && owner.status(current.dir).state !== 'unbound') await owner.refreshEvidence(current.dir, undefined, agent.session.id)
+        return owner && owner.status(current.dir).state !== 'unbound' ? owner.readEvidence(id, signal) : loadSession?.(id, signal) ?? Promise.resolve(undefined)
+      }, async (callback, signal) => {
+        const current = [...(state.modules.get(moduleId)?.values() ?? [])].at(-1)
+        if (!current) throw new Error('检索模块未授权')
+        const owner = knowledge?.()
+        return owner && owner.status(current.dir).state !== 'unbound'
+          ? owner.withEvidence([{ directory: current.dir, sessionId: agent.session.id }], signal, callback)
+          : callback()
       })
       state.indexes.set(moduleId, retrieval)
     }
@@ -130,7 +136,7 @@ export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target
       const observation: RetrievalStatus = { ...state.observations.get(moduleId), state: 'refreshing' }
       state.observations.set(moduleId, observation)
       try {
-        const result = await retrievalFor(state, moduleId, agent).refresh()
+        const result = await retrievalFor(state, moduleId, agent).refresh(signal)
         signal?.throwIfAborted()
         if (agents.get(agent) !== state || declarationOf(state, moduleId) !== declaration) throw new Error('检索来源声明已变化或未授权')
         if (state.observations.get(moduleId) !== observation) throw new Error('检索来源状态已变化，请重新刷新')

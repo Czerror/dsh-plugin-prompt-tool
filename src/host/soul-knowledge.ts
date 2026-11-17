@@ -12,6 +12,7 @@ import type { LoadRetrievalSession } from './module-retrieval.ts'
 import { createRetrievalEventProjection, retrievalEventRevision } from './module-retrieval.ts'
 import { readSoulLedgerProjection } from './soul-ledger.ts'
 import { openAssistedBudget } from './soul-assisted-budget.ts'
+import { createSoulEvidence } from './soul-evidence.ts'
 import { installModulePackage } from './module-package.ts'
 import { createProjectIdentities } from './soul-project-identity.ts'
 import type { AssetFile, AssetImportRequest } from '../shared/asset-transfer.ts'
@@ -38,7 +39,8 @@ export interface SoulKnowledgeOwner {
   confirm(directory: string, request: SoulKnowledgeRequest, signal: AbortSignal): Promise<ReturnType<SoulKnowledgeOwner['status']>>
   upgrade(directory: string, files: AssetFile[], request: AssetImportRequest, expectedBindingRevision: string | null, signal: AbortSignal): Promise<{ id: string; backupPath?: string }>
   sources(directory: string, sessionId: string): { state: string; documents: KnowledgeDocument[]; histories: z.infer<typeof history>[] }
-  refreshEvidence(directory: string, signal?: AbortSignal, sessionId?: string): Promise<void>
+  withEvidence<T>(scopes: readonly { directory: string; sessionId: string }[], signal: AbortSignal | undefined, callback: (verify: () => Promise<void>) => T | Promise<T>): Promise<T>
+  readEvidence: LoadRetrievalSession
   learn(directory: string, sessionId: string, request: { text: string; layer: string; ref: string; refs?: string[]; assessment?: z.infer<typeof assessment>; expectedRevision: string; basis?: string; previous?: string }, signal: AbortSignal, assertAuthorized?: () => void): Promise<Record<string, unknown>>
   learning(directory: string, sessionId: string, includeInactive?: boolean): z.infer<typeof learning>[]
   manage(directory: string, request: SoulKnowledgeRequest, sessionId: string, signal: AbortSignal): Promise<Record<string, unknown>>
@@ -117,19 +119,9 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     if (controls.get(id)?.revision !== revision) controls.set(id, { revision, token: Symbol() })
     for (const listener of changeListeners) { try { listener() } catch { /* 通知失败不撤销已持久化事实。 */ } }
   }
-  const evidenceSessions = new Map<string, Awaited<ReturnType<LoadRetrievalSession>>>()
+  const evidence = createSoulEvidence(loadSession)
   const observationCursors = new Map<string, number>()
-  const evidenceProjections = new Map<string, ReturnType<typeof createRetrievalEventProjection>>()
-  const projectionOf = (id: string, events: ReturnType<NonNullable<Awaited<ReturnType<LoadRetrievalSession>>>['snapshotEvents']>) => {
-    let project = evidenceProjections.get(id)
-    if (!project) { project = createRetrievalEventProjection(); evidenceProjections.set(id, project) }
-    return project(events)
-  }
-  const loadEvidence = async (id: string) => {
-    const session = await loadSession?.(id)
-    evidenceSessions.set(id, session)
-    return session
-  }
+  const loadEvidence = evidence.load
   let active = true
   const pending = new Set<Promise<unknown>>()
   const previews = new Map<string, string>()
@@ -217,20 +209,16 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     return { kind: 'knowledge', moduleId: basename(value.directory), root: revisionOf(JSON.stringify([value.identity, value.moduleIdentity, value.generation ?? null])), path: item.path, scope: item.scope, sourceId: item.id, revision, content }
   }
   const sources: SoulKnowledgeOwner['sources'] = (directory, sessionId) => {
+    evidence.assert(JSON.stringify([key(directory), sessionId]))
     const value = requireBinding(directory), project = scopeOf(value, sessionId)
     const participant = value.participants?.findLast(row => row.sessionId === sessionId)
     const inherited = (id: string) => !participant?.parent || participant.grants.includes(id)
     const documents = (value.sources ?? []).filter(item => !item.revoked && inherited(item.id) && (item.scope === 'general' || item.scope === project)).map(item => readSource(value, item))
-    const projections = new Map<string, ReturnType<ReturnType<typeof createRetrievalEventProjection>> | undefined>()
     const histories = (value.histories ?? []).filter(item => {
       if (item.revoked || !inherited(item.id) || item.scope !== 'general' && item.scope !== project) return false
+      if (item.seqs.some(seq => !evidence.includes(item.sessionId, seq))) throw new Error('当前证据集合已变化，请结束操作后重新准备')
       if (!item.automatic) return true
-      if (!projections.has(item.sessionId)) {
-        const events = evidenceSessions.get(item.sessionId)?.snapshotEvents()
-        projections.set(item.sessionId, events && projectionOf(item.sessionId, events))
-      }
-      const projection = projections.get(item.sessionId)
-      return !!projection && item.seqs.every(seq => projection.contents.has(seq))
+      return item.seqs.every(seq => evidence.reference(item.sessionId, seq)?.public)
     })
     const allowed = new Set([...documents.map(row => row.sourceId), ...histories.map(row => row.id)])
     for (const row of value.publications ?? []) {
@@ -240,8 +228,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       if (row.roots.some(id => {
         const source = histories.find(source => source.id === id)
         if (!source) return false
-        const session = evidenceSessions.get(source.sessionId)
-        return !session || source.seqs.some((seq, index) => revisionOf(JSON.stringify(session.snapshotEvents().find(event => event.seq === seq))) !== source.versions[index])
+        return source.seqs.some((seq, index) => evidence.reference(source.sessionId, seq)?.version !== source.versions[index])
       })) continue
       try {
         identity(dirname(join(value.root, row.path)))
@@ -261,7 +248,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   }
   const visibleRecords = (directory: string, sessionId: string) => {
     const value = requireBinding(directory), allowed = new Set(sources(directory, sessionId).histories.map(row => row.id))
-    return (value.records ?? []).filter(row => allowed.has(row.sourceId) && revisionOf(JSON.stringify(evidenceSessions.get(row.sessionId)?.snapshotEvents().find(event => event.seq === row.seq))) === row.version)
+    return (value.records ?? []).filter(row => allowed.has(row.sourceId) && evidence.reference(row.sessionId, row.seq)?.version === row.version)
   }
   const reconcile = (directory: string, value: Binding) => {
     for (const entry of readSoulLedgerProjection(directory).entries) {
@@ -273,6 +260,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     }
   }
   const owner: SoulKnowledgeOwner = {
+    readEvidence: evidence.load,
     assisted,
     onChange(listener) { changeListeners.add(listener); return () => { changeListeners.delete(listener) } },
     status,
@@ -332,12 +320,11 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           if (!previous || previous.state !== 'adopted' || !valid(previous, new Set([...trail, row.id]))) return false
         }
         if (row.evidence?.some(item => {
-          const source = access.histories.find(source => source.id === item.id), session = source && evidenceSessions.get(source.sessionId)
-          return !source || revisionOf(JSON.stringify(source)) !== item.version || !session || source.seqs.some((seq, index) => revisionOf(JSON.stringify(session.snapshotEvents().find(event => event.seq === seq))) !== source.versions[index])
+          const source = access.histories.find(source => source.id === item.id)
+          return !source || revisionOf(JSON.stringify(source)) !== item.version || source.seqs.some((seq, index) => evidence.reference(source.sessionId, seq)?.version !== source.versions[index])
         })) return false
         const source = access.histories.find(source => source.id === row.sourceId)
-        const session = source && evidenceSessions.get(source.sessionId)
-        return Boolean(allowed.has(row.sourceId) && source && revisionOf(JSON.stringify(source)) === row.sourceVersion && session && source.seqs.every((seq, index) => revisionOf(JSON.stringify(session.snapshotEvents().find(event => event.seq === seq))) === source.versions[index]))
+        return Boolean(allowed.has(row.sourceId) && source && revisionOf(JSON.stringify(source)) === row.sourceVersion && source.seqs.every((seq, index) => evidence.reference(source.sessionId, seq)?.version === source.versions[index]))
       }
       if (includeInactive) {
         const project = scopeOf(value, sessionId), participant = value.participants?.findLast(row => row.sessionId === sessionId)
@@ -367,7 +354,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         // 语义识别归模型；作者、长期范围和核心确认门由真实原始事件约束。
         const direct = parsed.basis === 'explicit-long-term' && !participant?.parent && event.type === 'user/message' && data.source?.kind === 'user' && typeof scopeText === 'string' && /以后|今后|长期|始终|总是|from now on|always|going forward/i.test(scopeText) && !/这次|本次|暂时|今天|当前任务|just this|this time|temporar/i.test(scopeText) && !/身份|核心|原则|锁定|identity|principle|locked/i.test(original!) && !['core', 'locked'].includes(parsed.layer)
         if (parsed.previous && !owner.learning(directory, sessionId).some(row => row.id === parsed.previous && row.layer === parsed.layer && row.scope === source.scope)) throw new Error('被替换学习不存在或不适用')
-        const access = sources(directory, sessionId), evidence = new Map<string, string>(), roots = new Set<string>(), supporting = new Set<string>(), derivedRefs = new Set<string>()
+        const access = sources(directory, sessionId), dependencies = new Map<string, string>(), roots = new Set<string>(), supporting = new Set<string>(), derivedRefs = new Set<string>()
         const refs = [...new Set([parsed.ref, ...(parsed.refs ?? [])])]
         const visit = async (ref: string, support: boolean, trail = new Set<string>()): Promise<void> => {
           if (trail.has(ref)) throw new Error('学习证据循环')
@@ -393,7 +380,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
               if (support) supporting.add(root)
             }
           }
-          evidence.set(origin.id, revisionOf(JSON.stringify(origin)))
+          dependencies.set(origin.id, revisionOf(JSON.stringify(origin)))
         }
         for (const ref of refs) await visit(ref, true)
         for (const ref of parsed.assessment?.counterRefs ?? []) await visit(ref, false)
@@ -401,9 +388,9 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const rootSession = await loadEvidence(currentParticipant?.rootSessionId ?? sessionId)
         // 最后一次加载可能使已检查来源变化；提交前同步复核完整依赖。
         const finalAccess = sources(directory, sessionId)
-        for (const [id, version] of evidence) {
-          const origin = finalAccess.histories.find(item => item.id === id), session = origin && evidenceSessions.get(origin.sessionId)
-          if (!origin || revisionOf(JSON.stringify(origin)) !== version || !session || origin.seqs.some((seq, index) => revisionOf(JSON.stringify(session.snapshotEvents().find(event => event.seq === seq))) !== origin.versions[index])) throw new Error('学习提交证据已变化或撤权')
+        for (const [id, version] of dependencies) {
+          const origin = finalAccess.histories.find(item => item.id === id)
+          if (!origin || revisionOf(JSON.stringify(origin)) !== version || origin.seqs.some((seq, index) => evidence.reference(origin.sessionId, seq)?.version !== origin.versions[index])) throw new Error('学习提交证据已变化或撤权')
         }
         for (const ref of derivedRefs) {
           if (!finalAccess.documents.some(item => item.sourceId === ref)) throw new Error('学习提交派生来源已失效')
@@ -417,22 +404,28 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         signal.throwIfAborted(); assertAuthorized?.(); assertActive()
         if (requireBinding(directory).revision !== value.revision) throw new Error('学习提交版本冲突')
         const inferred = parsed.basis === 'inference' && supporting.size >= 2 && parsed.assessment?.decision === 'adopt' && !parsed.assessment.unresolved && !['core', 'locked'].includes(parsed.layer)
-        const row = learning.parse({ id: revisionOf(JSON.stringify([refs, parsed.text, parsed.layer, parsed.previous, parsed.assessment])), text: parsed.text, layer: parsed.layer, sourceId: source.id, sourceVersion: revisionOf(JSON.stringify(source)), scope: source.scope, evidence: [...evidence].map(([id, version]) => ({ id, version })), roots: [...roots], refs, ...(parsed.assessment ? { assessment: parsed.assessment } : {}), state: direct || inferred ? 'adopted' : 'candidate', ...(parsed.previous ? { previous: parsed.previous } : {}) })
+        const row = learning.parse({ id: revisionOf(JSON.stringify([refs, parsed.text, parsed.layer, parsed.previous, parsed.assessment])), text: parsed.text, layer: parsed.layer, sourceId: source.id, sourceVersion: revisionOf(JSON.stringify(source)), scope: source.scope, evidence: [...dependencies].map(([id, version]) => ({ id, version })), roots: [...roots], refs, ...(parsed.assessment ? { assessment: parsed.assessment } : {}), state: direct || inferred ? 'adopted' : 'candidate', ...(parsed.previous ? { previous: parsed.previous } : {}) })
         if (value.learning?.some(item => item.id === row.id)) return value.learning.find(item => item.id === row.id)!
         await saveBinding(revisionOf(key(directory)), { ...value, learning: [...(value.learning ?? []), row], revision: revisionOf(randomUUID()) })
         return row
       }))
     },
-    async refreshEvidence(directory, signal, sessionId) {
-      const value = requireBinding(directory), roots = new Set([...(value.records ?? []).map(row => row.sourceId), ...(value.publications ?? []).flatMap(row => row.roots), ...(value.learning ?? []).flatMap(row => [row.sourceId, ...(row.evidence ?? []).map(item => item.id)])])
-      await prepareProjects(value, signal, sessionId)
-      for (const id of new Set((value.histories ?? []).filter(row => roots.has(row.id) && !row.revoked).map(row => row.sessionId))) await loadEvidence(id)
-      assertActive(); requireBinding(directory)
+    async withEvidence(scopes, signal, callback) {
+      assertActive(); signal?.throwIfAborted()
+      const selections = []
+      for (const { directory, sessionId } of scopes) {
+        if (!sessionId) throw new Error('证据操作缺少真实会话')
+        const value = requireBinding(directory)
+        await prepareProjects(value, signal, sessionId)
+        const project = scopeOf(value, sessionId), participant = value.participants?.findLast(row => row.sessionId === sessionId)
+        const histories = (value.histories ?? []).filter(row => !row.revoked && (row.scope === 'general' || row.scope === project) && (!participant?.parent || participant.grants.includes(row.id)))
+        selections.push({ key: JSON.stringify([key(directory), sessionId]), histories: [...histories, { sessionId, seqs: [] }, ...(participant ? [{ sessionId: participant.rootSessionId, seqs: [] }] : [])] })
+      }
+      return evidence.run(selections, signal, () => callback(evidence.verify))
     },
     records: visibleRecords,
     async consolidate(directory, sessionId, request, signal, assertAuthorized) {
       signal.throwIfAborted(); assertAuthorized?.()
-      await owner.refreshEvidence(directory, signal, sessionId)
       signal.throwIfAborted(); assertAuthorized?.()
       if (typeof request.text !== 'string' || !request.text.trim() || Buffer.byteLength(request.text) > 1024 * 1024 || !Array.isArray(request.refs) || !request.refs.length || request.refs.length > 200 || request.refs.some(ref => typeof ref !== 'string' || ref.length > 256) || typeof request.expectedRevision !== 'string') throw new Error('整理正文或引用非法、缺失或超限')
       const value = requireBinding(directory), access = sources(directory, sessionId)
@@ -471,8 +464,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         await loadEvidence(sessionId)
         const session = await loadEvidence(participant?.rootSessionId ?? sessionId)
         for (const source of historyRoots) {
-          const original = evidenceSessions.get(source.sessionId)
-          if (!original || source.seqs.some((seq, index) => revisionOf(JSON.stringify(original.snapshotEvents().find(event => event.seq === seq))) !== source.versions[index])) throw new Error('整理原始事件版本已变化')
+          if (source.seqs.some((seq, index) => evidence.reference(source.sessionId, seq)?.version !== source.versions[index])) throw new Error('整理原始事件版本已变化')
         }
         const finalAccess = sources(directory, sessionId)
         const finalAllowed = new Set([...finalAccess.documents.map(row => row.sourceId), ...finalAccess.histories.map(row => row.id)])
@@ -530,14 +522,14 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const value = requireBinding(directory), control = value.continuity
         if (!control?.enabled) return
         await prepareProjects(value, undefined, sessionId)
-        const session = await loadEvidence(sessionId)
+        const session = await evidence.loadRaw(sessionId)
         if (!session) throw new Error('真实会话不可读取')
         const events = session.snapshotEvents()
         const priorParticipant = value.participants?.find(row => row.sessionId === sessionId && row.generation === control.generation)
         const observationKey = JSON.stringify([key(directory), control.generation, sessionId])
         const cursor = Math.max(priorParticipant?.cursor ?? -1, observationCursors.get(observationKey) ?? -1)
         if (priorParticipant && !attached && (events.at(-1)?.seq ?? -1) <= cursor) return
-        const projection = projectionOf(sessionId, events)
+        const projection = createRetrievalEventProjection()(events)
         const next = structuredClone(value)
         if (!parentSessionId && !next.projects?.some(row => row.sessionId === sessionId) && cwd) {
           try {
@@ -674,7 +666,6 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           if (!row || !manageable.some(source => source.id === row.sourceId && source.scope === row.scope)) throw new Error('学习不存在或当前无权管理')
           if (request.action === 'learning-confirm') {
             if (row.state !== 'candidate') throw new Error('只有候选可以确认')
-            await owner.refreshEvidence(directory, signal, sessionId)
             if (owner.learning(directory, sessionId, true).find(item => item.id === row.id)?.inactiveReason) throw new Error('学习依赖证据已失效')
             const source = value.histories!.find(source => source.id === row.sourceId)!
             const session = await loadEvidence(source.sessionId)
@@ -691,7 +682,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           next.directory = canonicalDirectory(directory)
           next.continuity = request.action === 'enable' && value.continuity?.enabled ? value.continuity : { enabled: request.action === 'enable', enabledAt: Date.now(), generation: randomUUID() }
           if (request.action === 'enable' && !value.continuity?.enabled) {
-            const session = await loadEvidence(sessionId)
+            const session = await evidence.loadRaw(sessionId, signal)
             if (!session) throw new Error('无法核实启用会话界线')
             const boundary = session.snapshotEvents().reduce((max, event) => Math.max(max, event.seq), -1)
             ;(next.participants ??= []).push({ sessionId, scope: scopeOf(value, sessionId)!, boundary, cursor: boundary, generation: next.continuity.generation,
@@ -712,7 +703,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           if (!scope) throw new Error('会话尚未绑定项目')
           if (request.sessionId) {
             if (typeof request.sessionId !== 'string' || request.sessionId.length > 256 || !Array.isArray(request.seqs) || !request.seqs.length || request.seqs.length > 1000 || request.seqs.some(seq => !Number.isSafeInteger(seq) || seq < 0)) throw new Error('历史范围必须明确选择真实事件')
-            const session = await loadEvidence(request.sessionId)
+            const session = await evidence.loadRaw(request.sessionId, signal)
             if (!session || session.id !== request.sessionId || !Array.isArray(request.seqs) || !request.seqs.length || request.seqs.length > 1000 || request.seqs.some(seq => !Number.isSafeInteger(seq) || !session.snapshotEvents().some(event => event.seq === seq)) || new Set(request.seqs).size !== request.seqs.length) throw new Error('历史范围必须明确选择真实事件')
             const item = { id: revisionOf(JSON.stringify([request.sessionId, request.seqs])), sessionId: request.sessionId, seqs: request.seqs, versions: request.seqs.map(seq => revisionOf(JSON.stringify(session.snapshotEvents().find(event => event.seq === seq)))), scope, revoked: false }
             const revision = revisionOf(JSON.stringify([value.revision, sessionId, item, session.snapshotEvents().filter(event => request.seqs!.includes(event.seq))]))
@@ -774,6 +765,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     },
     async dispose() {
       active = false
+      evidence.dispose()
       projects.dispose()
       controls.clear()
       for (const listener of changeListeners) { try { listener() } catch { /* 释放继续清理其余监听。 */ } }
@@ -781,13 +773,22 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       await Promise.allSettled(pending); await assisted.dispose(); await domain.close()
     },
   }
+  const learn = owner.learn, record = owner.record, consolidate = owner.consolidate, manage = owner.manage, observe = owner.observe
+  owner.learn = (directory, sessionId, request, signal, assertAuthorized) => owner.withEvidence([{ directory, sessionId }], signal, () => learn(directory, sessionId, request, signal, assertAuthorized))
+  owner.record = (directory, sessionId, operation, commit, signal) => owner.withEvidence([{ directory, sessionId }], signal, () => record(directory, sessionId, operation, commit, signal))
+  owner.consolidate = (directory, sessionId, request, signal, assertAuthorized) => owner.withEvidence([{ directory, sessionId }], signal, () => consolidate(directory, sessionId, request, signal, assertAuthorized))
+  owner.manage = (directory, request, sessionId, signal) => ['sources', 'learning-list', 'learning-confirm'].includes(request.action)
+    ? owner.withEvidence([{ directory, sessionId }], signal, () => manage(directory, request, sessionId, signal))
+    : manage(directory, request, sessionId, signal)
+  owner.observe = (directory, sessionId, eventSeq, parentSessionId, assertAuthorized, attached, cwd) => parentSessionId
+    ? owner.withEvidence([{ directory, sessionId: parentSessionId }], undefined, () => observe(directory, sessionId, eventSeq, parentSessionId, assertAuthorized, attached, cwd))
+    : observe(directory, sessionId, eventSeq, parentSessionId, assertAuthorized, attached, cwd)
   for (const [id, value] of table.entries()) {
     try {
       const next = structuredClone(requireBinding(value.directory))
       for (const row of next.projects ?? []) {
         try { await projects.prepare(row.path) } catch { /* 单个失效项目不阻止其他会话恢复；读取时仍严格核对。 */ }
       }
-      for (const id of new Set((next.histories ?? []).filter(row => !row.revoked).map(row => row.sessionId))) await loadEvidence(id)
       reconcile(value.directory, next)
       if (next.records?.length !== value.records?.length) {
         next.revision = revisionOf(randomUUID())
