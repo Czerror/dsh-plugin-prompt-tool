@@ -48,6 +48,8 @@ process 规则另支持 `command-confine-passthrough: true`：每模块发布一
 
 唯一部署开关 `modulesEnabled` 控制模块运行总闸。关闭只撤回贡献，定义、资产与持久变量保留。规则启用成员来自插件存储根 config.yml.enabled，人设动作与其他规则共同参与；排序归模块 configOrder。
 
+启用模块时，以配置锁内读到的最新启用集合为准完成路径及跨模块互斥校验；若另一提交使候选集合冲突，本次启用拒绝且不改写已有合法集合。停用与重复启用保持幂等，配置中的注释及未知字段保留。
+
 读端点与写端点都由请求头 `x-module-id` **定位**目录（服务端只用它解析 `deps.moduleDirectory`；未声明即无目标，`required` 端点 400 `module-dir-unavailable`）。写端点另在本体里带 `expectedModuleId`／`expectedRevisions`，其中 `expectedModuleId` 只作**一致性校验**、不参与定位：与请求头声明不一致即 400 `module-subject-conflict`，与当次解析目录不符即 409 `module-changed`（处理期间目标被换掉）——载荷永远不能替请求头选路径。两条身份判据在任何端点、任何豁免下都执行（见 [ADR-0014](adr/0014-module-subject-declared-per-operation.md)）。声明只决定这次读写作用在哪个模块，不改变启用集合或官方预设。官方工具预览的 presetId 保留官方含义。
 
 模型工具的主语由这次调用显式声明的 `moduleId` 参数决定——该 Agent 这次启用了哪几层只作拒绝时的候选提示，绝不作为目标，缺声明即拒绝；工具主语约定见 [ADR-0014](adr/0014-module-subject-declared-per-operation.md)。模板按自身 sourceModuleId 访问变量，与模型工具目标和 UI 卡片归属分开。
