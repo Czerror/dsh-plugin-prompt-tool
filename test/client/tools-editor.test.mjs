@@ -98,3 +98,65 @@ test('tools owner：发布重试只发 refreshOnly，不重写工具定义', asy
   assert.deepEqual(h.calls.at(-1), { expectedModuleId: 'module-a', refreshOnly: true })
   assert.equal(h.draft.publicationPending, false)
 })
+
+test('tools owner：保存与发布重试跨视图完成，读取与模板不抢提交序号', async () => {
+  const draft = draftOf('module-a')
+  let active = true
+  let oldNotices = 0
+  let currentNotices = 0
+  let reads = 0
+  let resolveRead
+  let resolveWrite
+  let rejectWrite
+  const deps = {
+    reader: { load: () => { reads += 1; return new Promise(resolve => { resolveRead = resolve }) } },
+    request: () => new Promise((resolve, reject) => { resolveWrite = resolve; rejectWrite = reject }),
+    isCurrent: () => active,
+    changed: () => { oldNotices += 1 },
+  }
+  const editor = createToolsEditor('module-a', draft, deps)
+  const loading = editor.load()
+  editor.mutate([tool('mine')])
+  const saving = editor.save()
+  active = false
+  draft.refresh = () => { currentNotices += 1 }
+  const remounted = createToolsEditor('module-a', draft, { ...deps, isCurrent: () => true })
+  const noticesBefore = oldNotices
+  const reloading = remounted.load()
+  const inserting = remounted.insertTemplate(tool('template'))
+  resolveRead(ok([tool('stale')]))
+  resolveWrite({ ok: true, value: { persisted: true, publicationPending: true, publicationError: 'publish failed' } })
+  const result = await saving
+  assert.equal(draft.saving, false)
+  assert.equal(result.ok, true)
+  assert.equal(reads, 1, '重挂不启动抢序读取')
+  await reloading
+  assert.equal(await inserting, 'failed')
+  assert.equal(await loading, false, '保存前的在途读已失效')
+  assert.deepEqual(draft.saved, [tool('mine')])
+  assert.equal(draft.publicationPending, true)
+  assert.equal(draft.publicationError, 'publish failed')
+  assert.equal(oldNotices, noticesBefore, '旧视图不再收到通知')
+  assert.ok(currentNotices > 0, '完成结果通知当前视图')
+
+  const retry = editor.retryPublication()
+  await remounted.load()
+  assert.equal(await remounted.insertTemplate(tool('template')), 'failed')
+  resolveWrite(ok([]))
+  assert.equal((await retry).ok, true)
+  assert.equal(draft.saving, false)
+  assert.equal(draft.publicationPending, false)
+  assert.equal(draft.publicationError, undefined)
+
+  for (const rejected of [false, true]) {
+    editor.mutate([tool('kept')])
+    const attempt = editor.save()
+    if (rejected) rejectWrite(new Error('transport failed'))
+    else resolveWrite(fail('write failed'))
+    if (rejected) await assert.rejects(attempt, /transport failed/)
+    else assert.equal((await attempt).ok, false)
+    assert.equal(draft.saving, false, '失败与 rejection 均释放 busy')
+    assert.deepEqual(draft.tools, [tool('kept')])
+    assert.deepEqual(draft.saved, [tool('mine')], '失败不推进基线')
+  }
+})
