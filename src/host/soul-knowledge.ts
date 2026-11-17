@@ -32,6 +32,7 @@ export interface KnowledgeDocument { kind: 'knowledge'; moduleId: string; root: 
 export interface SoulKnowledgeOwner {
   assisted: Awaited<ReturnType<typeof openAssistedBudget>>
   onChange(listener: () => void): () => void
+  control(directory: string): () => void
   status(directory: string): { state: 'unbound' | 'bound' | 'unavailable'; binding?: Binding; consolidationRevision?: string; learningRevision?: string; reason?: string; entry: string }
   preview(directory: string, request: SoulKnowledgeRequest): Record<string, unknown>
   confirm(directory: string, request: SoulKnowledgeRequest, signal: AbortSignal): Promise<ReturnType<SoulKnowledgeOwner['status']>>
@@ -115,8 +116,11 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     throw error
   })
   const table = domain.table('bindings'), queue = createTargetQueue()
+  const controls = new Map<string, { revision: string; token: symbol }>()
   const saveBinding = async (id: string, value: Binding) => {
     await table.put(id, value)
+    const revision = consolidationRevision(value)
+    if (controls.get(id)?.revision !== revision) controls.set(id, { revision, token: Symbol() })
     for (const listener of changeListeners) { try { listener() } catch { /* 通知失败不撤销已持久化事实。 */ } }
   }
   const evidenceSessions = new Map<string, Awaited<ReturnType<LoadRetrievalSession>>>()
@@ -137,10 +141,13 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   const previews = new Map<string, string>()
   const key = (directory: string) => directoryKey(canonicalDirectory(directory))
   const assertActive = () => { if (!active) throw new Error('知识库持久状态已释放') }
-  const consolidationRevision = (value: Binding) => revisionOf(JSON.stringify({ ...value, revision: undefined,
-    participants: value.participants?.map(({ cursor: _cursor, grants: _grants, ...row }) => row),
-    histories: value.histories?.filter(row => !row.automatic || value.records?.some(record => record.sourceId === row.id) || row.revoked),
-  }))
+  const consolidationRevision = (value: Binding) => {
+    const recordedSources = new Set(value.records?.map(record => record.sourceId))
+    return revisionOf(JSON.stringify({ ...value, revision: undefined,
+      participants: value.participants?.map(({ cursor: _cursor, grants: _grants, ...row }) => row),
+      histories: value.histories?.filter(row => !row.automatic || recordedSources.has(row.id) || row.revoked),
+    }))
+  }
   // Observation cursors and automatically indexed events are derived state;
   // they must not invalidate a user command's control-version CAS token.
   const observationControlSnapshot = (value: Binding) => {
@@ -153,22 +160,26 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     copy.histories = copy.histories?.filter(row => !row.automatic || row.revoked)
     return JSON.stringify({ ...copy, revision: undefined })
   }
+  const assertIdentity = (directory: string, current: Pick<Binding, 'moduleIdentity' | 'root' | 'identity' | 'read' | 'write'>) => {
+    assertModuleSnapshotSource(dirname(directory), basename(directory))
+    if (identity(directory) !== current.moduleIdentity) throw new Error('来源模块身份已变化，请重新预览确认')
+    if (identity(current.root) !== current.identity) throw new Error('知识库真实身份已变化，请重新预览确认')
+    for (const path of [...current.read, ...current.write]) {
+      safePath(path)
+      const absolute = join(current.root, path)
+      identity(dirname(absolute))
+      const stat = lstatSync(absolute)
+      if (stat.isSymbolicLink() || current.read.includes(path) && !stat.isFile() || current.write.includes(path) && !stat.isDirectory()) throw new Error('授权资料类型已变化或被替换为链接')
+    }
+  }
   const status: SoulKnowledgeOwner['status'] = directory => {
     assertActive()
     const current = table.get(revisionOf(key(directory))), entry = '/prompt-tool knowledge <JSON：moduleId、action=preview|confirm|status>'
     if (!current) return { state: 'unbound', entry }
     try {
-      assertModuleSnapshotSource(dirname(directory), basename(directory))
-      if (identity(directory) !== current.moduleIdentity) throw new Error('来源模块身份已变化，请重新预览确认')
-      if (identity(current.root) !== current.identity) throw new Error('知识库真实身份已变化，请重新预览确认')
-      for (const path of [...current.read, ...current.write]) {
-        safePath(path)
-        const absolute = join(current.root, path)
-        identity(dirname(absolute))
-        const stat = lstatSync(absolute)
-        if (stat.isSymbolicLink() || current.read.includes(path) && !stat.isFile() || current.write.includes(path) && !stat.isDirectory()) throw new Error('授权资料类型已变化或被替换为链接')
-      }
-      return { state: 'bound', binding: structuredClone(current), consolidationRevision: consolidationRevision(current), learningRevision: consolidationRevision(current), entry }
+      assertIdentity(directory, current)
+      const revision = consolidationRevision(current)
+      return { state: 'bound', binding: structuredClone(current), consolidationRevision: revision, learningRevision: revision, entry }
     } catch (error) { return { state: 'unavailable', reason: String((error as Error).message), entry } }
   }
   const prepare = (directory: string, request: SoulKnowledgeRequest) => {
@@ -271,6 +282,20 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     assisted,
     onChange(listener) { changeListeners.add(listener); return () => { changeListeners.delete(listener) } },
     status,
+    control(directory) {
+      const access = status(directory)
+      if (access.state !== 'bound') throw new Error('知识库授权不可用')
+      const id = revisionOf(key(directory)), revision = access.consolidationRevision!
+      if (controls.get(id)?.revision !== revision) controls.set(id, { revision, token: Symbol() })
+      const token = controls.get(id)!.token
+      const { root, moduleIdentity, identity: rootIdentity, read, write } = access.binding!
+      const authorization = { root, moduleIdentity, identity: rootIdentity, read, write }
+      return () => {
+        assertActive()
+        if (controls.get(id)?.token !== token) throw new Error('输入、来源、授权或整理版本已变化')
+        assertIdentity(directory, authorization)
+      }
+    },
     sources,
     upgrade(directory, files, request, expectedBindingRevision, signal) {
       const operation = queue.run(key(directory), async () => {
@@ -741,6 +766,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     },
     async dispose() {
       active = false
+      controls.clear()
       for (const listener of changeListeners) { try { listener() } catch { /* 释放继续清理其余监听。 */ } }
       changeListeners.clear(); previews.clear()
       await Promise.allSettled(pending); await assisted.dispose(); await domain.close()
