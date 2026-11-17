@@ -294,6 +294,14 @@ Agent接入保持步骤准备、真实接受、Hook事件、工具后处理与�
 
 可选包出口 `/early` 仅在目标求值前按包名、版本、完整SHA-256和唯一结构锚点进行内存接入。官方instructions compose局部resolved读取预算，其余读取/身份/投影仍由官方闭包负责。当前支持0.2.2-rc.2入口SHA-256 afbd526d1e3126a368774f24105140adc3ef532ca4aa93cfa0fb1318d5b9b75d；失配保持原行为。运行资格来自已验证接缝及实际scope链官方实例和fs/workingDirectory，依赖缺失只暂停同条件分支的预算动作与关联正文，else及无关规则保持；恢复后正常重判，不补发过去动作。关闭插件注销reader后内存接缝透传，卸载加载钩子不清ESM缓存。
 
+启动时用 Node 预加载插件入口，使它先于官方 `agent-instructions`、`agent-loop` 及其他目标包导入：
+
+```sh
+node --import dsh-plugin-prompt-tool/early /absolute/path/to/official-entry.js
+```
+
+将示例路径替换为实际运行的官方 JavaScript 入口，并从能解析插件包的环境执行；不要把 `dsh` 的 shell、`.cmd` 或 PowerShell 可执行 shim 当作 Node 入口。已运行的 DSH 无法由普通热加载补接早期钩子，是否及何时重启由用户决定。
+
 复制完整 `engine/` 可复用纯编译器、动作、条件、历史与模板求值。宿主接线仍需要相应官方服务，五个模块工具外壳还需要 Prompt Tool 的 provider。独立引擎不偷偷读取插件 DSH_HOME 或 session 变量表。`env-safety.mjs` 与 `path-safety.mjs` 是纯安全 helper，随复制协议一起带走；`env-facts` 白名单外键在构造期 fail loud，`instruction-hint` 的 `params.file` 只允许指令文件候选名且 realpath 必须落在 cwd→最近项目根或 DSH_HOME。
 
 `instruction-files.mjs` 只提供探测（纯函数 + 引擎侧执行器）；`instruction-hint.mjs` 既可挂载为行，也为 placeholder 填充器提供消息构造——复制方可以只要探测、不挂该行。执行器与宿主探测都只走到最近的项目根为止（marker 首命中即停），不继续向盘根探测。
