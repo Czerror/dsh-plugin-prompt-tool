@@ -1,5 +1,6 @@
 import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import fs, { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -215,9 +216,81 @@ test('写暂存期间目标被外部改写：rename 前复核拒绝，外部内�
     assert.equal(write.body.code, 'agents-file-conflict', '窗口内的外部改写必须在 rename 前被拒')
     assert.match(write.body.message, /文件已被外部修改/)
     assert.equal(readFileSync(target, 'utf8'), 'EXTERNAL WRITE\n', '外部内容未被覆盖')
+    t.mock.restoreAll()
+    syncBuiltinESMExports()
+    const fresh = await call(BRIDGE_ENDPOINTS.bootstrap, { sessionId: 'session-r' })
+    const retry = await call(BRIDGE_ENDPOINTS.agentsFile, {
+      sessionId: 'session-r', contextId: fresh.body.instructions.context.contextId,
+      fileId: file.fileId, expectedRevision: fresh.body.instructions.files.find((item) => item.fileId === file.fileId).revision,
+      content: 'RETRY SAVED\n',
+    })
+    assert.equal(retry.status, 200, '取消替换后释放锁，允许重新读取后的合法保存')
   } finally {
     t.mock.restoreAll()
     syncBuiltinESMExports()
     rmSync(rootR, { recursive: true, force: true })
   }
+})
+
+test('同一部署根的双进程同版本保存最多一次成功，保留先提交正文', { timeout: 15000 }, async (t) => {
+  const target = join(rootA, 'AGENTS.md')
+  const { detectAgentsFiles, readAgentsFileSnapshot } = await import('../../src/host/agents-cards.ts')
+  const file = detectAgentsFiles({ cwd: rootA }).find((item) => item.scope === 'project')
+  const expectedRevision = readAgentsFileSnapshot(file).revision
+  const source = `
+    import fs from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    import { writeAgentsFileChecked } from ${JSON.stringify(new URL('../../src/host/agents-cards.ts', import.meta.url).href)};
+    const [file, expectedRevision, content] = JSON.parse(process.env.PT_SAVE);
+    const rename = fs.renameSync;
+    fs.renameSync = (...args) => {
+      process.send({ type: 'barrier' });
+      fs.readSync(0, Buffer.alloc(1), 0, 1, null);
+      return rename(...args);
+    };
+    syncBuiltinESMExports();
+    const result = await writeAgentsFileChecked({ file, expectedRevision, content });
+    process.send({ type: 'result', result }, () => process.disconnect());
+  `
+  function writer(content) {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', source], {
+      env: { ...process.env, PT_SAVE: JSON.stringify([file, expectedRevision, content]) },
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+    })
+    let stderr = ''
+    child.stderr.on('data', (chunk) => { stderr += chunk })
+    const messages = [], waiters = []
+    child.on('message', (message) => {
+      if (waiters.length) waiters.shift().resolve(message)
+      else messages.push(message)
+    })
+    const exited = new Promise((resolve) => child.once('exit', (code) => {
+      for (const waiter of waiters.splice(0)) waiter.reject(new Error(`writer exited ${code}: ${stderr}`))
+      resolve(code)
+    }))
+    t.after(async () => { if (child.exitCode === null) child.kill(); await exited })
+    return {
+      next: () => messages.length ? Promise.resolve(messages.shift()) : new Promise((resolve, reject) => waiters.push({ resolve, reject })),
+      release: () => child.stdin.end('x'),
+      exited,
+    }
+  }
+  const first = writer('FIRST SAVED\n')
+  assert.equal((await first.next()).type, 'barrier')
+  const second = writer('SECOND SAVED\n')
+  const competing = await second.next()
+  first.release()
+  const committed = await first.next()
+  assert.equal(committed.result.ok, true)
+  let rejected = competing
+  if (competing.type === 'barrier') {
+    second.release()
+    rejected = await second.next()
+  }
+  assert.equal(await first.exited, 0)
+  assert.equal(await second.exited, 0)
+  assert.equal(rejected.result.ok, false, '同版本竞争不能双成功')
+  assert.equal(rejected.result.status, 409)
+  assert.equal(rejected.result.code, 'agents-file-conflict')
+  assert.equal(readFileSync(target, 'utf8'), 'FIRST SAVED\n')
 })
