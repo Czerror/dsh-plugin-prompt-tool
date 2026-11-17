@@ -295,6 +295,23 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await assert.rejects(owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], signal, () => owner.records(dir, agent.session.id)), /fixture unavailable history/)
   evidenceObservation = undefined
   assert.deepEqual(owner.status(dir).binding.records, persistedBeforeCancel, '装载失败保留合法登记与pending')
+  await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], signal, async () => {
+    let releaseShared, startedShared
+    const held = new Promise(resolve => { releaseShared = resolve })
+    const started = new Promise(resolve => { startedShared = resolve })
+    let loads = 0
+    evidenceObservation = async () => { loads++; startedShared(); await held }
+    const cancel = new AbortController()
+    const first = owner.readEvidence(agent.session.id, cancel.signal)
+    const second = owner.readEvidence(agent.session.id)
+    await started
+    cancel.abort(new Error('one consumer cancelled'))
+    await assert.rejects(first, /one consumer cancelled/)
+    releaseShared()
+    assert.equal((await second).id, agent.session.id)
+    assert.equal(loads, 1, '共享历史装载，单消费者取消不影响另一个消费者')
+    evidenceObservation = undefined
+  })
   let firstReady, secondReady
   const firstEntered = new Promise(resolve => { firstReady = resolve })
   const secondEntered = new Promise(resolve => { secondReady = resolve })
