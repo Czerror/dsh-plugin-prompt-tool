@@ -9,16 +9,63 @@ import { findModuleDir, packageModulesDir } from './module-dirs.ts'
 import { MAX_ASSET_BYTES, MAX_ASSET_FILES } from '../shared/asset-transfer.ts'
 import { makeSessionReference, sessionReferenceText, MAX_REFERENCE_CHARS } from '../../engine/retrieval-reference.mjs'
 import type { RetrievalEvent, SessionReference } from '../../engine/retrieval-reference.mjs'
+import type { KnowledgeDocument } from './soul-knowledge.ts'
+import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 
 export interface RetrievalSession { id: string; snapshotEvents: () => readonly RetrievalEvent[] }
 export type LoadRetrievalSession = (id: string) => Promise<RetrievalSession | undefined>
-export interface RetrievalScope { moduleId: string; dir: string; paths: readonly string[]; sessions?: readonly string[]; session?: RetrievalSession; synonymsFile?: string }
+export interface RetrievalScope { moduleId: string; dir: string; paths: readonly string[]; sessions?: readonly string[]; session?: RetrievalSession; synonymsFile?: string; knowledge?: readonly KnowledgeDocument[]; fileAllowed?: (path: string) => boolean; eventAllowed?: (id: string, event: RetrievalEvent) => boolean }
 export type FileReference = { kind: 'file'; moduleId: string; path: string; revision: string; start: number; end: number }
-export type RetrievalReference = FileReference | SessionReference
+export type KnowledgeReference = Omit<KnowledgeDocument, 'content'> & { start: number; end: number }
+export type RetrievalReference = FileReference | SessionReference | KnowledgeReference
 export type RetrievalHit = { reference: RetrievalReference; content: string; match?: 'exact' | 'normalized' | 'synonym'; time?: string | null; timeState?: 'known' | 'unknown' }
 export interface RetrievalQuery { query?: string; mode?: 'search' | 'timeline'; since?: string; until?: string; limit?: number; cursor?: string }
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const MAX_CHUNK = MAX_REFERENCE_CHARS
+type EventData = { id?: string; text?: string; source?: { kind?: string; callId?: string }; content?: Array<{ type: string; text?: string }>; message?: EventData; callId?: string; name?: string; arguments?: string; toolCallId?: string }
+const eventData = (event: RetrievalEvent): EventData => (event as RetrievalEvent & { data?: EventData }).data ?? {}
+const eventRevisions = new WeakMap<RetrievalEvent, string>()
+export function retrievalEventRevision(event: RetrievalEvent): string {
+  let revision = eventRevisions.get(event)
+  if (!revision) { revision = digest(JSON.stringify(event)); eventRevisions.set(event, revision) }
+  return revision
+}
+/** 官方快照不可变且seq连续；追加只处理后缀，替换快照则重建。 */
+export function createRetrievalEventProjection(legacyUserText = false) {
+  let previous: readonly RetrievalEvent[] = [], latestUser = -1
+  let bySeq = new Map<number, RetrievalEvent>(), contents = new Map<number, string>(), calls = new Map<string, { name: string; derived: boolean }>()
+  return (events: readonly RetrievalEvent[]) => {
+    if (events !== previous) {
+      const append = events.length >= previous.length && previous.every((event, index) => events[index] === event)
+      if (!append) { bySeq = new Map(); contents = new Map(); calls = new Map(); latestUser = -1 }
+      for (let i = append ? previous.length : 0; i < events.length; i++) {
+        const event = events[i]!, data = eventData(event), message = event.type === 'user/message' ? data : data.message
+        bySeq.set(event.seq, event)
+        if (event.type === 'tool/call' && typeof data.callId === 'string' && typeof data.name === 'string') {
+          const derived = Object.values(MODULE_TOOL_NAMES).some(name => name === data.name)
+          calls.set(data.callId, { name: data.name, derived })
+        }
+        if (event.type === 'user/message' && message?.source?.kind === 'user') latestUser = event.seq
+        if (!['user/message', 'assistant/message', 'tool/result'].includes(event.type) || !message || ['runtime-context', 'system-prompt', 'plugin'].includes(message.source?.kind ?? '')) continue
+        if (event.type === 'user/message' && !['user', 'agent-message'].includes(message.source?.kind ?? '') && !(legacyUserText && !message.source && typeof message.text === 'string')) continue
+        if (event.type === 'assistant/message' && message.source?.kind !== 'model') continue
+        const call = event.type === 'tool/result' ? calls.get(message.source?.callId ?? message.toolCallId ?? '') : undefined
+        if (event.type === 'tool/result' && (!call || call.derived)) continue
+        const content = message.content?.filter(block => block.type === 'text' && typeof block.text === 'string').map(block => ({ type: 'text', text: block.text! })) ?? (legacyUserText && typeof message.text === 'string' ? [{ type: 'text', text: message.text }] : [])
+        if (!content.length && !(event.type === 'user/message' && message.source?.kind === 'user')) continue
+        const source = event.type === 'tool/result' ? { kind: 'tool', callId: message.source?.callId ?? message.toolCallId, name: call!.name } : { kind: message.source?.kind ?? (event.type === 'assistant/message' ? 'model' : 'unknown') }
+        contents.set(event.seq, JSON.stringify({ seq: event.seq, type: event.type, ...(event.time === undefined ? {} : { time: event.time }), source, content }))
+      }
+      previous = events
+    }
+    return { bySeq, contents, latestUser }
+  }
+}
+function knowledgeContent(scope: RetrievalScope, reference: KnowledgeReference): string {
+  const item = scope.knowledge?.find(row => row.sourceId === reference.sourceId && row.root === reference.root && row.path === reference.path && row.scope === reference.scope && row.revision === reference.revision)
+  if (!item) throw new Error('知识来源引用已撤权或失效，请重新搜索')
+  return item.content
+}
 const normalize = (text: string): string => text.normalize('NFKC').toLowerCase().replace(/(?<![0-9,])[0-9]{1,3}(?:,[0-9]{3})+(?![0-9,])/g, value => value.replaceAll(',', ''))
 function includesQuery(text: string, query: string): boolean {
   let start = text.indexOf(query)
@@ -34,6 +81,7 @@ function matchKind(text: string, query: string): 'exact' | 'normalized' | undefi
 }
 function synonymTerms(scope: RetrievalScope, query: string): { terms: string[]; content?: string } {
   if (!scope.synonymsFile) return { terms: [] }
+  if (scope.fileAllowed && !scope.fileAllowed(scope.synonymsFile)) throw new Error('受管近义资料未授权')
   resolveModuleReadPath(scope.dir, scope.synonymsFile, ['assets', 'data'])
   const content = readModuleFile(scope.dir, scope.synonymsFile).content
   if (Buffer.byteLength(content) > 65536) throw new Error('检索近义表超过64 KiB')
@@ -51,6 +99,7 @@ function timeOf(value: unknown): number | undefined {
 }
 
 function fileContent(scope: RetrievalScope, path: string): string {
+  if (scope.fileAllowed && !scope.fileAllowed(path)) throw new Error('受管知识资料未授权')
   if (!scope.paths.some(allowed => allowed === path || (allowed.endsWith('/') && path.startsWith(allowed)))) throw new Error('检索来源未授权')
   resolveModuleReadPath(scope.dir, path, ['assets', 'data'], { allowRootMemory: true })
   return readModuleFile(scope.dir, path).content
@@ -88,11 +137,21 @@ function filePaths(scope: RetrievalScope): string[] {
     if (lstatSync(resolved).isDirectory() && !path.endsWith('/')) throw new Error('检索目录白名单必须以 / 结尾')
     walk(selected)
   }
-  return [...paths]
+  return [...paths].filter(path => !scope.fileAllowed || scope.fileAllowed(path))
 }
 
-export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession) {
+export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession, refreshEvidence?: () => Promise<void>) {
   const indexes = new Map<string, { events: readonly RetrievalEvent[]; rows: { seq: number; content: string }[] }>()
+  const projectors = new Map<string, ReturnType<typeof createRetrievalEventProjection>>()
+  const project = (id: string, events: readonly RetrievalEvent[]) => {
+    let projector = projectors.get(id)
+    if (!projector) { projector = createRetrievalEventProjection(true); projectors.set(id, projector) }
+    return projector(events)
+  }
+  const referenceOf = (scope: RetrievalScope, id: string, event: RetrievalEvent, content: string, start: number, end: number): SessionReference => ({
+    kind: 'session', moduleId: scope.moduleId, sessionId: id, seqs: [event.seq], start, end,
+    revision: 'public1:' + digest(JSON.stringify([retrievalEventRevision(event), content])),
+  })
   const assertSessionAuthorized = (scope: RetrievalScope, id: string): void => {
     const current = scopeOf()
     if (current.moduleId !== scope.moduleId || current.dir !== scope.dir || (current.session?.id !== id && !current.sessions?.includes(id))) throw new Error('检索会话未授权')
@@ -108,7 +167,8 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
     return session
   }
   async function indexSession(scope: RetrievalScope, id: string) {
-    const session = await authorizedSession(scope, id), events = [...session.snapshotEvents()]
+    const session = await authorizedSession(scope, id), rawEvents = session.snapshotEvents(), projection = project(id, rawEvents)
+    const events = rawEvents.filter(event => !scope.eventAllowed || scope.eventAllowed(id, event))
     assertSessionAuthorized(scope, id)
     const prior = indexes.get(id)
     // 官方事件快照不可变；纯追加只索引后缀，替换或恢复则重建派生索引。
@@ -116,7 +176,8 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
     const rows = appendOnly ? [...prior.rows] : []
     for (const event of events.slice(appendOnly ? prior.events.length : 0)) {
       if (!Number.isSafeInteger(event.seq) || event.seq < 0) throw new Error('授权会话事件身份无效')
-      rows.push({ seq: event.seq, content: JSON.stringify(event) })
+      const content = projection.contents.get(event.seq)
+      if (content) rows.push({ seq: event.seq, content })
     }
     if (new Set(rows.map(row => row.seq)).size !== rows.length) throw new Error('授权会话事件身份重复')
     if (rows.reduce((bytes, row) => bytes + Buffer.byteLength(row.content), 0) > MAX_ASSET_BYTES) throw new Error('授权会话检索超过64 MiB上限')
@@ -124,12 +185,23 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
     return { events, rows, session }
   }
   const sessionIds = (scope: RetrievalScope) => new Set([...(scope.session ? [scope.session.id] : []), ...(scope.sessions ?? [])])
-  const resultOf = (scope: RetrievalScope, hits: RetrievalHit[]) => {
+  const resultOf = async (scope: RetrievalScope, hits: RetrievalHit[]) => {
+    await refreshEvidence?.()
     const current = scopeOf()
     if (current.moduleId !== scope.moduleId || current.dir !== scope.dir) throw new Error('检索模块未授权')
     // 最后一次await后统一复核全部命中，先前收集的正文不能跨异步撤权返回。
     for (const { reference } of hits) {
-      if (reference.kind === 'session') assertSessionAuthorized(current, reference.sessionId)
+      if (reference.kind === 'session') {
+        assertSessionAuthorized(current, reference.sessionId)
+        if (current.eventAllowed) {
+          const events = indexes.get(reference.sessionId)?.events.filter(event => current.eventAllowed!(reference.sessionId, event)) ?? []
+          if (reference.revision.startsWith('public1:')) {
+            const event = events.find(event => event.seq === reference.seqs[0]), content = indexes.get(reference.sessionId)?.rows.find(row => row.seq === reference.seqs[0])?.content
+            if (!event || !content || referenceOf(current, reference.sessionId, event, content, reference.start, reference.end).revision !== reference.revision) throw new Error('历史来源已撤权或失效')
+          } else if (digest(sessionReferenceText(events, reference.seqs)) !== reference.revision) throw new Error('历史来源已撤权或失效')
+        }
+      }
+      else if (reference.kind === 'knowledge') knowledgeContent(current, reference)
       else if (digest(fileContent(current, reference.path)) !== reference.revision) throw new Error('检索引用已失效，请重新搜索')
     }
     const selected: RetrievalHit[] = []
@@ -172,25 +244,27 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
     }
     for (const id of sessionIds(scope)) {
       const { events, rows, session } = await indexSession(scope, id)
+      const bySeq = new Map(events.map(event => [event.seq, event]))
       const revision = digest(JSON.stringify(events))
       versions.push(['session', id, revision])
       revalidate.push(() => {
         assertSessionAuthorized(scope, id)
-        if (digest(JSON.stringify(session.snapshotEvents())) !== revision) throw new Error('时间线来源已变化，请重新查询')
+        const latestScope = scopeOf(), latest = session.snapshotEvents().filter(event => !latestScope.eventAllowed || latestScope.eventAllowed(id, event))
+        if (digest(JSON.stringify(latest)) !== revision) throw new Error('时间线来源已变化，请重新查询')
       })
       const times = new Map(events.map(event => [event.seq, event.time]))
       for (const row of rows) {
         for (let start = 0; start < row.content.length; start += MAX_CHUNK) {
           const end = Math.min(row.content.length, start + MAX_CHUNK)
-          add(makeSessionReference(scope.moduleId, id, events, [row.seq], { start, end }), row.content.slice(start, end), times.get(row.seq))
+          add(referenceOf(scope, id, bySeq.get(row.seq)!, row.content, start, end), row.content.slice(start, end), times.get(row.seq))
         }
       }
     }
-    resultOf(scope, hits)
+    await resultOf(scope, hits)
     const current = scopeOf()
     if (JSON.stringify([current.moduleId, current.dir, current.paths, [...sessionIds(current)]]) !== JSON.stringify([scope.moduleId, scope.dir, scope.paths, [...sessionIds(scope)]])) throw new Error('时间线来源声明已变化')
     for (const check of revalidate) check()
-    const sourceKey = (hit: RetrievalHit): string => hit.reference.kind === 'file' ? '0:' + hit.reference.path + ':' + String(hit.reference.start).padStart(12, '0') : '1:' + hit.reference.sessionId + ':' + String(hit.reference.seqs[0]).padStart(16, '0') + ':' + hit.reference.start
+    const sourceKey = (hit: RetrievalHit): string => hit.reference.kind !== 'session' ? '0:' + hit.reference.path + ':' + String(hit.reference.start).padStart(12, '0') : '1:' + hit.reference.sessionId + ':' + String(hit.reference.seqs[0]).padStart(16, '0') + ':' + hit.reference.start
     hits.sort((a, b) => (a.time === b.time ? 0 : a.time === null ? 1 : b.time === null ? -1 : a.time!.localeCompare(b.time!)) || sourceKey(a).localeCompare(sourceKey(b)))
     const version = digest(JSON.stringify([scope.moduleId, scope.dir, scope.paths, [...sessionIds(scope)], versions, input.query ?? null, since ?? null, until ?? null, limit]))
     let offset = 0
@@ -212,6 +286,7 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
   }
   return {
     async search(input: RetrievalQuery) {
+      await refreshEvidence?.()
       if (input.mode !== undefined && input.mode !== 'search' && input.mode !== 'timeline') throw new Error('检索模式无效')
       if ((input.query !== undefined || input.mode !== 'timeline') && (typeof input.query !== 'string' || input.query.trim().length === 0 || input.query.length > 1024)) throw new Error('检索 query 必须为1–1024字符')
       const limit = input.limit ?? 20
@@ -229,6 +304,13 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
         if (candidateBytes > MAX_ASSET_BYTES) throw new Error('检索候选超过64 MiB')
         candidates.push({ ...hit, ...(match ? { match } : {}) })
       }
+      for (const document of scope.knowledge ?? []) {
+        const { content, ...reference } = document
+        for (let start = 0; start < content.length; start += MAX_CHUNK) {
+          const end = Math.min(content.length, start + MAX_CHUNK)
+          add({ reference: { ...reference, start, end }, content: content.slice(start, end) })
+        }
+      }
       for (const path of filePaths(scope)) {
         const content = fileContent(scope, path), revision = digest(content)
         let offset = 0
@@ -243,10 +325,12 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
       }
       for (const id of sessionIds(scope)) {
         const { events, rows } = await indexSession(scope, id)
+        const bySeq = new Map(events.map(event => [event.seq, event]))
         for (const row of rows) {
           for (let start = 0; start < row.content.length; start += MAX_CHUNK) {
             const end = Math.min(row.content.length, start + MAX_CHUNK), text = row.content.slice(start, end)
-            const reference = makeSessionReference(scope.moduleId, id, events, [row.seq], { start, end })
+            if (!scope.synonymsFile && !matchKind(text, query)) continue
+            const reference = referenceOf(scope, id, bySeq.get(row.seq)!, row.content, start, end)
             add({ reference, content: text })
             if (!scope.synonymsFile && candidates.length === limit) return resultOf(scope, candidates)
           }
@@ -273,12 +357,27 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
       return resultOf(scope, selected)
     },
     async open(reference: RetrievalReference) {
+      await refreshEvidence?.()
       const scope = scopeOf()
       if (!reference || reference.moduleId !== scope.moduleId) throw new Error('检索引用未授权或无效')
-      if (Object.keys(reference).some(key => !['kind', 'moduleId', 'path', 'revision', 'start', 'end', 'sessionId', 'seqs'].includes(key))) throw new Error('检索引用含未知字段')
+      if (Object.keys(reference).some(key => !['kind', 'moduleId', 'path', 'revision', 'start', 'end', 'sessionId', 'seqs', 'root', 'scope', 'sourceId'].includes(key))) throw new Error('检索引用含未知字段')
+      if (reference.kind === 'knowledge') {
+        const content = knowledgeContent(scope, reference)
+        if (!Number.isSafeInteger(reference.start) || !Number.isSafeInteger(reference.end) || reference.start < 0 || reference.end <= reference.start || reference.end > content.length || reference.end - reference.start > MAX_CHUNK) throw new Error('检索引用范围无效')
+        return { reference, content: content.slice(reference.start, reference.end) }
+      }
       if (reference.kind === 'session') {
-        const session = await authorizedSession(scope, reference.sessionId), events = session.snapshotEvents()
+        const session = await authorizedSession(scope, reference.sessionId), rawEvents = session.snapshotEvents()
+        const projection = project(reference.sessionId, rawEvents), events = rawEvents.filter(event => !scope.eventAllowed || scope.eventAllowed(reference.sessionId, event))
         assertSessionAuthorized(scope, reference.sessionId)
+        if (reference.revision.startsWith('public1:')) {
+          if (reference.seqs.length !== 1) throw new Error('检索引用事件身份无效')
+          const event = events.find(event => event.seq === reference.seqs[0]), content = event && projection.contents.get(event.seq)
+          if (!event || !content || referenceOf(scope, session.id, event, content, reference.start, reference.end).revision !== reference.revision) throw new Error('检索引用已失效，请重新搜索')
+          if (!Number.isSafeInteger(reference.start) || !Number.isSafeInteger(reference.end) || reference.start < 0 || reference.end <= reference.start || reference.end > content.length || reference.end - reference.start > MAX_CHUNK) throw new Error('检索引用范围无效')
+          const nextReference = reference.end < content.length ? referenceOf(scope, session.id, event, content, reference.end, Math.min(content.length, reference.end + MAX_CHUNK)) : undefined
+          return { reference, content: content.slice(reference.start, reference.end), totalChars: content.length, ...(nextReference ? { nextReference } : {}) }
+        }
         const content = sessionReferenceText(events, reference.seqs)
         if (digest(content) !== reference.revision) throw new Error('检索引用已失效，请重新搜索')
         const expected = makeSessionReference(scope.moduleId, session.id, events, reference.seqs, reference)
@@ -293,6 +392,7 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
       return { reference, content: content.slice(reference.start, reference.end) }
     },
     async refresh() {
+      await refreshEvidence?.()
       const scope = scopeOf(), files = filePaths(scope)
       for (const path of files) fileContent(scope, path)
       let events = 0

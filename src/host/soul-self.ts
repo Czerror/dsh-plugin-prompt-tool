@@ -107,12 +107,18 @@ export function refreshSoulSelf(moduleDir: string, index: SoulIndexStatus, optio
   })
 }
 
-export function renderSoulSelf(moduleDir: string, agent: SoulSelfAgent, signal?: AbortSignal, budgetBytes = 12288, index?: SoulIndexStatus, runtimeLines: readonly string[] = [], template?: SoulSelfTemplate): string {
+export function renderSoulSelf(moduleDir: string, agent: SoulSelfAgent, signal?: AbortSignal, budgetBytes = 12288, index?: SoulIndexStatus, runtimeLines: readonly string[] = [], template?: SoulSelfTemplate, allowLegacyLedger = true, learning: readonly { text: string; protected: boolean }[] = []): string {
   signal?.throwIfAborted()
   if (!agent?.session?.id) throw new Error('SELF 缺少实际 Agent 身份')
   for (const path of [SOUL_SELF_SOURCE, 'data/02-soul.jsonl', 'data/02-墨.jsonl']) assertNoModuleLinks(join(moduleDir, path))
   let prefix: string
-  try { prefix = deriveSoulSelf(moduleDir, index, budgetBytes, template).content }
+  if (!allowLegacyLedger) {
+    const source = readModuleFile(moduleDir, SOUL_SELF_SOURCE).content
+    if (!source.trim()) throw new Error('SELF 骨架缺失：data/SELF.src.md')
+    prefix = seal(template?.(source).text ?? source) + '\n- 持续记忆：仅使用当前有效学习与已授权交接；旧账本待归类。\n'
+    const core = learning.filter(row => row.protected)
+    if (core.length) prefix += '\n## 已确认核心与锁定偏好\n' + core.map(row => seal(row.text)).join('\n') + '\n'
+  } else try { prefix = deriveSoulSelf(moduleDir, index, budgetBytes, template).content }
   catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'EACCES' || code === 'EPERM' || code === 'SELF_TEMPLATE' || /链接|越界|超预算|不是普通文件/.test(String((error as Error).message))) throw error
@@ -125,17 +131,30 @@ export function renderSoulSelf(moduleDir: string, agent: SoulSelfAgent, signal?:
   }
   let text = seal(`${prefix}\n## 当前运行身份\n- 本会话：${agent.session.id}\n- 受众：${(agent.session.header?.delegationDepth ?? 0) > 0 ? '子代理' : '主会话'}\n`)
   if (Buffer.byteLength(text) > validateSelfBudget(budgetBytes)) throw new Error('SELF 动态上下文超预算')
+  const optional = learning.filter(row => !row.protected)
+  const learningBudget = budgetBytes - (runtimeLines.length ? Buffer.byteLength('…（未注入其余状态；可按需回取）\n') : 0)
+  for (let index = 0; index < optional.length; index++) {
+    const line = seal(optional[index]!.text) + '\n'
+    const omitted = `- 未注入学习：${optional.length - index}；资料仍可按授权回取。\n`
+    if (Buffer.byteLength(text + line + omitted) <= learningBudget) text += line
+    else {
+      if (Buffer.byteLength(text + omitted) > learningBudget) throw new Error('SELF 学习省略说明超预算')
+      text += omitted
+      break
+    }
+  }
   for (const line of runtimeLines) {
     const available = budgetBytes - Buffer.byteLength(text) - 1
     const sealed = seal(line)
     if (Buffer.byteLength(sealed) <= available) { text += sealed + '\n'; continue }
-    const suffix = '…（状态摘要）'
+    const suffix = '…（未注入其余状态；可按需回取）'
     let summary = ''
     for (const char of sealed) {
       if (Buffer.byteLength(summary + char + suffix) > available) break
       summary += char
     }
-    if (summary) text += summary + suffix + '\n'
+    if (Buffer.byteLength(summary + suffix) > available) throw new Error('SELF 省略说明超预算，需精简骨架或学习')
+    text += summary + suffix + '\n'
     break
   }
   return text

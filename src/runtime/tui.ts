@@ -11,6 +11,12 @@ import { loadModuleSpec } from '../host/module-spec.ts'
 import { ENGINE_PARAM_DEFINITIONS, type EngineParamKey } from '../shared/engine-params.ts'
 import { modulesEnabledOps } from '../shared/module-settings.ts'
 import { previewModuleDataImport, applyModuleDataImport, type ModuleDataImportRequest } from '../host/module-data-import.ts'
+import type { SoulKnowledgeOwner, SoulKnowledgeRequest } from '../host/soul-knowledge.ts'
+import { SOUL_SELF_SERVICE } from '../../engine/service-names.mjs'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { readSoulUpgradePreview } from '../host/soul-upgrade.ts'
+import { moduleImportPreview } from '../host/module-package.ts'
+import { userModulesDir } from '../host/module-dirs.ts'
 
 /** dsh-tui 全局开关：键名与 settings 路径一致（settings mutate）。 */
 const TUI_GLOBAL_SWITCHES: ReadonlyArray<readonly [key: string, label: string]> = [
@@ -111,15 +117,65 @@ export function registerTuiCommand(
   getModuleDirectory?: (moduleId: string) => string,
   saveModuleParam?: SaveModuleParam,
   refreshModule?: (id: string) => Promise<void>,
+  knowledge?: () => SoulKnowledgeOwner | undefined,
 ): void {
   ctx.inject(['settings'], (sctx: Context) => {
     /** 用户显式声明过的 TUI 会话主语（按发起命令的 Agent）：只记用户说的，不持久化、不跨会话共享。 */
     const sessionSubjects = new Map<string, string>()
+    const upgradePreviews = new Map<string, { owner: SoulKnowledgeOwner; revision: string | null; preview: string }>()
     return sctx.commands.register({
       name: 'prompt-tool',
       description: '提示词工具：查看或切换本插件开关',
-      input: { hint: 'status | module [模块id] | data-import <JSON> | on/off/toggle <开关> | [module <模块id>] config <id> [on/off/toggle]' },
+      input: { hint: 'status | module [模块id] | knowledge <JSON> | upgrade <JSON> | data-import <JSON> | on/off/toggle <开关> | [module <模块id>] config <id> [on/off/toggle]' },
       handler: async (invocation): Promise<CommandResult> => {
+        const upgradeInput = /^upgrade\s+([\s\S]+)$/.exec(invocation.rawInput.trim())
+        if (upgradeInput) {
+          try {
+            const request = JSON.parse(upgradeInput[1]!) as Record<string, unknown>
+            if (!request || Object.keys(request).some(key => !['moduleId', 'action', 'expectedRevision', 'expectedSourceDigest', 'expectedPreviewRevision'].includes(key))
+              || typeof request.moduleId !== 'string' || !['preview', 'confirm'].includes(String(request.action))) throw new Error('升级必须显式声明模块moduleId和action=preview|confirm')
+            const directory = getModuleDirectory?.(request.moduleId)
+            if (!directory || !refreshModule) throw new Error('升级模块或重建入口不可用')
+            invocation.signal.throwIfAborted()
+            const candidate = await readSoulUpgradePreview(directory)
+            if (candidate.status !== 'ready' || !candidate.files.length) return { kind: 'error', text: JSON.stringify(candidate) }
+            const choices = { targetId: request.moduleId, overwrite: true }
+            const preview = moduleImportPreview(userModulesDir(), candidate.files, choices)
+            if (!('prepared' in preview)) throw new Error('升级候选需要额外选择')
+            const owner = knowledge?.(), previewKey = JSON.stringify([invocation.agent.id, request.moduleId])
+            if (!owner) throw new Error('升级知识库持久状态不可用')
+            if (request.action === 'preview') {
+              const current = owner.status(directory)
+              if (current.state === 'unavailable') throw new Error('升级知识库授权不可用：' + current.reason)
+              upgradePreviews.set(previewKey, { owner, revision: current.binding?.revision ?? null, preview: preview.previewRevision })
+              return { kind: 'success', text: JSON.stringify({ ...candidate, files: undefined, expectedSourceDigest: preview.sourceDigest, expectedPreviewRevision: preview.previewRevision, summary: preview.summary }) }
+            }
+            if (request.expectedRevision !== candidate.expectedRevision || typeof request.expectedSourceDigest !== 'string' || typeof request.expectedPreviewRevision !== 'string') throw new Error('升级预览已过期或缺少确认凭据，请重新预览')
+            const confirmed = upgradePreviews.get(previewKey)
+            if (!confirmed || confirmed.owner !== owner || confirmed.preview !== request.expectedPreviewRevision) throw new Error('升级预览已失效，请重新预览')
+            const installed = await owner.upgrade(directory, candidate.files, { ...choices, expectedSourceDigest: request.expectedSourceDigest, expectedPreviewRevision: request.expectedPreviewRevision }, confirmed.revision, invocation.signal)
+            upgradePreviews.delete(previewKey)
+            try { await refreshModule(request.moduleId) } catch (error) {
+              return { kind: 'error', text: JSON.stringify({ ...installed, persisted: true, publicationPending: true, reason: String((error as Error).message) }) }
+            }
+            return { kind: 'success', text: JSON.stringify({ ...installed, persisted: true, publicationPending: false, knowledgeAuthorizationChanged: false }) }
+          } catch (error) { return { kind: 'error', text: `升级模块拒绝：${String((error as Error).message)}` } }
+        }
+        const knowledgeInput = /^knowledge\s+([\s\S]+)$/.exec(invocation.rawInput.trim())
+        if (knowledgeInput) {
+          try {
+            const request = JSON.parse(knowledgeInput[1]!) as SoulKnowledgeRequest
+            if (!request || typeof request.moduleId !== 'string') throw new Error('知识库操作必须显式声明moduleId')
+            const directory = getModuleDirectory?.(request.moduleId), owner = knowledge?.()
+            if (!directory || !owner) throw new Error('模块或知识库持久状态不可用')
+            invocation.signal.throwIfAborted()
+            const result = request.action === 'preview' ? owner.preview(directory, request)
+              : request.action === 'confirm' ? await owner.confirm(directory, request, invocation.signal)
+                : request.action === 'status' ? { ...owner.status(directory), assistedConsolidation: (sctx.get(SOUL_SELF_SERVICE) as { assistedStatus?: (id: string, agent: Agent) => Record<string, unknown> } | undefined)?.assistedStatus?.(request.moduleId, invocation.agent) ?? { state: 'unavailable', reason: 'Soul运行时未装配' } } : await owner.manage(directory, request, invocation.agent.session.id, invocation.signal)
+            if (!result) throw new Error('知识库action无效')
+            return { kind: 'success', text: JSON.stringify(result) }
+          } catch (error) { return { kind: 'error', text: `知识库操作拒绝：${String((error as Error).message)}` } }
+        }
         // 命令由用户直接调用；JSON 保留来源路径中的空格，不经过 token 拆分。
         const dataImport = /^data-import\s+([\s\S]+)$/.exec(invocation.rawInput.trim())
         if (dataImport) {
@@ -140,6 +196,8 @@ export function registerTuiCommand(
             `      /prompt-tool on|off|toggle <${[...TUI_GLOBAL_SWITCHES, ...TUI_PARAM_SWITCHES].map(([key]) => key).join('|')}>\n` +
             '      /prompt-tool module <模块id>（声明本次会话主语，随后命令都作用在它上面）\n' +
             '      /prompt-tool module（显示当前声明）\n' +
+            '      /prompt-tool knowledge <JSON>（显式moduleId；action=preview|confirm|status；确认须带预览expectedRevision）\n' +
+            '      /prompt-tool upgrade <JSON>（moduleId、action=preview|confirm；确认原样带回三份expected凭据，不改变知识库授权）\n' +
             '      /prompt-tool data-import <JSON>（moduleId + sourceDirectory/paths 或 initialize:true；预览后带 expectedRevision 应用，只补缺失）\n' +
             '      /prompt-tool module <模块id> on|off|toggle <模块参数>（单条命令前声明并执行）\n' +
             '      /prompt-tool config <id>（id 可含空格）\n' +
@@ -200,7 +258,8 @@ export function registerTuiCommand(
           const modelsLine = catalogEntries.length > 0
             ? `检测到的模型名: ${catalogEntries.map(([provider, models]) => `${provider} → ${models.join(', ')}`).join('；')}`
             : '未检测到模型名（adapter 未公布或查询失败）'
-          return { kind: 'success', text: renderTuiStatus(source, params, rules, declared) + '\n' + providersLine + '\n' + modelsLine }
+          const knowledgeStatus = moduleDir ? knowledge?.()?.status(moduleDir) : undefined
+          return { kind: 'success', text: renderTuiStatus(source, params, rules, declared) + '\n' + providersLine + '\n' + modelsLine + '\n知识库：' + JSON.stringify(knowledgeStatus ?? { state: 'unavailable', entry: '/prompt-tool knowledge <JSON：moduleId、action=preview|confirm|status>' }) }
         }
         if (tokens[0] === 'config') {
           const { id, action } = parseIdentifierAndAction(

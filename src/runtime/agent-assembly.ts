@@ -21,7 +21,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import SystemPrompt, { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptSection } from '@deepseek-ai/dsh-system-prompt'
 import { scopeChainOf, scopeOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
-import { MANIFEST_CHECK_SERVICE } from '../../engine/service-names.mjs'
+import { MANIFEST_CHECK_SERVICE, SOUL_SELF_SERVICE } from '../../engine/service-names.mjs'
 import { packageEngineDir, resolveModuleDir } from '../host/module-dirs.ts'
 import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { loadModuleSpec, readModulesRevision } from '../host/module-spec.ts'
@@ -452,6 +452,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (current === undefined) return
     if (agent !== undefined && current.agent !== agent) return
     mounts.delete(sessionId)
+    const soul = ctx.get(SOUL_SELF_SERVICE) as { detached?: (id: string, agent: Agent) => void } | undefined
+    for (const id of current.moduleIds) soul?.detached?.(id, current.agent)
     ruleDiagnostics.invalidateIdentity(current.moduleIds)
     await current.fiber.dispose()
   }
@@ -571,6 +573,12 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         ...prepared.filter(item => !record.prepared.includes(item)).map(item => item.moduleId)])])
       record.prepared = prepared
       record.stamp = stamp; record.content = content; record.committed = true
+      const soul = ctx.get(SOUL_SELF_SERVICE) as { attached?: (id: string, agent: Agent, boundary: number) => Promise<void>; detached?: (id: string, agent: Agent) => void } | undefined
+      for (const id of previousModuleIds) if (!record.moduleIds.includes(id)) soul?.detached?.(id, agent)
+      const boundary = agent.session.snapshotEvents().reduce((max, event) => Math.max(max, event.seq), -1)
+      for (const id of record.moduleIds) if (!previousModuleIds.includes(id)) {
+        void soul?.attached?.(id, agent, boundary).catch(error => warnOnce(`Soul参与界线登记失败：${String(error)}`))
+      }
       for (const item of duplicateIdentities) {
         const where = item.channel === 'kind' ? `显式 sourceKind ${JSON.stringify(item.identity)}` : `去重身份 ${JSON.stringify(item.identity)}`
         warnOnce(item.suspectedCopy
@@ -829,6 +837,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       installToolStepAssembly(ctx, {
         knows: agent => knownAgents.has(agent), ensureFresh,
         assemble: (context, invoke) => withAgent(context.agent!, async () => {
+          const soul = ctx.get(SOUL_SELF_SERVICE) as { refresh?: (id: string, agent: Agent) => Promise<void> } | undefined
+          for (const id of mounts.get(context.agent!.id)?.moduleIds ?? []) await soul?.refresh?.(id, context.agent!)
           try { mounts.get(context.agent!.id)?.rules.prepareAssembly(context) } catch (error) {
             if (error !== null && typeof error === 'object' && 'recoveryFailed' in error && error.recoveryFailed === true) await releaseNow(context.agent!.id, context.agent)
             warn(error)

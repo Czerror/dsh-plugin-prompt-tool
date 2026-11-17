@@ -12,12 +12,14 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-tool-step-')
 const { createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
+const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-coordinator.ts')
 
 async function harness(t, rules = [{ id: 'narrow', then: [{ id: 'allow', kind: 'tool-visibility', allow: ['keep'] }] }], modules = ['rule-engine']) {
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(Tools)
   await root.plugin(native)
+  installPreStepCoordinator(root)
   const rawTools = root.get('tools')
   root.provide('llm', {})
   root.provide('promptToolDiscovery', createDiscoveryRegistry())
@@ -76,6 +78,30 @@ test('公开 resolve/assemble 后置收窄最终声明与实际执行，官方 w
   assert.equal((await h.execute(toolSet)).results[0].result.isError, true)
   assert.equal(h.counts().calls, 1)
   toolSet.dispose()
+})
+
+test('pre-step 工具条件遵守封存后的工具面，只读裁剪保留真实用户问句', async t => {
+  const rules = [
+    { id: 'surface', then: [{ id: 'allow', kind: 'tool-visibility', allow: ['keep', 'hidden'] }] },
+    { id: 'notice', if: { all: [{ tool: { name: 'keep' } }, { tool: { name: 'hidden' } }] },
+      then: [{ id: 'inject', kind: 'inject-text', config: { layer: 'pre-step', position: 'before-all', text: 'WRITE NOTICE' } }] },
+  ]
+  const h = await harness(t, rules)
+  const question = { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: '只读说明当前状态。' }] }
+  const inject = async () => {
+    const toolSet = await h.services.tools.resolve(h.context)
+    try {
+      await h.services.prompt.assemble({ ...h.context, toolSet })
+      return await h.root.waterfall(scopeTarget(h.agent, h.agent), 'agent/pre-step', { ...h.context, toolSet },
+        async () => ({ kind: 'continue', messages: [question] }))
+    } finally { toolSet.dispose() }
+  }
+  const writable = await inject()
+  assert.deepEqual(writable.messages.map(message => message.content[0].text), ['WRITE NOTICE', question.content[0].text])
+  rules[0].then[0].allow = []
+  h.write()
+  h.runtime.schedule('step-surface')
+  assert.deepEqual(await inject(), { kind: 'continue', messages: [question] })
 })
 
 test('pending 拒绝公开批次和原服务 guard，失败或取消关闭一次，重试复用封存快照', async t => {

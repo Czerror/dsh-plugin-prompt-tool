@@ -31,7 +31,9 @@ export interface ModuleInstallOptions {
   build: (candidate: string) => void
   /** 取消信号：提交前复核，已取消则抛出且不碰目标。 */
   signal?: AbortSignal
+  beforeCommit?: () => void
 }
+export interface ModuleInstallCommitOptions extends ModuleInstallOptions { commit: () => Promise<void> }
 
 /** 清理本次 stage；失败返回路径供调用方报告，不掩盖已完成的安装。 */
 function cleanupStage(stage: string): string | undefined {
@@ -43,7 +45,9 @@ function cleanupStage(stage: string): string | undefined {
   }
 }
 
-export function installModuleDirectory(options: ModuleInstallOptions): ModuleInstallOutcome {
+export function installModuleDirectory(options: ModuleInstallCommitOptions): Promise<ModuleInstallOutcome>
+export function installModuleDirectory(options: ModuleInstallOptions): ModuleInstallOutcome
+export function installModuleDirectory(options: ModuleInstallOptions | ModuleInstallCommitOptions): ModuleInstallOutcome | Promise<ModuleInstallOutcome> {
   const { root, id, expectedVersion, build, signal } = options
   assertModuleId(id)
   mkdirSync(resolve(root), { recursive: true })
@@ -53,7 +57,7 @@ export function installModuleDirectory(options: ModuleInstallOptions): ModuleIns
   // 暂存根与目标同文件系统；目录名带目标 id，失败时可由用户识别。
   const stage = mkdtempSync(join(rootPath, '.' + id + '.install-'))
   const candidate = join(stage, id)
-  let outcome: ModuleInstallOutcome
+  let outcome: ModuleInstallOutcome | Promise<ModuleInstallOutcome>
   try {
     mkdirSync(candidate)
     build(candidate)
@@ -63,7 +67,9 @@ export function installModuleDirectory(options: ModuleInstallOptions): ModuleIns
       signal?.throwIfAborted()
       const actualVersion = directoryVersionOf(target)
       if (actualVersion !== expectedVersion) return { state: 'conflict', actualVersion } as const
+      options.beforeCommit?.()
       if (expectedVersion === null) {
+        if ('commit' in options) throw new Error('状态交接只支持已存在模块的受控更新')
         // 目标必须不存在：没有旧目录可备份，直接落到目标。
         renameSync(candidate, target)
         return { state: 'installed' } as const
@@ -81,6 +87,16 @@ export function installModuleDirectory(options: ModuleInstallOptions): ModuleIns
         }
         throw error
       }
+      if ('commit' in options) return Promise.resolve().then(options.commit).then(() => ({ state: 'installed' as const }), error => {
+        if (error instanceof Error && 'code' in error && error.code === 'unknown-state') return { state: 'recovery-required' as const, backupPath: backup, cause: error }
+        try {
+          renameSync(target, candidate)
+          renameSync(backup, target)
+        } catch (restoreError) {
+          return { state: 'recovery-required' as const, backupPath: backup, cause: restoreError }
+        }
+        throw error
+      })
       return { state: 'installed' } as const
     })
   } catch (error) {
@@ -88,10 +104,11 @@ export function installModuleDirectory(options: ModuleInstallOptions): ModuleIns
     cleanupStage(stage)
     throw error
   }
-  if (outcome.state === 'recovery-required') return outcome
-  const leftoverStage = cleanupStage(stage)
-  if (outcome.state === 'installed' && leftoverStage !== undefined) {
-    return { state: 'installed', leftoverStage }
+  const finish = (result: ModuleInstallOutcome): ModuleInstallOutcome => {
+    if (result.state === 'recovery-required') return result
+    const leftoverStage = cleanupStage(stage)
+    return result.state === 'installed' && leftoverStage !== undefined ? { state: 'installed', leftoverStage } : result
   }
-  return outcome
+  if (outcome instanceof Promise) return outcome.then(finish, error => { cleanupStage(stage); throw error })
+  return finish(outcome)
 }

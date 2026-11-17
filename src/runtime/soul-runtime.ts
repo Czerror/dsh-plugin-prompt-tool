@@ -16,6 +16,7 @@ import { readSoulDiagnostics } from '../host/soul-diagnostics.ts'
 import { readSoulUpgradePreview } from '../host/soul-upgrade.ts'
 import { readModuleVariables } from '../host/module-variables.ts'
 import type { SessionVariableOwner } from '../host/session-variables.ts'
+import type { SoulKnowledgeOwner } from '../host/soul-knowledge.ts'
 import { evaluateTemplate } from '../../engine/template-evaluation.mjs'
 import { interpolateVariables, stripUnresolvedRefs } from '../../engine/interpolate.mjs'
 import { readSoulPressure } from './soul-pressure.ts'
@@ -25,11 +26,12 @@ import { contextRuntimeOf } from '../../engine/context-provenance.mjs'
 import { recoveryObservationOf } from '../../engine/generation-recovery.mjs'
 import type { RuleSoulReminder } from '../../engine/rule-runtime.mjs'
 import { createModuleRetrievalProvider } from './module-retrieval-tools.ts'
-import type { RetrievalEvent } from '../../engine/retrieval-reference.mjs'
+import { loadKnowledgeSession } from './soul-knowledge.ts'
 import { createSoulMaintenanceProvider } from './soul-maintenance.ts'
+import { createSoulAssisted } from './soul-assisted.ts'
 import { SOUL_MAINTENANCE_SERVICE, SOUL_SELF_SERVICE, toolServiceName } from '../../engine/service-names.mjs'
 
-export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds: (id: string) => readonly string[], sessions: () => SessionVariableOwner | undefined): SoulStateObservation {
+export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds: (id: string) => readonly string[], sessions: () => SessionVariableOwner | undefined, knowledge?: () => SoulKnowledgeOwner | undefined): SoulStateObservation {
   let active = true
   const sessionOwner = (): SessionVariableOwner => {
     const owner = sessions?.()
@@ -45,6 +47,20 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     return assertModuleSnapshotSource(host.root, id)
   }
   const keyOf = (id: string, agent: Agent): string => JSON.stringify([id, agent.session.id])
+  const admit = async (id: string, agent: Agent, seq?: number, attached = false) => {
+    const dir = source(id, agent), owner = knowledge?.()
+    if (!owner || owner.status(dir).state === 'unbound') return
+    const parentId = agent.session.header.parentSession
+    if (parentId) {
+      const subagents = ctx.get('subagents') as { rootOf(agent: Agent): Agent } | undefined
+      const agents = ctx.get('agents') as { get(id: string): Agent | undefined } | undefined
+      const parent = agents?.get(parentId)
+      if (!parent || !subagents || subagents.rootOf(parent) !== subagents.rootOf(agent)) throw new Error('子代理真实委派关系不可核实')
+      source(id, parent)
+    }
+    await owner.observe(dir, agent.session.id, seq, parentId, () => { source(id, agent) }, attached, agent.session.header.cwd)
+    source(id, agent)
+  }
   const activityOf = (agent: Agent): string | null => {
     const events = agent.session.snapshotEvents()
     for (let i = events.length - 1; i >= 0; i--) {
@@ -54,6 +70,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     }
     return null
   }
+  const assisted = createSoulAssisted(ctx, () => knowledge?.(), source, admit)
   // 定义暂时损坏时保留最近有效预算，不降低可用快照的注入上限。
   const budgets = new Map<string, { stamp: string; checkedAt: number; value: number }>()
   const readSelfBudget = (dir: string): number => {
@@ -70,23 +87,19 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     budgets.set(dir, { stamp, checkedAt: performance.now(), value })
     return value
   }
-  const retrieval = createModuleRetrievalProvider(host, async id => {
-    const sessions = ctx.get('sessions') as { get(id: string): { id: string; snapshotEvents(): readonly RetrievalEvent[] } | undefined } | undefined
-    const live = sessions?.get(id)
-    if (live) return live
-    const persistence = ctx.get('sessionPersistence') as {
-      open(id: string, access: 'read'): Promise<{ read(offset: number, length: number): Promise<{ events: readonly RetrievalEvent[] }>; close(): Promise<void> }>
-    } | undefined
-    if (!persistence) throw new Error('历史会话持久服务不可用')
-    const handle = await persistence.open(id, 'read')
-    try {
-      const { events } = await handle.read(0, 100001)
-      if (events.length > 100000 || Buffer.byteLength(JSON.stringify(events)) > 32 * 1024 * 1024) throw new Error('授权会话超出检索预算')
-      return { id, snapshotEvents: () => events }
-    } finally { await handle.close() }
-  })
+  const retrieval = createModuleRetrievalProvider(host, id => loadKnowledgeSession(ctx, id), knowledge)
   const maintenance = createSoulMaintenanceProvider({ refreshRetrieval: (agent, id, signal) => retrieval.refresh(agent, id, signal) })
-  const reminder = createSoulReminder((id, agent) => readSoulLedgerProjection(source(id, agent as Agent)))
+  const legacyAllowed = (dir: string): boolean => {
+    if (!knowledge) return true
+    const owner = knowledge()
+    if (!owner) throw new Error('知识来源授权持久状态不可用')
+    return owner.status(dir).state === 'unbound'
+  }
+  const reminder = createSoulReminder((id, agent) => {
+    const dir = source(id, agent as Agent)
+    if (!legacyAllowed(dir)) throw new Error('旧账本待归类，停止自动提醒贡献')
+    return readSoulLedgerProjection(dir)
+  })
   const pressure = (dir: string, agent: Agent): SoulPressure | { state: 'disabled' } | { state: 'unknown'; reason: string } => {
     try {
       const thresholds = readModuleFacts(dir).effectiveConfigs?.['soul-maintenance']?.pressureThresholds
@@ -111,6 +124,8 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     if (key === 'clock.iso') return new Date().toISOString()
     if (key === 'clock.timeZone') return Intl.DateTimeFormat().resolvedOptions().timeZone
     if (key.startsWith('soul.')) {
+      if (key === 'soul.learning' && !legacyAllowed(dir)) return knowledge?.()?.learning(dir, agent.session.id).map(row => row.text).join('\n')
+      if (!legacyAllowed(dir)) return undefined
       if (key === 'soul.mark' || key === 'soul.markAt') {
         const mark = readSoulState(dir, agent.session.id, sessionOwner()).mark
         return key === 'soul.mark' ? mark?.text : mark?.recordedAt
@@ -134,6 +149,19 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   }
   ctx.provide(SOUL_SELF_SERVICE, {
     status,
+    async refresh(id: string, agent: Agent) {
+      const dir = source(id, agent), owner = knowledge?.()
+      if (knowledge && !owner || owner?.status(dir).state === 'unavailable') throw new Error('学习授权不可用，停止本次装配')
+      if (owner?.status(dir).state === 'bound') await owner.refreshEvidence(dir)
+      if (knowledge?.() !== owner) throw new Error('学习持久状态已变化')
+      source(id, agent)
+    },
+    assistedStatus: assisted.status,
+    requestAssisted: assisted.request,
+    detached: assisted.detached,
+    admit,
+    attached: (id: string, agent: Agent, boundary: number) => admit(id, agent, boundary + 1, true),
+    assertParticipating: source,
     readValue,
     reminder,
     committed: (id: string, agent: Agent) => {
@@ -144,15 +172,30 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     },
     render: (id: string, agent: Agent, signal?: AbortSignal): Promise<string> => {
       const dir = source(id, agent, signal), budget = readSelfBudget(dir)
-      return Promise.resolve().then(() => {
+      return Promise.resolve().then(async () => {
+        const owner = knowledge?.()
+        if (owner && owner.status(dir).state === 'bound') await owner.refreshEvidence(dir)
+        if (knowledge?.() !== owner) throw new Error('SELF学习持久状态已变化')
         if (source(id, agent, signal) !== dir) throw new Error('SELF来源发生变化')
         const state = readSoulState(dir, agent.session.id, sessionOwner())
         const water = pressure(dir, agent)
+        const assistedState = assisted.status(id, agent)
+        const handoff: string[] = []
+        if (owner?.status(dir).binding?.continuity?.enabled) {
+          const allowed = new Set(owner.records(dir, agent.session.id).map(row => row.entryId))
+          const ledger = readSoulLedgerProjection(dir)
+          const items = [...ledger.items.filter(item => item.status === 'open' && allowed.has(item.id)).map(item => ({ id: item.id, entry: item.entry, status: item.status })),
+            ...ledger.entries.filter(entry => entry.type === 'container' && allowed.has(entry.id)).reverse().map(entry => ({ id: entry.id, entry, status: 'container' }))]
+          for (const item of items.slice(0, 3)) handoff.push(`- [${item.status}] ${item.id}；${item.entry.by}；${item.entry.t}：${item.entry['概要']}${item.entry.ref ? `；出处：${item.entry.ref}` : ''}`)
+          if (items.length > 3) handoff.push(`- 未注入交接：${items.length - 3}；可用 soul_ledger list 按授权回取。`)
+        }
         const text = renderSoulSelf(dir, agent, signal, budget, retrieval.status(agent, id), [
           `- 显式状态：${state.mark?.text ?? '尚未标记'}；标记时刻：${state.mark?.recordedAt ?? '无'}`,
+          ...(typeof assistedState.notice === 'string' ? [`- 整理提示：${assistedState.notice}`] : []),
           ...(water.state === 'disabled' ? [] : [water.state === 'known'
             ? `- 上下文水位：${water.guidance}。此为提示，不自动压缩。`
             : `- 上下文水位：未知；${water.reason}`]),
+          ...handoff,
         ], sourceText => {
           if (!sourceText.includes('{{')) return { text: sourceText, revision: '' }
           const snapshot = readModuleVariables(dir, { runtime: true })
@@ -161,7 +204,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
           const result = evaluateTemplate(sourceText, { module: snapshot.module, global: snapshot.global, sessionVariables: session.variables,
             session: agent.session, readOnly: true, sourceId: `${id}:self`, readRuntime: key => readValue(id, key, agent, signal) })
           return { text: result.text, revision: JSON.stringify([snapshot.revisions, session.revision]) }
-        })
+        }, legacyAllowed(dir), owner?.status(dir).state === 'bound' ? owner.learning(dir, agent.session.id).map(row => ({ text: `- ${row.text}`, protected: row.layer === 'core' || row.layer === 'locked' })) : [])
         source(id, agent, signal)
         if (rendered.size > 1024) rendered.delete(rendered.keys().next().value!)
         const key = keyOf(id, agent), candidates = [...(rendered.get(key)?.candidates ?? []), digest(text)].slice(-16)
@@ -171,6 +214,13 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     },
   })
   ctx.effect(() => ctx.on('session/event', (session, event) => {
+    const agents = ctx.get('agents') as { get(id: string): Agent | undefined } | undefined
+    const agent = agents?.get(session.id)
+    if (agent && ['user/message', 'assistant/message', 'tool/call', 'tool/result', 'command/run', 'command/done', 'turn/end'].includes(event.type)) for (const id of moduleIds(agent.id)) {
+      void admit(id, agent, event.seq).then(async () => {
+        if (event.type === 'turn/end' && ['completed', 'no-visible-output'].includes((event.data as { reason?: { kind?: string } }).reason?.kind ?? '') && readModuleFacts(source(id, agent)).effectiveConfigs?.['soul-maintenance']?.enabled === true) await assisted.request(id, agent)
+      }).catch(error => ctx.logger?.warn?.(`Soul来源登记或整理失败：${String(error)}`))
+    }
     const data = event.data as { message?: { source?: { kind?: string; form?: string; sections?: Array<{ text?: string }> } } }
     const observed = data.message?.source
     if (observed?.kind !== 'runtime-context' || observed.form !== 'snapshot') return
@@ -180,7 +230,14 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
       delivered.set(key, new Date(event.time).toISOString())
     }
   }))
-  ctx.effect(() => () => { active = false; maintenance.dispose(); budgets.clear(); rendered.clear(); delivered.clear() })
+  ctx.effect(() => {
+    const agents = ctx.get('agents') as { list(): Agent[] } | undefined
+    for (const agent of agents?.list() ?? []) for (const id of moduleIds(agent.id)) {
+      void admit(id, agent).catch(error => ctx.logger?.warn?.(`Soul恢复对账失败：${String(error)}`))
+    }
+    return () => {}
+  })
+  ctx.effect(() => () => { active = false; assisted.dispose(); maintenance.dispose(); budgets.clear(); rendered.clear(); delivered.clear() })
   const observe = (exec: ToolExecution, id: string) => {
     if (!exec.agent) throw new Error('Soul状态缺少实际Agent')
     return status(id, exec.agent)
@@ -188,11 +245,13 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   return { status: observe, check: async (exec, id, includeUpgrade) => {
     if (!exec.agent) throw new Error('Soul状态缺少实际Agent')
     const agent = exec.agent, dir = source(id, agent), key = keyOf(id, agent)
+    if (includeUpgrade && !legacyAllowed(dir)) throw new Error('受控知识库已接入，模型不能展开完整升级正文；请使用用户升级入口')
     const diagnostics = readSoulDiagnostics(dir, { index: retrieval.status(agent, id),
       selfRenderedAt: rendered.get(key)?.at, selfDeliveredAt: delivered.get(key),
       maintenance: maintenance.status(id), context: contextRuntimeOf(agent)?.status(), recovery: recoveryObservationOf(agent) })
     const sessionId = agent.session.id
     const upgrade = includeUpgrade ? await readSoulUpgradePreview(dir) : { status: 'not-applicable' as const }
+    if (includeUpgrade && !legacyAllowed(dir)) throw new Error('知识来源授权已变化，不能返回升级正文')
     if (source(id, agent, exec.signal) !== dir || agent.session.id !== sessionId) throw new Error('Soul诊断来源或会话已变化')
     return { ...diagnostics, checks: diagnostics.checks.map(check => ({ ...check })),
       upgrade: upgrade.status === 'not-applicable' ? { status: includeUpgrade ? upgrade.status : 'not-requested', expectedRevision: null, conflicts: [], candidate: null, files: [], apply: null } : { status: upgrade.status, expectedRevision: upgrade.expectedRevision, conflicts: upgrade.conflicts,
