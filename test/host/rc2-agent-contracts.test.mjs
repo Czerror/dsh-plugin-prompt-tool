@@ -485,6 +485,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await assistTool('assist')
   for (let tries = 0; tries < 200; tries++) {
     assisted = (await assistTool('status')).value.assistedConsolidation
+    if (assisted.state === 'no-work') await assistTool('assist')
     if (assisted.state === 'deferred') break
     await new Promise(resolve => setTimeout(resolve, 5))
   }
