@@ -13,7 +13,7 @@ import type { KnowledgeDocument } from './soul-knowledge.ts'
 import { MODULE_TOOL_NAMES } from '../shared/engine-capabilities.ts'
 
 export interface RetrievalSession { id: string; snapshotEvents: () => readonly RetrievalEvent[] }
-export type LoadRetrievalSession = (id: string) => Promise<RetrievalSession | undefined>
+export type LoadRetrievalSession = (id: string, signal?: AbortSignal) => Promise<RetrievalSession | undefined>
 export interface RetrievalScope { moduleId: string; dir: string; paths: readonly string[]; sessions?: readonly string[]; session?: RetrievalSession; synonymsFile?: string; knowledge?: readonly KnowledgeDocument[]; fileAllowed?: (path: string) => boolean; eventAllowed?: (id: string, event: RetrievalEvent) => boolean }
 export type FileReference = { kind: 'file'; moduleId: string; path: string; revision: string; start: number; end: number }
 export type KnowledgeReference = Omit<KnowledgeDocument, 'content'> & { start: number; end: number }
@@ -140,7 +140,14 @@ function filePaths(scope: RetrievalScope): string[] {
   return [...paths].filter(path => !scope.fileAllowed || scope.fileAllowed(path))
 }
 
-export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession, refreshEvidence?: () => Promise<void>) {
+export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession, withEvidence: <T>(callback: () => Promise<T>, signal?: AbortSignal) => Promise<T> = callback => callback()) {
+  return {
+    search: (input: RetrievalQuery, signal?: AbortSignal) => withEvidence(() => createRetrievalOperation(scopeOf, loadSession).search(input), signal),
+    open: (reference: RetrievalReference, signal?: AbortSignal) => withEvidence(() => createRetrievalOperation(scopeOf, loadSession).open(reference), signal),
+    refresh: (signal?: AbortSignal) => withEvidence(() => createRetrievalOperation(scopeOf, loadSession).refresh(), signal),
+  }
+}
+function createRetrievalOperation(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession) {
   const indexes = new Map<string, { events: readonly RetrievalEvent[]; rows: { seq: number; content: string }[] }>()
   const projectors = new Map<string, ReturnType<typeof createRetrievalEventProjection>>()
   const project = (id: string, events: readonly RetrievalEvent[]) => {
@@ -186,7 +193,6 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
   }
   const sessionIds = (scope: RetrievalScope) => new Set([...(scope.session ? [scope.session.id] : []), ...(scope.sessions ?? [])])
   const resultOf = async (scope: RetrievalScope, hits: RetrievalHit[]) => {
-    await refreshEvidence?.()
     const current = scopeOf()
     if (current.moduleId !== scope.moduleId || current.dir !== scope.dir) throw new Error('检索模块未授权')
     // 最后一次await后统一复核全部命中，先前收集的正文不能跨异步撤权返回。
@@ -286,7 +292,6 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
   }
   return {
     async search(input: RetrievalQuery) {
-      await refreshEvidence?.()
       if (input.mode !== undefined && input.mode !== 'search' && input.mode !== 'timeline') throw new Error('检索模式无效')
       if ((input.query !== undefined || input.mode !== 'timeline') && (typeof input.query !== 'string' || input.query.trim().length === 0 || input.query.length > 1024)) throw new Error('检索 query 必须为1–1024字符')
       const limit = input.limit ?? 20
@@ -357,7 +362,6 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
       return resultOf(scope, selected)
     },
     async open(reference: RetrievalReference) {
-      await refreshEvidence?.()
       const scope = scopeOf()
       if (!reference || reference.moduleId !== scope.moduleId) throw new Error('检索引用未授权或无效')
       if (Object.keys(reference).some(key => !['kind', 'moduleId', 'path', 'revision', 'start', 'end', 'sessionId', 'seqs', 'root', 'scope', 'sourceId'].includes(key))) throw new Error('检索引用含未知字段')
@@ -392,7 +396,6 @@ export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession
       return { reference, content: content.slice(reference.start, reference.end) }
     },
     async refresh() {
-      await refreshEvidence?.()
       const scope = scopeOf(), files = filePaths(scope)
       for (const path of files) fileContent(scope, path)
       let events = 0
