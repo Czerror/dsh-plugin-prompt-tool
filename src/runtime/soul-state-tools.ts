@@ -106,9 +106,12 @@ export function registerSoulStateTools(ctx: Context, host: Pick<ModuleToolHost, 
       exec.signal.throwIfAborted()
       if (host.target(exec, args.moduleId).dir !== target.dir || exec.agent?.session.id !== sessionId) throw new Error('Soul状态来源或会话已变化')
       const owner = knowledge?.(), access = owner?.status(target.dir)
-      if (access?.binding) access.binding.learning = owner!.learning(target.dir, sessionId, true)
-      const recording = access?.state === 'bound' ? owner!.recording(target.dir, sessionId) : { persisted: 0, pending: 0, derivedFailed: 0 }
-      return { sessionId, ...readSoulState(target.dir, sessionId, sessionOwner()), knowledge: access ?? { state: 'unavailable', reason: '知识库持久状态不可用' }, assistedConsolidation: exec.agent && assisted?.assistedStatus?.(target.id, exec.agent) as Observation, recording, ...(observation === undefined ? {} : { observation }) }
+      const read = () => {
+        if (access?.binding) access.binding.learning = owner!.learning(target.dir, sessionId, true)
+        const recording = access?.state === 'bound' ? owner!.recording(target.dir, sessionId) : { persisted: 0, pending: 0, derivedFailed: 0 }
+        return { sessionId, ...readSoulState(target.dir, sessionId, sessionOwner()), knowledge: access ?? { state: 'unavailable', reason: '知识库持久状态不可用' }, assistedConsolidation: exec.agent && assisted?.assistedStatus?.(target.id, exec.agent) as Observation, recording, ...(observation === undefined ? {} : { observation }) }
+      }
+      return access?.state === 'bound' ? owner!.withEvidence([{ directory: target.dir, sessionId }], exec.signal, read) : read()
     },
   })))
   return () => { void fiber.dispose() }

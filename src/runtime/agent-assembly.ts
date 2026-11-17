@@ -836,16 +836,20 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const listeners = [
       installToolStepAssembly(ctx, {
         knows: agent => knownAgents.has(agent), ensureFresh,
-        assemble: (context, invoke) => withAgent(context.agent!, async () => {
-          const soul = ctx.get(SOUL_SELF_SERVICE) as { refresh?: (id: string, agent: Agent) => Promise<void> } | undefined
-          for (const id of mounts.get(context.agent!.id)?.moduleIds ?? []) await soul?.refresh?.(id, context.agent!)
-          try { mounts.get(context.agent!.id)?.rules.prepareAssembly(context) } catch (error) {
-            if (error !== null && typeof error === 'object' && 'recoveryFailed' in error && error.recoveryFailed === true) await releaseNow(context.agent!.id, context.agent)
-            warn(error)
-          }
-          context.signal?.throwIfAborted()
-          return invoke()
-        }),
+        assemble: (context, invoke) => {
+          const ids = [...(mounts.get(context.agent!.id)?.moduleIds ?? [])]
+          const soul = ctx.get(SOUL_SELF_SERVICE) as { withEvidence?: <T>(ids: readonly string[], agent: Agent, signal: AbortSignal | undefined, callback: () => Promise<T>) => Promise<T> } | undefined
+          const assemble = () => withAgent(context.agent!, async () => {
+            if (JSON.stringify(mounts.get(context.agent!.id)?.moduleIds ?? []) !== JSON.stringify(ids)) throw new Error('证据准备期间装配模块已变化')
+            try { mounts.get(context.agent!.id)?.rules.prepareAssembly(context) } catch (error) {
+              if (error !== null && typeof error === 'object' && 'recoveryFailed' in error && error.recoveryFailed === true) await releaseNow(context.agent!.id, context.agent)
+              warn(error)
+            }
+            context.signal?.throwIfAborted()
+            return invoke()
+          })
+          return soul?.withEvidence ? soul.withEvidence(ids, context.agent!, context.signal, assemble) : assemble()
+        },
         settle: (assembly, context) => mounts.get(context.agent!.id)?.rules.settleToolSurface(assembly, context) ?? Promise.resolve(assembly),
       }),
       // `agent/created` 对四种来源都触发（startup / resume / clear / compact），每次都是一个新

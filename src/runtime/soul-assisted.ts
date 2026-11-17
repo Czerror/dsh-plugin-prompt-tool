@@ -8,7 +8,7 @@ import type { AssistedLimits } from '../host/soul-assisted-budget.ts'
 import { readModuleFacts } from '../host/module-params.ts'
 import { revisionOf } from '../host/module-write.ts'
 import { readSoulLedgerProjection } from '../host/soul-ledger.ts'
-import { loadKnowledgeSession } from './soul-knowledge.ts'
+import type { RetrievalSession } from '../host/module-retrieval.ts'
 
 declare module '@deepseek-ai/dsh-llm' { interface LlmRequestPurposeMap { 'soul-continuity-organize': true } }
 export const ASSISTED_PURPOSE = 'soul-continuity-organize'
@@ -64,13 +64,15 @@ export function createSoulAssisted(ctx: Context, knowledge: () => SoulKnowledgeO
     try {
       const { owner, key, directory } = identity(id, agent)
       const view: Record<string, unknown> = { state: 'idle', ...observations.get(key), budget: owner.assisted.read(key) }
-      if (!owner.recording(directory, agent.session.id).pending) delete view.notice
+      try { if (!owner.recording(directory, agent.session.id).pending) delete view.notice }
+      catch { /* 无准备或证据暂不可用时保留提示。 */ }
       return view
     } catch (error) { return { state: 'unavailable', reason: String(error) } }
   }
   const request = async (id: string, agent: Agent): Promise<Record<string, unknown>> => {
     await admit(id, agent)
     const initial = identity(id, agent), { directory, owner, participant, key } = initial
+    const assertControl = owner.control(directory, agent.session.id)
     if (!active) throw new Error('辅助整理已释放')
     if (running.has(key)) return status(id, agent)
     const controller = new AbortController(), signal = controller.signal
@@ -79,6 +81,7 @@ export function createSoulAssisted(ctx: Context, knowledge: () => SoulKnowledgeO
     const work = Promise.resolve().then(async () => {
       const releases: Array<() => void> = []
       let reservation: string | undefined, started: number | undefined, elapsedMs: number | undefined, usage: TokenUsage | undefined, committing = false, overrun = false, streamed = false
+      let rootSession: RetrievalSession | undefined
       const limits = limitsOf(directory)
       const abort = (reason: string) => controller.abort(new Error(reason))
       const releaseResources = () => { for (const release of releases.splice(0).reverse()) release() }
@@ -86,29 +89,32 @@ export function createSoulAssisted(ctx: Context, knowledge: () => SoulKnowledgeO
       signal.addEventListener('abort', cancelled, { once: true })
       const valid = () => {
         signal.throwIfAborted()
-        const current = identity(id, agent)
-        if (!active || current.owner !== owner || current.key !== key || current.participant.rootMessageId !== participant.rootMessageId || current.access.consolidationRevision !== initial.access.consolidationRevision) throw new Error('输入、来源、授权或整理版本已变化')
+        if (!active || knowledge() !== owner || source(id, agent) !== directory) throw new Error('辅助整理所属模块已变化')
+        assertControl()
+        const latestHuman = rootSession?.snapshotEvents().findLast(event => event.type === 'user/message' && (event as unknown as { data?: { source?: { kind?: string } } }).data?.source?.kind === 'user') as unknown as { data?: { id?: string } } | undefined
+        if (rootSession && latestHuman?.data?.id !== participant.rootMessageId) throw new Error('子任务所属根用户回合已失效')
       }
       try {
-        await owner.refreshEvidence(directory); valid()
-        const records = owner.records(directory, agent.session.id).filter(row => row.pending)
+        const records = await owner.withEvidence([{ directory, sessionId: agent.session.id }], signal, () => owner.records(directory, agent.session.id).filter(row => row.pending))
+        valid()
         if (!records.length) { observation.state = 'no-work'; await owner.assisted.backlog(key, participant.rootMessageId!, false, limits); return }
         if (await owner.assisted.backlog(key, participant.rootMessageId!, true, limits)) observation.notice = '持续三个新用户回合仍有待整理材料，请查看整理状态；正常记录已保留。'
-        const rootSession = await loadKnowledgeSession(ctx, participant.rootSessionId)
-        const latestHuman = rootSession.snapshotEvents().findLast(event => event.type === 'user/message' && (event as unknown as { data?: { source?: { kind?: string } } }).data?.source?.kind === 'user') as unknown as { data?: { id?: string } } | undefined
-        if (latestHuman?.data?.id !== participant.rootMessageId) throw new Error('子任务所属根用户回合已失效')
         const selected: Array<{ ref: string; source: string; record: unknown; material: unknown }> = [], omitted: string[] = []
         const entries = readSoulLedgerProjection(directory).entries
-        for (const row of records) {
-          const session = await loadKnowledgeSession(ctx, row.sessionId)
-          const event = session.snapshotEvents().find(event => event.seq === row.seq)
-          if (!event || revisionOf(JSON.stringify(event)) !== row.version) throw new Error('待整理来源已变化')
-          const entry = entries.find(entry => entry.id === row.entryId)
-          if (!entry || (entry.origin as { operation?: string } | undefined)?.operation !== row.operation) throw new Error('待整理账本条目已变化')
-          const fragment = { ref: row.entryId, source: row.sourceId, record: entry, material: event }
-          if (selected.length && estimate(rules + JSON.stringify([...selected, fragment])) > limits.inputTarget) omitted.push(row.entryId)
-          else selected.push(fragment)
-        }
+        await owner.withEvidence([{ directory, sessionId: agent.session.id }], signal, async () => {
+          rootSession = await owner.readEvidence(participant.rootSessionId, signal)
+          valid()
+          for (const row of records) {
+            const session = await owner.readEvidence(row.sessionId, signal)
+            const event = session?.snapshotEvents().find(event => event.seq === row.seq)
+            if (!event || revisionOf(JSON.stringify(event)) !== row.version) throw new Error('待整理来源已变化')
+            const entry = entries.find(entry => entry.id === row.entryId)
+            if (!entry || (entry.origin as { operation?: string } | undefined)?.operation !== row.operation) throw new Error('待整理账本条目已变化')
+            const fragment = { ref: row.entryId, source: row.sourceId, record: entry, material: event }
+            if (selected.length && estimate(rules + JSON.stringify([...selected, fragment])) > limits.inputTarget) omitted.push(row.entryId)
+            else selected.push(fragment)
+          }
+        })
         valid()
         const text = JSON.stringify({ materials: selected, omitted }), inputTokens = estimate(rules + text)
         observation.inputTokens = inputTokens; observation.omitted = omitted
@@ -122,7 +128,9 @@ export function createSoulAssisted(ctx: Context, knowledge: () => SoulKnowledgeO
         reservation = reserved.id
         valid()
         releases.push(owner.onChange(() => { if (!committing) try { valid() } catch { abort('来源或授权变化') } }))
-        const watcher = watch(initial.access.binding!.root, { recursive: true }, () => { try { owner.sources(directory, agent.session.id); valid() } catch { abort('知识来源被替换') } })
+        const watcher = watch(initial.access.binding!.root, { recursive: true }, () => {
+          if (!committing) void owner.withEvidence([{ directory, sessionId: agent.session.id }], signal, () => { owner.sources(directory, agent.session.id); valid() }).catch(() => abort('知识来源被替换'))
+        })
         watcher.on('error', () => abort('知识来源监视不可用'))
         releases.push(() => watcher.close())
         const agents = ctx.get('agents') as { get(id: string): Agent | undefined } | undefined
@@ -148,13 +156,13 @@ export function createSoulAssisted(ctx: Context, knowledge: () => SoulKnowledgeO
         observation.state = 'candidate'
         await agent.whenIdle(); valid()
         // 只在短提交窗口进入维护；生成与等待不占用Agent维护锁。
-        await agent.runMaintenance(async activitySignal => {
+        await owner.withEvidence([{ directory, sessionId: agent.session.id }], signal, () => agent.runMaintenance(async activitySignal => {
           valid()
           committing = true
           const result = await owner.consolidate(directory, agent.session.id, { text: candidate, refs: selected.map(row => row.ref), expectedRevision: initial.access.consolidationRevision! }, AbortSignal.any([signal, activitySignal]), valid)
           Object.assign(observation, result)
-        })
-        if (observation.state === 'published' && !owner.recording(directory, agent.session.id).pending) await owner.assisted.backlog(key, participant.rootMessageId!, false, limits)
+        }))
+        if (observation.state === 'published' && !await owner.withEvidence([{ directory, sessionId: agent.session.id }], signal, () => owner.recording(directory, agent.session.id).pending)) await owner.assisted.backlog(key, participant.rootMessageId!, false, limits)
       } catch (error) {
         observation.state = signal.aborted ? 'cancelled' : 'failed'
         observation.reason = String(error)
@@ -177,10 +185,14 @@ export function createSoulAssisted(ctx: Context, knowledge: () => SoulKnowledgeO
     if (message.source.kind !== 'user') return
     for (const job of running.values()) if (job.root === agent.session.id) job.controller.abort(new Error('新用户输入'))
   })
+  const offInput = ctx.on('session/event', (session, event) => {
+    if (event.type !== 'user/message' || (event.data as { source?: { kind?: string } }).source?.kind !== 'user') return
+    for (const job of running.values()) if (job.root === session.id) job.controller.abort(new Error('新用户输入'))
+  })
   const offDisposed = ctx.on('agent/disposed', ({ agent }) => {
     for (const job of running.values()) if (job.agent === agent || job.root === agent.session.id) job.controller.abort(new Error('会话已释放'))
   })
   return { request, status,
     detached(id: string, agent: Agent) { for (const job of running.values()) if (job.moduleId === id && (job.agent === agent || job.root === agent.session.id)) job.controller.abort(new Error('来源模块已释放')) },
-    dispose() { active = false; offInbox(); offDisposed(); for (const job of running.values()) job.controller.abort(new Error('模块已释放')); for (const hook of cancelHooks.values()) hook.release() } }
+    dispose() { active = false; offInbox(); offInput(); offDisposed(); for (const job of running.values()) job.controller.abort(new Error('模块已释放')); for (const hook of cancelHooks.values()) hook.release() } }
 }

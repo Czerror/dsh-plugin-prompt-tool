@@ -49,7 +49,7 @@ export function useCustomToolsEditor(props: {
   const [loadError, setLoadError] = useState(editor.error)
   const [publication, setPublication] = useState({ pending: editor.publicationPending === true, error: editor.publicationError })
   const disabled = props.disabled === true || loading || loadError.length > 0
-  // 卸载标记：应答回来时已卸载就不再改状态（owner 的 `isCurrent`）。
+  // 卸载只抑制旧视图提示，共享草稿仍接纳保存结果。
   const active = useRef(true)
   // owner 在渲染期建，但它的 `changed` 要调渲染镜像；镜像每次渲染重建，故用 ref 取最新的那个。
   const refreshRef = useRef<() => void>(() => {})
@@ -59,7 +59,7 @@ export function useCustomToolsEditor(props: {
     reader: { load: () => readCustomTools(moduleId ?? '', undeclared) },
     request: (body) => bridgeCall('customTools', body, moduleId ?? ''),
     isCurrent: () => active.current,
-    changed: refreshRef.current,
+    changed: () => refreshRef.current(),
     onDeclared: props.onDeclared,
   }), [editor, moduleId, undeclared, props.onDeclared])
   const refresh = useCallback((): void => {
@@ -95,12 +95,13 @@ export function useCustomToolsEditor(props: {
       return
     }
     void owner.save().then((customResult) => {
+      if (!active.current) return
       if (customResult === undefined || !customResult.ok) {
         props.onNotice('error', customResult === undefined ? t('customTools.saveFailed') : ('message' in customResult ? customResult.message : undefined) ?? t('customTools.saveFailed'))
         return
       }
       props.onNotice(editor.publicationPending ? 'error' : 'ok', editor.publicationError ?? (editor.publicationPending ? t('publication.pending') : t('customTools.saved', { count: editor.saved.length })))
-    })
+    }).catch(() => { if (active.current) props.onNotice('error', t('customTools.saveFailed')) })
   }
   const patchTool = (index: number, patch: Partial<ToolDraft>): void => owner.applyPatch(index, patch)
   const toggleCard = (index: number): void => {
@@ -137,10 +138,11 @@ export function useCustomToolsEditor(props: {
       <PublicationNotice publication={publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         disabled={saving}
         onRetry={() => { void owner.retryPublication().then((result) => {
+          if (!active.current) return
           if (result === undefined) return
           if (!result.ok) { props.onNotice('error', result.message ?? t('customTools.saveFailed')); return }
           props.onNotice(editor.publicationPending ? 'error' : 'ok', editor.publicationError ?? (editor.publicationPending ? t('publication.pending') : t('publication.done')))
-        }) }} />
+        }).catch(() => { if (active.current) props.onNotice('error', t('customTools.saveFailed')) }) }} />
       <fieldset className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
           <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool()}>{t('main.newBlankTool')}</Button>

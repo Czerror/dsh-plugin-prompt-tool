@@ -92,8 +92,10 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
       } })
     } }
   } }
-  let replaceEvidence = false, replaceAfterLoads = 0, replacedSeq = -1, commandObservation, learningObservation
+  let replaceEvidence = false, replaceAfterLoads = 0, replacedSeq = -1, commandObservation, learningObservation, evidenceObservation, evidenceLoads = 0
   const loadKnowledgeSession = async id => {
+    evidenceLoads++
+    if (evidenceObservation) await evidenceObservation(id)
     if (id === 'command-cas' && commandObservation) await commandObservation()
     if (learningObservation) { const observe = learningObservation; learningObservation = undefined; await observe() }
     if (replaceAfterLoads > 0 && --replaceAfterLoads === 0) replaceEvidence = true
@@ -233,9 +235,9 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(first.value.reference.rootMessageId, message.id)
   const learned = await owner.learn(dir, agent.session.id, { text: 'Keep answers concise', layer: 'core', ref: first.value.reference.entryId, expectedRevision: owner.status(dir).learningRevision }, signal)
   assert.equal(learned.state, 'candidate', '模型不能确认核心变化')
-  assert.equal(owner.learning(dir, fresh.agent.session.id).length, 0)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], undefined, () => owner.learning(dir, fresh.agent.session.id))).length, 0)
   await manage({ action: 'learning-confirm', sourceId: learned.id })
-  assert.equal(owner.learning(dir, fresh.agent.session.id)[0].text, 'Keep answers concise')
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], undefined, () => owner.learning(dir, fresh.agent.session.id)))[0].text, 'Keep answers concise')
   const learningRuntime = createRuleRuntime(fresh.agent.ctx, { agent: fresh.agent, warnOnce: message => { throw new Error(message) } })
   t.after(() => learningRuntime.dispose())
   learningRuntime.replace([{ moduleId: 'alice', rules: compileRules([{ id: 'self', then: [{ id: 'self', kind: 'inject-text', config: { layer: 'runtime-context', strategy: 'placeholder', fill: 'soul-self' } }, { id: 'persona', kind: 'persona', prefix: 'USER BASE' }] }], { moduleId: 'alice' }) }])
@@ -246,12 +248,12 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     finally { toolSet.dispose() }
   }
   assert.match(await self(), /Keep answers concise/)
-  const recordsBeforeDisable = owner.records(dir, agent.session.id)
+  const recordsBeforeDisable = (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id)))
   await manage({ action: 'disable' })
-  assert.deepEqual(owner.learning(dir, fresh.agent.session.id), [])
+  assert.deepEqual((await owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], undefined, () => owner.learning(dir, fresh.agent.session.id))), [])
   assert.doesNotMatch(await self(), /Keep answers concise/, '关闭同时撤回SELF和persona共享的学习贡献')
-  assert.equal(owner.learning(dir, fresh.agent.session.id, true).find(row => row.id === learned.id).text, 'Keep answers concise')
-  assert.deepEqual(owner.records(dir, agent.session.id), recordsBeforeDisable, '关闭保留正式原文及历史查询')
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], undefined, () => owner.learning(dir, fresh.agent.session.id, true))).find(row => row.id === learned.id).text, 'Keep answers concise')
+  assert.deepEqual((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id))), recordsBeforeDisable, '关闭保留正式原文及历史查询')
   await manage({ action: 'enable' })
   assert.match(await self(), /Keep answers concise/, '重新启用恢复仍有效来源的学习')
   await manage({ action: 'learning-withdraw', sourceId: learned.id })
@@ -261,20 +263,111 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await send(message)
   assert.equal((await call()).isError, false)
   assert.equal(readSoulLedgerProjection(dir).total, 1)
-  assert.equal(owner.records(dir, agent.session.id)[0].entryId, id)
-  assert.equal(owner.sources(dir, agent.session.id).histories.some(row => row.sessionId === agent.session.id && row.seqs.includes(agent.session.snapshotEvents().find(event => event.type === 'user/message').seq)), false)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id)))[0].entryId, id)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).histories.some(row => row.sessionId === agent.session.id && row.seqs.includes(agent.session.snapshotEvents().find(event => event.type === 'user/message').seq)), false)
   await send(createUserMessage({ content: [{ type: 'text', text: 'AUTOMATIC FOLLOWUP' }], source: { kind: 'agent-message' } }))
   assert.equal(owner.status(dir).binding.participants.findLast(row => row.sessionId === agent.session.id).rootMessageId, message.id)
   failDerived = true
   const partial = await call('partial-operation')
   assert.equal(partial.value.persisted, true)
   assert.equal(partial.value.derived.state, 'failed')
-  assert.deepEqual(owner.recording(dir, agent.session.id), { persisted: 2, pending: 1, derivedFailed: 1 })
+  assert.deepEqual((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.recording(dir, agent.session.id))), { persisted: 2, pending: 1, derivedFailed: 1 })
   await owner.dispose()
+  const beforeReopenLoads = evidenceLoads
   owner = await openSoulKnowledge(facility, loadKnowledgeSession)
-  assert.equal(owner.records(dir, agent.session.id).length, 2, 'seed无需session/event即可恢复对账')
+  assert.equal(evidenceLoads, beforeReopenLoads, '冷启动只按账本元数据恢复，不加载历史正文')
+  assert.throws(() => owner.records(dir, agent.session.id), /未准备/, '同步冷读明确不可用')
+  const persistedBeforeCancel = owner.status(dir).binding.records
+  let releaseEvidence, evidenceStarted
+  const evidenceHeld = new Promise(resolve => { releaseEvidence = resolve })
+  const evidenceLoading = new Promise(resolve => { evidenceStarted = resolve })
+  evidenceObservation = async () => { evidenceStarted(); await evidenceHeld }
+  const cancelledEvidence = new AbortController()
+  let lateConsumer = false
+  const cancelledPreparation = owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], cancelledEvidence.signal, () => { lateConsumer = true })
+  await evidenceLoading
+  cancelledEvidence.abort(new Error('fixture evidence cancelled'))
+  await assert.rejects(cancelledPreparation, /fixture evidence cancelled/)
+  evidenceObservation = undefined; releaseEvidence()
+  assert.equal(lateConsumer, false, '取消无需等待不可中断历史读取，迟到不进入消费')
+  assert.deepEqual(owner.status(dir).binding.records, persistedBeforeCancel, '取消不能删除记录或清理pending')
+  evidenceObservation = async () => { throw new Error('fixture unavailable history') }
+  await assert.rejects(owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], signal, () => owner.records(dir, agent.session.id)), /fixture unavailable history/)
+  evidenceObservation = undefined
+  assert.deepEqual(owner.status(dir).binding.records, persistedBeforeCancel, '装载失败保留合法登记与pending')
+  await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], signal, async () => {
+    let releaseShared, startedShared
+    const held = new Promise(resolve => { releaseShared = resolve })
+    const started = new Promise(resolve => { startedShared = resolve })
+    let loads = 0
+    evidenceObservation = async () => { loads++; startedShared(); await held }
+    const cancel = new AbortController()
+    const first = owner.readEvidence(agent.session.id, cancel.signal)
+    const second = owner.readEvidence(agent.session.id)
+    await started
+    cancel.abort(new Error('one consumer cancelled'))
+    await assert.rejects(first, /one consumer cancelled/)
+    releaseShared()
+    assert.equal((await second).id, agent.session.id)
+    assert.equal(loads, 1, '共享历史装载，单消费者取消不影响另一个消费者')
+    evidenceObservation = undefined
+  })
+  let firstReady, secondReady
+  const firstEntered = new Promise(resolve => { firstReady = resolve })
+  const secondEntered = new Promise(resolve => { secondReady = resolve })
+  await Promise.all([
+    owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], signal, async () => {
+      firstReady(); await secondEntered
+      assert.equal(owner.records(dir, agent.session.id).length, 2)
+      const nestedCancel = new AbortController()
+      let enteredNested, releaseNested, checkedNested
+      const nestedEntered = new Promise(resolve => { enteredNested = resolve })
+      const nestedGate = new Promise(resolve => { releaseNested = resolve })
+      const nestedChecked = new Promise(resolve => { checkedNested = resolve })
+      const nested = owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], nestedCancel.signal, async () => {
+        enteredNested(); await nestedGate
+        const outcomes = await Promise.allSettled([
+          Promise.resolve().then(() => owner.records(dir, agent.session.id)),
+          owner.readEvidence(agent.session.id),
+        ])
+        checkedNested(outcomes.map(result => result.status))
+      })
+      await nestedEntered
+      nestedCancel.abort(new Error('nested cancelled'))
+      await assert.rejects(nested, /nested cancelled/)
+      const loadsBeforeLate = evidenceLoads
+      releaseNested()
+      assert.deepEqual(await nestedChecked, ['rejected', 'rejected'], '子操作取消后迟到投影与原文读取均拒绝')
+      assert.equal(evidenceLoads, loadsBeforeLate)
+      assert.equal(owner.records(dir, agent.session.id).length, 2, '子取消不撤销父消费资格')
+      assert.throws(() => owner.sources(dir, fresh.agent.session.id), /未准备/, '并发会话不串用证据scope')
+      await assert.rejects(owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], signal, () => {}), /额外材料/, '嵌套不扩张固定集合')
+    }),
+    owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], signal, async () => {
+      secondReady(); await firstEntered
+      assert.equal(owner.learning(dir, fresh.agent.session.id, true)[0].state, 'withdrawn', '冷重读不恢复已撤回学习')
+      assert.throws(() => owner.records(dir, agent.session.id), /未准备/)
+    }),
+  ])
+  const retiringOwner = owner
+  let releaseRetired, retiredReady, retiredChecked
+  const retirementGate = new Promise(resolve => { releaseRetired = resolve })
+  const retirementReady = new Promise(resolve => { retiredReady = resolve })
+  const retirementChecked = new Promise(resolve => { retiredChecked = resolve })
+  const retirement = retiringOwner.withEvidence([{ directory: dir, sessionId: agent.session.id }], signal, async () => {
+    retiredReady(); await retirementGate
+    assert.throws(() => retiringOwner.records(dir, agent.session.id), /释放/)
+    retiredChecked()
+  })
+  await retirementReady
+  const retirementRejected = assert.rejects(retirement, /释放/)
+  await owner.dispose()
+  await retirementRejected
+  releaseRetired(); await retirementChecked
+  owner = await openSoulKnowledge(facility, loadKnowledgeSession)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id))).length, 2, 'seed无需session/event即可恢复对账')
   assert.equal(readSoulLedgerProjection(dir).total, 2)
-  const publication = { expectedRevision: owner.status(dir).consolidationRevision, text: 'Authoritative project decision in detail.', refs: owner.records(dir, agent.session.id).map(row => row.entryId) }
+  const publication = { expectedRevision: owner.status(dir).consolidationRevision, text: 'Authoritative project decision in detail.', refs: (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id))).map(row => row.entryId) }
   const consolidate = async (request, expectError = false) => {
     const result = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'publish', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'consolidate', ...request }) }] })).results[0].result
     assert.equal(result.isError, expectError, JSON.stringify(result))
@@ -286,7 +379,9 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(statusResult.value.assistedConsolidation?.state, 'idle')
   assert.equal(statusResult.value.assistedConsolidation.budget.attempts.length, 0)
   const toolEvent = agent.session.append({ type: 'tool/result', data: { id: 'publication-status', result: statusResult } })
+  const unchangedControl = owner.control(dir)
   await owner.observe(dir, agent.session.id, toolEvent.seq)
+  assert.doesNotThrow(unchangedControl, 'cursor和无关自动历史不失效控制凭据')
   assert.equal(owner.status(dir).consolidationRevision, statusResult.value.knowledge.consolidationRevision, '工具结果不改变生成前整理依赖版本')
   const oldPublication = { ...publication, refs: [publication.refs[0]], text: 'Previous authoritative decision.' }
   const ledgerBeforeChange = readFileSync(join(dir, 'data', '02-soul.jsonl'), 'utf8')
@@ -298,41 +393,54 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   replacedSeq = first.value.reference.seq
   replaceAfterLoads = 2
   await consolidate(publication, true)
-  assert.equal(owner.sources(dir, agent.session.id).documents.length, 0, '最后一次await期间来源变化同时停用既有派生版本')
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.length, 0, '最后一次await期间来源变化同时停用既有派生版本')
   replaceEvidence = false
   failPublication = true
   const failedPublication = await consolidate(publication)
   assert.equal(failedPublication.state, 'candidate')
-  assert.deepEqual(owner.sources(dir, agent.session.id).documents.map(row => row.content), [oldPublication.text])
-  assert.equal(owner.recording(dir, agent.session.id).pending, 1)
+  assert.deepEqual((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.map(row => row.content), [oldPublication.text])
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.recording(dir, agent.session.id))).pending, 1)
   assert.equal((await consolidate(publication)).state, 'published')
-  assert.equal(owner.sources(dir, agent.session.id).documents.at(-1).content, publication.text)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.at(-1).content, publication.text)
   await manage({ action: 'disable' })
-  assert.equal(owner.sources(dir, agent.session.id).documents.length, 0, '关闭撤回自动整理贡献')
-  assert.ok(owner.sources(dir, agent.session.id).histories.length, '关闭保留合法历史查询')
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.length, 0, '关闭撤回自动整理贡献')
+  assert.ok((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).histories.length, '关闭保留合法历史查询')
   await manage({ action: 'enable' })
-  assert.equal(owner.sources(dir, agent.session.id).documents.at(-1).content, publication.text)
-  assert.equal(owner.recording(dir, agent.session.id).pending, 0)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.at(-1).content, publication.text)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.recording(dir, agent.session.id))).pending, 0)
   assert.equal((await consolidate(publication)).state, 'published')
-  const publishedPath = 'data/' + owner.sources(dir, agent.session.id).documents.at(-1).path
+  const publishedPath = 'data/' + (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.at(-1).path
   assert.equal(modelCalls, callsBeforePublication, '不可用状态查询和直接整理不额外调用模型')
+  const searchLoads = new Map()
+  evidenceObservation = async sessionId => {
+    const count = (searchLoads.get(sessionId) ?? 0) + 1
+    searchLoads.set(sessionId, count)
+    if (sessionId !== agent.session.id && count === 2) replaceEvidence = true
+  }
+  try {
+    const changedDuringSearch = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'changed-publication-search', name: 'module_search', arguments: JSON.stringify({ moduleId: 'alice', query: publication.text }) }] })).results[0].result
+    assert.equal(replaceEvidence, true, '读取后一个会话时替换先前派生来源原文')
+    assert.equal(changedDuringSearch.isError, true, '检索返回前拒绝原文已变化的派生正文')
+  } finally { evidenceObservation = undefined; replaceEvidence = false }
   replaceEvidence = true
   const staleRead = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'stale-publication-read', name: 'module_file_read', arguments: JSON.stringify({ moduleId: 'alice', path: publishedPath }) }] })).results[0].result
   assert.equal(staleRead.isError, true, '普通文件工具也刷新持久历史，拒绝失效派生正文')
-  await owner.refreshEvidence(dir)
-  assert.equal(owner.sources(dir, agent.session.id).documents.length, 0, '持久历史重新加载后拒绝旧派生正文')
+  await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => {})
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.length, 0, '持久历史重新加载后拒绝旧派生正文')
   replaceEvidence = false
-  await owner.refreshEvidence(dir)
+  await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => {})
   const beforeRevoke = owner.status(dir)
+  const revokedControl = owner.control(dir)
   assert.equal(beforeRevoke.binding.histories.find(row => row.id === first.value.reference.sourceId).automatic, true)
   await manage({ action: 'revoke', sourceId: first.value.reference.sourceId })
+  assert.throws(revokedControl, /版本已变化/, '撤权立即失效已获取的控制凭据')
   assert.notEqual(owner.status(dir).binding.revision, beforeRevoke.binding.revision, '自动历史撤权仍刷新控制版本')
   assert.notEqual(owner.status(dir).learningRevision, beforeRevoke.learningRevision, '撤权使旧学习依赖失效')
   assert.notEqual(owner.status(dir).consolidationRevision, beforeRevoke.consolidationRevision, '撤权使旧整理依赖失效')
   const staleRevoke = await command({ action: 'enable', expectedRevision: beforeRevoke.binding.revision })
   assert.equal(staleRevoke.kind, 'error')
   assert.match(staleRevoke.text, /版本冲突/)
-  assert.equal(owner.sources(dir, agent.session.id).documents.length, 0, '撤权立即停用混合派生正文')
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.length, 0, '撤权立即停用混合派生正文')
   await send(createUserMessage({ content: [{ type: 'text', text: 'unrelated new decision' }], source: { kind: 'user' } }))
   assert.equal((await call('after-single-revoke')).isError, false)
   assert.equal(readSoulLedgerProjection(dir).total, 3, '单项撤权不阻断无关新材料')
@@ -364,7 +472,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     } finally { learningObservation = undefined; released.resolve() }
     const result = (await pending).results[0].result
     assert.equal(result.isError, true, '根会话的新真实输入必须阻止迟到学习提交')
-    assert.equal(owner.learning(dir, target.session.id, true).some(row => row.text === '迟到学习不得生效'), false, '迟到候选不能持久化')
+    assert.equal((await owner.withEvidence([{ directory: dir, sessionId: target.session.id }], undefined, () => owner.learning(dir, target.session.id, true))).some(row => row.text === '迟到学习不得生效'), false, '迟到候选不能持久化')
     await owner.observe(dir, agent.session.id)
   }
   await interruptLearning(agent, feedback.value.reference.entryId)
@@ -382,7 +490,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   replaceAfterLoads = 3
   assert.equal((await propose({ ...inference, text: '在途证据不可采纳' })).isError, true, '最后一次await替换先前证据时拒绝提交')
   replaceEvidence = false
-  await owner.refreshEvidence(dir)
+  await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => {})
   const inferred = await propose(inference)
   assert.equal(inferred.isError, false, JSON.stringify(inferred))
   assert.equal(inferred.value.learning.state, 'adopted')
@@ -475,10 +583,10 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(resultMaterial.record.by, agent.session.id)
   assert.match(JSON.stringify(resultMaterial.material), /排查刷新失败/)
   assert.doesNotMatch(JSON.stringify(resultMaterial.material), /缓存键冲突/, '用户原请求与模型记录结果分别保留来源')
-  assert.equal(owner.records(dir, agent.session.id).find(row => row.entryId === resultMaterial.ref).pending, false)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id))).find(row => row.entryId === resultMaterial.ref).pending, false)
   assert.equal(assisted.budget.attempts[0].tokens, 23, '结算包含缓存读写输入')
   assert.equal(assisted.budget.attempts[0].estimated, false)
-  assert.equal(owner.recording(dir, agent.session.id).pending, 0)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.recording(dir, agent.session.id))).pending, 0)
   await assistTool('assist')
   assert.equal(auxiliary.length, 1, '没有新增材料不重复整理')
   assert.equal((await call('same-root-more-material')).isError, false)
@@ -510,15 +618,19 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal(assisted.budget.attempts.at(-1).estimated, true, '取消或缺usage保留预留')
   assert.equal(agent.cancel, originalCancel)
   assert.deepEqual(Object.getOwnPropertyDescriptor(agent, 'cancel'), originalCancelDescriptor)
-  assert.ok(owner.recording(dir, agent.session.id).pending > 0)
+  assert.ok((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.recording(dir, agent.session.id))).pending > 0)
   await send(createUserMessage({ content: [{ type: 'text', text: 'new round for input priority' }], source: { kind: 'user' } }))
   await assistTool('assist')
   for (let tries = 0; tries < 200 && auxiliary.length < 3; tries++) await new Promise(resolve => setTimeout(resolve, 5))
   assert.equal(auxiliary.length, 3)
   cancelledWrapper.call(agent, { kind: 'user' }, { keepInbox: true })
   assert.equal(auxiliary[2].signal.aborted, false, '已卸载旧wrapper不取消新请求')
-  await send(createUserMessage({ content: [{ type: 'text', text: 'new input while auxiliary still held' }], source: { kind: 'user' } }))
-  assert.equal(auxiliary[2].signal.aborted, true)
+  agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'unrelated automatic context' }], source: { kind: 'runtime-context' } }), { surfaceOp: 'append' })
+  await owner.observe(dir, agent.session.id)
+  assert.equal(auxiliary[2].signal.aborted, false, '自动索引和cursor推进不取消辅助流')
+  agent.session.append('user/message', createUserMessage({ content: [{ type: 'text', text: 'new input while auxiliary still held' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+  assert.equal(auxiliary[2].signal.aborted, true, '真实根输入立即取消，不等待异步observe')
+  await owner.observe(dir, agent.session.id)
   assert.ok(agent.session.snapshotEvents().some(event => event.type === 'user/message' && event.data.content?.some(block => block.text === 'new input while auxiliary still held')))
   for (let tries = 0; tries < 200; tries++) {
     assisted = (await assistTool('status')).value.assistedConsolidation
@@ -539,7 +651,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   owner = await openSoulKnowledge(facility, loadKnowledgeSession)
   assert.equal((await assistTool('status')).value.assistedConsolidation.budget.attempts.length, 4, '恢复不重置根会话预算')
   auxiliaryRules.dispose()
-  const parentSourceIds = owner.sources(dir, agent.session.id).histories.map(row => row.id)
+  const parentSourceIds = (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).histories.map(row => row.id)
   const context = { agent, scope: scopeOf(agent.ctx), signal }
   const toolSet = await root.tools.resolve(context)
   t.after(() => toolSet.dispose())
@@ -570,12 +682,12 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.ok(parentSourceIds.every(id => childParticipation.grants.includes(id)))
   await interruptLearning(child, childResult.value.reference.entryId)
   await send(createUserMessage({ content: [{ type: 'text', text: 'later private parent input' }], source: { kind: 'user' } }))
-  const laterSource = owner.sources(dir, agent.session.id).histories.findLast(row => row.sessionId === agent.session.id).id
-  assert.equal(owner.sources(dir, childId).histories.some(row => row.id === laterSource), false)
+  const laterSource = (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).histories.findLast(row => row.sessionId === agent.session.id).id
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: childId }], undefined, () => owner.sources(dir, childId))).histories.some(row => row.id === laterSource), false)
   await manage({ action: 'disable' })
-  assert.equal(owner.sources(dir, childId).histories.some(row => row.id === laterSource), false, '关闭不能丢失子任务范围上限')
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: childId }], undefined, () => owner.sources(dir, childId))).histories.some(row => row.id === laterSource), false, '关闭不能丢失子任务范围上限')
   await manage({ action: 'enable' })
-  assert.equal(owner.sources(dir, childId).histories.some(row => row.id === laterSource), false)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: childId }], undefined, () => owner.sources(dir, childId))).histories.some(row => row.id === laterSource), false)
   assert.doesNotMatch(await self(), /维修承诺结合零件与沟通需求|使用中文回答|Use detailed answers/, '重新启用不恢复失效来源的贡献')
   await root.subagents.drainDescendants([agent])
   excluded.add(agent.id)
