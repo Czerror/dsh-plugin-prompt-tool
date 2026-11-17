@@ -4,6 +4,8 @@
 
 为 [DeepSeek Harness（DSH）](https://deepseek-harness.github.io/deepseek-harness/) 管理提示词与规则。用模块决定注入什么内容、何时触发，以及作用于主会话还是子代理；继续使用原有的官方会话预设。
 
+![模块规则按条件向主会话或子代理注入内容](readme/assets/hero.svg)
+
 ## 能做什么
 
 在提示词工具工作台中，你可以：
@@ -11,7 +13,7 @@
 - 编辑提示词、人设、触发条件、变量和主会话／子代理的模型参数
 - 新建、启停、复制和分享模块，预览当前可用工具
 - 导入 SillyTavern 预设、角色卡和世界书，转换为模块
-- 按需启用 Soul 账本、知识检索和持续记忆；知识库接入与持续记忆需另行授权
+- 在模块中按需配置账本、知识检索与持续记忆；知识库接入与持续记忆需另行授权
 
 ## 安装
 
@@ -64,9 +66,19 @@ dsh --profile web
 | 任务 | 文档 |
 | --- | --- |
 | 编写模块、查看 YAML 示例 | [模块编写指南](skills/dsh-module/SKILL.md) · [字段参考](module.yml) |
-| 配置变量、人设、指令策略与 Soul | [参数与存储](docs/architecture-params.md) · [Soul 授权与持续记忆](docs/architecture-params.md#知识库授权与持续记忆) |
+| 配置变量、人设与指令策略 | [参数与存储](docs/architecture-params.md) |
 | 配置注入位置、工具与高级动作 | [引擎指南](docs/engine-reuse.md) · [插入点契约](docs/injection-point-contracts.md) |
 | 导入角色卡、世界书或分享模块 | [SillyTavern 转换](docs/SillyTavern.md) · [资产交换](docs/asset-transfer.md) |
+
+## 内置模块
+
+内置模块可按需启停或替换：
+
+- **Ponytail**：注入精简务实的工程规则，提供 lite／full／ultra 三档；来源 [ponytail](https://github.com/DietrichGebert/ponytail)。
+- **PTC 模式**：通过官方执行器将工具呈现为 `run_code` 与 SDK。
+- **技能面收窄**：隐藏完整技能目录，通过 `skill_search`／`skill_load` 按需查找和加载。
+- **Soul**：提供判据、结构化账本、授权检索与动态 SELF 等持续身份能力；改编自 [dsh-agent-soul](https://github.com/cyanwell/dsh-agent-soul)。
+- **工具面收窄**：保留核心工具，其余通过 `tool_search` 按需解锁。
 
 ## 本地开发
 
@@ -82,6 +94,10 @@ git diff --check
 ```
 
 涉及宿主接入或发布包时，再执行 `pnpm verify:host` 和 `pnpm verify:pack`。构建后可在 DSH 插件管理页用 `link:` 加仓库绝对路径安装本地版本；更新代码后重启宿主。
+
+## 项目状态
+
+项目持续更新；最近发布为 [v6.1.0（2026-11-17）](https://github.com/Czerror/dsh-plugin-prompt-tool/releases/tag/v6.1.0)。
 
 ## 许可与来源
 

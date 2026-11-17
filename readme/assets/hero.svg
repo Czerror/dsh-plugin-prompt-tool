@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 240" role="img" aria-labelledby="title desc">
+  <title id="title">Module rules → conditions → main sessions and subagents</title>
+  <desc id="desc">DSH Prompt Tool uses module rules to control when content is injected and which session receives it. The diagram is a conceptual overview.</desc>
+  <rect width="1200" height="240" rx="20" fill="#f3f6f2"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" fill="#203a30">
+    <text x="48" y="63" font-size="28" font-weight="600" letter-spacing="3">DSH / PROMPT TOOL</text>
+    <path d="M312 152H410M744 152H842M812 152V112H842M812 152V192H842" fill="none" stroke="#52896b" stroke-width="5"/>
+    <path d="m395 142 15 10-15 10m432-60 15 10-15 10m0 60 15 10-15 10" fill="none" stroke="#52896b" stroke-width="5"/>
+    <rect x="48" y="105" width="264" height="94" rx="12" fill="#203a30"/>
+    <text x="180" y="163" text-anchor="middle" font-size="38" font-weight="600" fill="#fff">Module rules</text>
+    <rect x="425" y="105" width="319" height="94" rx="12" fill="#dbe8db"/>
+    <text x="584" y="163" text-anchor="middle" font-size="38" font-weight="600">Conditions</text>
+    <text x="865" y="124" font-size="38" font-weight="600">Main session</text>
+    <text x="865" y="204" font-size="38" font-weight="600">Subagents</text>
+  </g>
+</svg>

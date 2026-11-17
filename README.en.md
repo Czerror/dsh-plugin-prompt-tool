@@ -4,6 +4,8 @@
 
 Manage prompts and rules in [DeepSeek Harness (DSH)](https://deepseek-harness.github.io/deepseek-harness/). Use modules to choose what to inject, when to trigger it, and whether it applies to main sessions or subagents. Keep using your existing official session preset.
 
+![Module rules inject content into main sessions or subagents when conditions match](readme/assets/hero.svg)
+
 ## What you can do
 
 In the Prompt Tool workspace, you can:
@@ -11,7 +13,7 @@ In the Prompt Tool workspace, you can:
 - Edit prompts, personas, conditions, variables, and model parameters for main sessions and subagents
 - Create, enable, disable, copy, and share modules; preview available tools
 - Import SillyTavern presets, character cards, and world books as modules
-- Enable the Soul ledger, knowledge retrieval, and continuous memory as needed; knowledge access and continuous memory require separate authorization
+- Configure ledgers, knowledge retrieval, and continuous memory in modules as needed; knowledge access and continuous memory require separate authorization
 
 ## Install the plugin
 
@@ -64,9 +66,19 @@ These reference documents are in Chinese:
 | Task | Documentation |
 | --- | --- |
 | Write modules and find YAML examples | [Module authoring guide](skills/dsh-module/SKILL.md) · [Field reference](module.yml) |
-| Configure variables, personas, instruction policies, and Soul | [Parameters and storage](docs/architecture-params.md) · [Soul authorization and continuous memory](docs/architecture-params.md#知识库授权与持续记忆) |
+| Configure variables, personas, and instruction policies | [Parameters and storage](docs/architecture-params.md) |
 | Configure injection points, tools, and advanced actions | [Engine guide](docs/engine-reuse.md) · [Injection point contracts](docs/injection-point-contracts.md) |
 | Import character cards and world books, or share modules | [SillyTavern conversion](docs/SillyTavern.md) · [Asset transfer](docs/asset-transfer.md) |
+
+## Built-in modules
+
+Enable, disable, or replace these modules as needed:
+
+- **Ponytail**: Injects concise, pragmatic engineering rules with lite/full/ultra levels; sourced from [ponytail](https://github.com/DietrichGebert/ponytail).
+- **PTC mode**: Presents tools as `run_code` and an SDK through the official executor.
+- **Skill surface**: Hides the full skill catalog and uses `skill_search`/`skill_load` to find and load skills on demand.
+- **Soul**: Provides criteria, structured ledgers, authorized retrieval, and a dynamic SELF for persistent identity; adapted from [dsh-agent-soul](https://github.com/cyanwell/dsh-agent-soul).
+- **Tool surface**: Keeps core tools visible and unlocks others on demand through `tool_search`.
 
 ## Develop locally
 
@@ -82,6 +94,10 @@ git diff --check
 ```
 
 For host integration or package changes, also run `pnpm verify:host` and `pnpm verify:pack`. After building, install locally through the DSH plugin manager using `link:` followed by the repository’s absolute path. Restart the host after code changes.
+
+## Project status
+
+The project is receiving updates; the latest release is [v6.1.0 (2026-11-17)](https://github.com/Czerror/dsh-plugin-prompt-tool/releases/tag/v6.1.0).
 
 ## License and sources
 

@@ -38,7 +38,7 @@ process 规则另支持 `command-confine-passthrough: true`：每模块发布一
 | 外部来源事实 | 注入动作 params.source | 导入报告与导出元数据 |
 | 模块显示名称 | module.yml.name | 模块卡与编辑目标选择；不改变模块 ID 或目录 |
 
-模块的 `customTools` 是普通工具模板行（例如原核心破限模块的 `http_fetch`）：模块总开关关闭时整组贡献撤回；模块开启后仍须把该工具行显式设为 `true` 才注册，关闭工具行会撤回注册并保留定义。这类行不是官方工具能力，固定发起 GET 并返回状态、成功标志和原始响应正文，不能与官方 `web_fetch` 的网页提取、来源引用或 provider 能力按语义等价使用。`fetch` 来源开关默认关闭，工具行不隐式修改或打开它。工具行本身随内容模块移出，本仓库保留行定义、开关与注册撤回的契约。
+`customTools` 是模块自定义工具模板行：模块总开关关闭时整组贡献撤回；模块开启后仍须把工具行显式设为 `true` 才注册，关闭工具行撤回注册并保留定义。自定义 HTTP 工具返回原始响应时，不等价于官方 `web_fetch` 的网页提取、来源引用或 provider 能力；工具行不隐式打开 `fetch` 来源开关，该开关默认关闭。
 
 当前格式的决策见 [ADR-0013](adr/0013-native-context-module-state.md)。模块不注册为官方会话预设、不保存会话绑定，不通过 settings 携带规则正文或大文本。
 
@@ -68,7 +68,7 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 规则顶层 layer 是注入动作缺省层及展示归属，不建立跨层总顺序。正文和内容策略属于动作，变量属于持久存储。读取叶子可投影稳定身份；映射写入覆盖 then、else、嵌套分支，保持原始条件、未改参数与注释，不写回编译展开或默认值。
 
-`persona.stripDefaultIdentity` 的可选值为 `preset` 或 `harness`；它是普通动作字段，沿完整定义、切片、保存版本及模块包往返保留，非法目标在候选校验阶段拒绝。原内置 `limit-breaker` 已随内容模块移出，本字段契约保持不变，由外部内容插件的规则使用。
+`persona.stripDefaultIdentity` 可选 `preset` 或 `harness`，选择要移除的默认身份来源；它是普通动作字段，沿完整定义、切片、保存版本及模块包往返保留，非法目标在候选校验阶段拒绝。
 
 ## 规则与变量事务
 
@@ -76,9 +76,9 @@ module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改
 
 人设动作预算 `instructionsMaxBytes` 仍归module.yml普通规则，合法值为正安全整数。工作台直接复用RuleParameterFields数字原文、fields错误草稿、hasRuleFields保存阻断和原rule-drafts/CAS；切回继承清除此字段的原草稿，不创建独立预算保存。参考初值65536不限制用户采用其他合法值。
 
-委派参数同样保存在普通规则动作 `subagent-params`，当前只接受 `provider: spawn`、合法工具名 `tool` 与必填非负安全整数 `maxDepth`。0 表示明确禁止委派；空值、负数、小数与非数值均拒绝，撤回贡献通过关闭规则或删除动作表达。数字沿原 RuleParameterFields、fields/hasRuleFields、规则 CAS 与发布，不新增深度草稿或保存端点。`assembly.target.sections.replace` 的名称与完整正文沿原装配表单及规则事务编辑。内容模块（原 `unrestricted`）已移出本仓库；播种与复制导出仍按只补缺失、保留完整规则与内容资产、不覆盖用户副本的契约执行，见 [ADR-0015](adr/0015-builtin-module-seed-missing-only.md)。
+委派参数保存在普通规则动作 `subagent-params`，当前只接受 `provider: spawn`、合法工具名 `tool` 与必填非负安全整数 `maxDepth`。0 表示明确禁止委派；空值、负数、小数与非数值均拒绝，撤回贡献通过关闭规则或删除动作表达。数字沿原 RuleParameterFields、fields/hasRuleFields、规则 CAS 与发布，不新增深度草稿或保存端点。`assembly.target.sections.replace` 的名称与完整正文沿原装配表单及规则事务编辑。
 
-显式瞬时额度 `request-params.maxTokens` 与 `phase.maxPromoteSteps` 同样沿原数字原文草稿和规则事务保存，合法范围均为正安全整数。非法或未完成原文不发保存请求，折叠保留草稿。该额度与同动作的patch/unset.maxTokens及replace互斥；原有patch组合不迁移。`pre-step-filter.instructionHint` 是普通规则中的可编辑完整模板。内容模块（原 `redteam`）已移出本仓库，播种与复制导出仍按只补缺失、不覆盖用户副本的契约执行。请求额度运行接缝和指令字节预算分别取资格，详见[引擎指南](engine-reuse.md)。
+显式瞬时额度 `request-params.maxTokens` 与 `phase.maxPromoteSteps` 沿数字原文草稿和规则事务保存，合法范围均为正安全整数。非法或未完成原文不发保存请求，折叠保留草稿。该额度与同动作的patch/unset.maxTokens及replace互斥；原有patch组合不迁移。`pre-step-filter.instructionHint` 是普通规则中的可编辑完整模板。请求额度运行接缝和指令字节预算分别取资格，详见[引擎指南](engine-reuse.md)。
 
 ### 规则事务与互斥
 
@@ -211,7 +211,7 @@ module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块i
 
 文件读取额度归普通 `host-control/file-read-limits` 动作的 `value`，不进入部署settings或独立参数表。三个可选正安全整数复用原 `RuleParameterFields` 数字原文、错误草稿、版本保存和完整候选校验；清空只撤销该字段，三项全空仍由编译拒绝，不发布为0。标签保持简短，单位及继承说明使用原hint。实际接入边界见[文件读取上限](engine-reuse.md#文件读取上限)。
 
-结果片段配置归 `module.yml.rules` 的普通 `tool-result/action: edit-text` 动作，`edits` 保存非空数组及每项的 `region/match/text`；空替文为有效删除，空匹配由完整候选校验拒绝。装配替句的 `match` 可为非空字面候选数组，候选仍按明确原文匹配，不转换为正则或逗号拼接。两者沿原规则CAS、YAML Document、切片、导入导出与发布链保存，没有独立结果配置文件或保存端点。结果/Web/交付规则已随内容模块移出，引擎侧只保留动作与保存契约；运行支持边界见[工具结果与Web功能段](engine-reuse.md#工具结果与web功能段)。
+结果片段配置归 `module.yml.rules` 的普通 `tool-result/action: edit-text` 动作，`edits` 保存非空数组及每项的 `region/match/text`；空替文为有效删除，空匹配由完整候选校验拒绝。装配替句的 `match` 可为非空字面候选数组，候选仍按明确原文匹配，不转换为正则或逗号拼接。两者沿原规则CAS、YAML Document、切片、导入导出与发布链保存，没有独立结果配置文件或保存端点；运行支持边界见[工具结果与Web功能段](engine-reuse.md#工具结果与web功能段)。
 ## 自定义模型工具
 
 customTools 独立于规则/变量。`compileCustomTool` 使用官方 DSL 转换再交 `tool-definition.mjs` 校验；身份、Schema、执行器和输出都在保存/装配前检查。保存保留作者 DSL，运行内联编译工具，不另写工具产物目录。
@@ -242,25 +242,33 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 
 旧私有记忆/角色来源标记阻止原生分享与导入；不能删掉标记后发出潜在记忆。先备份并明确拆分私有 memory.md 和可分享规则，再由用户授权转换。未知附件保留，不清理旧用户目录。
 
-## 书房数据预览与导入
+<a id="书房数据预览与导入"></a>
 
-用户在 Web 或 TUI 的命令入口直接执行 `/prompt-tool data-import <JSON>`。目标必须是已安装的用户模块，`moduleId` 在每次请求中显式给出；来源为用户选择的书房根目录，`paths` 逐个指定该根下的普通文件，不递归扫描来源。
+## 模块私有数据预览与导入
+
+用户在 Web 或 TUI 执行 `/prompt-tool data-import <JSON>`。目标必须是已安装的用户模块，每次显式传 `moduleId`；来源根由用户选择，`paths` 逐个指定根下普通文件，不递归扫描。以下示例的 `your_module_id` 均替换为实际目标模块 ID。
 
 ```text
-/prompt-tool data-import {"moduleId":"soul","sourceDirectory":"D:/my-study","paths":["02-墨.jsonl","10-宪章/rules.md"]}
+/prompt-tool data-import {"moduleId":"your_module_id","sourceDirectory":"D:/my-data","paths":["notes.jsonl","rules.md"]}
 ```
 
 预览返回 `revision` 和 `entries`，每项有目标路径与 `create`、`skip` 或 `conflict` 状态，预览不写盘。确认后保持原请求不变，加上 `"expectedRevision":"<预览返回的 revision>"` 再执行。只创建缺失项；同内容项跳过，冲突项报告并保留目标，不提供隐式覆盖。来源内容、选择范围或整个目标目录在预览后发生变化均拒绝应用，须重新预览。
 
 目标统一落在模块的 `data/`。来源根下的旧名 `02-墨.jsonl` 集中映射为 `data/02-soul.jsonl`；目标已存在旧账本时拒绝生成第二份账本，须先明确处理旧数据。原始来源始终保留。路径越界、链接、非普通文件、非法 UTF-8、单文件超过 8 MiB、总量超过 64 MiB 或条目超过 2048 个均拒绝。
 
-新建书房使用 `{"moduleId":"soul","initialize":true}` 选择该模块 `assets/manifest.yml` 的目录与模板文件，同样先预览再带 `expectedRevision` 应用，不能同时给外部来源。初始化只补缺失，不覆盖已修改模板；它不凭空创建清单 `checks` 中的账本，也不把检查通过等同于初始化完成。这里的 `data/AGENTS.md` 是模块私有资产，不是工作区指令文件。
+初始化使用 `{"moduleId":"your_module_id","initialize":true}` 选择目标模块 `assets/manifest.yml` 的目录与模板文件，同样先预览再带 `expectedRevision` 应用，不能同时给外部来源。只补缺失，不覆盖已修改模板；不凭空创建清单 `checks` 中的文件，检查通过也不等于初始化完成。`data/AGENTS.md` 是模块私有资产，不是工作区指令文件。
 
 `host/module-data-import.ts` 统一拥有预览与应用；完整候选在现有模块目录事务中生成，锁内复核版本后交换，准备失败保留原目录。默认模块导出仍排除整个 `data/`。这条显式命令不会改变 `module_manifest` 既有的 next/check/apply 语义。check 本身保持只读且实时检查；规则条件 `manifest: { ok: boolean }` 通过 `src/host/module-manifest-check.ts` 单独缓存结果 1000ms，manifest 的 mtime/size 变化提前失效，到期后首次求值完整重检。显式 check 不刷新规则缓存，也不写变量。独立 rule-engine 入口不提供该读取器；三值与入口契约见 [引擎复用](engine-reuse.md#规则条件与动作边界)。
 
-## 模块归属与验证
+<a id="模块归属与验证"></a>
 
-### Soul账本与派生快照
+## 模块数据与能力接口
+
+<a id="soul账本与派生快照"></a>
+
+### 账本、授权与动态上下文
+
+以下接口按目标模块复用，不要求模块 ID 为 `soul`。`soul-ledger`、`soul-maintenance`、`soul_ledger`、`soul_state`、`soul-self` 等是现有能力、工具或内容源标识，保留真实名称。模块声明相应能力后，工具仍须显式定位 `moduleId`；示例 ID 不授予读写权限。
 
 #### 账本读写与收口
 
@@ -278,7 +286,7 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 
 通用 `module_file_append` 拒绝向 `data/02-soul.jsonl` 和旧名 `data/02-墨.jsonl` 追加，包括大小写变体。显式数据导入仍须预览，保留来源并报告目标冲突。
 
-新 close 数据需要账本 v2 读取器；旧 `9007bf28` 仍会累计原 promise 且允许写入，兼容标记不能保护旧二进制。回滚先撤 `soul-ledger` 写能力及旧 SELF/提醒贡献，确认后再退代码；保留全部 close 行。内置种子只补缺失，不自动改用户副本、活变量或私有数据。
+close 数据需要账本 v2 读取器；旧版会忽略收口且仍可写入，兼容标记不能保护旧二进制。回滚先撤账本写能力及旧动态上下文、提醒贡献，再退代码；保留全部 close 行，不自动改用户副本、活变量或私有数据。
 
 #### 会话状态与升级
 
@@ -291,33 +299,35 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 | `check` | 只读报告文件、账本、SELF 候选/投递、索引与维护/恢复证据；unknown/not-observed 不表示通过 |
 | `check` + `includeUpgrade: true` | 仅知识库未绑定时可展开完整升级正文；已绑定或授权不可用时拒绝，须走下述真实用户入口 |
 
-已有副本由真实用户执行 `/prompt-tool upgrade {"moduleId":"soul","action":"preview"}`，审阅规则、能力参数和有效正文变化。确认时改为 `action: "confirm"`，原样带回 `expectedRevision`、`expectedSourceDigest`、`expectedPreviewRevision`。目标、资产或知识库控制状态变化使预览失效；用户修改的正文或不同参数报告冲突，不强覆盖。模型不能代替确认，绑定后的完整升级包也不能经模型工具读取。
+受控升级由真实用户执行 `/prompt-tool upgrade {"moduleId":"your_module_id","action":"preview"}`，审阅规则、能力参数和有效正文变化。此入口只处理匹配受支持规则基线的候选，不是任意自定义模块的自动迁移器。确认时改为 `action: "confirm"`，原样带回 `expectedRevision`、`expectedSourceDigest`、`expectedPreviewRevision`。目标、资产或知识库控制状态变化使预览失效；用户修改的正文或不同参数报告冲突，不强覆盖。模型不能代替确认，绑定后的完整升级包也不能经模型工具读取。
 
 确认复用正式安装与重建，保留私有数据、账本、骨架、未知资产，以及知识库授权、项目、记录、学习、持续记忆开关和已消费辅助额度。模块内知识根随受控升级交接目录身份，普通目录替换仍拒绝。状态保存失败恢复原模块与绑定，可重新预览；存储结果或目录恢复无法确认时保留现场及备份，按错误中的路径核对，不重新接入覆盖状态。已持久化但重建失败返回 `publicationPending:true`，修复后重新装配。升级不替代接入、项目选择或持续记忆启用，也不自动更新已有副本或重启 DSH。
 
 mark 的唯一所有者是通用会话键 `soul.mark`，`soul_state` 兼容接口、`module_variables` 与模板共用限长。`recordedAt` 来自该键的宿主更新时间：同值写不刷新，其他键变化不改变 mark 时刻，但会使整表旧 revision 失效。
 
-旧 `data/.soul/state-<hash>.json` 仅由会话变量 owner 在新记录不存在时兼容读取。首次合法会话写将旧 mark 与本次变更一次提交到官方域，保留原件；新记录存在后不再读旧值。旧文件损坏或版本变化则拒绝迁移，不以空表覆盖。Soul 运行时和状态工具须接入 owner getter；依赖不可用时拒绝读取，不自行回读旧文件。
+旧 `data/.soul/state-<hash>.json` 仅由会话变量 owner 在新记录不存在时兼容读取。首次合法会话写将旧 mark 与本次变更一次提交到官方域，保留原件；新记录存在后不再读旧值。旧文件损坏或版本变化则拒绝迁移，不以空表覆盖。运行时与状态工具须接入 owner getter；依赖不可用时拒绝读取，不自行回读旧文件。
 
 #### 知识库授权与持续记忆
 
 知识库默认未接入。以下管理操作只由真实用户执行 `/prompt-tool knowledge <JSON>`，每次显式传 `moduleId`；模型不能代替授权或学习确认。首次预览示例：
 
 ```text
-/prompt-tool knowledge {"moduleId":"soul","action":"preview","read":[],"write":["general","projects"]}
+/prompt-tool knowledge {"moduleId":"your_module_id","action":"preview","read":[],"write":["general","projects"]}
 ```
 
 | 用户操作 | 请求与版本 | 行为与失败边界 |
 |---|---|---|
-| 接入预览、确认 | `preview`；保持请求改为 `confirm`，携预览返回的 `expectedRevision` | 默认原模块书房，可用绝对 `root` 选其他目录或已存在父目录下的新根；`read` 显式列旧文件，`write` 只选 general/projects。预览只读元数据，最多 2000 项、8 层；内容、模块或根身份变化须重预览。仅补缺失目录，不搬迁、覆盖账本、SELF、状态或未知文件 |
+| 接入预览、确认 | `preview`；保持请求改为 `confirm`，携预览返回的 `expectedRevision` | 默认目标模块的数据根，可用绝对 `root` 选其他目录或已存在父目录下的新根；`read` 显式列旧文件，`write` 只选 general/projects。预览只读元数据，最多 2000 项、8 层；内容、模块或根身份变化须重预览。仅补缺失目录，不搬迁、覆盖账本、SELF、状态或未知文件 |
 | 查询、选择项目 | `status` / `sources`；`project` 携绝对 `projectDirectory` 与当前绑定 `expectedRevision` | status 区分未接入、已绑定、不可用；sources 返回来源、待归类资料和版本。项目绑定实际会话：Git 按真实 common-dir，同仓 worktree 共享，独立克隆不共享；非 Git 按所选目录。后续 cwd 变化不改归属，已绑定会话不静默换项目 |
 | 登记旧资料或历史 | `source-preview` 携 read 内 `path`，或 `sessionId` + 明确 `seqs`；指定 `scope: general/project`。保持请求改为 `source-confirm`，携预览的 `expectedRevision` | 旧材料须手选，不自动纳入；版本或来源变化须重预览 |
 | 撤销来源授权 | `revoke` 携 `sourceId`、当前绑定版本 | 立即撤权，保留原文；受影响的摘要和学习停止注入 |
-| 启停持续记忆 | 先绑定项目，再以 `enable` / `disable` 携当前绑定版本 | enable 从当前会话及新挂载 Soul 的事件界线开始，只处理之后的新材料；disable 停新处理及新闭环学习、自动整理贡献，保留原文、合法查询与审计；重启用只恢复来源仍有效的贡献 |
+| 启停持续记忆 | 先绑定项目，再以 `enable` / `disable` 携当前绑定版本 | enable 从当前会话及新挂载能力的事件界线开始，只处理之后的新材料；disable 停新处理及新闭环学习、自动整理贡献，保留原文、合法查询与审计；重启用只恢复来源仍有效的贡献 |
 | 查询、确认学习 | `learning-list`；`learning-confirm` 携学习条目 id 作为 `sourceId`、当前绑定版本 | 显示来源、范围、变更；仅有效候选可确认，core/locked 始终须用户确认，子任务不能确认或管理用户学习 |
 | 撤回、忘记学习 | `learning-withdraw` / `learning-forget`，携条目 `sourceId`、当前绑定版本 | 撤回仅恢复此前仍有效的学习；忘记停用目标及后续依赖。保留原始证据和无关学习，不收回已投递文本 |
 
 绑定由官方持久域按来源模块保存，不随导出、复制或导入转移；不可用时不切其他根。接入不自动启动整理、学习或跨项目授权。根重绑须重新选来源，旧引用不复活；搜索与回取都复核本机根、路径、版本及范围，普通文件工具不能绕过授权。
+
+`module_search` 搜索已授权模块资料和历史，支持 `mode: timeline`；`module_open` 按返回的引用重验并回取原文。检索可做全半角、大小写、千分位归一化及模块声明的有界近义匹配，命中标明方式；会话索引仅含公开正文，排除插件注入、推理、流式片段与本插件工具回执，当前回合自动来源的助手/工具输出不参与即时召回，原日志不改写。
 
 持续记忆中，正式账本写入关联真实来源、项目、根用户 MessageId 和稳定条目，原文成功后登记待整理；重试不重复追加。登记失败单独返回 `persisted:true`、`derived.state:"failed"`，恢复只补登记。`soul_state.recording` 分别报告原始成功、待整理和派生失败。子代理只继承派发时的任务范围与根用户输入，父会话后续材料不自动扩权；工具和自动 followup 不成为新用户根。
 
@@ -340,15 +350,17 @@ mark 的唯一所有者是通用会话键 `soul.mark`，`soul_state` 兼容接�
 | 额度 | 默认与失败行为 |
 |---|---|
 | 次数 | 每个真实根用户 MessageId，主子合计最多一次；调用前持久预留，失败、取消、重放或恢复不返次数 |
-| 输入与输出 | 4096 tokens 是选材目标，不截断完整材料或引用；输入明确标识为估算，预留估算输入与最多 1024 输出 |
-| 累计与时限 | 根会话累计 32768 tokens / 120 秒，单次生成最多 20 秒；可靠 usage 含缓存读写，缺失或失败保留预留，实际超限停后续辅助，估算可能低估 |
-| 取消与积压 | 不占长维护锁；新输入、原生取消、模块释放、授权或来源变化请求取消并拒绝迟到候选，已消费资源不能收回。连续三个新用户回合积压集中提示，清空后重置 |
+| `assistedInputTarget` / `assistedOutputTokens` | 4096 tokens 是选材目标，不截断完整材料或引用；输入明确标识为估算，预留估算输入与最多 1024 输出 |
+| `assistedSessionTokens` / `assistedSessionMs` / `assistedTimeoutMs` | 根会话累计 32768 tokens / 120 秒，单次生成最多 20 秒；可靠 usage 含缓存读写，缺失或失败保留预留，实际超限停后续辅助，估算可能低估 |
+| 取消与 `assistedBacklogTurns` | 不占长维护锁；新输入、原生取消、模块释放、授权或来源变化请求取消并拒绝迟到候选，已消费资源不能收回。默认连续三个新用户回合积压集中提示，清空后重置 |
 
 `soul_state` 和用户 `knowledge status` 的 `assistedConsolidation` 分别显示候选/发布、失败原因、预留/实际用量和积压。待整理不代表已生成摘要或已学会。
 
 恢复旧版本前，用户先在绑定项目的会话执行 `disable` 并带当前绑定版本，确认停止新处理；再撤新写能力、SELF 和提醒贡献，等待辅助请求取消后切换版本。保留历史，不静默迁移或回滚新控制格式；账本 v2 的旧二进制风险见前文，不能删除 close 行迁就旧版。
 
-#### SELF 装配与预算
+<a id="self-装配与预算"></a>
+
+#### 动态上下文装配与预算
 
 SELF 按知识库绑定状态取材。绑定后，旧资料待归类时暂停旧自动 SELF/提醒，保留骨架并显示待归类；账本 list 仅返回当前获授权的新记录。SELF 使用骨架、当前授权有效学习与真实身份；持续记忆启用时再加最多三条本项目有效未结事项及最近交接，已收口不重开，关闭或撤权立即停贡献，旧账本与快照不复活。启用模板求值的 persona 可用 `{{runtime.get::soul.learning}}` 读取同一投影。
 
