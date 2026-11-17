@@ -1,5 +1,7 @@
 # 统一规则引擎复用指南
 
+Soul 辅助整理在开始时从知识 owner 固定控制凭据；流式片段仅核对凭据、owner 与模块身份及真实根用户输入，不读取完整绑定或重算全部历史摘要。持久化授权、项目、启停代次、相关记录／学习／发布变化使凭据失效；纯 cursor 推进及无关自动索引不误取消。真实根输入在会话事件到达时立即取消，不等待异步观察。取消钩子与来源 watcher 保留，材料消费和提交仍完整复核授权与原始版本；watcher 不保证文件正文同步版本。
+
 `compaction-tool-result-pruner` 按宿主解析的官方构造器身份发现全部存活 Fiber，并在各 owner 自己的 Context 等待、门控原 Pruner；正式 standard 组合内层 isolate 不影响发现。就绪与停用资格按当前 Agent 的官方 scope 和真实 session 身份核对，其他 Agent 的 owner 不提供就绪。晚到或重挂后在后续正常装配重判，释放立即使旧门控失活；关闭规则恢复官方裁剪，第三方外层包装保留。不复制裁剪算法，也不修改预设。
 
 `host-control / session-rewind-todos` 独立默认开启，按回退提交时真实 Agent 的规则判定。开启时预览及历史标记提交前核对当前作用域的官方 `todos` 投影；owner 未注册或释放时明确拒绝，正常暂无清单（null）允许，恢复后在下次正常请求重判，关闭时不依赖 todo owner。历史标记提交后，读取官方 `todos` standing-plan 投影（`turn/start` 后无清单即不写），仅将 completed 改为 pending，保持 in_progress、pending、正文与顺序；沿官方 Session 的 `todo/write` 全量事件持久化并更新同一投影，不建立第二状态库。历史重放只解释，不补写待办。标记已提交而待办写入失败时返回带 markerId 的失败目标，明确历史已提交；原边界重试只补待办，不重复回退，已进入新轮则拒绝。关闭、释放不逆转已写结果，后续不再更新。
