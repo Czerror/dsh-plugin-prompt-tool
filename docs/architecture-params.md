@@ -1,26 +1,26 @@
 # 后端参数框架
 
-内置核心破限、无限制与红队模块仍由用户启用；其规则默认开启，只有核心破限的互斥审批旁路说明默认关闭，普通审批说明默认开启。模块停用再启用保留用户逐条关闭的选择。补种仍只处理缺失目录，包升级不自动重置已有副本；一次性同步已有规则状态必须由用户明确发起。
+本页说明模块定义、持久变量、人设、版本事务与保存边界。规则语义以 `engine/rule-spec.mjs` 为准，共享参数以 `src/shared/engine-params.ts` 为准，bridge 以 `src/shared/bridge-contract.ts` 为准。
 
-回退待办使用独立普通 `host-control / session-rewind-todos`，仅接受 `value: true` 且无次数预算，内置卡默认开启。它不隐式启用会话回退；按当前目标 Agent 规则条件生效，复用既有 rewind bridge 的逐目标失败与重试载荷。待办正文不进入 module.yml 或 settings，持久 owner 仍为官方 Session 的 `todo/write`。
+内容模块已移出本仓库，具体卡片和初值由内容来源决定。模块停用再启用保留逐条启停选择；补种只处理缺失目录，包升级不重置已有副本。
 
-会话回退使用普通 `host-control / session-rewind` 动作，仅接受 `value: true` 且不接受次数预算，内置卡默认开启。资格沿当前 Agent 规则受众和条件求值；关闭只阻止后续回退，已提交标记仍按持久操作解释。新 bridge `rewind` 不接受模块主语，字段由 shared 契约统一定义，phase 为 `preview` / `commit` / `retry`，只接会话身份、模式、请求去重身份、页面凭据及固定边界，不接受任意事件范围或子目标列表。
+回退待办使用 `host-control/session-rewind-todos`，仅接受 `value: true` 且无次数预算。它不隐式启用会话回退；按当前目标 Agent 规则条件生效，复用 rewind bridge 的逐目标失败与重试载荷。待办正文仍归官方 Session 的 `todo/write`，不进入 module.yml 或 settings。
 
-Messages 当前系统正文保存为普通 `host-control/messages-current-system`，仅接受 `value: true`，默认开启，不接受次数预算或非默认时机。规则启停、受众与嵌套分支沿现有事务；不保存正文副本，不隐式开启 `current-system-snapshot`。依赖诊断沿 `host:messages-current-system`，已有用户模块不补卡或覆盖。实际接入范围见[引擎指南](engine-reuse.md)。
+会话回退使用 `host-control/session-rewind`，仅接受 `value: true` 且无次数预算。资格沿当前 Agent 规则受众和条件求值；关闭只阻止后续回退，已提交标记仍有效。bridge `rewind` 的 phase 为 `preview` / `commit` / `retry`，只接会话身份、模式、去重身份、页面凭据及固定边界，不接受模块主语、任意事件范围或子目标列表。
 
-请求身份首段与系统角色沿普通规则分别保存为 `host-control/oauth-identity-prefix`、`host-control/provider-system-role`，唯一值为 `value: true`。两卡独立启停与受众判定，不接受投递次数预算或 outermost 排序；已有用户模块不追加或覆盖默认卡。动作不保存第二份正文、认证或请求头，运行身份只来自已接受工具步骤与实际 prepared adapter call。缺目标诊断分别使用 `host:oauth-identity-prefix`、`host:provider-system-role`，详情见[引擎指南](engine-reuse.md)。
+Messages 当前系统正文使用 `host-control/messages-current-system`，仅接受 `value: true`，不接受次数预算或非默认时机。不保存正文副本，不隐式开启 `current-system-snapshot`；依赖诊断为 `host:messages-current-system`。实际接入范围见[引擎指南](engine-reuse.md)。
 
-系统段与消息形状容错归普通 host-control/message-shape-guards 动作，唯一参数为 value: true，默认开启。它不接受次数预算或 outermost 排序；启停、受众、嵌套分支、规则版本、复制导出和显式依赖诊断沿原规则事务。已有用户模块不追加或覆盖内置卡，作用范围见[引擎指南](engine-reuse.md)。
+请求身份首段与系统角色分别使用 `host-control/oauth-identity-prefix`、`host-control/provider-system-role`，唯一值为 `value: true`。两卡独立启停与受众判定，不接受次数预算或 outermost 排序。不保存正文、认证或请求头副本，运行身份只来自已接受工具步骤与实际 prepared adapter call；缺目标诊断分别为 `host:oauth-identity-prefix`、`host:provider-system-role`。
 
-每步当前系统正文归普通 `host-control/current-system-snapshot` 动作，唯一参数为 `value: true`，默认开启，不接受投递次数预算或 outermost 排序。正文仍归既有 inject-text / persona 声明，动作不复制或持久化第二份正文；启停、受众、分支、保存版本沿普通规则路径。已有用户模块不追加或覆盖内置卡。
+系统段与消息形状容错使用 `host-control/message-shape-guards`，唯一值为 `value: true`，不接受次数预算或 outermost 排序。它与上述动作共用规则启停、受众、分支、版本、复制导出与依赖诊断，不另建保存通道。
 
-process 规则另支持 `command-confine-passthrough: true`：每模块发布一次，仅影响后续命令 confine 调用，与构造软默认独立；不接受 Agent 私有条件。内置卡默认开启，已有用户模块不追加或覆盖。
+每步当前系统正文使用 `host-control/current-system-snapshot`，唯一值为 `value: true`，不接受次数预算或 outermost 排序。正文仍归 inject-text / persona 声明，不复制或持久化第二份正文。
 
-规则正文包含可选 `executionScope: agent | process`，省略时为 agent；该字段沿既有完整规则正文、切片与模块复制导出保存，启停仍归原 `_settings.yml`。process 规则仅保存支持的无条件构造软默认，不接受 Agent 私有条件。内置三个软默认卡初始开启，只补缺失模块，已有用户定义不追加或覆盖；作用时机与原生新会话继承见[引擎指南](engine-reuse.md)。
+process 规则另支持 `command-confine-passthrough: true`：每模块发布一次，仅影响后续命令 confine 调用，与构造软默认独立；不接受 Agent 私有条件。
 
-委派额度归普通 `host-control/delegation-limits` 的 `value`：可选 `maxDepth`（非负安全整数）与 `askTimeout`（1–2147483秒），至少一项。复用规则数字原文、错误草稿与版本保存，清空撤销该字段，空对象与非法数字拒绝发布；内置10/300只是可编辑初值。
+规则正文的 `executionScope: agent | process` 省略时为 agent，沿完整定义、切片与复制导出保存，启停投影在 `_settings.yml`。process 规则只接受支持的无条件构造软默认及上述命令穿透，不接受 Agent 私有条件；作用时机与新会话继承见[引擎指南](engine-reuse.md)。
 
-本页说明模块定义、持久变量、人设、版本事务与保存边界。规则语义以 `engine/rule-spec.mjs` 为准，共享参数以 `src/shared/engine-params.ts` 为准，bridge 以 `src/shared/bridge-contract.ts` 为准；文档不建立第二份字段校验器。
+委派额度归 `host-control/delegation-limits` 的 `value`：可选 `maxDepth`（非负安全整数）与 `askTimeout`（1–2147483 秒），至少一项。复用规则数字草稿与版本保存；清空撤销该字段，空对象与非法数字拒绝发布。
 
 ## 原生格式与持久状态
 
@@ -262,33 +262,62 @@ AGENTS.md/CLAUDE.md 及 local 变体属于用户文件。正文就地保存；�
 
 ### Soul账本与派生快照
 
-`soul-ledger` 提供正式工具 `soul_ledger`，每次显式传 `moduleId`；`action: list` 可按 `type` 和 `limit` 读取，`action: append` 接收 `type` 与 `概要` 或旧 `text` 之一，以及可选 `ref`／`feel`。支持 lead、promise、fact、shelved、gain、loss、persona、container；作者和时间由真实执行会话与宿主生成，不接受调用方覆盖。lead 通过官方 `tools/pre-execute` 请求审批；promise 必须由最后一条 lead 的署名会话追加。读旧 text 时投影为概要，不重写原行。
+#### 账本读写与收口
 
-追加沿模块锁串行，账本总量 8 MiB、单字段 8 KiB；读取默认30条、最多100条和64 KiB输出。坏历史、链接、取消和超限都拒绝，不重置为新账本。通用 `module_file_append` 对 `data/02-soul.jsonl` 与旧名 `data/02-墨.jsonl`（含大小写变体）拒绝追加；显式用户数据导入仍按预览权限保留原件与目标冲突。
+`soul-ledger` 提供 `soul_ledger`，每次显式传 `moduleId`。作者和时间由真实会话与宿主生成，不接受覆盖。工具操作如下：
 
-用户骨架在 `data/SELF.src.md`，诊断快照在 `data/.soul/SELF.md`。每步 SELF 直接读取当前骨架、账本投影、真实会话身份/时钟和索引最近观测；维护关闭或快照缺失/陈旧不阻断当前事实。读取内容版本及历史分界最多重验三次，持续变动报告不可用。快照仅作诊断或明确带来源时间与安全原因的降级，不作为当前事实；权限、路径或身份拒绝不允许借旧快照绕过。
+| action | 输入与权限 | 结果与限制 |
+|---|---|---|
+| `list` | `type`、`limit`；可选 `view: pending/open/pending-review`、`cursor` | 默认 30 条，最多 100 条、64 KiB；游标绑定内容版本与过滤条件；旧 `text` 投影为概要，不改原行 |
+| `append` | `type`，`概要` 或旧 `text` 二选一，可选 `ref`／`feel` | lead 经官方 `tools/pre-execute` 审批；promise 仅最后一条 lead 的署名会话可追加 |
+| `close` | `targetId/outcome/reason/ref?`；outcome 为 completed/cancelled，reason 非空 | promise 仅当前 lead 可关闭；shelved 原作者或当前 lead 可关闭；同结果幂等，冲突拒绝 |
 
-派生与快照复用同一正文实现，屏蔽已识别的凭据格式后按 UTF-8 字节预算（默认12288）；骨架与身份不静默截断，事项只给有界摘要、精确总数和未展示数。快照使用 CAS、临时文件和 rename，最终发布前重验来源，失败保留旧版。`rule-engine` 内置 `strategy: placeholder, fill: soul-self` 负责实际异步装配，模块无需策略 JS；候选渲染和真实投递分开观测。
+条目类型为 lead、promise、fact、shelved、gain、loss、persona、container。收口只追加，不改旧行；暂时搁置仍未结。写入按模块锁串行，账本上限 8 MiB、单字段 8 KiB；坏历史、链接、取消或超限均拒绝，不重置账本。
 
-`soul_ledger list` 增加 `view: pending/open/pending-review` 和 `cursor`，游标绑定内容版本及过滤条件。条目 `id` 由模块规范路径、元数据固化的逻辑身份和原行内容链派生，追加及同路径正式导入复制不改变旧引用；inode不是持久身份。模块改名或部署根迁移不保证旧引用，不能把跨模块复制当同一账本。首次合法写入前在锁内建立 `data/.soul-ledger-v2.json` 历史分界与身份；读取不初始化，历史 promise/shelved 明确待核对。`close` 接受 `targetId/outcome/reason/ref?`，outcome 为 completed/cancelled，reason 非空；promise 仅当前 lead，shelved 原作者或当前 lead 可关闭，同结果重复幂等、冲突结果拒绝。收口只追加，旧行不改，暂时搁置仍未结。
+首次合法写入前，在锁内建立 `data/.soul-ledger-v2.json` 的历史分界与逻辑身份；读取不初始化，历史 promise/shelved 标为待核对。条目 `id` 由模块规范路径、逻辑身份和原行内容链派生，追加及同路径正式导入复制不改变旧引用；inode 不作持久身份。模块改名、部署根迁移不保证旧引用，跨模块复制不是同一账本。
 
-`soul-ledger` 同时挂载 `soul_state`。status 读取真实当前会话；mark 写 1–512 字符、最多2048字节的短状态，携 `expectedRevision`（首次 null），按模块与真实会话隔离并原子保存，卸载不删除。check 只读报告文件、账本、SELF 候选/投递、索引、维护/恢复证据；unknown/not-observed 不冒充全绿。标记时刻、系统活动时刻和快照时刻分别呈现。check 显式 `includeUpgrade: true` 才展开 upgrade：完整规则与新增能力配置、近义资产、现有可交换文件；内部注释/未知字段保持，共享alias连带变化或用户不同配置明确拒绝。完整files须交 `module_import` 模型工具预览确认（保留data/memory/skills），携新凭据应用并重建，不用普通覆盖导入替代。
+通用 `module_file_append` 拒绝向 `data/02-soul.jsonl` 和旧名 `data/02-墨.jsonl` 追加，包括大小写变体。显式数据导入仍须预览，保留来源并报告目标冲突。
 
 新 close 数据需要账本 v2 读取器；旧 `9007bf28` 仍会累计原 promise 且允许写入，兼容标记不能保护旧二进制。回滚先撤 `soul-ledger` 写能力及旧 SELF/提醒贡献，确认后再退代码；保留全部 close 行。内置种子只补缺失，不自动改用户副本、活变量或私有数据。
 
-mark 现在是通用会话键 `soul.mark`，`soul_state` 保留兼容接口并复用同一 owner；通过 module_variables 或模板写该键也执行同一限长。recordedAt 来自该键的宿主更新时间，同值写不刷新，其他键变化不改变 mark 时刻，但会使整个会话表的旧 revision 失效。旧 `data/.soul/state-<hash>.json` 仅读取兼容，首次合法会话写将旧 mark 与本次变更一次提交到官方域并保留原件；新记录存在后不再读取旧值。旧文件损坏或版本变化拒绝迁移，不以空表覆盖。
+#### 会话状态与升级
 
-Soul 运行时与状态工具必须显式接入会话变量 owner 的 getter；依赖不可用时拒绝读取当前状态，不直接回读旧文件。旧文件兼容读取仅由会话变量 owner 在新记录不存在时执行。
+`soul-ledger` 同时挂载 `soul_state`，分别呈现标记、系统活动与快照时刻。操作如下：
 
-注入预算从模块事实读取，mtime/size 变化提前更新，最长缓存1000ms；读取或校验失败沿用最近有效值，无历史值回默认。这只缓存预算，不缓存当前骨架/账本事实。定义内容暂时损坏不阻断安全只读来源，但路径、文件种类和可读声明 ID 仍逐次校验，最终输出仍受预算限制。维护与注入共用预算校验，回退与刷新口径见 [SELF动态内容与维护心跳](engine-reuse.md#self动态内容与维护心跳)。
+| 操作 | 行为与边界 |
+|---|---|
+| `status` | 读取真实当前会话 |
+| `mark` | 写 1–512 字符、最多 2048 字节的短状态；须带 `expectedRevision`，首次为 null；按模块与会话隔离，原子保存，卸载不删除 |
+| `check` | 只读报告文件、账本、SELF 候选/投递、索引与维护/恢复证据；unknown/not-observed 不表示通过 |
+| `check` + `includeUpgrade: true` | 才展开 upgrade，包含完整规则、新增能力配置、近义资产与现有可交换文件；保留注释和未知字段，共享 alias 连带变化或用户配置不同则拒绝 |
+
+升级的完整 files 须交 `module_import` 模型工具预览确认，保留 data/memory/skills，再携新凭据应用并重建；不能用普通覆盖导入替代。
+
+mark 的唯一所有者是通用会话键 `soul.mark`，`soul_state` 兼容接口、`module_variables` 与模板共用限长。`recordedAt` 来自该键的宿主更新时间：同值写不刷新，其他键变化不改变 mark 时刻，但会使整表旧 revision 失效。
+
+旧 `data/.soul/state-<hash>.json` 仅由会话变量 owner 在新记录不存在时兼容读取。首次合法会话写将旧 mark 与本次变更一次提交到官方域，保留原件；新记录存在后不再读旧值。旧文件损坏或版本变化则拒绝迁移，不以空表覆盖。Soul 运行时和状态工具须接入 owner getter；依赖不可用时拒绝读取，不自行回读旧文件。
+
+#### SELF 装配与预算
+
+用户骨架为 `data/SELF.src.md`，诊断快照为 `data/.soul/SELF.md`。每步 SELF 读取当前骨架、账本投影、真实会话身份/时钟和索引最近观测；维护关闭或快照缺失、陈旧不阻断读取。内容版本与历史分界最多重验三次，持续变动则报告不可用。
+
+快照只作诊断或降级，降级须标明来源时间与安全原因，不能冒充当前事实；权限、路径或身份拒绝不能借旧快照绕过。派生与快照复用正文实现，屏蔽已识别凭据后按 UTF-8 字节预算输出，默认 12288 字节；骨架与身份不静默截断，事项提供有界摘要、精确总数和未展示数。
+
+快照经 CAS、临时文件和 rename 保存，发布前重验来源，失败保留旧版。`rule-engine` 内置 `strategy: placeholder, fill: soul-self` 异步装配，模块无需策略 JS；候选渲染和真实投递分别观测。
+
+预算取自模块事实，缓存最长 1000 ms，mtime/size 变化提前更新；读取或校验失败沿用最近有效值，无历史值则回默认。缓存不包含骨架或账本事实。定义暂时损坏不阻断安全只读来源，但仍逐次校验路径、文件种类和可读声明 ID，并限制最终输出。维护与注入共用预算校验，详见 [SELF动态内容与维护心跳](engine-reuse.md#self动态内容与维护心跳)。
+
+#### 恢复额度与索引
 
 `generation-recovery` 额度保存在插件存储根的 `generation-recovery/<会话ID摘要>.json`，保存已消费 turn/step 身份及累计 used；锁内去重后原子替换，重挂与重启不清零，损坏文件拒绝重置。它不进入模块导出，也不修改会话日志。索引是可重建的派生内存状态，原账本与宿主日志仍为权威来源。
+
+#### 实现归属与验证
 
 | 所有者 | 文件 |
 |---|---|
 | 完整定义/切片 | host/module-slices.ts、module-rules.ts |
 | 安装事务 | host/module-install-transaction.ts |
-| 两级变量 | host/module-variables.ts、shared/module-variables.ts |
+| 模块/全局变量与会话域 | host/module-variables.ts、shared/module-variables.ts；host/session-variables.ts、runtime/module-variable-adapter.ts |
 | 模块私有文件 | host/module-files.ts、module-file-path.ts；装配清单 host/module-manifest.ts |
 | 导入/导出 | host/import-source.ts、module-package.ts、module-install.ts |
 | 装配/人设 | engine/rule-runtime.mjs；runtime/agent-assembly.ts、persona-registration.ts 官方适配 |
@@ -296,4 +325,4 @@ Soul 运行时与状态工具必须显式接入会话变量 owner 的 getter；�
 
 随包内置模块只在用户模块根缺失同名目录时补建；已有副本（含用户修改）不覆盖，也不比较内容。见 [ADR-0015](adr/0015-builtin-module-seed-missing-only.md)。
 
-长期测试只进入注入行为、写盘语义、bridge 载荷、安全拒绝 seam，期望来自独立规格/字面样例，断言公共接口。提交前跑完整 package gates，涉及宿主/包接入补对应验证；一次性探针放隔离临时目录，不能用仅检查旧符号消失的测试替代行为验收。
+验证以公共接口的注入、写盘、bridge 载荷和安全拒绝行为为准；测试准入与交付检查见仓库规则。

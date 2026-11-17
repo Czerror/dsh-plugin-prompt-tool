@@ -15,7 +15,7 @@
 
 ## 安装
 
-需要 DSH `0.2.2-rc.2` 或更高版本。使用 CLI 时，还需要 Node.js `24.9.0+` 和 PATH 中可用的 pnpm；完整要求见 [package.json](package.json)。
+需要 DSH `0.2.2-rc.2` 或更高版本。使用命令行界面（CLI）时，还需要 Node.js `24.9.0+` 和 PATH 中可用的 pnpm；完整要求见 [package.json](package.json)。
 
 ### 桌面端或 Web
 
@@ -45,7 +45,7 @@ dsh --profile web
 3. 在 **主会话** 或 **子代理** 页编辑模块规则，设置正文、条件和动作后保存，按需启用规则。
 4. 需要排查效果时，点击 **诊断一次**，查看规则与当前会话的诊断结果。
 
-导入支持原生 YAML／JSON、目录／ZIP，以及 SillyTavern 预设、PNG／JSON 角色卡和世界书。新建和导入的模块默认不启用；SillyTavern 功能的转换范围见 [导入说明](docs/SillyTavern.md)。
+导入支持 [YAML](https://yaml.org/)／[JSON](https://www.json.org/json-en.html) 模块文件、目录／[ZIP 压缩包](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT)，以及 SillyTavern 预设、[PNG 图像](https://www.w3.org/TR/png/)／JSON 角色卡和世界书。新建和导入的模块默认不启用；SillyTavern 功能的转换范围见 [导入说明](docs/SillyTavern.md)。
 
 保存后再刷新页面，未保存草稿不保证恢复。终端界面可通过 `/prompt-tool` 操作模块，`/settings` 中的 **提示词工具** 提供模块运行总开关。
 

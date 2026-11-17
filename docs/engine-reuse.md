@@ -1,16 +1,40 @@
 # 统一规则引擎复用指南
 
-Soul 辅助整理在开始时从知识 owner 固定控制凭据；流式片段仅核对凭据、owner 与模块身份及真实根用户输入，不读取完整绑定或重算全部历史摘要。持久化授权、项目、启停代次、相关记录／学习／发布变化使凭据失效；纯 cursor 推进及无关自动索引不误取消。真实根输入在会话事件到达时立即取消，不等待异步观察。取消钩子与来源 watcher 保留，材料消费和提交仍完整复核授权与原始版本；watcher 不保证文件正文同步版本。
+本文说明规则编译、宿主接入、模块运行与跨项目复用的契约。插入点载荷见 [九层契约](injection-point-contracts.md)，字段与写盘责任见 [参数框架](architecture-params.md)。
 
-项目身份缓存归知识 owner 生命周期。显式绑定、恢复、cwd 推导及 SELF／检索／学习的异步准备解析 Git，保留超时与取消；同步模板冷读明确不可用。稳定读取只复核真实目录与祖先、`.git`、gitdir／commondir 指针和目标的文件系统身份，不启动 Git；合法主仓库与 worktree 仍共享 common-dir。身份变化立即拒绝并使同一控制凭据失效，异步重验完成前再次核对足迹，释放或目录变化后的迟到结果不能恢复旧授权。
+## Soul 证据准备与资源边界
 
-Soul 启动仅按账本 origin 与持久来源元数据恢复登记，不预载历史正文。知识 owner 的 `withEvidence` 接收真实会话与本次完整模块集合，在装配、维护和写入锁之外准备紧凑引用验证材料；同步 sources、records、learning 和模板只消费当前操作，未准备明确不可用。不同会话的操作互相隔离，嵌套只能复用固定集合；结束、取消或 owner 释放后不可继续消费。原文仍按业务需要读取并复核 raw/public 引用版本及授权，历史 Session、事件和检索投影不作为长期验证缓存。读取失败与取消不删除记录、清 pending 或恢复已撤回学习；辅助生成与等待 Agent 空闲不占用证据操作。
+知识 owner 管理项目身份、证据操作与历史装载。启动仅按账本 origin 和持久来源元数据恢复登记，不预载历史正文。
 
-每个知识 owner 的投影材料上限为 8 MiB JSON UTF-8、100000 条引用。计量口径是去重后的完整 JSON 数组：作用域为 `["s", key]`、历史身份为 `["h", sessionId]`、引用为 `["r", sessionId, seq, sha256, public ? 1 : 0]`，包括字符串转义、数组分隔符与外层括号。操作在锁外一次预约完整集合；不足时按 FIFO 可取消等待，单操作超额明确拒绝并提示缩小范围重试。相同固定材料共享计量，活动材料不会淘汰，最后消费者结束即释放；同一引用发现不同版本时本次操作拒绝并释放预约，来源稳定后可重试，不覆盖其他操作的材料。
+### 授权与项目身份
 
-Soul 准备、检索和辅助整理的原始历史读取共用 owner 的最多两个在途装载槽，同会话在途读取合并，每个消费者独立取消。最后消费者退出才取消底层，不可中断读取实际结束前仍占槽，迟到结果不回填；已完成读取不缓存，最终版本复核仍重新读取。单会话保留 100000 事件、32 MiB JSON UTF-8 限额。上述投影编码预算不保证 Node heap、RSS、原文解码峰值或官方宿主总内存上限；失败或取消不改持久授权、记录、pending 或学习状态，无 Soul 参与的通用检索维持原保护。
+- 辅助整理开始时固定控制凭据；流式片段只核对凭据、owner、模块身份与真实根输入，不读取完整绑定或重算全部历史摘要。持久授权、项目、启停代次及相关记录／学习／发布变化使凭据失效；纯 cursor 推进和无关自动索引不取消操作。
+- 真实根输入到达会话事件即取消，不等异步观察。取消钩子和来源 watcher 保留；消费材料及提交时完整复核授权与原始版本，watcher 不保证正文同步版本。
+- 项目身份缓存随 owner 释放。绑定、恢复、cwd 推导及 SELF／检索／学习的异步准备解析 Git，支持超时与取消；同步模板冷读不可用。稳定读取不启动 Git，只复核真实目录、祖先、`.git`、gitdir／commondir 指针及目标的文件系统身份；合法主仓库与 worktree 共享 common-dir。
+- 身份变化立即拒绝并使控制凭据失效，异步重验完成前再次核对足迹。owner 释放或目录变化后的迟到结果不能恢复旧授权。
+
+### 证据操作与额度
+
+`withEvidence` 接收真实会话和本次完整模块集合，在装配、维护、写入锁之外准备紧凑引用材料。同步 sources、records、learning 与模板只消费当前操作，未准备即不可用。会话间操作隔离，嵌套只复用固定集合；结束、取消或 owner 释放后停止消费。辅助生成及等待 Agent 空闲不占证据操作。
+
+| 资源 | 额度与调度 | 失败、取消与释放 |
+|---|---|---|
+| 投影材料 | 每 owner 最多 8 MiB JSON UTF-8、100000 条引用；锁外一次预约完整集合，不足时 FIFO 可取消等待 | 单操作超额拒绝并提示缩小范围；同一引用版本冲突则拒绝本次操作、释放预约，来源稳定后可重试，不覆盖其他操作材料 |
+| 共享材料 | 相同固定材料共享计量；活动材料不淘汰 | 最后消费者结束即释放 |
+| 原始历史 | 准备、检索、辅助整理共用最多两个在途装载槽；同会话在途读取合并，消费者独立取消 | 最后消费者退出才取消底层；不可中断读取结束前仍占槽，迟到结果不回填；完成后不缓存，最终版本复核重新读取 |
+| 单会话历史 | 最多 100000 事件、32 MiB JSON UTF-8 | 无 Soul 的通用检索维持原保护 |
+
+投影计量采用去重后的完整 JSON 数组：作用域 `["s", key]`、历史身份 `["h", sessionId]`、引用 `["r", sessionId, seq, sha256, public ? 1 : 0]`，包含转义、数组分隔符和外层括号。该编码预算不保证 Node heap、RSS、原文解码峰值或宿主总内存上限。
+
+原文仍按需读取并复核 raw/public 引用版本与授权；历史 Session、事件及检索投影不作长期验证缓存。失败或取消不改变持久授权、记录、pending 或学习状态，不恢复已撤回学习。
+
+## 宿主控制动作
+
+### 工具结果裁剪
 
 `compaction-tool-result-pruner` 按宿主解析的官方构造器身份发现全部存活 Fiber，并在各 owner 自己的 Context 等待、门控原 Pruner；正式 standard 组合内层 isolate 不影响发现。就绪与停用资格按当前 Agent 的官方 scope 和真实 session 身份核对，其他 Agent 的 owner 不提供就绪。晚到或重挂后在后续正常装配重判，释放立即使旧门控失活；关闭规则恢复官方裁剪，第三方外层包装保留。不复制裁剪算法，也不修改预设。
+
+### 会话回退与待办
 
 `host-control / session-rewind-todos` 独立默认开启，按回退提交时真实 Agent 的规则判定。开启时预览及历史标记提交前核对当前作用域的官方 `todos` 投影；owner 未注册或释放时明确拒绝，正常暂无清单（null）允许，恢复后在下次正常请求重判，关闭时不依赖 todo owner。历史标记提交后，读取官方 `todos` standing-plan 投影（`turn/start` 后无清单即不写），仅将 completed 改为 pending，保持 in_progress、pending、正文与顺序；沿官方 Session 的 `todo/write` 全量事件持久化并更新同一投影，不建立第二状态库。历史重放只解释，不补写待办。标记已提交而待办写入失败时返回带 markerId 的失败目标，明确历史已提交；原边界重试只补待办，不重复回退，已进入新轮则拒绝。关闭、释放不逆转已写结果，后续不再更新。
 
@@ -20,11 +44,15 @@ Soul 准备、检索和辅助整理的原始历史读取共用 owner 的最多�
 
 Session 解释器在 Agent 创建及插件挂载已有 Agent 时安装，公开派生出口排除确认的空标记并保留原派生缓存与其他消息贡献。规则关闭不恢复被撤内容；重放不补写或重发。释放恢复仍归本来源所有的方法，使保留在第三方包装内的旧贡献失活。卸载后的环境不支持回退历史的完整展示，需恢复插件解释器；不为卸载改写日志。Web 装配与真实三端运行须分别验收，Node 行为回归不能替代浏览器或桌面证据。
 
+### Messages 当前系统正文
+
 普通规则 `host-control / messages-current-system` 仅接受 `value: true`，默认开启，独立于 `current-system-snapshot`，不隐式开启它。单独生效时，Messages 顶层 system 使用当前请求历史中最后一条非空 system 正文，空正文不擦除已有正文，原 `options.system` 前缀保持。两者在同一步同时获准时，按真实消息来源先放本步已接受的完整 `system-prompt` 正文，再按原顺序组合其他来源 system；其他来源的空白、换行和同文贡献保持，不按正文全局去重，不把这些正文降为中途 system。工具增删通知仍沿官方 developer 路径，工具配对、ID 和内容校验不绕过。
 
 Messages 资格复用真实 Agent 的 sealed 工具步骤、原 prepared adapter 身份与 snapshot owner 判据，热更新不混入旧步及重试，缺 owner、取消、释放或路由重挂停止旧资格。缺失必要 owner 只暂停该动作及显式依赖正文，无关规则继续。可选 early 接入逐一校验 npm 官方发布包 `@deepseek-ai/dsh-llm-deepseek@0.2.2-rc.2` 的完整发行指纹和唯一锚点。需用户重启 DSH 后生效，真实 CLI/Web 综合验收另行执行。
 
 Responses 同段包含系统正文和工具删除时，正文沿系统角色映射，工具删除沿固定 PI 的当前工具集合折叠；关闭时保留官方角色判据。
+
+### 请求身份与系统角色
 
 请求身份首段与系统角色由两个独立 `host-control` 动作控制：`oauth-identity-prefix` 和 `provider-system-role`，均只接受 `value: true`，内置卡默认开启。前者只跳过 Anthropic OAuth builder 自动添加的 Claude Code 身份首块，用户正文中的相同句子保留；认证、headers、工具名、缓存与其他正文保持官方路径。后者只调整 completions 与 responses 的系统正文角色判据：原推理与 compat 条件允许 developer 时，仅 `URL.hostname` 精确为 `api.openai.com` 或真正的 `.azure.com` 子域保留 developer，其余使用 system。工具增删通知的既有 developer 语义不改；相似后缀、userinfo 和 query 不授权原生角色。
 
@@ -32,11 +60,15 @@ Responses 同段包含系统正文和工具删除时，正文沿系统角色映�
 
 资格在实际 Agent 的工具步骤准备时冻结，loop 只在本次 `llm.prepareCall` 期间携带身份，实际 adapter 将它绑定到原 prepared stream。请求专属模型副本携带该身份，不按 sessionId、最近 Agent 或全局 fetch 关联。热更只影响后续步骤；取消、步骤关闭、规则 owner 撤回或 adapter 注册释放后停止本来源效果，重挂不能复活旧资格。发行适配分别校验 loop、LLM 路由、DSH PI adapter 与 PI provider 的版本、完整指纹和唯一锚点；两个 OpenAI 目标均成功加载才就绪，缺失仅暂停该能力及显式依赖分支，OAuth 能力独立。需要 early 入口与用户重启 DSH 后生效；本地最终载荷不承诺远端服务接受，CLI/Web 综合验收另行执行。
 
+### 消息形状容错
+
 普通规则 host-control/message-shape-guards 使用 value: true，内置卡默认开启。资格在当前工具步骤准备时固定，最终公开 assemble 与 refreshContext 只将缺失或非字符串的 section/context 正文归空，合法字符串、空白和顺序保持；complete 最终还原也经过该出口。未知变量、非法表达式、provider/getter 异常仍由官方抛出。
 
 缺省或非数组 messages 仅在 enter 决定归为空数组；模型切换的前置消费者和最终 turn 消费均使用同一 Agent、modelSelection 所关联的 sealed 步骤。未知 kind、reject、取消和独立异常不变。真实 step 内，Session 的 system/developer/assistant 派生仅过滤缺消息、非数组或空 content，官方投影仍优先，合法消息保原身份；user/tool 不参与该过滤。loop 的 systemNodes/textOf 沿同一步处理空 content，首尝试 runtime-context 原分流与一次投递保持，历史事件不改写。脱离该 Agent 步骤的公开派生调用仍透传。
 
 agent、session、loop 的实际发行物分别验证版本、指纹和唯一结构，并由实际 Agent.model、Session.surface 和 loop 实例联合握手。任一必要 owner 缺失仅暂停本能力和显式依赖分支，预算与当前系统快照能力独立。热更新只影响后续步骤，关闭、释放、取消或旧步骤结束后不能借新 owner 复活。rc.2 JSONL v4 仍拒绝缺 message 或非数组 system content，容错不绕过持久格式校验；空 content 数组可正常持久化。需 early 入口和用户重启 DSH 后生效；真实 CLI/Web 综合验收另行执行。
+
+### 当前系统快照
 
 普通规则 `host-control / current-system-snapshot` 使用 `value: true`，内置卡默认开启。它复用请求前 `prepareAssembly`，把资格与兼容状态固定在原工具步骤；请求按已接受 assembly 对象身份读取同一个 sealed 步骤和局部 renderedPrompt，热更新、裸装配及同 Agent 并发装配不改变在途步骤与重试。按真实 Agent 隔离主子受众，取消沿官方信号；规则关闭影响后续步骤，owner 释放、步骤关闭或当前接缝失配立即停止本来源投影，旧资格不借新 owner 复活。
 
@@ -44,15 +76,23 @@ agent、session、loop 的实际发行物分别验证版本、指纹和唯一结
 
 早入口验证官方 agent-loop 实际版本、发行指纹及 snapshot 独立锚点，只有实际 constructor marker 与本 Agent 存活 owner 同时存在才就绪。缺失只暂停包含该动作的显式依赖分支，无关规则继续；owner 恢复后在下一次正常装配重判，不轮询补发。需用户重启 DSH 并选用 early 入口后生效；CLI/Web 综合验收另行执行。
 
+### Provider Hook 决定
+
 `host-control / provider-hook-decisions` 的 `value` 选择 `claude-code: true` 或 `codex: true`（也可同时选择）。普通内置模块两卡默认开启。它保留官方 Hook 执行、原始审计和 context，仅绕过本 owner 的 UserPromptSubmit、PreToolUse、PostToolUse、Stop 的 deny 出口，以及 Claude 独有 ask 出口；其他 owner 和下游拒绝保持。四事件在接受时冻结当前 Agent 自己的规则计划，只取该事件的 modelSelection，缺模型时模型条件 unavailable，不读取 Agent 下一步模型。关闭、撤回和 owner 释放影响后续调用，不重放历史动作。
 
 两个可选官方包逐一验证实际解析版本、完整发行指纹和四事件 anchor；缺失或失配仅暂停显式依赖该目标的分支，并显示原因。owner 必须成功读取配置，且经官方 scope 路由对当前 Agent 可达；消费结果时仍检查 owner 存活和调用取消。在途热改保持已接受计划，释放或取消不能沿旧计划授权。重新装配 owner 后在下次正常重判恢复，early 入口需用户重启 DSH 后生效。该动作不接受投递次数预算或 outermost 排序。nested 仅指部署中实际解析到的另一份副本，未装配不声称已验证；原生 Stop deny 会 steer、prompt deny 会 reject，不另建空动作或旁路伪用户正文。真实 CLI/Web 组合验收另行执行。
+
+### 沙箱升级请求
 
 升级请求由三个独立 `host-control` 能力控制，`value: true`，内置卡默认开启：`escalation-criteria` 跳过阶梯、缺审批服务与缺 Agent 的显式检查，但仍调用真实审批（缺服务仍会失败）；`escalation-grant` 直接返回本次 requestedMode；`escalation-outcome` 只将 rejected/cancelled/unavailable 三种审批结果转为本次 mode，不吞其他错误或任务总取消。直接授信优先于其他两项，但不关闭工具管线或其他 owner 的拒绝。
 
 四个官方调用者（文件、bash、pwsh、PTC）在各自已有原始发行指纹 owner 内组合适配，传递当次 exec 的 toolSet/modelSelection；sandbox 独有早期入口只改其升级函数。身份不进入原审批请求或审计正文，不从最近 Agent 猜步骤。规则按当前 Agent 可达的真实 caller 及其 scope/生命周期判定依赖；可选目标未装配不阻断其他路径，实际缺失或失配的路径不可借其他 caller 就绪。await 前固定步骤快照，撤回影响后续步骤，owner 释放后不复活。需用户重启 DSH 并选用 early 入口后生效；已有用户模块不自动追加卡片。
 
+### 审批决定
+
 `host-control / approval-decisions` 的 value 接受独立布尔字段 autoGrant、autoReviewPassthrough、toolAskAllow。三个内置卡默认开启。autoGrant 保留官方请求审计，仅在工具管线向原审批服务请求期间继承同一步身份；其他缺身份审批不授权。autoReviewPassthrough 只透传该自动审核 owner，独立 guard 保留；toolAskAllow 在取得审批服务后直接允许，包括缺服务及原审批拒绝，不表示全局工具 guard 失效。任务取消保留。各 owner 分别按发行包指纹校验，缺失仅暂停命中分支；真实服务释放后不可复活。需用户重启 DSH 并选用 early 入口后生效，当前已有用户模块不追加卡片。
+
+### 进程直通与构造默认
 
 命令直通由普通规则 `host-control / command-confine-passthrough`、`value: true` 和显式 `executionScope: process` 控制，内置卡默认开启。它独立于软默认：公开生命周期只包装官方 LocalSandboxProvider 当前实例的 confine，作用后续调用，返回原 argv 的副本及空拒绝签名/runner 失败规则，不执行命令。缺目标仅暂停此能力。无 Agent 参数的共享 owner 不读会话、受众或最近步骤；原路径的参数、this、同步/异步返回和异常身份保持，直通仍尊重 caller 取消。关闭影响后续调用，在途保留接受快照；撤回仅恢复仍由本来源拥有的方法，第三方后置包装不覆盖，释放实例不复活。不修改宿主文件，真实 CLI/Web 验收另行执行。
 
@@ -62,17 +102,35 @@ agent、session、loop 的实际发行物分别验证版本、指纹和唯一结
 
 新主会话 full-access 继承由官方 permission-presets 原生提供：部署是 full-access 且用户没有指定其他默认时，新会话采用 full-access；显式默认、后续用户选择和既有日志保持，子代理仍走官方捕获与委派策略事件。插件不添加同义开关，也不覆盖用户钉选。
 
+### 委派深度与等待上限
+
 `host-control/delegation-limits` 的 `value.maxDepth` 为非负安全整数，`value.askTimeout` 为1–2147483秒整数；至少声明一项。内置核心模块分别提供默认开启的深度10和等待300秒规则。深度仅替代官方spawn工具省略的配置，显式配置与provider-managed保留；等待仅替代调用的timeout=-1，省略和有限值由官方owner处理。两个早期owner分别校验，缺失只暂停显式依赖该目标的分支。参数按当前Agent已接受步骤封存，后续重判才接受更新；关闭不改已创建子代理或在途提问，取消沿原信号。普通入口缺失早期owner时需用户重启DSH并选用early入口。
+
+## 规则编译与发布
+
+### 编译与作用域绑定
 
 规则是唯一行为定义。插件读取模块定义、校验切片，再经 `compileRules → createRuleRuntime(...).replace` 装配到 Agent scope；一次性调用仍可使用 `mountRuleSources`。这是两段式生命周期：`compileRules` 只编译与校验（产物每条规则携带 `conditionTrees`，选项里的 `ctx` / `standingMountFor` / `variableStore` / `manifestCheck` 会被显式剥掉），条件在来源注册前由 `rebindConditions` 绑定。原因是 `preset` 谓词要挂载 scope 的 ctx（`conditions/preset.mjs` 把服务查询基准绑在构造期），准备期拿不到——那边绑出来的 `preset` 条件是恒 UNAVAILABLE 的静默死条件。需要官方模块导出的兜底时，由调用方通过 options 传 `standingMountFor`；重绑含 `preset`、含 `variable`、含 `manifest`、含 `phase` 且未显式 `subscribe: false`、或含 `anchor.after` 动作引用的树，其余谓词原样保留。规则实例、条件绑定和运行状态按 Agent 私有，不跨 Agent 复用可变的准备产物。模块不进入官方会话预设注册表；九个插入点各有生命周期，不形成插件自定义的全局管线。
 
+### 保存、热更新与失败恢复
+
 编辑保存与运行注入分别负责：客户端只提交合法草稿，普通保存完成写盘与切片验证后立即确认 `persisted`，运行发布由装配通道按 300ms 合并。发送消息不等待自动保存；官方 `systemPrompt.assemble()` 开始、同步 provider 求值之前，插件提前处理已保存规则定义的变化。`refreshOnly` 同样提前发布并等待真实结果；显式发布、文件观察与请求前检查使用同一调度通道，同版本不会重复重挂。变量值仍在模板求值时读取，不因值更新重挂规则。
 
-插件同时观察启用表与已参与模块的 `module.yml`（200ms 文件检查），使直接修改文件也能更新后续事件的注册。正文、参数、启停、增删、条件、受众和插入点修改从后续实际发生的官方入口生效；不会重跑进行中的请求，也不补执行已经过去的入口。单个模块读取、校验或挂载失败时，首次加载跳过该模块；已有有效版本则恢复该模块的旧贡献，健康模块继续更新。旧版本也无法挂载时撤销该模块并报告两次失败。文件变化或显式刷新可以重试，同一坏版本不在每次请求时重复撤装。监听与文件观察随插件释放，不修改官方 Loader 或 profile。
+启用表与参与模块的 `module.yml` 每 200 ms 检查一次。直接修改文件与页面保存一样，只影响后续实际发生的官方入口，不重跑在途请求、不补执行过去入口。文件观察和监听随插件释放，不修改官方 Loader 或 profile。
 
-装配记录只包含实际参与贡献的模块。未变化的普通规则来源与模块能力保留注册；未启用模块保存不重挂 Agent。规则的跨模块排序仍聚合计算，共享派生组在成员或有效内容变化时可以更新；共享工具仍由成功来源共同使用。失败尝试的工具和监听器不会保留。显式刷新在发布健康模块后仍返回故障诊断；普通保存不等待这个结果，后台失败只写日志与 `/meta` 的 `publicationFailures`，不进入 `moduleWarnings`，也不在工作台显示。切片提交后失败和显式重试失败仍保留 `persisted/publicationPending`。全局部署配置、跨模块 `complete`／`sections.append` 冲突，以及无法归属单个模块的公共注册错误仍整体拒绝并尝试恢复原装配，不自动选择赢家。
+装配记录只含实际贡献模块。未变化来源保留注册及初始化 owner；未启用模块保存不重挂 Agent。跨模块排序仍聚合计算，共享派生组仅在成员或有效内容变化时更新，共享工具由成功来源共用。失败尝试不保留工具或监听器；检索工具在依赖就绪后同步注册，第二项失败先清理第一项。
 
-晚到服务的初始化同样受模块装配管理。依赖尚未到达是正常等待，已有规则贡献可以继续；只有模块及其共享能力的初始化全部成功后，才更新该 Agent 上该模块的最后有效快照（`lastGood`）。未变化来源保留原初始化所有者，增量更新不把一次准备成功当作初始化成功。初始化回调随后失败时，撤销所属模块的贡献并尝试恢复该快照，无有效快照则跳过；共享能力失败影响当前声明它的来源集合。故障诊断保留来源与原因。同一失败定义不会因其他模块更新而自动重试，修改该模块定义或显式刷新可以重试。来源已替换、Agent已结束或插件已卸载后，迟到状态不能撤销新贡献或重新启用旧模块。检索工具在依赖就绪后同步注册，第二项注册失败先清理第一项，不留逃离模块初始化链路的工具fiber。运行期单次维护、检索或动作错误仍由各自业务处理，不因此触发模块回退。
+| 失败位置 | 保留与回退 | 重试条件 |
+|---|---|---|
+| 单模块读取、校验或挂载 | 首次失败跳过；有有效版本则恢复旧贡献，健康模块继续更新；旧版本也挂载失败则撤销该模块并报告两次失败 | 文件变化或显式刷新；同一坏版本不逐请求重复撤装 |
+| 依赖尚未到达 | 正常等待，已有贡献继续；模块及共享能力全部初始化成功后，才更新该 Agent 的模块 `lastGood`，准备成功不等于初始化成功 | 等待依赖，不误报失败 |
+| 初始化回调失败 | 撤销所属贡献并尝试恢复 `lastGood`，无快照则跳过；共享能力失败影响当前声明它的来源集合，诊断保留来源和原因 | 修改该模块定义或显式刷新；其他模块更新不触发重试 |
+| 全局部署配置、跨模块 `complete`／`sections.append` 冲突、无法归属单模块的公共注册错误 | 整体拒绝并尝试恢复原装配，不自动选赢家 | 按故障修正候选 |
+| 单次运行期维护、检索或动作错误 | 各业务处理，不触发模块回退 | 沿各业务契约 |
+
+来源替换、Agent 结束或插件卸载后的迟到初始化，不能撤销新贡献或重新启用旧模块。
+
+普通保存不等待后台发布；失败只写日志和 `/meta` 的 `publicationFailures`，不进入 `moduleWarnings` 或工作台。显式刷新发布健康模块后仍返回故障诊断；切片已提交后的失败及显式重试失败，均保留 `persisted/publicationPending`。
 
 字段和磁盘事务见 [参数框架](architecture-params.md)，外部来源转换见 [SillyTavern 导入](SillyTavern.md)，设计决策见 [ADR-0013](adr/0013-native-context-module-state.md)。
 
@@ -160,23 +218,18 @@ Agent接入保持步骤准备、真实接受、Hook事件、工具后处理与�
 
 ### 插件侧怎么引入引擎（类型边界）
 
-`engine/*.mjs` 是纯 JS，`tsconfig.json` 不开 `allowJs`/`checkJs`。因此每个**被 `src/` 静态引入**的引擎模块都配一份手写 `.d.mts`（与 `.mjs` 同目录同名）：
+`engine/*.mjs` 是纯 JS，`tsconfig.json` 不启用 `allowJs`/`checkJs`。类型边界分为两种：
 
-- 已有声明的：`rule-spec`／`audience`／`rule-facts`／`shared`／`interpolate`／`executor`／`pre-step-source`／`promotion-pool`／`branch`／`tool-definition`／`order`／`rule-runtime`／`compaction-epoch`／`conditions/index`／`template-evaluation`／`template-frame`／`context-activation`／`service-names`／`discovery`／`delivery`／`instruction-files`／`source-kind`／`instruction-blocks`（2026-10-16 起 `src/` 侧不再用 `@ts-expect-error` 引入）。
-- **新增引擎导出时同步改声明**：`src/` 只用到的符号才声明（声明是「插件依赖面」而非引擎全貌）；跨引擎模块引用写成 `import type { X } from './y.mjs'`，**不要**引用 `src/` 的类型（声明文件与 `.mjs` 同目录，`src/` 不在它的解析面内）。
-- **声明文件只是类型面**：不进 `lib/` 打包，也不需要改 `package.json`／tsdown（`exports["./engine/*"]` 已覆盖；TS 按 `./x.mjs` → `./x.d.mts` 解析）。
-- **为什么有些声明符号 `src/` 从不直接 import，却仍然必要**（别按「无人使用」删它们）：`src/` 消费的是**函数**，不是字段类型——`StandingMountFor` 被 `loadStandingMountFor` 的返回引用、`MountRuleSourcesOptions` 被 `mountRuleSources` 的参数引用、`PreStepBatchOptions` 被 `runPreStepBatch` 的参数引用、`WarnOnce` 被 `createWarnOnce` 的返回引用……它们是**签名的组成部分**。删掉会让签名退回 `unknown`。判据是「它是否支撑某个被消费符号的签名」，**不是**「它自己有没有被 import」。
-- **声明的失效方式是静默的，当前没有机制校验**：声明多于实现 ⇒ `src/` 编译通过、运行期拿到 `undefined`；签名写宽（如 `rule-runtime.d.mts` 的 `ctx: unknown`）⇒ 类型不再报错但也不再说实话。这两类都只能靠「新增／改名引擎导出时同步改声明」这条纪律 ＋ 人看。**已做的核对（2026-10-22）**：19 份声明的导出在运行期逐个 `import` 核对，**无漂移、无冗余**。
-- **动态加载点的归属与断言**（2026-10-16 核实）：按 id 加载在 `runtime/agent-assembly.ts:126-145`（`join(packageEngineDir(), '<id>.mjs')` ＋ `existsSync`，缺文件按官方行诊断/未知行跳过、缺 `apply` 抛）；固定文件名 URL 动态导入有三处——`runtime/bridge-runtime.ts:546`（`schema.mjs`，断言 `{ getEngineMeta }`）、`runtime/routes/instructions.ts:31`（`rule-spec.mjs`，收在 `ruleEditorMeta()` 里、被调 5 次，断言用的是 `src/shared/rules.ts` 的 `RuleEditorMeta` **副本**而非本目录的声明）、`src/index.ts:202-206`（`skill-search.mjs`，相对 `import.meta.url`，失败 warn 降级）。引擎内另有 `actions/content.mjs`（按策略名懒加载）与 `host-package.mjs`（按宿主包名，非引擎模块）。
-- **这些断言为什么不收成一个接口**：四处加载在**路径基准／失败语义／断言形状／缓存**上各不相同——按 id 那处要求「缺件跳过、缺 `apply` 抛」，`index.ts` 那处要求「失败只 warn」，只有 `bridge-runtime` 与 `instructions` 两处同形（固定文件名 ＋ `packageEngineDir()`）。强行统一会得到一个覆盖四种错误语义的宽 options ＝ 浅接口，故**有意保留内联断言**。
-- **`@ts-expect-error` 与「声明不参与」的边界**：上面静态引入的模块由同目录 `.d.mts` 供类型（见上一条）；**走绝对 URL 动态 import 的那几处，`.d.mts` 不参与解析**，类型完全由手写内联断言承担——`rule-spec.mjs` 因此同时有两条类型路径，`src/runtime/routes/instructions.ts` 用的还是 `src` 侧的同名副本。
-- `engine/vendor/**` 的 `@ts-expect-error` 来自上游转译产物，随快照整体覆盖，**不手动改**。
+- 静态引入由同目录同名的手写 `.d.mts` 提供类型。新增或改名导出时同步声明；只声明插件依赖面及其签名所需类型，不按类型是否被直接 import 判断去留。跨引擎类型用 `import type { X } from './y.mjs'`，不引用 `src/` 类型。声明不生成到 `lib/`，现有 `exports["./engine/*"]` 已覆盖解析路径。
+- 绝对 URL 动态 import 由调用点的内联断言提供类型，`.d.mts` 不参与解析。`agent-assembly.ts` 按能力 id 加载：缺文件跳过（官方行另记诊断），缺 `apply` 抛错；`bridge-runtime.ts` 加载 `schema.mjs`，`routes/instructions.ts` 加载 `rule-spec.mjs` 并使用 `src/shared/rules.ts` 的 `RuleEditorMeta`；`src/index.ts` 相对包入口加载 `skill-search.mjs`，失败告警降级。路径基准、失败语义与缓存不同，保持各自断言。
+
+手写声明不会自动证明导出真实存在或签名准确；过多声明可能让编译通过而运行取得 `undefined`，宽泛签名也会掩盖错误。修改导出时须同时核对实现、声明与调用方。引擎内的策略和宿主包仍分别由 `actions/content.mjs` 与 `host-package.mjs` 动态加载；`engine/vendor/**` 的上游转译标注随快照更新，不手改。
 
 服务名绑定也在这条边界上：宿主与引擎共用的服务名只有 `engine/service-names.mjs` 一个真值源，`src/` 与引擎侧的各引用点都从它取，**改名不得手抄**。手抄的失效方式是静默的——引擎查不到协调服务就回退自身的独立执行路径，模块工具外壳等不到 provider 就不挂工具，两边都不报错。这也是「引擎可单独复制」的一部分：名字随 `engine/` 一起走，复制方不必问宿主。回归通过 `test/host/agent-assembly.test.mjs` 与模块工具行为测试验证实际挂载、调用和释放。
 
 ### 引擎契约（加载器视角）
 
-组合源 `engine/compositions/source/local/*.yml` 里的行分两类，加载器（`src/runtime/agent-assembly.ts:147-220`）按 `name` 判断：
+组合源 `engine/compositions/source/local/*.yml` 的行分两类。加载器 `src/runtime/agent-assembly.ts` 按行 `id` 查找本地文件：
 
 - **本地引擎行**：`name: ./engine/<id>.mjs`。加载器按行 `id` 拼出同一路径 import，执行 `apply(ctx, config, { agent })`；`config` 是模块定义里解析后的行配置。
 - **官方 recipe 行**：`name` 是 `cordis:group` 或 `@deepseek-ai/dsh-*` 包名，没有本地 `.mjs`。这些行由会话原有预设提供，加载器在 `engine/<id>.mjs` 缺席时跳过并记录诊断，不校验引擎形状；声明它们不会让插件自行挂载官方包。
@@ -186,10 +239,10 @@ Agent接入保持步骤准备、真实接受、Hook事件、工具后处理与�
 一个**本地引擎模块**必须满足五条：
 
 1. **身份**：文件位于 `engine/<id>.mjs`，与行 `id` 一致；行 `name` 若存在应为 `./engine/<id>.mjs`（加载器不读 `name`）。以实际组合加载和 `verify:pack` 的包内引擎执行验证可用性。
-2. **入口**：导出 `apply` 函数；缺 `apply` 在装配准备期抛错（`agent-assembly.ts:204`）。
+2. **入口**：导出 `apply` 函数；缺失时在装配准备期抛错。
 3. **依赖**：`inject` 缺省或为字符串数组；数组元素是宿主服务名（`tools`、`systemPrompt`、`llm`、`skills` 等）。
-4. **配置**：`configContract.parse(raw, plugin)` 缺省或为函数；装配准备期会调用一次做 fail-fast（`agent-assembly.ts:213-214`），引擎在 `apply` 内可以再解析以取得规范化配置——当前两边都保留，**这是有意为之的 fail-fast ＋ normalize 两段**，不是遗漏。
-5. **清理**：`apply` 返回函数时，装配 fiber 把它作为 disposer 收走（`agent-assembly.ts:507-508`）；不返回则依赖注册时自带的 effect。
+4. **配置**：`configContract.parse(raw, plugin)` 缺省或为函数；准备期调用以提前拒绝非法配置，`apply` 内可再次解析取得规范化配置。
+5. **清理**：`apply` 返回的函数由装配 scope 作为 disposer 收走；不返回则依赖注册时自带的 effect。
 
 **不做通用能力注册表**：引擎之间按名调用目前只有发现引擎一个真实消费者（`promptToolDiscovery`，见 `discovery.mjs`）。等到出现第二个按能力解析的消费者（例如技能面成为可见面的发现来源），再按两个真实用例定接口；在此之前，新增引擎照抄 `discovery.mjs` 的「服务名 + 注册表 + 按 agent 键控」形状，而不是先建注册表。
 
@@ -213,15 +266,13 @@ Agent接入保持步骤准备、真实接受、Hook事件、工具后处理与�
 
 执行适配复用官方 `tools/execute` waterfall 的真实调用上下文，调用期只代理 `subagents.startActivation`：工具名、spawn、真实 parent 和 sealed step 全部匹配才替换原请求的 maxDepth，其余调用透传。官方 0.2.2-rc.2 使用顶层 `spec.parent` 与 `spec.maxDepth`；适配按该契约核对真实 parent 并替换顶层深度，不兼容旧的嵌套请求形状。深度上下文与 refreshContext 使用同一已接受值；已有工具集合不读热更值，取消仍沿原管线，dispose 关闭步骤。没有第二套深度配置库，也不修改宿主默认深度或 provider。
 
-外部内容插件复现原 `unrestricted` 时，用的就是本文这套普通规则机制：正文与 Boost 走模块 `assets/` 资产（`templateFile`），只作 `system-section` 投递——用户覆盖优先、包内缺失才回退、显式空正文不回退也不补正文；两份正文各自只注册一段，不删官方工具、环境或其他来源贡献。跨模块先后由 `configOrder` 决定，正文 100、Boost 200，协议规则须显式占用 100–200 之间的序号，否则会落到正文之前或 Boost 之后；手动重排 `configOrder` 没有守卫（评审 P2 记录），改序号时须自行保持在 100–200。原模块的十条规则清单、25128B 完整正文与 1850B Boost 只在存档里，本仓库不再维护它们。
+外部内容插件可用普通规则复现原 `unrestricted`：正文与 Boost 通过 `templateFile` 引用模块 `assets/`，各注册一个 `system-section`，不删除官方工具、环境或其他来源贡献。用户覆盖优先，用户文件缺失才回退包内；显式空正文不回退也不补正文。若正文与 Boost 的 `configOrder` 分别为 100、200，协议规则须在两者之间；手动重排没有守卫，调用方负责保持次序。原模块正文与规则清单由外部内容插件维护。
 
 原 `redteam` 同理：请求输出 token 初值 8192、晋升兜底步 2、指令字节预算 65536 是三个独立额度，不混用；指令字节预算走同一 early 接缝，瞬时额度需要官方 agent-loop 的指定发行指纹，缺指纹时对应预算及其同分支正文暂停。原十五条规则、三协议与六角色正文只在存档里，本仓库不再维护它们。
 
 外部内容模块的目录 id 必须为 `redteam`（`ROLE_MODULE_ID`），角色规则 id 为 `role-<role>`（`plan`、`recon`、`assess`、`vuln-scan`、`exploit`、`internal`）。协议规则 `protocol-redteam` 与 `protocol-official` 共用 `capability-protocol` 互斥组，自动派工总开关为 `auto-delegation`。缺少这些内容时，自动派工报 `AUTO_DELEGATION_DISABLED`，不投递角色正文，并给出一次可见告警；启动成功不表示角色已生效。
 
-团队角色委派通过官方 Team 与 subagent 完成。启动前登记一次性 intent 与唯一 token，子会话在宿主等待的 `agent/created` 事件中消费，并在首次装配前写入会话角色事实。角色正文由外部内容模块的 `role-*` 规则与 `assets/` 提供；名称、描述与任务文本不授予角色。五个执行角色显式使用 `maxDepth: 1`，缺少 `depthLimit` 能力时拒绝启动。`plan` 只作用于真实根 Agent，派给子代理报 `ROLE_NOT_EXECUTABLE`。
-
-任务、依赖与版本由官方 Team 管理。只有真实运行的 `stopReason` 为 `completed`、有输出且归属匹配时，才标记任务完成；取消的启动不留下可复用资格。自动派工默认关闭，显式开启时选择红队协议；关闭只撤回后续派工，不自动切回普通协议，不删除官方任务或中断其他来源。
+角色身份、叶子限制、完成判据与取消清理由 [角色委派](#角色委派官方-team-单任务) 约束；默认关闭、协议选择与关闭行为见 [自动派工编排](#自动派工编排官方-team-多任务)。
 
 角色组合仍是引擎的既有机制，内容模块按它组织即可：角色正文放模块 `assets/roles/`，公共段放 `assets/common/` 且每段只有一份文件，角色规则按声明序用 `templateFile` 引用它们，声明序即投递序、每段只投递一次。修改公共段只改那一份文件，引用它的角色预览与应用同步变化，未引用的角色保持；角色正文独立编辑，保存、复制与导出保留相对 `templateFile` 引用，不把公共段展开成多份副本。模块变量 `role` 为空表示未分配执行角色，此时所有角色组合都不投递；同一角色只生成一份，不默认叠加。原六角色与六公共段的正文随内容模块移出，本仓库只保留这套组合机制与 `role` 变量的判定语义。
 
@@ -525,7 +576,9 @@ search/open 工具只注册一次，多个来源模块按Agent聚合授权，释
 
 Basic的范围接口只适用于打开的turn。idle程序式范围与恢复局部压缩经独立维护事务，使用公开Session事件和同一摘要／计价owner；范围验证、取消、版本与shrink检查通过才提交替换。手动compactNow直接复用官方维护入口，不嵌套维护。换模型使用目标 `EpochHeader.config` 计价，失败不提交目标路由；溢出仅在surface已实际推进时重试，次数由官方策略限制，取消不重试。
 
-可选官方包由 `importHostCapability` 在启用时从宿主解析；白名单 `HOST_CAPABILITY_PACKAGES` 只限制可导入的包集合，运行期不比对版本（安装期仍受 `engines.dsh` 与 peer 范围约束）。宿主 API 不兼容以装配期真实错误暴露，不作前置版本诊断；三个 `dsh-compaction*` 包不声明为插件依赖；仓库顶层 `node_modules` 未链接它们，引擎解析路径不可达，只能由真实宿主的隔离验证核对，仓库回归只覆盖白名单拒绝与 `dsh-llm` 路径。`verify:host` 只对这一显式入口允许已登记的宿主能力，普通静态／动态导入仍执行 peer 与 dev 双声明检查。真实官方行为在隔离环境验证，仓库回归测试覆盖公开适配器、流、写盘与拒绝契约。官方 framing 快照升级时须重新核验。
+可选官方包由 `importHostCapability` 在启用时从宿主解析。`HOST_CAPABILITY_PACKAGES` 只限制可导入的包集合，运行期不比对版本；安装期仍受 `engines.dsh` 与 peer 范围约束。API 不兼容在装配时报告，不作前置版本诊断；开发依赖中存在某个包，不代表真实宿主已装配或解析到它。
+
+`verify:host` 只对该显式入口允许已登记的宿主能力，普通静态／动态导入仍检查 peer 与 dev 双声明。真实官方行为须在隔离宿主验证；仓库回归检查公开适配器、流、写盘与拒绝契约，不能代替宿主接入验收。官方 framing 快照升级时须重新核验。
 
 ## SELF动态内容与维护心跳
 
@@ -576,14 +629,14 @@ runtime-context 的注册文本必须是同步 provider，不能只在 assemble 
 - 一次性 intent + 唯一 token：intent 在 `startActivation` **前**登记、在 `agent/created` 消费即删，启动抛错或取消立刻丢弃，取消的启动不会把角色留给下一个无关 child。
 - 认领在 created 窗口内发起（此时 child Agent 已由官方注册），`ownerId` 因此是真实子会话；`settle` 只在真实运行 `stopReason: 'completed'`、有 assistant 输出、且任务归属等于该 child 时标完成，陈旧 `expectedRevision` 保留官方 `TEAM_TASK_STALE_REVISION`。一轮结束不等于任务完成。
 - 恢复只认官方持久事实：child header 的 `parentSession` 与子会话自己的 `prompt-tool/role-binding` 事件交叉核验；`subagent/descriptor` 无角色字段、`runId` 不随恢复保留，重挂后按 header 与事件重建运行时事实，不按成员名猜角色。
-- `release()` 只撤回未消费 intent；`close()` 停止新派工但保留官方任务、已启动子会话与其他来源的工作。`selectCapabilityProtocol(moduleRoot, branch)` 是 05 留给派工的显式协议选择入口，关闭派工不自动切回普通协议。
+- `release()` 只撤回未消费 intent；`close()` 停止新派工但保留官方任务、已启动子会话与其他来源的工作。`selectCapabilityProtocol(moduleRoot, branch)` 显式选择协议，关闭派工不自动切回普通协议。
 
 ## 自动派工编排（官方 Team 多任务）
 
-`src/runtime/auto-delegation.ts` 把「一次计划」跑成官方事实：plan 会话给出已授权目标的自包含子任务，编排负责登记官方任务与依赖、真实派发、等待匹配终态并汇总。它复用 07 的 `RoleDelegationRuntime`，不新建任务表、成员库、消息队列或常驻调度器。
+`src/runtime/auto-delegation.ts` 使用 `RoleDelegationRuntime` 登记官方任务与依赖、派发子任务、等待匹配终态并汇总。plan 会话提供已授权目标的自包含任务书；编排不另建任务表、成员库、消息队列或常驻调度器。
 
-- **总开关是模块规则**：外部内容插件提供的 `auto-delegation` 规则默认 `enabled: false`（规格 34）。关闭时 `run`／`enable` 报 `AUTO_DELEGATION_DISABLED` 且不登记任务；用户经既有规则编辑保存后，运行时下一次调用即按新值判定——不缓存、不重启。规则打开时它只向 main 受众投递运行纪律，不代替任何实际调用。
-- **开启事务只做两件事**：经 05 的既有跨模块互斥 `selectCapabilityProtocol(moduleRoot, 'redteam')` 选红队协议，再给真实根会话授 `plan`（`assignRootRole` 拒绝子会话，报 `ROLE_PARENT_REQUIRED`）。团队开关仍由官方管理；关闭（`disable`）只撤回本来源的 plan 角色与未消费资格，不擅自重开普通协议、不删任务、不动已启动子任务。
+- **总开关是模块规则**：外部内容插件提供的 `auto-delegation` 规则默认 `enabled: false`。关闭时 `run`／`enable` 报 `AUTO_DELEGATION_DISABLED` 且不登记任务；编辑保存后，下一次调用按新值判定，无需重启。规则只向 main 受众投递运行纪律，不代替实际调用。
+- **开启事务**：通过跨模块互斥 `selectCapabilityProtocol(moduleRoot, 'redteam')` 选红队协议，再给真实根会话授 `plan`（`assignRootRole` 拒绝子会话，报 `ROLE_PARENT_REQUIRED`）。团队开关仍由官方管理；关闭（`disable`）只撤回本来源的 plan 角色与未消费资格，不重开普通协议、不删任务、不动已启动子任务。
 - **任务书自包含**：`planned` 的六段（目标范围／输入／已知事实／预期产出／验收依据／实际可用工具）缺一段即 `AUTO_BRIEF_INCOMPLETE`，因为子代理不继承父对话。正文只由这六段渲染，不追加计划外内容；角色正文仍由 `role-<role>` 规则与 `assets/` 提供，在子代理首请求投递。
 - **官方登记唯一**：`submitTask` 透传 `createTask`（含 `blockedBy`／`writeScopes`）；任务描述首行写稳定标记 `[auto-plan:<planId>/<key>]`，恢复或重挂时用 `listTasks` 读回同一标记的任务复用，**不重复创建**；`status: completed` 或已被其他来源认领的任务**不重复派发**，只按官方视图汇报（`reason: official-status`）。
 - **依赖串行、额度内并行**：调度只在前序官方任务 `completed` 后启动后序，`parallel` 默认 1，只对互不依赖的任务并行。官方 `ready` 只表示可认领——启动必须走真实 `delegate`，完成必须等 `settle`（`stopReason: completed` + 有输出 + `ownerId` 匹配 + 版本未陈旧）。`writeScopes` 只是官方冲突提示（`writeScopeWarnings`），不当锁或目录隔离。

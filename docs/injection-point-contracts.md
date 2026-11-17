@@ -1,6 +1,6 @@
 # 九层配置卡与官方插入点契约
 
-核对基线：DSH 已发布包 `0.2.2-rc.1`；宿主契约以安装的发布类型与公开行为为准，不以同版本源码 checkout 替代。九层是插件对公开扩展点的组织，不是宿主统一的九阶段管线。层序仅用于 UI；模块配置序号只在对应插入点、位置内比较，`order` 保留各入口的独立语义。
+本文说明九层配置卡如何映射官方扩展点。核对基线为 DSH 已发布包 `0.2.2-rc.2`，以安装的发布类型与公开行为为准，源码 checkout 仅作参考。九层只组织 UI，不构成宿主统一管线；模块配置序号只在对应插入点、位置内比较，`order` 保留各入口的独立语义。
 
 其中六层支持 `inject-text`；agent-request、llm-stream、tool-pipeline 仅作规则展示归属，分别通过 request-params、stream-output 和工具动作执行。文本条件支持可选含端点 minChars/maxChars；每轮引导由条件分支选择普通静态正文。
 
@@ -51,9 +51,7 @@ rules:
 
 ## 各层的载荷求值窗口
 
-上表说「接入什么」，这一节说「什么时候求值」。它决定动作该用普通注册还是
-`waterfallPosition: outermost`（见 [引擎指南](engine-reuse.md#同-scope-内的注册顺序2026-09-22)），
-也决定配置改完是否需要新的一轮才生效。
+求值窗口决定配置何时生效，以及动作使用普通注册还是 `waterfallPosition: outermost`，见 [注册顺序](engine-reuse.md#同-scope-内的注册顺序2026-09-22)。
 
 | 层 | 求值窗口 | 对配置的含义 |
 |---|---|---|
@@ -77,7 +75,7 @@ rules:
 
 模块自己的配置列表就地排序：只交换自身原槽位。跨模块排序走 `/module-config-order`，携带完整启用集合身份列表与版本，在同插入点、位置内交换当前受众可见的槽位（跨官方档位也可，先后由 `configOrder` 覆盖）——它是**参与装配的跨模块**排序，不声明单一主语。排序不会改写正文、官方定位 `order` 或世界书语义。详见 [ADR-0006](adr/0006-module-config-order.md)。
 
-**刻度来源**：区段边界由 `/meta` 与 `/bootstrap` 运行时下发，数值取官方 `getSectionOrder(name)` / `getContextOrder(name)`；每组取可求值档位的 min/max，任一组全不可用才不下发整表。`src/shared/official-orders.ts` 的名字分组对应 `0.2.2-rc.1`（section 34 项 / context 7 项，包含 `TOOL_APPLY_PATCH`、`TOOL_SCHEDULE`，不含已移除的 `TOOL_CORDIS`）；仍为 section 六组与 context 一组，数值不硬编码。`verify:host` 以已安装发布类型为真值检查名字集合，缺项或多项都失败。快捷入口使用 `from - 1` 插入区段之前，避免同 order 时按名称排序落到官方段之后；末项使用 `max(to) + 1`。
+**刻度来源**：`/meta` 与 `/bootstrap` 运行时下发区段边界，数值取官方 `getSectionOrder(name)` / `getContextOrder(name)`。每组取可求值档位的 min/max；任一组全不可用则不下发整表。名字分组由 `src/shared/official-orders.ts` 对齐已安装的 `dsh-system-prompt` 发布类型，`verify:host` 检查集合，缺项或多项都失败。快捷入口用 `from - 1` 插在区段之前，避免同 order 时落到官方段之后；末项用 `max(to) + 1`。
 
 ## 参数所有权与存储
 

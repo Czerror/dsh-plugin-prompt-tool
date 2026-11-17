@@ -1,9 +1,9 @@
 # 桌面版插件接口契约
 
 > 适用范围：dsh-plugin-prompt-tool 作为外部 Cordis 插件，在 Electron 桌面版（DeepSeek Harness Desktop）中的装配方式、可用宿主接口与 Web 版的行为差异。
-> 本文描述当前实现的稳定契约，不是实施计划；与官方源码不一致时以官方源码为准。
+> 插件构建与依赖基线为已发布的 DSH `0.2.2-rc.2`；本文桌面壳行为核对自官方 `0.2.2-rc.3` 工作树，不据此承诺 rc.2 的桌面能力。升级或适配以目标版本的发布包、类型和源码为准。
 > 相关代码：`cordis.patch.yml`、`package.json#dsh`、`src/index.ts`、`src/client/index.ts`、`src/shared/bridge-contract.ts`。
-> 官方依据：DeepSeek Harness 工作树 `apps/desktop/README.zh.md` 与 `apps/desktop/src/`；本文所有结论均可回溯到具体文件行号。
+> 官方依据：DeepSeek Harness 的 `apps/desktop/src/`、`apps/desktop-host/src/` 与 `packages/client/modules/src/index.ts`。行号随版本变化，核对时按符号定位。
 
 本文只记录长期稳定的接口边界。桌面版自身的打包、签名、更新与安装器流程不在范围内。
 
@@ -22,18 +22,9 @@
 
 ## 2. 插件在桌面版的装配链
 
-    PROFILE_TEMPLATES.web            packages/boot/app-boot/src/profile.ts:183-185
-      -> initProfile(profileDir)     apps/desktop/src/project-manager.ts:175
-      -> $DSH_HOME/profiles/desktop  apps/desktop/src/paths.ts:19
-      -> loadProfileDirectory        apps/desktop-host/src/index.ts:23
-      -> runtime resolution          apps/cli/src/profile-boot.ts:205-206
+Desktop 从 web 模板初始化 `$DSH_HOME/profiles/desktop`，随后加载该目录。本插件作为外部 bundle 加入 `dsh.profile.bundles`。该 profile 由 Electron 独占，CLI 拒绝使用 `desktop` 名称（大小写不敏感）。
 
-要点：
-
-- Desktop profile 由 **web 模板**初始化（`['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']`），本插件是随后追加进 `dsh.profile.bundles` 的外部 bundle。
-- Desktop 用 `loadProfileDirectory` 加载已初始化目录，**不经 CLI 的 profile 查找**；CLI 直接拒绝该名字：`profile "desktop" is managed exclusively by the Electron application`（`apps/cli/src/args.ts:83-87`，大小写不敏感）。
-- 官方包经 **runtime resolution 拦截 ESM/CJS 解析器**，不在 profile 的 `node_modules` 里建链接；profile 侧只清理早期 Link 后端写下的 `.dsh-module-fallback` 投影（`apps/desktop/src/project-manager.ts:89`）。启动**从不运行 pnpm**。
-- 不要与"不可变 runtime 树里存在物理 `node_modules/<name>`"混淆（`apps/desktop/src/runtime-tree.ts:130`）——那是签名资源内部，不是 profile 的链接。
+官方包通过 runtime resolution 解析，不在 profile 的 `node_modules` 建链接，启动不运行 pnpm。签名 runtime 资源内部的物理 `node_modules` 不属于 profile 装配面。
 
 本插件的声明（三处缺一不可）：
 
@@ -89,7 +80,7 @@
 |---|---|---|---|
 | 1 | 启动注入的传递 | Host 采集后经 IPC 下发，页面调 `applyIndexInjections` | 服务端直接渲染进 index.html |
 | 2 | 页面侧 `script-preload` 注入行 | **空操作** | 生效 |
-| 3 | `__DSH_TRANSPORT__` | `{ ownsHost: true, streamBaseUrl }` → `isLoopback = true` | 不携带 → `isLoopback = false` |
+| 3 | 连接信任 | 壳提供 `ownsHost: true`，连接视为 loopback | 按页面 hostname 判断，localhost／loopback 地址也为 true |
 | 4 | 插件 bundle 缓存头 | 强制改写为 `no-store`（revision 每次启动都变） | 沿用 Host 的 immutable |
 | 5 | 转发时的头处理 | 响应剥 `set-cookie` 与连接级头；请求剥 `host/origin/cookie/sec-fetch-site` 再注入 Host cookie | 直连，无此层 |
 | 6 | origin 校验 | `origin` 非 `dsh-app://app` 直接 403 | 无 |
@@ -124,60 +115,41 @@
 
 ## 7. 适配约束
 
-本插件与桌面版的接口只有一条:**loopback settings bridge**。因此：
+插件业务状态通过 loopback settings bridge 读写，导航、会话与目录选择复用官方客户端服务：
 
 - 所有插件状态读写走 `/api/prompt-tool/settings/*`，不新增任何 Electron IPC 依赖；桌面壳没有为插件预留这类通道。
 - bridge 的 loopback、Host/Origin 校验、请求体上限、统一 `{ ok, value }` 包装在两端一致，桌面版不额外放宽。
 - 桌面版多一层 Electron HTTP 转发，**插件侧不需要为之做任何特殊处理**；反向代理式的头改写由壳负责。
 - 诊断插件问题时，页面文档是 `dsh-app://app`，不要把 `http://127.0.0.1:<端口>/...` 的裸探测结果当成插件行为的证据：桌面版端口由系统分配，且该端口需要 Host 认证 cookie、`/plugins/*` 与 `/api/prompt-tool/*` 的认证要求不同。
-- **目录选择走官方原生抽象**：本插件用 `ctx.uiWorkspace.pickDirectory()`（`src/client/index.ts`），而不是直接调桌面桥 `__DSH_DIRECTORY_PICKER__`。2026-09-26 在 Windows 桌面版实测：模块包导入与素材上传的目录选择入口**弹出原生资源管理器对话框**，功能正常。官方自身也是二选一（`ui-directory-picker-native` 在桥存在时用 `desktop.pick()`，否则回落到同一抽象），因此复用抽象即可，无需为桌面版特判。
+- 目录选择调用 `ctx.uiWorkspace.pickDirectory()`（`src/client/index.ts`），由宿主决定是否使用原生对话框；插件不直接依赖 `__DSH_DIRECTORY_PICKER__`。
 
 ### 7.1 窗口 chrome 让位（消费官方 CSS 变量）
 
-桌面版的窗口顶部有一段**原生** chrome 不参与网页布局；插件若把可交互控件画在那里，点击会被 Electron 判成拖窗口。官方为此在根元素发布四个变量，**插件只消费它们，不做运行时平台探测**：
+工作台使用宿主原生槽位，面板几何和标题栏让位由宿主持有，不再创建 body portal 抽屉或叠加标题栏内边距。
 
-| 变量 | 桌面版取值 | Web 版 | 用途 |
-|---|---|---|---|
-| `--dsh-frame-chrome-top` | Windows 标题栏高度（`data-windows-titlebar` 时取 `--dsh-windows-titlebar-height`；全屏为 0） | 未定义 → 回退 0 | 原生 chrome 整层顶让位 |
-| `--dsh-windows-titlebar-height` | Windows 40px | 未定义 → 回退 0 | 精确的原生 caption 行高度 |
-| `--dsh-frame-top-clearance` | macOS 固定 48px／Windows 同 caption 高度 | 未定义 | 「窗口顶带下沉量」语义，含额外 8px |
-| `--dsh-frame-leading-clearance` | macOS 收起侧栏时 160px / 全屏 84px | 未定义 | 左上角窗口 chrome 的行内带宽 |
+插件自有业务浮层仍须避开窗口拖拽带：
 
-**本插件只用其中三个，且分工不同**：整层让位一律用 `--dsh-frame-chrome-top`（它在 Web 下未定义即回退 0，全屏下被官方显式置 0，因此叠加写法两端都对，**不需要任何 `data-platform` 分支**）；`--dsh-frame-leading-clearance` 只用于抽屉左内边距（macOS 交通灯）；只有需要**精确 caption 行高度**做几何夹取的悬浮面板才读 `--dsh-windows-titlebar-height`——`--dsh-frame-top-clearance` 面向「窗口顶带下沉」语义、会多让 8px，不适合当 caption 真源。
-
-本插件消费这些变量的位置：
-
-| 位置 | 变量 | 解决的问题 |
+| 消费位置 | 官方变量 | 规则 |
 |---|---|---|
-| `src/client/app/workbench/Workbench.module.css`（抽屉整层 `inset`） | chrome-top | 抽屉内容顶到窗口边缘 |
-| `src/client/app/workbench/Workbench.module.css`（抽屉面板左内边距） | leading-clearance | macOS 交通灯压住品牌与标题 |
-| `src/client/ui/controls.module.css`（模态背板 `inset` 与模板模态 `max-height`） | chrome-top | 矮窗口下居中模态的头部进入拖拽带 |
-| `src/client/ui/anchored-popover.ts`（锚定面板顶边夹取） | windows-titlebar-height | 面板夹取上界要按 caption 行高算，不能用会多让 8px 的顶带值 |
+| `src/client/ui/controls.module.css` | `--dsh-frame-chrome-top` | 模态背板的顶部与最大高度只让位一次；Web 下回退 0 |
+| `src/client/ui/anchored-popover.ts` | `--dsh-windows-titlebar-height` | 按实际 caption 行高夹取悬浮面板，不用含额外留白的 `--dsh-frame-top-clearance` |
 
-**让位只做一次**：工作台是 body portal 抽屉，不继承官方 `AppFrame` 的 `padding-top: var(--dsh-windows-titlebar-height)`（`packages/client/ui-layout/src/client/AppFrame.module.css:26-32`），所以这一次让位由抽屉面板承担；masthead 等内层**不再叠加**同一变量。叠加两次会把标题推到 caption 下沿的两倍处（实测约 90px），比官方内容起点低一整条 caption 行，页签行也跟着下移；masthead 自身只保留呼吸空间（总高 40px，与官方会话头持平），标题因此与会话标题同线、页签与官方「对话/轨迹」同线。
+插件不再消费 `--dsh-frame-leading-clearance`。不读取宿主 DOM，不新增运行时平台分支；桌面窗口几何的版本变化需对照官方布局源码复核。
 
 ## 8. 已知残留
 
-- **预设导出的下载确认**：`src/client/features/modules/ModuleExportDialog.tsx` 用 blob URL + `a[download]` 触发下载。桌面主窗口 session 没有 `will-download` 处理（只有 guest 侧 session 注册并 `preventDefault`），因此走 Electron 默认下载流程（原生「另存为」对话框）。当前把 `revokeObjectURL` 的宽限期设为 60 秒作为冗余保险；blob 数据在下载启动时已被读取，**这是保险而非功能依赖**。
-- **悬浮入口位置偏好不做跨载体迁移**：位置只写 `localStorage`，桌面 origin 是 `dsh-app://app`，与 Web 版互不相通，清站点数据即丢。官方同类偏好在桌面版有走原生文件适配器的先例（快捷键存 `userData/keybindings.json`），本插件暂不跟进。
-- **悬浮入口可能落进窗口顶部拖拽带（影响有限）**：`src/client/app/workbench/floating-trigger-position.ts` 的夹取下界只保留 8px 边缘留白（`y ≥ 8`），没有避开 Windows 原生 caption 行（官方 `AppFrame.module.css:40-47` 的 `-webkit-app-region: drag`）。按钮高 28px，故拖到最上方时仍有下半截落在拖拽带之外：**按钮几何上始终完整可见，不会跑出窗口或"消失"，位置也仍可调整恢复**；真实影响只是上半截的按下会被当作拖窗口，可点区域变小。判定该交互是否需要避开、以及怎么避，属产品决策，需要时以官方变量 `--dsh-windows-titlebar-height` 为下界。
+- 模块导出仍由 `src/client/features/modules/ModuleExportDialog.tsx` 使用 blob URL 与 `a[download]`，60 秒后回收 URL。rc.3 的 `apps/desktop/src/file-actions.ts` 已有 `will-download` 处理，但只接管带 `#dsh-download=` 的官方请求；本插件未走该接口，下载交互仍由 Electron 默认流程决定，需按目标桌面版本实测。
+
+工作台已采用原生导航、会话分页与右侧 tab，不再有悬浮入口或其 localStorage 位置偏好。
 
 ## 9. 与本文相关的官方文档/源码不一致
 
-排查时已核对并记录，供后续升级时复核：
-
-| 位置 | 不一致 |
-|---|---|
-| `docs/subsystems/boot.zh.md:19` | 只列 `ChangeResult.application` 四个值；源码是五个（含 `cancelled`，`packages/boot/plugin-manager/src/types.ts` 的 `ChangeResult.application`） |
-| `packages/extensions/cordis-client-runner/src/index.ts:5` | 注释写作 `dshClient`，实际字段是 `package.json.dsh.client` |
-| `packages/boot/app-boot/src/profile.ts:11-14` | 层顺序注释漏了 home 级 patch；实现与另外三处文档都含它 |
-| `packages/bundle/web-app/cordis.patch.yml:290` | 注释称 "Web profiles opt in"，与 `:293` 表达式（非 desktop 一律 disabled，无 opt-in 开关）不符 |
-| `docs/cookbook/adding-a-settings-card.zh.md:42` | 写 `form.state`；源码无 `state` 成员，只有 `getSnapshot()` / `subscribe()` |
+本文不维护随版本漂移的官方注释差异清单。遇到文档与类型冲突，先核对目标发布版本的实现；本地 rc.3 源码只能作为对应版本的依据，不能替代 rc.2 发布契约。
 
 ## 10. 更新本文的方式
 
 改动本插件的桌面版适配时：
 
 1. 先在官方工作树核对对应文件（本文引用的行号会随官方版本漂移，行号失效时按符号名重新定位）。
-2. 只把**稳定契约**写进本文；一次性的排查结论、临时探测与版本相关的临时现象留在项目修改记忆（`D:\AI\workspase\.ai-memory\dsh-plugin-prompt-tool\`）。
+2. 只记录稳定契约及必要版本条件；一次性探测和历史排查结论不保留在本文。
 3. 交付前运行 `git -C <repo> diff --check`，并核对本文中的路径与命令仍然存在。

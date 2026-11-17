@@ -15,7 +15,7 @@ In the Prompt Tool workspace, you can:
 
 ## Install the plugin
 
-Requires DSH `0.2.2-rc.2` or later. For the CLI, you also need Node.js `24.9.0+` and pnpm on your PATH. See [package.json](package.json) for all requirements.
+Requires DSH `0.2.2-rc.2` or later. For the command-line interface (CLI), you also need Node.js `24.9.0+` and pnpm on your PATH. See [package.json](package.json) for all requirements.
 
 ### Desktop or Web
 
@@ -45,7 +45,7 @@ After installation, open **Prompt Tool** from the sidebar:
 3. Edit the module’s rules on **Main session** or **Subagent**. Save the text, conditions, and actions, and enable rules as needed.
 4. To check the result, click **Run diagnostics once** for rule and current-session diagnostics.
 
-You can import native YAML/JSON, folders/ZIP files, SillyTavern presets, PNG/JSON character cards, and world books. New and imported modules start disabled. See [SillyTavern import details](docs/SillyTavern.md) for conversion limits.
+You can import [YAML](https://yaml.org/)/[JSON](https://www.json.org/json-en.html) module files, folders/[ZIP archives](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), SillyTavern presets, [PNG images](https://www.w3.org/TR/png/)/JSON character cards, and world books. New and imported modules start disabled. See [SillyTavern import details](docs/SillyTavern.md) for conversion limits.
 
 Save before refreshing the page: unsaved drafts may be lost. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
 
