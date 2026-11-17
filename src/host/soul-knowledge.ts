@@ -669,7 +669,9 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         if (['learning-confirm', 'learning-forget', 'learning-withdraw'].includes(request.action)) {
           if (value.participants?.findLast(row => row.sessionId === sessionId)?.parent) throw new Error('子任务不能确认或管理用户学习')
           const row = next.learning?.find(row => row.id === request.sourceId)
-          if (!row || !sources(directory, sessionId).histories.some(source => source.id === row.sourceId)) throw new Error('学习不存在或当前无权管理')
+          const project = value.projects?.find(item => item.sessionId === sessionId)?.identity
+          const manageable = request.action === 'learning-confirm' ? sources(directory, sessionId).histories : (value.histories ?? []).filter(source => source.scope === 'general' || source.scope === project)
+          if (!row || !manageable.some(source => source.id === row.sourceId && source.scope === row.scope)) throw new Error('学习不存在或当前无权管理')
           if (request.action === 'learning-confirm') {
             if (row.state !== 'candidate') throw new Error('只有候选可以确认')
             await owner.refreshEvidence(directory, signal, sessionId)
@@ -685,7 +687,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
             for (const item of next.learning ?? []) if (item.previous && disabled.has(item.previous)) { item.state = row.state; disabled.add(item.id) }
           }
         } else if (request.action === 'enable' || request.action === 'disable') {
-          if (!scopeOf(value, sessionId)) throw new Error('启用持续记忆前必须明确选择项目')
+          if (!(request.action === 'enable' ? scopeOf(value, sessionId) : value.projects?.find(row => row.sessionId === sessionId)?.identity)) throw new Error('启停持续记忆前必须明确选择项目')
           next.directory = canonicalDirectory(directory)
           next.continuity = request.action === 'enable' && value.continuity?.enabled ? value.continuity : { enabled: request.action === 'enable', enabledAt: Date.now(), generation: randomUUID() }
           if (request.action === 'enable' && !value.continuity?.enabled) {

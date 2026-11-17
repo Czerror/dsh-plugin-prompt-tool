@@ -39,7 +39,7 @@ export function registerModuleFileTools(ctx: Context, host: Pick<ModuleToolHost,
           const target = host.target(exec, args.moduleId)
           if (knowledge && !knowledge()) throw new Error('知识来源授权持久状态不可用')
           const owner = knowledge?.(), sessionId = exec.agent?.session.id
-          if (owner && owner.status(target.dir).state !== 'unbound') await owner.refreshEvidence(target.dir)
+          if (owner && owner.status(target.dir).state !== 'unbound') await owner.refreshEvidence(target.dir, exec.signal, sessionId)
           exec.signal?.throwIfAborted()
           if (knowledge?.() !== owner || host.target(exec, args.moduleId).dir !== target.dir || exec.agent?.session.id !== sessionId) throw new Error('模块文件读取来源或会话已变化')
           owner?.assertFile(target.dir, resolveModuleReadPath(target.dir, args.path, ['assets', 'data'], { allowRootMemory: true }), sessionId)

@@ -126,6 +126,14 @@ test('用户升级：完整预览确认、目标变化拒绝、私有资产保�
   const conflict = JSON.parse((await run({ action: 'preview' })).text)
   assert.equal(conflict.status, 'conflict')
   assert.equal(readFileSync(join(dir, 'assets', 'tools.md'), 'utf8'), 'USER CUSTOM TOOLS')
+  const learningId = owner.learning(dir, agent.session.id)[0].id
+  renameSync(project, project + '-missing')
+  await assert.rejects(owner.manage(dir, { moduleId: id, action: 'learning-forget', sourceId: learningId, expectedRevision: owner.status(dir).binding.revision }, 'unrelated-session', signal), /无权/, '减权不能跨会话项目归属')
+  const forgotten = await Promise.allSettled([manage({ action: 'learning-forget', sourceId: learningId })])
+  const withdrawn = await Promise.allSettled([manage({ action: 'learning-withdraw', sourceId: learningId })])
+  const disabled = await Promise.allSettled([manage({ action: 'disable' })])
+  assert.deepEqual([...forgotten, ...withdrawn, ...disabled].map(row => row.status), ['fulfilled', 'fulfilled', 'fulfilled'], '项目丢失仍允许遗忘、撤回和停用')
+  assert.equal(owner.status(dir).binding.continuity.enabled, false)
   renameSync(dir, dir + '-original'); cpSync(dir + '-original', dir, { recursive: true })
   assert.equal(owner.status(dir).state, 'unavailable', '普通目录替换不能沿用受控升级的身份交接')
 })
@@ -232,6 +240,7 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   await owner.refreshEvidence(f.dir, undefined, 'session-a')
   owner.control(f.dir, 'session-a')()
   assert.equal(owner.sources(f.dir, 'session-a').state, 'ready', '其他会话项目丢失不阻止当前合法项目')
+  assert.equal((await call('module_file_read', { path: 'memory.md' })).isError, false, '文件工具按真实会话准备，不受其他项目丢失影响')
   renameSync(unrelatedProject + '-moved', unrelatedProject)
   const select = async selection => {
     const request = { moduleId: 'alice', action: 'source-preview', scope: 'project', ...selection }
