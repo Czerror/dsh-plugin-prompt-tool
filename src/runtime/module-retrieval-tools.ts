@@ -103,7 +103,7 @@ export function createModuleRetrievalProvider(host: Pick<ModuleToolHost, 'target
         const current = [...(state.modules.get(moduleId)?.values() ?? [])].at(-1)
         if (!current) throw new Error('检索模块未授权')
         const owner = knowledge?.()
-        if (owner && owner.status(current.dir).state !== 'unbound') await owner.refreshEvidence(current.dir)
+        if (owner && owner.status(current.dir).state !== 'unbound') await owner.refreshEvidence(current.dir, undefined, agent.session.id)
       })
       state.indexes.set(moduleId, retrieval)
     }
