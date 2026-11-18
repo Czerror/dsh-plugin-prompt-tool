@@ -9,7 +9,7 @@ import type { SoulStateObservation } from './soul-state-tools.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
 import { assertModuleSnapshotSource } from '../host/module-install.ts'
 import { readModuleFacts } from '../host/module-params.ts'
-import { deriveSoulSelfParts, renderSoulSelf, validateSelfBudget } from '../host/soul-self.ts'
+import { deriveSoulSelfParts, renderSoulSelf, validateSelfBudget, SOUL_CONTEXT_RESET, soulContributionTag } from '../host/soul-self.ts'
 import { eventMessage, visibleMessages } from '../../engine/delivery.mjs'
 import { readSoulState } from '../host/soul-state.ts'
 import { readSoulLedgerProjection } from '../host/soul-ledger.ts'
@@ -37,7 +37,7 @@ interface SoulDeliverySource {
   moduleId: string
   sessionId: string
   actionId: string
-  soulDelivery: { version: 1; sessionId: string; audience: string; form: 'baseline'; digest: string }
+  soulDelivery: { version: 1; sessionId: string; audience: string; form: 'baseline' | 'update'; digest: string; previous?: string; parts: Record<string, string>; textDigest: string }
 }
 function deliverySource(value: unknown): SoulDeliverySource | undefined {
   if (!value || typeof value !== 'object') return
@@ -47,7 +47,11 @@ function deliverySource(value: unknown): SoulDeliverySource | undefined {
   if (typeof source.kind === 'string' && source.kind.startsWith('plugin:') && source.kind === `plugin:${source.plugin}` && typeof source.moduleId === 'string'
     && typeof source.sessionId === 'string' && typeof source.actionId === 'string' && stamp.version === 1
     && stamp.sessionId === source.sessionId && typeof stamp.audience === 'string'
-    && stamp.form === 'baseline' && typeof stamp.digest === 'string' && /^[a-f0-9]{64}$/.test(stamp.digest)) return value as SoulDeliverySource
+    && (stamp.form === 'baseline' || stamp.form === 'update') && typeof stamp.digest === 'string' && /^[a-f0-9]{64}$/.test(stamp.digest)
+    && typeof stamp.textDigest === 'string' && /^[a-f0-9]{64}$/.test(stamp.textDigest)
+    && stamp.parts !== null && typeof stamp.parts === 'object' && !Array.isArray(stamp.parts)
+    && Object.values(stamp.parts).every(hash => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash))
+    && (stamp.form === 'baseline' || typeof stamp.previous === 'string')) return value as SoulDeliverySource
 }
 function messageText(value: unknown): string | undefined {
   if (!value || typeof value !== 'object') return
@@ -197,15 +201,15 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     renderChanges: (id: string, agent: Agent, signal?: AbortSignal) => withEvidence([id], agent, signal, () => {
       const dir = source(id, agent, signal), owner = knowledge?.()
       const audience = (agent.session.header.delegationDepth ?? 0) > 0 ? 'subagent' : 'main'
-      const learning = owner?.status(dir).state === 'bound' ? owner.learning(dir, agent.session.id).map(row => ({ id: row.id, text: `- ${row.text}`, protected: row.layer === 'core' || row.layer === 'locked' })) : []
+      const learning = owner?.status(dir).state === 'bound' ? owner.learning(dir, agent.session.id).map(row => ({ id: `learning:${row.id}`, text: `- ${row.text}`, protected: row.layer === 'core' || row.layer === 'locked' })) : []
       const facts: Array<{ id: string; text: string }> = []
       const ledger = readSoulLedgerProjection(dir)
       const allowed = legacyAllowed(dir) ? null : new Set(owner?.status(dir).binding?.continuity?.enabled ? owner.records(dir, agent.session.id).map(row => row.entryId) : [])
-      for (const item of ledger.items) if (item.status === 'open' && (allowed === null || allowed.has(item.id))) facts.push({ id: item.id, text: `- [${item.status}] ${item.id}：${item.entry['概要']}` })
+      for (const item of ledger.items) if (item.status === 'open' && (allowed === null || allowed.has(item.id))) facts.push({ id: `ledger:${item.id}`, text: `- [${item.status}] ${item.id}：${item.entry['概要']}` })
       const state = readSoulState(dir, agent.session.id, sessionOwner())
-      if (state.mark) facts.push({ id: 'session-mark', text: `- 显式状态：${state.mark.text}` })
+      if (state.mark) facts.push({ id: 'mark:session', text: `- 显式状态：${state.mark.text}` })
       const water = pressure(dir, agent)
-      if (water.state === 'known' && water.level !== 'normal') facts.push({ id: 'pressure', text: `- 上下文水位：${water.guidance}` })
+      if (water.state === 'known' && water.level !== 'normal') facts.push({ id: 'pressure:warning', text: `- 上下文水位：${water.guidance}` })
       const parts = deriveSoulSelfParts(dir, agent, readSelfBudget(dir), learning, facts, sourceText => {
         if (!sourceText.includes('{{')) return { text: sourceText, revision: '' }
         const snapshot = readModuleVariables(dir, { runtime: true })
@@ -214,21 +218,40 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
         const result = evaluateTemplate(sourceText, { module: snapshot.module, global: snapshot.global, sessionVariables: session.variables, session: agent.session, readOnly: true, sourceId: `${id}:self`, readRuntime: key => readValue(id, key, agent, signal) })
         return { text: result.text, revision: '' }
       })
-      const summary = digest(JSON.stringify(parts))
+      const entries = [['identity', parts.identity], ...parts.learning.map(row => [row.id, row.text]), ...parts.facts.map(row => [row.id, row.text])] as Array<[string, string]>
+      const current = Object.fromEntries(entries.map(([key, text]) => [key, digest(text)]))
+      const summarize = (mapping: Record<string, string>) => digest(JSON.stringify(Object.entries(mapping).sort(([a], [b]) => a.localeCompare(b))))
+      const summary = summarize(current)
       const accepted = new Set<number>(agent.session.snapshotEvents().filter(event => event.type === 'user/message').map(event => event.seq))
-      const baseline = visibleMessages(agent.session).filter(({ seq, message }) => {
+      let previous: SoulDeliverySource['soulDelivery'] | undefined
+      for (const { message } of visibleMessages(agent.session).filter(({ seq, message }) => {
         const stamp = deliverySource(message.source)
         return accepted.has(seq) && seq >= (agent.session.inheritedEventCount ?? 0)
           && stamp?.moduleId === id && stamp.sessionId === agent.session.id
           && typeof stamp.actionId === 'string' && stamp.soulDelivery?.version === 1 && stamp.soulDelivery.sessionId === agent.session.id && stamp.soulDelivery.audience === audience
-      }).sort((a, b) => b.seq - a.seq)[0]
-      if (deliverySource(baseline?.message.source)?.soulDelivery.digest === summary) return null
-      const text = [parts.identity, ...parts.learning.map(row => row.text), ...parts.facts.map(row => row.text)].join('\n')
+      }).sort((a, b) => a.seq - b.seq)) {
+        const stamp = deliverySource(message.source)!.soulDelivery
+        const body = messageText(message)
+        if (body === undefined || digest(body) !== stamp.textDigest || summarize(stamp.parts) !== stamp.digest) { previous = undefined; continue }
+        if (stamp.form === 'baseline') previous = stamp
+        else previous = previous?.digest === stamp.previous ? stamp : undefined
+      }
+      if (previous?.digest === summary) return null
+      let form: 'baseline' | 'update' = previous ? 'update' : 'baseline'
+      if (previous && ('omission:budget' in previous.parts || 'omission:budget' in current)) form = 'baseline'
+      const changes = entries.filter(([key]) => previous?.parts[key] !== current[key]).map(([, text]) => text)
+      for (const key of Object.keys(previous?.parts ?? {})) if (!(key in current)) changes.push(key === 'pressure:warning'
+        ? '此前水位警告解除。' : `[贡献 ${soulContributionTag(key)}] 已失效，不再依据。`)
+      let text = form === 'baseline' ? [SOUL_CONTEXT_RESET, ...entries.map(([, text]) => text)].filter(Boolean).join('\n') : changes.join('\n')
+      if (Buffer.byteLength(text) > readSelfBudget(dir)) {
+        form = 'baseline'
+        text = [SOUL_CONTEXT_RESET, ...entries.map(([, text]) => text)].filter(Boolean).join('\n')
+      }
       source(id, agent, signal)
       const key = keyOf(id, agent)
       if (rendered.size > 1024) rendered.delete(rendered.keys().next().value!)
       rendered.set(key, { at: new Date().toISOString(), candidates: [...(rendered.get(key)?.candidates ?? []), digest(text)].slice(-16), sessionId: agent.session.id })
-      return { text, source: { soulDelivery: { version: 1, sessionId: agent.session.id, audience, form: 'baseline', digest: summary } } }
+      return { text, source: { soulDelivery: { version: 1, sessionId: agent.session.id, audience, form, digest: summary, parts: current, textDigest: digest(text), ...(form === 'update' ? { previous: previous!.digest } : {}) } } }
     }),
     committed: (id: string, agent: Agent) => {
       source(id, agent)

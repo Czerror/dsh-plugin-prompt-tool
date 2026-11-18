@@ -269,6 +269,25 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     assert.ok(received, '真实模型请求包含本fixture来源消息，拒绝旧SELF或其他来源代替')
     assert.deepEqual(received.content, delivered.content, '模型实际收到已接纳身份消息的确切正文')
   }
+  for (const [index, mark] of ['DELTA MARK A', 'DELTA MARK B', 'DELTA MARK A', null].entries()) {
+    const state = variables.read(dir, fresh.agent.session.id)
+    await variables.edit(dir, fresh.agent.session.id, { changes: { 'soul.mark': mark }, expectedRevision: state.revision }, { signal })
+    const before = deliveryEvents().length
+    fresh.agent.send(createUserMessage({ content: [{ type: 'text', text: `mark transition ${index}` }], source: { kind: 'user' } }), 'next-turn', true)
+    await fresh.agent.whenIdle()
+    assert.equal(deliveryEvents().length, before + 1, '每次状态变化均正式接纳，包括A→B→A和清空')
+    const changed = JSON.stringify(deliveryEvents().at(-1).data.content)
+    assert.doesNotMatch(changed, /USER SKELETON|Keep answers concise/, '状态变化仅投递差量，不重发身份或未变化学习')
+    if (mark) assert.ok(changed.includes(mark), '新状态正文进入已接纳来源消息')
+    else {
+      assert.doesNotMatch(changed, /DELTA MARK A|DELTA MARK B/, '清空只撤销贡献，不回显旧状态正文')
+      const priorTag = JSON.stringify(deliveryEvents().at(-2).data.content).match(/\[贡献 ([a-f0-9]{64})\]/)[1]
+      assert.ok(changed.includes(`[贡献 ${priorTag}] 已失效，不再依据。`), '清空明确撤销此前公开标识的贡献')
+    }
+    const delivered = deliveryEvents().at(-1).data
+    const received = primaryRequests.at(-1).findLast(message => isDeliverySource(message.source))
+    assert.deepEqual(received?.content, delivered.content, '每次差量实际模型请求与接纳正文一致')
+  }
   learningRuntime.replace(learningRules)
   deliveryRetrieval.status = retrievalStatus
   const recordsBeforeDisable = (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id)))
@@ -564,8 +583,22 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const otherTools = await otherProject.agent.ctx.tools.resolve(otherContext)
   try { assert.doesNotMatch(JSON.stringify(await otherProject.agent.ctx.systemPrompt.assemble({ ...otherContext, toolSet: otherTools })), /刷新验证仍待运行|交接：下一步核对刷新日志/, '另一项目不能通过SELF读取同根账本交接') }
   finally { otherTools.dispose() }
+  learningRuntime.replace([{ moduleId: 'alice', rules: compileRules([{ id: 'self-changes', then: [{ id: 'self-changes', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'placeholder', fill: 'soul-self-changes', dedupe: 'none', mergeMode: 'separate' } }] }], { moduleId: 'alice' }) }])
+  fresh.agent.send(createUserMessage({ content: [{ type: 'text', text: 'open task baseline' }], source: { kind: 'user' } }), 'next-turn', true)
+  await fresh.agent.whenIdle()
+  const openBody = deliveryEvents().map(event => event.data.content.map(part => part.text).join('')).join('\n')
+  const taskLine = openBody.split('\n').findLast(line => line.includes(shelved.value.reference.entryId) && line.includes('[贡献 '))
+  assert.ok(taskLine, '关闭前已接纳事项贡献')
+  const taskTag = taskLine.match(/\[贡献 ([a-f0-9]{64})\]/)[1]
+  const beforeClose = deliveryEvents().length
   const closed = await handoffTool('handoff-close', { action: 'close', targetId: shelved.value.reference.entryId, outcome: 'completed', reason: '验证已经完成' })
   assert.equal(closed.isError, false, JSON.stringify(closed))
+  fresh.agent.send(createUserMessage({ content: [{ type: 'text', text: 'closed task transition' }], source: { kind: 'user' } }), 'next-turn', true)
+  await fresh.agent.whenIdle()
+  assert.equal(deliveryEvents().length, beforeClose + 1)
+  assert.equal(deliveryEvents().at(-1).data.content[0].text, `[贡献 ${taskTag}] 已失效，不再依据。`, '关闭事项只撤销原贡献')
+  assert.deepEqual(primaryRequests.at(-1).findLast(message => isDeliverySource(message.source))?.content, deliveryEvents().at(-1).data.content)
+  learningRuntime.replace(learningRules)
   assert.doesNotMatch(await self(), /刷新验证仍待运行/, '已收口事项不能在新会话重新打开')
   await manage({ action: 'disable' })
   assert.doesNotMatch(await self(), /交接：下一步核对刷新日志/, '关闭撤回交接贡献')
