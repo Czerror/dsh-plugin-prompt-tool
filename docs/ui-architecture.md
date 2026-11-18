@@ -163,7 +163,7 @@ slot 使用 ctx.slots.inject() 等待声明，再调用 ctx.slots.register()。�
           ├─ 工具预览
           └─ 模块
 
-模块运行总闸与手动诊断位于模块页，不另设 settings tab。`app/workspace/pages/ModulesWorkspacePage` 在模块列表前组合统一诊断卡，规则摘要和上下文激活摘要宽屏双栏、窄容器单列；成功时间、空态、错误、截断提示与折叠详情都在卡内。feature 之间不互相导入。数据 store 由 WorkspaceStoreOwner 独立持有，PromptWorkspace 消费其快照；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
+模块运行总闸与手动诊断位于模块页，不另设 settings tab。`app/workspace/pages/ModulesWorkspacePage` 在模块列表前放置紧凑的诊断工具条。未诊断时不占用结果栏；运行后可按需展开规则与当前会话的上下文结果，宽容器双栏、窄容器单列。收起结果仍提示失败或失效；展开和收起均不发请求。feature 之间不互相导入。数据 store 由 WorkspaceStoreOwner 独立持有，PromptWorkspace 消费其快照；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
 
 模块的目录物化、复制、删除和参数由本插件维护；模块不进入官方 `agentPresets` 注册表，编辑目标不驱动官方会话预设切换。工具预览仍可只读官方 roster；默认值 `selectedDefault` / `defaultId` 不参与模块设置。
 
