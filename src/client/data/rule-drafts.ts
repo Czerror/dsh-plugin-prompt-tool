@@ -18,6 +18,7 @@ export interface RulesDraft {
   entries: RuleEntry[]
   saved: RuleDefinition[]
   fields: Map<string, FieldDraft>
+  composing?: Set<string>
   revisions?: RuleRevisions
   meta?: RulesSnapshot['meta']
   remote?: RulesSnapshot
@@ -213,6 +214,30 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     } catch (error) { if (isLatest(draft, sequence)) { draft.retry = 'save'; draft.error = String(error) }; return false }
     finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
   }
+  const move = async (key: string, path: string, index: number, offset: -1 | 1): Promise<boolean> => {
+    if (!deps.isCurrent() || !draft.loaded || draft.busy !== undefined || draft.remote !== undefined
+      || draft.retry === 'read' || !draft.revisions || hasRuleFields(draft) || draft.composing?.size) return false
+    const entry = draft.entries.find(item => item.key === key && !item.deleted)
+    if (entry === undefined || !path.startsWith(`${key}:`)) return false
+    const value = structuredClone(entry.value)
+    let list: unknown = value
+    for (const part of path.slice(key.length + 1).split(':')) {
+      if (list === null || typeof list !== 'object' || !Object.hasOwn(list, part)) return false
+      list = (list as Record<string, unknown>)[part]
+    }
+    const target = index + offset
+    if (!Array.isArray(list) || !Number.isInteger(index) || index < 0 || index >= list.length || target < 0 || target >= list.length) return false
+    ;[list[index], list[target]] = [list[target], list[index]]
+    // 位置缓存属于旧子树；模块校验已确认它们均为干净格式缓存。
+    const prefixes = [`${path}:${index}`, `${path}:${target}`]
+    for (const name of draft.fields.keys()) if (prefixes.some(prefix => name === prefix || name.startsWith(prefix + ':'))) draft.fields.delete(name)
+    patch(key, value)
+    return submit()
+  }
+  const setComposing = (key: string, active: boolean): void => {
+    draft.composing ??= new Set()
+    if (active) draft.composing.add(key); else draft.composing.delete(key)
+  }
   const discard = (): void => {
     if (draft.busy !== undefined) return
     if (draft.remote !== undefined) acceptRules(draft, draft.remote)
@@ -226,6 +251,6 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
   const retryKind = (): 'read' | 'save' | 'publish' => draft.retry === 'read' || draft.remote !== undefined ? 'read'
     : draft.activationPending !== undefined ? 'save' : draft.publicationPending ? 'publish' : draft.loaded && rulesDirty(draft) ? 'save' : 'read'
   const retry = (): Promise<boolean> => retryKind() === 'publish' ? retryPublication() : retryKind() === 'save' ? submit() : load(true)
-  return { load, patch, add, remove, create, submit, retryPublication, discard, changed, retry, get retryKind() { return retryKind() } }
+  return { load, patch, move, setComposing, add, remove, create, submit, retryPublication, discard, changed, retry, get retryKind() { return retryKind() } }
 }
 export type RuleEditor = ReturnType<typeof createRuleEditor>

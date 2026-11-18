@@ -544,6 +544,8 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 主会话与子代理共用 `RuleCard`，每卡就是一条真实规则，不再存在模块级“编辑行为规则”二级编辑器。最外层折叠保留，收起只显示卡头，展开才挂载导航和表单；折叠前提交可保存草稿，非法输入保留供重开继续编辑。设置只承载共享参数与资产。原 `PromptConfigCard` 继续拥有指令文件编辑，主会话中置顶，子代理不显示重复文件卡。页面顺序不建立跨插入点的全局执行顺序。
 
+动作与整个分支的同列表上下移动是显式提交点，适用于 then、else 与嵌套列表：最终合法值、新顺序及同模块全部合法脏编辑一次提交，其他模块草稿独立。同模块任意未完成或非法字段、仍在进行的输入法合成都拒绝移动，保留原文与原顺序且不写入；合成结束不会重放移动，须再次激活按钮。移动只清理换位子树的干净位置缓存，沿既有共享草稿与提交 owner 保存，不先失焦保存旧顺序。写拒绝保留本地新顺序，冲突须先重读；落盘成功但发布失败不回滚，重试只发布。在途新编辑继续保留为待保存草稿。
+
 `InjectionPointsPanel#injectionPointSlots({ store, t, viewFilter, audience, keyword, … })` 是唯一的层装配入口，返回 `beforeCards`（页面级诊断卡与不占布局的定位 effect）以及 `renderLayerSettings`、`hasLayerSettings` 和 `layerCards`（某层某模块的卡片数据，含 `id` / `kind` / `searchText`）。两个页面声明受众视图、创建编排并持有工具草稿所有者，不手写层名判断或重复资产布局。能力参数与其余资产编辑器由实例卡内的层设置区承载。人设在普通规则内按动作编辑，不另设跨模块固定卡。
 
 `LayerSettingsContent` 的参数、装配能力与资产都按共享契约派生：`data/layer-cards.ts#layerCards` 一次给出该层该模块的卡片（`param` / `capability` / `missingCapability` / `asset` / `add`），渲染只按 kind 分组，资产复用各自专用编辑器、草稿池与写端点。模型参数不重复生成通用控件。创建本层能力复用 `ModuleCapabilityCreateMenu`（`features/modules/EngineModuleList.tsx`），提示词模板仍从原九层模板菜单创建。无可编辑设置的层不生成设置页签，无实例不生成兜底卡。设置视图首次进入才挂载，卡片保持展开时切换视图不丢输入；外层折叠卸载视图，草稿仍由工作台持有。

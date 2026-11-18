@@ -18,6 +18,48 @@ function harness(request, enqueue = async (_moduleId, task) => task()) {
   return { draft, editor, calls, switchModule: () => { current = false } }
 }
 
+test('rules bridge: moving commits the module once, rejects incomplete input and preserves in-flight edits', async () => {
+  const branch = { if: { scope: { audience: 'main' } }, then: [alpha.then[0]], else: [beta.then[0]] }
+  const original = { ...alpha, then: [branch, beta.then[0]], else: [alpha.then[0], beta.then[0]] }
+  let finish
+  const h = harness(async body => body.edits ? new Promise(resolve => { finish = resolve })
+    : { ok: true, value: body.refreshOnly ? snapshot(h.draft.saved, 'published') : snapshot([original, beta]) })
+  await h.editor.load()
+  const [entry, other] = h.draft.entries, path = entry.key + ':then'
+  h.editor.patch(other.key, { ...other.value, name: 'same module' })
+  h.draft.fields.set(other.key + ':full', { source: '{}', text: '{', error: 'unfinished' })
+  assert.equal(await h.editor.move(entry.key, path, 0, 1), false)
+  assert.deepEqual(h.draft.entries[0].value, original)
+  assert.equal(h.draft.fields.get(other.key + ':full').text, '{')
+  assert.equal(h.calls.length, 1, 'invalid sibling blocks both movement and writing')
+  h.draft.fields.delete(other.key + ':full')
+  h.editor.setComposing(other.key, true)
+  assert.equal(await h.editor.move(entry.key, path, 0, 1), false)
+  h.editor.setComposing(other.key, false)
+  assert.equal(h.calls.length, 1, 'composition end does not replay movement')
+  h.draft.fields.set(path + ':0:then:0:alpha-text:n', { source: '01', text: '01' })
+  h.draft.fields.set(entry.key + ':else:0:alpha-text:n', { source: '02', text: '02' })
+  const saving = h.editor.move(entry.key, path, 0, 1)
+  await Promise.resolve()
+  assert.equal(h.calls.length, 2)
+  const sent = h.calls[1]
+  assert.equal(sent.expectedModuleId, 'module-a')
+  assert.deepEqual(sent.expectedRevisions.rules, { alpha: 'baseline', beta: 'baseline' })
+  assert.deepEqual(sent.edits[0].rule.then, [beta.then[0], branch])
+  assert.equal(sent.edits[1].rule.name, 'same module')
+  assert.equal(h.draft.fields.has(path + ':0:then:0:alpha-text:n'), false)
+  assert.equal(h.draft.fields.has(entry.key + ':else:0:alpha-text:n'), true)
+  h.editor.patch(entry.key, { ...h.draft.entries[0].value, name: 'typed while saving' })
+  finish({ ok: true, value: { ...snapshot(sent.edits.map(edit => edit.rule), 'saved'), publicationPending: true, publicationError: 'publish failed' } })
+  assert.equal(await saving, false, 'publication failure does not undo a persisted move')
+  assert.equal(h.draft.entries[0].value.name, 'typed while saving')
+  assert.deepEqual(h.draft.saved[0].then, [beta.then[0], branch])
+  assert.equal(h.calls.length, 2, 'one move performs one module write')
+  assert.equal(await h.editor.retry(), true)
+  assert.deepEqual(h.calls[2], { expectedModuleId: 'module-a', refreshOnly: true })
+  assert.equal(h.draft.entries[0].value.name, 'typed while saving')
+})
+
 test('rules bridge: rename/delete use previous identity and CAS; unknown payload and action IDs survive', async () => {
   const next = { ...structuredClone(alpha), id: 'renamed-alpha', name: 'renamed' }
   const h = harness(async body => ({ ok: true, value: body.edits ? snapshot([next], 'saved') : snapshot() }))
@@ -43,9 +85,10 @@ test('rules bridge: CAS failure and switched module never discard local input', 
   const h = harness(async body => body.edits ? { ok: false, code: 'rules-conflict', message: 'revision changed' } : { ok: true, value: snapshot() })
   await h.editor.load()
   const key = h.draft.entries[0].key
-  const changed = { ...structuredClone(alpha), name: 'local draft' }
+  const changed = { ...structuredClone(alpha), name: 'local draft', then: [alpha.then[0], beta.then[0]] }
   h.editor.patch(key, changed)
-  assert.equal(await h.editor.submit(), false)
+  assert.equal(await h.editor.move(key, key + ':then', 0, 1), false)
+  changed.then.reverse()
   assert.equal(h.draft.error, 'revision changed')
   assert.deepEqual(h.draft.entries[0].value, changed)
   assert.equal(h.draft.revisions.rules.alpha, 'baseline')

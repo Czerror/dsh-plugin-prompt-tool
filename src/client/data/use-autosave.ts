@@ -29,6 +29,10 @@ export function useAutosave(identity: string, save: () => void) {
     }
   }, [identity])
   return {
+    commit: (action: () => void): void => {
+      cancel(); pending.current = false
+      if (!composing.current) action()
+    },
     flush, isFocused: () => focused.current, onBlur,
     onFocus: () => { focused.current = true; pending.current = false; cancel() },
     onCompositionStart: () => { composing.current = true },
