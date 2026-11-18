@@ -236,7 +236,8 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
       const facts: Array<{ id: string; text: string }> = []
       const ledger = readSoulLedgerProjection(dir)
       const allowed = legacyAllowed(dir) ? null : new Set(owner?.status(dir).binding?.continuity?.enabled ? owner.records(dir, agent.session.id).map(row => row.entryId) : [])
-      for (const item of ledger.items) if (item.status === 'open' && (allowed === null || allowed.has(item.id))) facts.push({ id: `ledger:${item.id}`, text: `- [${item.status}] ${item.id}：${item.entry['概要']}` })
+      if (ledger.lead && (allowed === null || allowed.has(ledger.lead.id))) facts.push({ id: 'ledger:lead', text: `- 当前主导：${ledger.lead.by}；${ledger.lead['概要']}` })
+      for (const item of ledger.items) if (allowed === null || allowed.has(item.id)) facts.push({ id: `ledger:${item.id}`, text: `- [${item.status}] ${item.id}：${item.entry['概要']}` })
       const state = readSoulState(dir, agent.session.id, sessionOwner())
       if (state.mark) facts.push({ id: 'mark:session', text: `- 显式状态：${state.mark.text}` })
       const water = pressure(dir, agent)
@@ -251,9 +252,11 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
       })
       const entries = [['identity', parts.identity], ...parts.learning.map(row => [row.id, row.text]), ...parts.facts.map(row => [row.id, row.text])] as Array<[string, string]>
       const current = Object.fromEntries(entries.map(([key, text]) => [key, digest(text)]))
-      const summarize = (mapping: Record<string, string>) => digest(JSON.stringify(Object.entries(mapping).sort(([a], [b]) => a.localeCompare(b))))
-      const summary = summarize(current)
       const previous = acceptedDelivery(agent, id, audience)
+      // 未知不是恢复正常；仅保留已送达警告的摘要，不缓存其正文。
+      if (water.state !== 'known' && previous?.parts['pressure:warning']) current['pressure:warning'] = previous.parts['pressure:warning']
+      const summarize = (mapping: Record<string, string>) => digest(JSON.stringify(Object.entries(mapping).sort(([a], [b]) => a.localeCompare(b))))
+      let summary = summarize(current)
       if (previous?.digest === summary) return null
       let form: 'baseline' | 'update' = previous ? 'update' : 'baseline'
       if (previous && ('omission:budget' in previous.parts || 'omission:budget' in current)) form = 'baseline'
@@ -264,6 +267,10 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
       if (Buffer.byteLength(text) > readSelfBudget(dir)) {
         form = 'baseline'
         text = [SOUL_CONTEXT_RESET, ...entries.map(([, text]) => text)].filter(Boolean).join('\n')
+      }
+      if (form === 'baseline' && water.state !== 'known') {
+        delete current['pressure:warning']
+        summary = summarize(current)
       }
       source(id, agent, signal)
       const key = keyOf(id, agent)

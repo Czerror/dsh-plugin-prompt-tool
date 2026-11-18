@@ -99,6 +99,7 @@ rules:
           mergeMode: separate
           dedupe: session
           order: 132
+          position: after-all
           templateFile: ./assets/criteria.md
 
   - id: soul-self
@@ -115,6 +116,7 @@ rules:
           mergeMode: separate
           dedupe: none
           order: 133
+          position: after-all
 
   - id: soul-tools
     name: soul 工具速查
@@ -133,6 +135,7 @@ rules:
           mergeMode: separate
           dedupe: session
           order: 134
+          position: after-all
           texts:
             - 重要决定、完成事项或长期反馈及时用 soul_ledger 记录索引；需要既有证据时用当前可用的 module_search/module_open 回取；需操作细节且 module_file_read 已提供时，按模块授权读取本模块 assets/tools.md。
 
@@ -156,6 +159,7 @@ rules:
           mergeMode: separate
           dedupe: session
           order: 134
+          position: after-all
           text: 重要决定、完成事项或长期反馈需记录，既有证据需回取时，先用 tool_search 检索 Soul 工具，确认工具可用后再调用；需操作细节且 module_file_read 已提供时，按模块授权读取本模块 assets/tools.md，不把检索或解锁当作记录或回取成功。
 
   - id: soul-tools-unavailable
@@ -178,6 +182,7 @@ rules:
           mergeMode: separate
           dedupe: session
           order: 134
+          position: after-all
           text: 当前未提供 Soul 记录或发现工具；需要记录重要决定、完成事项或回取既有证据时说明此限制，不声称已记录或已回取。
 
   - id: soul-core-sub

@@ -274,6 +274,66 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     assert.deepEqual(received.content, delivered.content, '模型实际收到已接纳身份消息的确切正文')
   }
   assert.equal(await deliveryService.renderChanges('alice', fresh.agent, signal), null, '已接纳可见身份不重复')
+  const ledgerChange = async (type, text) => {
+    if (type === 'lead') {
+      await owner.observe(dir, fresh.agent.session.id)
+      const { appendSoulLedger } = await import('../../src/host/soul-ledger.ts')
+      await owner.record(dir, fresh.agent.session.id, `delivery-${text}`, origin => appendSoulLedger(dir, { type, text, ref: 'fixture user explicitly designated this lead' }, { sessionId: fresh.agent.session.id, origin, signal }), signal)
+      return
+    }
+    const result = (await root.tools.execute({ agent: fresh.agent, signal, calls: [{ type: 'tool-call', id: `delivery-${text}`, name: 'soul_ledger', arguments: JSON.stringify({ moduleId: 'alice', action: 'append', type, text }) }] })).results[0].result
+    assert.equal(result.isError, false, JSON.stringify(result))
+  }
+  const advanceDelivery = async text => {
+    fresh.agent.send(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }), 'next-turn', true)
+    await fresh.agent.whenIdle()
+    return deliveryEvents().at(-1).data
+  }
+  await ledgerChange('lead', 'DELIVERY LEAD')
+  const leadBefore = deliveryEvents().length
+  assert.match(JSON.stringify((await advanceDelivery('observe lead change')).content), /DELIVERY LEAD/)
+  assert.equal(deliveryEvents().length, leadBefore + 1, '授权主导变更进入真实接纳消息')
+  await ledgerChange('shelved', 'DELIVERY PENDING REVIEW')
+  const { createHash } = await import('node:crypto')
+  const historicalLedger = readFileSync(join(dir, 'data', '02-soul.jsonl'), 'utf8')
+  const historicalBoundary = JSON.parse(readFileSync(join(dir, 'data', '.soul-ledger-v2.json'), 'utf8'))
+  writeFileSync(join(dir, 'data', '.soul-ledger-v2.json'), JSON.stringify({ ...historicalBoundary, length: historicalLedger.length, prefix: createHash('sha256').update(historicalLedger).digest('hex') }))
+  assert.equal(readSoulLedgerProjection(dir).items.find(row => row.entry['概要'] === 'DELIVERY PENDING REVIEW').status, 'pending-review')
+  assert.match(JSON.stringify((await advanceDelivery('observe historical pending')).content), /DELIVERY PENDING REVIEW/, '历史待核对事项首次进入SELF')
+  const moduleBeforePressure = readFileSync(join(dir, 'module.yml'), 'utf8')
+  writeFileSync(join(dir, 'module.yml'), 'id: alice\nmodules: []\nrules: []\nmoduleConfigs:\n  soul-maintenance:\n    pressureThresholds: [0.5, 0.7, 0.9]\n')
+  let measuredTokens = 95
+  root.provide('tokenMeter', { measure: () => ({ totalTokens: measuredTokens }) })
+  const requestHeader = fresh.agent.session.requestHeader.bind(fresh.agent.session)
+  const requestContext = fresh.agent.session.requestContext.bind(fresh.agent.session)
+  fresh.agent.session.requestHeader = () => ({ config: { provider: 'fixture', model: 'normal' } })
+  fresh.agent.session.requestContext = () => ({ provider: 'fixture', model: 'normal', contextWindow: 100 })
+  try {
+    assert.match(JSON.stringify((await advanceDelivery('warning')).content), /优先落盘/)
+    const warningCount = deliveryEvents().length
+    measuredTokens = NaN
+    const skeletonBeforeBudget = readFileSync(join(dir, 'data', 'SELF.src.md'), 'utf8')
+    try {
+      writeFileSync(join(dir, 'data', 'SELF.src.md'), 'B'.repeat(11800))
+      const budgetBaseline = await deliveryService.renderChanges('alice', fresh.agent, signal)
+      assert.equal(budgetBaseline.source.soulDelivery.form, 'baseline')
+      assert.equal('pressure:warning' in budgetBaseline.source.soulDelivery.parts, false, '预算重置不携带正文中不存在的历史警告摘要')
+      assert.doesNotMatch(budgetBaseline.text, /警告解除/)
+    } finally { writeFileSync(join(dir, 'data', 'SELF.src.md'), skeletonBeforeBudget) }
+    await advanceDelivery('unknown pressure')
+    assert.equal(deliveryEvents().length, warningCount, '未知测量不解除已接纳警告')
+    measuredTokens = 95
+    await advanceDelivery('same warning restored')
+    assert.equal(deliveryEvents().length, warningCount, '恢复相同警告不重复播报')
+    measuredTokens = 1
+    assert.match(JSON.stringify((await advanceDelivery('normal pressure')).content), /此前水位警告解除/)
+    await advanceDelivery('normal again')
+    assert.equal(deliveryEvents().length, warningCount + 1, '确认正常仅解除一次')
+  } finally {
+    fresh.agent.session.requestHeader = requestHeader
+    fresh.agent.session.requestContext = requestContext
+    writeFileSync(join(dir, 'module.yml'), moduleBeforePressure)
+  }
   for (const [index, mark] of ['DELTA MARK A', 'DELTA MARK B', 'DELTA MARK A', null].entries()) {
     const state = variables.read(dir, fresh.agent.session.id)
     await variables.edit(dir, fresh.agent.session.id, { changes: { 'soul.mark': mark }, expectedRevision: state.revision }, { signal })
@@ -333,7 +393,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const id = first.value.reference.entryId
   await send(message)
   assert.equal((await call()).isError, false)
-  assert.equal(readSoulLedgerProjection(dir).total, 1)
+  assert.equal(readSoulLedgerProjection(dir).total, 3)
   assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id)))[0].entryId, id)
   assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).histories.some(row => row.sessionId === agent.session.id && row.seqs.includes(agent.session.snapshotEvents().find(event => event.type === 'user/message').seq)), false)
   await send(createUserMessage({ content: [{ type: 'text', text: 'AUTOMATIC FOLLOWUP' }], source: { kind: 'agent-message' } }))
@@ -342,7 +402,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const partial = await call('partial-operation')
   assert.equal(partial.value.persisted, true)
   assert.equal(partial.value.derived.state, 'failed')
-  assert.deepEqual((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.recording(dir, agent.session.id))), { persisted: 2, pending: 1, derivedFailed: 1 })
+  assert.deepEqual((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.recording(dir, agent.session.id))), { persisted: 4, pending: 3, derivedFailed: 1 })
   await owner.dispose()
   const beforeReopenLoads = evidenceLoads
   owner = await openSoulKnowledge(facility, loadKnowledgeSession)
@@ -389,7 +449,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await Promise.all([
     owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], signal, async () => {
       firstReady(); await secondEntered
-      assert.equal(owner.records(dir, agent.session.id).length, 2)
+      assert.equal(owner.records(dir, agent.session.id).length, 4)
       const nestedCancel = new AbortController()
       let enteredNested, releaseNested, checkedNested
       const nestedEntered = new Promise(resolve => { enteredNested = resolve })
@@ -410,7 +470,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
       releaseNested()
       assert.deepEqual(await nestedChecked, ['rejected', 'rejected'], '子操作取消后迟到投影与原文读取均拒绝')
       assert.equal(evidenceLoads, loadsBeforeLate)
-      assert.equal(owner.records(dir, agent.session.id).length, 2, '子取消不撤销父消费资格')
+      assert.equal(owner.records(dir, agent.session.id).length, 4, '子取消不撤销父消费资格')
       assert.throws(() => owner.sources(dir, fresh.agent.session.id), /未准备/, '并发会话不串用证据scope')
       await assert.rejects(owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], signal, () => {}), /额外材料/, '嵌套不扩张固定集合')
     }),
@@ -436,8 +496,8 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await retirementRejected
   releaseRetired(); await retirementChecked
   owner = await openSoulKnowledge(facility, loadKnowledgeSession)
-  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id))).length, 2, 'seed无需session/event即可恢复对账')
-  assert.equal(readSoulLedgerProjection(dir).total, 2)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id))).length, 4, 'seed无需session/event即可恢复对账')
+  assert.equal(readSoulLedgerProjection(dir).total, 4)
   const publication = { expectedRevision: owner.status(dir).consolidationRevision, text: 'Authoritative project decision in detail.', refs: (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id))).map(row => row.entryId) }
   const consolidate = async (request, expectError = false) => {
     const result = (await root.tools.execute({ agent, signal, calls: [{ type: 'tool-call', id: 'publish', name: 'soul_state', arguments: JSON.stringify({ moduleId: 'alice', action: 'consolidate', ...request }) }] })).results[0].result
@@ -470,7 +530,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const failedPublication = await consolidate(publication)
   assert.equal(failedPublication.state, 'candidate')
   assert.deepEqual((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.map(row => row.content), [oldPublication.text])
-  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.recording(dir, agent.session.id))).pending, 1)
+  assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.recording(dir, agent.session.id))).pending, 3)
   assert.equal((await consolidate(publication)).state, 'published')
   assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.at(-1).content, publication.text)
   await manage({ action: 'disable' })
@@ -514,7 +574,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.length, 0, '撤权立即停用混合派生正文')
   await send(createUserMessage({ content: [{ type: 'text', text: 'unrelated new decision' }], source: { kind: 'user' } }))
   assert.equal((await call('after-single-revoke')).isError, false)
-  assert.equal(readSoulLedgerProjection(dir).total, 3, '单项撤权不阻断无关新材料')
+  assert.equal(readSoulLedgerProjection(dir).total, 5, '单项撤权不阻断无关新材料')
   await send(createUserMessage({ content: [{ type: 'text', text: '长期反馈：使用中文回答' }], source: { kind: 'user' } }))
   const feedback = await call('explicit-feedback')
   const propose = async args => {
