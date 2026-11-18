@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
 import type { RuleDiagnosticsSession } from '../../../data/rule-diagnostics-session.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
@@ -6,12 +6,15 @@ import { ModulesPage } from '../../../features/modules/ModulesPage.tsx'
 import { ContextActivationDiagnosticsCard } from '../../../features/prompts/ContextActivationDiagnosticsCard.tsx'
 import { DiagnosticsPanel } from '../../../features/modules/DiagnosticsPanel.tsx'
 import { Button } from '../../../ui/Button.tsx'
+import type { createWorkspaceBrowseState } from '../workspace-browse-state.ts'
 import css from './diagnostics.module.css'
 
-function DiagnosticResults({ children, t }: { children: ReactNode; t: PromptToolTranslate }): ReactNode {
-  const [open, setOpen] = useState(false)
-  return <details className={css.results} onToggle={event => setOpen(event.currentTarget.open)}>
-    <summary>{t(open ? 'diagnostics.hideResults' : 'diagnostics.results')}</summary>
+type ResultsDisclosure = ReturnType<typeof createWorkspaceBrowseState>['diagnosticsResults']
+
+function DiagnosticResults({ children, t, disclosure }: { children: ReactNode; t: PromptToolTranslate; disclosure: ResultsDisclosure }): ReactNode {
+  const open = useSyncExternalStore(disclosure.subscribe, disclosure.getSnapshot, disclosure.getSnapshot)
+  return <details className={css.results} open={open}>
+    <summary onClick={event => { event.preventDefault(); disclosure.toggle() }}>{t(open ? 'diagnostics.hideResults' : 'diagnostics.results')}</summary>
     {open && <div className={css.groups}>{children}</div>}
   </details>
 }
@@ -19,6 +22,7 @@ function DiagnosticResults({ children, t }: { children: ReactNode; t: PromptTool
 export function ModulesWorkspacePage(props: {
   store: PromptToolStore
   diagnostics: RuleDiagnosticsSession
+  resultsDisclosure: ResultsDisclosure
   t: PromptToolTranslate
   onReady: () => void
 }): ReactNode {
@@ -32,7 +36,7 @@ export function ModulesWorkspacePage(props: {
       : snapshot.status === 'error' ? props.t(context?.error !== undefined ? 'diagnostics.failed' : 'diagnostics.rulesFailed')
         : context?.error !== undefined ? props.t('diagnostics.contextFailed')
           : sessionId !== undefined && showRules && !showContext ? props.t('diagnostics.contextPending')
-            : snapshot.status === 'ready' ? props.t('diagnostics.completed') : ''
+            : snapshot.status === 'ready' ? props.t('diagnostics.completed') : props.t('diagnostics.never')
   return <>
     <section className={css.card} aria-label={props.t('diagnostics.title')}>
       <header className={css.header}>
@@ -42,7 +46,7 @@ export function ModulesWorkspacePage(props: {
         </Button>
       </header>
       <p className={css.notice} role="status" aria-atomic="true">{status}</p>
-      {(showRules || showContext) && <DiagnosticResults key={sessionId ?? ''} t={props.t}>
+      {(showRules || showContext) && <DiagnosticResults t={props.t} disclosure={props.resultsDisclosure}>
         {showRules && <DiagnosticsPanel diagnostics={props.diagnostics} t={props.t} />}
         {showContext && <ContextActivationDiagnosticsCard snapshot={context} sessionId={sessionId} t={props.t} />}
       </DiagnosticResults>}
