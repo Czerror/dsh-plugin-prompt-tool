@@ -31,6 +31,17 @@ import type { ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
 
+const ruleSearchText = new WeakMap<RuleDefinition, string>()
+
+function searchableRule(rule: RuleDefinition): string {
+  let text = ruleSearchText.get(rule)
+  if (text === undefined) {
+    text = JSON.stringify(rule).toLowerCase()
+    ruleSearchText.set(rule, text)
+  }
+  return text
+}
+
 export interface RulesWorkspaceProps {
   store: ModuleFactsPort & DraftsPort & RuleEditingPort & InstructionFilesPort & NoticePort & ModuleActionsPort
   t: PromptToolTranslate; scope?: 'main' | 'subagent'
@@ -110,7 +121,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     facts: factsFor(entry.value),
   }))).filter(({ entry, key, facts }) => !entry.deleted && (expanded === key || factsVisibleTo(facts, scope)))
     .filter(({ entry, moduleId: id, key, facts }) => expanded === key || (view === 'all' || view === 'context-activation' && facts.contextActivation || entry.value.layer === view)
-      && (!query || JSON.stringify(entry.value).toLowerCase().includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
+      && (!query || searchableRule(entry.value).includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
     .sort((a, b) => (rank.get(a.identity) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.identity) ?? Number.MAX_SAFE_INTEGER))
   const moduleSettings = enabledModules.flatMap(module => {
     const owner = owners.find(item => item.moduleId === module.id)
