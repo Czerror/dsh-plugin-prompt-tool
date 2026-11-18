@@ -221,15 +221,18 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       return item.seqs.every(seq => evidence.reference(item.sessionId, seq)?.public)
     })
     const allowed = new Set([...documents.map(row => row.sourceId), ...histories.map(row => row.id)])
+    let originals: Map<string, z.infer<typeof source> | z.infer<typeof history>> | undefined
+    const historyAt = evidence.histories(histories)
     for (const row of value.publications ?? []) {
       if (!value.continuity?.enabled) continue
       if (!row.roots.every(id => allowed.has(id)) || row.scope !== 'general' && row.scope !== project) continue
-      if (row.roots.some((id, index) => revisionOf(JSON.stringify([...(value.sources ?? []), ...(value.histories ?? [])].find(source => source.id === id))) !== row.rootVersions[index])) continue
-      if (row.roots.some(id => {
-        const source = histories.find(source => source.id === id)
-        if (!source) return false
-        return source.seqs.some((seq, index) => evidence.reference(source.sessionId, seq)?.version !== source.versions[index])
+      if (row.roots.some((id, index) => {
+        const selected = historyAt(id)
+        if (selected) return selected.version !== row.rootVersions[index]
+        originals ??= new Map([...(value.sources ?? []), ...(value.histories ?? [])].map(source => [source.id, source]))
+        return revisionOf(JSON.stringify(originals.get(id))) !== row.rootVersions[index]
       })) continue
+      if (row.roots.some(id => historyAt(id)?.valid === false)) continue
       try {
         identity(dirname(join(value.root, row.path)))
         const stat = lstatSync(join(value.root, row.path))
@@ -312,26 +315,33 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     learning(directory, sessionId, includeInactive = false) {
       const value = requireBinding(directory), access = sources(directory, sessionId)
       if (!includeInactive && !value.continuity?.enabled) return []
-      const allowed = new Set(access.histories.map(row => row.id))
-      const valid = (row: z.infer<typeof learning>, trail = new Set<string>()): boolean => {
-        if (trail.has(row.id)) return false
+      const historyAt = evidence.histories(access.histories)
+      const learningById = new Map(value.learning?.map(row => [row.id, row]))
+      const validity = new Map<string, boolean>()
+      const valid = (row: z.infer<typeof learning>): boolean => {
+        const cached = validity.get(row.id)
+        if (cached !== undefined) return cached
+        validity.set(row.id, false)
         if (row.previous) {
-          const previous = value.learning?.find(item => item.id === row.previous)
-          if (!previous || previous.state !== 'adopted' || !valid(previous, new Set([...trail, row.id]))) return false
+          const previous = learningById.get(row.previous)
+          if (!previous || previous.state !== 'adopted' || !valid(previous)) return false
         }
         if (row.evidence?.some(item => {
-          const source = access.histories.find(source => source.id === item.id)
-          return !source || revisionOf(JSON.stringify(source)) !== item.version || source.seqs.some((seq, index) => evidence.reference(source.sessionId, seq)?.version !== source.versions[index])
+          const source = historyAt(item.id)
+          return !source || source.version !== item.version || !source.valid
         })) return false
-        const source = access.histories.find(source => source.id === row.sourceId)
-        return Boolean(allowed.has(row.sourceId) && source && revisionOf(JSON.stringify(source)) === row.sourceVersion && source.seqs.every((seq, index) => evidence.reference(source.sessionId, seq)?.version === source.versions[index]))
+        const source = historyAt(row.sourceId)
+        const result = Boolean(source && source.version === row.sourceVersion && source.valid)
+        validity.set(row.id, result)
+        return result
       }
       if (includeInactive) {
         const project = scopeOf(value, sessionId), participant = value.participants?.findLast(row => row.sessionId === sessionId)
         return (value.learning ?? []).filter(row => (row.scope === 'general' || row.scope === project) && (!participant?.parent || participant.grants.includes(row.sourceId))).map(row => valid(row) ? row : { ...row, text: '[来源不可用，学习正文未展示]', ...(row.assessment ? { assessment: { ...row.assessment, reason: '[来源不可用，处理依据未展示]' } } : {}), inactiveReason: '来源撤权、缺失或版本变化；不生效，仅保留审阅元信息' })
       }
       const rows = (value.learning ?? []).filter(row => row.state === 'adopted' && valid(row))
-      return rows.filter(row => !rows.some(next => next.previous === row.id))
+      const replaced = new Set(rows.map(row => row.previous))
+      return rows.filter(row => !replaced.has(row.id))
     },
     learn(directory, sessionId, request, signal, assertAuthorized) {
       return tracked(queue.run(key(directory), async () => {
@@ -355,6 +365,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const direct = parsed.basis === 'explicit-long-term' && !participant?.parent && event.type === 'user/message' && data.source?.kind === 'user' && typeof scopeText === 'string' && /以后|今后|长期|始终|总是|from now on|always|going forward/i.test(scopeText) && !/这次|本次|暂时|今天|当前任务|just this|this time|temporar/i.test(scopeText) && !/身份|核心|原则|锁定|identity|principle|locked/i.test(original!) && !['core', 'locked'].includes(parsed.layer)
         if (parsed.previous && !owner.learning(directory, sessionId).some(row => row.id === parsed.previous && row.layer === parsed.layer && row.scope === source.scope)) throw new Error('被替换学习不存在或不适用')
         const access = sources(directory, sessionId), dependencies = new Map<string, string>(), roots = new Set<string>(), supporting = new Set<string>(), derivedRefs = new Set<string>()
+        const historyAt = evidence.histories(access.histories)
         const refs = [...new Set([parsed.ref, ...(parsed.refs ?? [])])]
         const visit = async (ref: string, support: boolean, trail = new Set<string>()): Promise<void> => {
           if (trail.has(ref)) throw new Error('学习证据循环')
@@ -366,11 +377,14 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
             return
           }
           const entry = visibleRecords(directory, sessionId).find(row => row.entryId === ref)
-          const origin = access.histories.find(row => row.id === (entry?.sourceId ?? ref))
+          const selected = historyAt(entry?.sourceId ?? ref)
+          const origin = selected?.source
           if (!origin || origin.scope !== source.scope) throw new Error('学习证据缺失或范围不一致')
+          if (!selected!.valid) throw new Error('学习证据版本变化')
           const originalSession = await loadEvidence(origin.sessionId)
+          const events = new Map(originalSession?.snapshotEvents().map(event => [event.seq, event]))
           for (const [index, seq] of origin.seqs.entries()) {
-            const event = originalSession?.snapshotEvents().find(row => row.seq === seq)
+            const event = events.get(seq)
             if (!event || revisionOf(JSON.stringify(event)) !== origin.versions[index]) throw new Error('学习证据版本变化')
             const data = (event as unknown as { data: { id?: string; source?: { kind?: string } } }).data
             // 只把经核实的真实用户消息计为独立经历；摘要和委派不创造根。
@@ -388,9 +402,10 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         const rootSession = await loadEvidence(currentParticipant?.rootSessionId ?? sessionId)
         // 最后一次加载可能使已检查来源变化；提交前同步复核完整依赖。
         const finalAccess = sources(directory, sessionId)
+        const finalHistoryAt = evidence.histories(finalAccess.histories)
         for (const [id, version] of dependencies) {
-          const origin = finalAccess.histories.find(item => item.id === id)
-          if (!origin || revisionOf(JSON.stringify(origin)) !== version || origin.seqs.some((seq, index) => evidence.reference(origin.sessionId, seq)?.version !== origin.versions[index])) throw new Error('学习提交证据已变化或撤权')
+          const origin = finalHistoryAt(id)
+          if (!origin || origin.version !== version || !origin.valid) throw new Error('学习提交证据已变化或撤权')
         }
         for (const ref of derivedRefs) {
           if (!finalAccess.documents.some(item => item.sourceId === ref)) throw new Error('学习提交派生来源已失效')
@@ -463,8 +478,9 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         for (const source of historyRoots) await loadEvidence(source.sessionId)
         await loadEvidence(sessionId)
         const session = await loadEvidence(participant?.rootSessionId ?? sessionId)
+        const historyAt = evidence.histories(historyRoots)
         for (const source of historyRoots) {
-          if (source.seqs.some((seq, index) => evidence.reference(source.sessionId, seq)?.version !== source.versions[index])) throw new Error('整理原始事件版本已变化')
+          if (!historyAt(source.id)?.valid) throw new Error('整理原始事件版本已变化')
         }
         const finalAccess = sources(directory, sessionId)
         const finalAllowed = new Set([...finalAccess.documents.map(row => row.sourceId), ...finalAccess.histories.map(row => row.id)])
@@ -668,8 +684,9 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
             if (row.state !== 'candidate') throw new Error('只有候选可以确认')
             if (owner.learning(directory, sessionId, true).find(item => item.id === row.id)?.inactiveReason) throw new Error('学习依赖证据已失效')
             const source = value.histories!.find(source => source.id === row.sourceId)!
-            const session = await loadEvidence(source.sessionId)
-            if (revisionOf(JSON.stringify(source)) !== row.sourceVersion || source.seqs.some((seq, index) => revisionOf(JSON.stringify(session?.snapshotEvents().find(event => event.seq === seq))) !== source.versions[index])) throw new Error('学习证据已变化')
+            await loadEvidence(source.sessionId)
+            const selected = evidence.histories([source])(source.id)!
+            if (selected.version !== row.sourceVersion || !selected.valid) throw new Error('学习证据已变化')
             row.state = 'adopted'
             row.confirmation = { sessionId, revision: value.revision }
           } else {

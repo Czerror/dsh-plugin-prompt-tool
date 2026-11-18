@@ -2,9 +2,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { LoadRetrievalSession, RetrievalSession } from './module-retrieval.ts'
 import { createRetrievalEventProjection, retrievalEventRevision } from './module-retrieval.ts'
+import { revisionOf } from './module-write.ts'
 
 export interface EvidenceSelection { key: string; histories: readonly { sessionId: string; seqs: readonly number[] }[] }
 interface Reference { version: string; public: boolean }
+type History = { id: string; sessionId: string; seqs: readonly number[]; versions: readonly string[] }
 interface Operation { active: boolean; keys: Set<string>; references: Map<string, Map<number, Reference>>; selected: Map<string, Set<number>>; signal: AbortSignal; parent?: Operation }
 
 export function createSoulEvidence(loadSession?: LoadRetrievalSession) {
@@ -152,6 +154,29 @@ export function createSoulEvidence(loadSession?: LoadRetrievalSession) {
     },
     reference(id: string, seq: number): Reference | undefined { return current().references.get(id)?.get(seq) },
     includes(id: string, seq: number): boolean { return current().selected.get(id)?.has(seq) ?? false },
+    histories<T extends History>(rows: readonly T[]) {
+      const operation = current()
+      let byId: Map<string, T> | undefined
+      const checked = new Map<string, { source: T; version: string; valid: boolean }>()
+      return (id: string) => {
+        current()
+        if (!operation.active) throw new Error('当前操作证据未准备或已释放')
+        byId ??= new Map(rows.map(row => [row.id, row]))
+        const source = byId.get(id)
+        if (!source) return undefined
+        let result = checked.get(id)
+        if (!result) {
+          let version: string | undefined, valid: boolean | undefined
+          result = {
+            source,
+            get version() { return version ??= revisionOf(JSON.stringify(source)) },
+            get valid() { return valid ??= source.seqs.every((seq, index) => operation.references.get(source.sessionId)?.get(seq)?.version === source.versions[index]) },
+          }
+          checked.set(id, result)
+        }
+        return result
+      }
+    },
     async verify(): Promise<void> {
       const operation = current()
       for (const [id, seqs] of operation.selected) {
