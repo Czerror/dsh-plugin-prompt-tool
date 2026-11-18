@@ -120,7 +120,7 @@ export function renderMatches(scored, query) {
     noun: 'tools',
     emptyText: `No tools match "${query}". An empty result only means no tool matched your keywords — if you need a specific tool, unlock it directly by exact name, e.g. tool_search({"toolNames":["web_search"]}).`,
     lineOf: ({ schema, name, exact }) => `- ${name}${exact ? ' (exact)' : ''}: ${String(schema?.description ?? '').split('\n')[0].slice(0, DESC_LIMIT)}`,
-    footer: 'Unlock with tool_search({"toolNames": ["<exact name>"]}).',
+    footer: 'Search matches are catalog candidates, not callable declarations. Exact names are unlocked with tool_search({"toolNames": ["<exact name>"]}); readiness is confirmed by the updated tool declarations (tools:sdk in PTC) on the next model request.',
   })
 }
 
@@ -131,17 +131,15 @@ export function createToolSearchDefinition(ctx, options = {}) {
   return {
     name: options.tool ?? 'tool_search',
     description: [
-      'Discover and unlock tools that are NOT currently available.',
+      'Discover catalog tools and submit exact names for unlocking on the next model request.',
       '',
       `This session starts with a minimal resident set: ${resident.join(', ')}. Everything else is unlocked on demand through this tool.`,
       '',
-      'Usage:',
-      '- `query` — search the catalog by keyword (matches tool names AND descriptions, 1-2 short words work best).',
-      '- call with NO arguments — list the catalog as group counts (`<prefix>_*(count) ...`), so you can see what exists before searching.',
-      `- \`${unlockKey}\` — unlock exact names. Unlocked tools appear from the NEXT request on and stay unlocked for the session.`,
+      '`query` searches names and descriptions; 1-2 short keywords work best. No arguments returns catalog group counts (`<prefix>_*(count) ...`). Search results only establish discovery.',
+      `\`${unlockKey}\` submits exact names for unlocking from the NEXT model request, without waiting for another user message. The session retains these names, subject to tool availability and visibility rules.`,
       '',
       `Example: ${options.tool ?? 'tool_search'}({"query":"pull request","${unlockKey}":["mcp__github__create_pull_request"]}) — search AND unlock in one call.`,
-      'IMPORTANT: if the task needs a capability outside that resident set — web search, subagents, task boards, MCP servers, anything not listed above — search for it here and unlock it. Do NOT make do with a resident tool when the tool you actually need is merely locked; an empty search result does NOT mean the tool does not exist, it only means no tool matched your keywords. Call with no arguments to see the catalog groups, then unlock by exact name.',
+      'A needed tool is ready when the updated tool declarations (tools:sdk in PTC) include it on the next model request. Neither a search match nor an unlock receipt establishes readiness; absence from the current declarations does not establish nonexistence. An empty search only means the keywords did not match. Completion of a tool operation requires its actual result and the evidence the task calls for.',
     ].join('\n'),
     parameters: toJsonSchema({
       query: { type: 'string', required: false, description: 'search keywords (e.g. "web", "subagent", "github")' },
@@ -162,7 +160,7 @@ export function createToolSearchDefinition(ctx, options = {}) {
       const lines = []
       // 解锁动作本身不需要任何运行时服务：引擎的 allowFrom 只读本工具的持久调用参数，
       // 所以即便目录不可用（无 tools 服务/无 agent），解锁也必须照样回报成功。
-      if (unlock.length > 0) lines.push(`Unlocked for the next request: ${unlock.join(', ')}`)
+      if (unlock.length > 0) lines.push(`Unlocked for the next request: ${unlock.join(', ')}. Confirm readiness in the updated tool declarations (tools:sdk in PTC) on the next model request; this receipt does not verify tool existence or availability.`)
       if (query.length === 0 && unlock.length > 0) return { text: lines.join('\n') }
       let schemas
       try {

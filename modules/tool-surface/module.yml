@@ -1,24 +1,3 @@
-# 工具面收窄 —— 常驻核心集 + tool_search 按需解锁。
-#
-# 为什么：工具面实测 **156 个工具、描述合计 46894 字符（约 12K token）**，每个请求都付。
-# 收窄到核心集后只剩十来个，其余按需解锁。
-#
-# `tool-visibility` 声明目录与 SDK 正文的呈现、执行闸和发现来源。
-# 常驻集只在这里写一次；首轮提示由普通注入动作组合。
-#
-# 解锁的生效时机：声明在每个 model step 前重算，解锁在下一步的模型请求里已经可见。
-# `requireMatch: true` 是刻意的，但判据是「名单与装配面整体错位」：常驻名单里的名字
-# **一个都不在**当前装配面时才放弃裁剪、暴露完整目录；只缺一两个（提供方被替换或关闭）
-# 仍照常收窄，缺项只留一条诊断。解锁名不参与这个判定。
-#
-# 工具名必须与**实际装配名**一致：本项目 harness 是 `pwsh`、`edit` + `write`；
-# `bash` 由平台各自提供——Windows 是本模块声明的 `tool-git-bash` 行（Git Bash，`bash -c`），
-# POSIX 是官方持久 bash。dsh-ops 会隐藏它替换的官方工具，改发布 `ops_*` 名字：随包名单
-# 直接登记这些替换名（含按需发现的文件/文档/PTC 名）；未安装该插件的部署里名字缺席，
-# 属惰性缺项，不触发放宽也不产生任何影响。
-#
-# 停用即回滚：本模块在 config.yml 的 enabled 里删掉即可，重启后工具面完全恢复。
-
 id: tool-surface
 name: 工具面收窄（核心文件与任务集）
 version: 2.0.0
@@ -91,6 +70,6 @@ rules:
               fill: tool-catalog
               position: after-all
               dedupe: session
-              text: 常驻工具：{{RESIDENT_TOOLS}}。缺少所需工具时，先用 {{DISCOVERY_TOOL}} 搜索；要用某个工具，先以 {"toolNames":["<工具名>"]} 解锁——解锁从下一次请求起生效，之后才可调用。
+              text: 常驻工具：{{RESIDENT_TOOLS}}。{{DISCOVERY_TOOL}} 的 query 只发现工具；精确 toolNames 解锁从下一次模型请求起生效。工具就绪以更新后的工具声明（PTC 为 tools:sdk）包含所需工具为准；搜索命中或解锁回执尚不代表可调用，当前未声明也不代表不存在。工具操作完成以实际调用结果与任务所需证据为准。
               params:
                 action: narrow-tools
