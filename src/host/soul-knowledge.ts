@@ -624,12 +624,17 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         await prepareProjects(value, signal, sessionId)
         const allowed = sources(directory, sessionId).histories
         const session = await loadEvidence(sessionId)
-        const source = allowed.findLast(row => row.sessionId === sessionId && participant.grants.includes(row.id) && session?.snapshotEvents().some(event => {
+        const events = session?.snapshotEvents() ?? []
+        const eventsBySeq = new Map(events.map(event => [event.seq, event]))
+        const source = allowed.findLast(row => {
+          if (row.sessionId !== sessionId || !participant.grants.includes(row.id)) return false
+          const event = eventsBySeq.get(row.seqs[0]!)
+          if (!event) return false
           const data = (event as unknown as { data?: { id?: string; source?: { kind?: string } } }).data
-          return event.seq === row.seqs[0] && event.type === 'user/message' && (participant.parent || data?.source?.kind === 'user' && data.id === participant.rootMessageId)
-        }))
+          return event.type === 'user/message' && (participant.parent || data?.source?.kind === 'user' && data.id === participant.rootMessageId)
+        })
         if (!source) throw new Error('缺少当前已授权真实来源')
-        const event = session?.snapshotEvents().find(row => row.seq === source.seqs[0])
+        const event = eventsBySeq.get(source.seqs[0]!)
         if (!event || event.time === undefined || revisionOf(JSON.stringify(event)) !== source.versions[0]) throw new Error('原始事件版本已变化')
         signal.throwIfAborted(); assertActive()
         if (requireBinding(directory).revision !== value.revision) throw new Error('知识来源版本已变化')
@@ -721,9 +726,13 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
           if (request.sessionId) {
             if (typeof request.sessionId !== 'string' || request.sessionId.length > 256 || !Array.isArray(request.seqs) || !request.seqs.length || request.seqs.length > 1000 || request.seqs.some(seq => !Number.isSafeInteger(seq) || seq < 0)) throw new Error('历史范围必须明确选择真实事件')
             const session = await evidence.loadRaw(request.sessionId, signal)
-            if (!session || session.id !== request.sessionId || !Array.isArray(request.seqs) || !request.seqs.length || request.seqs.length > 1000 || request.seqs.some(seq => !Number.isSafeInteger(seq) || !session.snapshotEvents().some(event => event.seq === seq)) || new Set(request.seqs).size !== request.seqs.length) throw new Error('历史范围必须明确选择真实事件')
-            const item = { id: revisionOf(JSON.stringify([request.sessionId, request.seqs])), sessionId: request.sessionId, seqs: request.seqs, versions: request.seqs.map(seq => revisionOf(JSON.stringify(session.snapshotEvents().find(event => event.seq === seq)))), scope, revoked: false }
-            const revision = revisionOf(JSON.stringify([value.revision, sessionId, item, session.snapshotEvents().filter(event => request.seqs!.includes(event.seq))]))
+            if (!session || session.id !== request.sessionId) throw new Error('历史范围必须明确选择真实事件')
+            const events = session.snapshotEvents(), eventsBySeq = new Map(events.map(event => [event.seq, event]))
+            if (request.seqs.some(seq => !eventsBySeq.has(seq)) || new Set(request.seqs).size !== request.seqs.length) throw new Error('历史范围必须明确选择真实事件')
+            const selectedSeqs = new Set(request.seqs)
+            const selectedEvents = request.seqs.map(seq => eventsBySeq.get(seq)!)
+            const item = { id: revisionOf(JSON.stringify([request.sessionId, request.seqs])), sessionId: request.sessionId, seqs: request.seqs, versions: selectedEvents.map(event => revisionOf(JSON.stringify(event))), scope, revoked: false }
+            const revision = revisionOf(JSON.stringify([value.revision, sessionId, item, events.filter(event => selectedSeqs.has(event.seq))]))
             const previewKey = key(directory) + ':' + sessionId
             if (request.action === 'source-preview') { previews.set(previewKey, revision); return { state: 'source-preview', source: item, revision, expectedRevision: value.revision } }
             if (previews.get(previewKey) !== revision || requireBinding(directory).revision !== value.revision) throw new Error('来源预览失效，请重新预览')

@@ -25,6 +25,7 @@ const MAX_CHUNK = MAX_REFERENCE_CHARS
 type EventData = { id?: string; text?: string; source?: { kind?: string; callId?: string }; content?: Array<{ type: string; text?: string }>; message?: EventData; callId?: string; name?: string; arguments?: string; toolCallId?: string }
 const eventData = (event: RetrievalEvent): EventData => (event as RetrievalEvent & { data?: EventData }).data ?? {}
 const eventRevisions = new WeakMap<RetrievalEvent, string>()
+const MAX_RETRIEVAL_PROJECTION_CACHE_BYTES = 24 * 1024 * 1024
 export function retrievalEventRevision(event: RetrievalEvent): string {
   let revision = eventRevisions.get(event)
   if (!revision) { revision = digest(JSON.stringify(event)); eventRevisions.set(event, revision) }
@@ -32,12 +33,12 @@ export function retrievalEventRevision(event: RetrievalEvent): string {
 }
 /** 官方快照不可变且seq连续；追加只处理后缀，替换快照则重建。 */
 export function createRetrievalEventProjection(legacyUserText = false) {
-  let previous: readonly RetrievalEvent[] = [], latestUser = -1
+  let previous: readonly RetrievalEvent[] = [], latestUser = -1, contentBytes = 0
   let bySeq = new Map<number, RetrievalEvent>(), contents = new Map<number, string>(), calls = new Map<string, { name: string; derived: boolean }>()
   return (events: readonly RetrievalEvent[]) => {
     if (events !== previous) {
       const append = events.length >= previous.length && previous.every((event, index) => events[index] === event)
-      if (!append) { bySeq = new Map(); contents = new Map(); calls = new Map(); latestUser = -1 }
+      if (!append) { bySeq = new Map(); contents = new Map(); calls = new Map(); latestUser = -1; contentBytes = 0 }
       for (let i = append ? previous.length : 0; i < events.length; i++) {
         const event = events[i]!, data = eventData(event), message = event.type === 'user/message' ? data : data.message
         bySeq.set(event.seq, event)
@@ -54,11 +55,13 @@ export function createRetrievalEventProjection(legacyUserText = false) {
         const content = message.content?.filter(block => block.type === 'text' && typeof block.text === 'string').map(block => ({ type: 'text', text: block.text! })) ?? (legacyUserText && typeof message.text === 'string' ? [{ type: 'text', text: message.text }] : [])
         if (!content.length && !(event.type === 'user/message' && message.source?.kind === 'user')) continue
         const source = event.type === 'tool/result' ? { kind: 'tool', callId: message.source?.callId ?? message.toolCallId, name: call!.name } : { kind: message.source?.kind ?? (event.type === 'assistant/message' ? 'model' : 'unknown') }
-        contents.set(event.seq, JSON.stringify({ seq: event.seq, type: event.type, ...(event.time === undefined ? {} : { time: event.time }), source, content }))
+        const projected = JSON.stringify({ seq: event.seq, type: event.type, ...(event.time === undefined ? {} : { time: event.time }), source, content })
+        contents.set(event.seq, projected)
+        contentBytes += Buffer.byteLength(projected)
       }
       previous = events
     }
-    return { bySeq, contents, latestUser }
+    return { bySeq, contents, latestUser, contentBytes }
   }
 }
 function knowledgeContent(scope: RetrievalScope, reference: KnowledgeReference): string {
@@ -141,20 +144,36 @@ function filePaths(scope: RetrievalScope): string[] {
 }
 
 export function createModuleRetrieval(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession, withEvidence: <T>(callback: (verify?: () => Promise<void>) => Promise<T>, signal?: AbortSignal) => Promise<T> = callback => callback()) {
+  // Reuse derived event data only; event authorization is rechecked on every operation and hit.
+  const projectors = new Map<string, { project: ReturnType<typeof createRetrievalEventProjection>; weight: number }>()
+  let projectionCacheBytes = 0
+  const project = (id: string, events: readonly RetrievalEvent[]) => {
+    let entry = projectors.get(id)
+    if (entry) projectors.delete(id)
+    else entry = { project: createRetrievalEventProjection(true), weight: 0 }
+    projectors.set(id, entry)
+    const projection = entry.project(events)
+    // shortcut: weight estimates serialized content plus 64 B/event, not V8 heap; tune only with heap profiling.
+    const weight = projection.contentBytes + events.length * 64
+    projectionCacheBytes += weight - entry.weight
+    entry.weight = weight
+    while (projectionCacheBytes > MAX_RETRIEVAL_PROJECTION_CACHE_BYTES && projectors.size > 0) {
+      const oldestId = projectors.keys().next().value!
+      const oldest = projectors.get(oldestId)!
+      projectors.delete(oldestId)
+      projectionCacheBytes -= oldest.weight
+    }
+    return projection
+  }
   return {
-    search: (input: RetrievalQuery, signal?: AbortSignal) => withEvidence(verify => createRetrievalOperation(scopeOf, loadSession, verify).search(input), signal),
-    open: (reference: RetrievalReference, signal?: AbortSignal) => withEvidence(verify => createRetrievalOperation(scopeOf, loadSession, verify).open(reference), signal),
-    refresh: (signal?: AbortSignal) => withEvidence(verify => createRetrievalOperation(scopeOf, loadSession, verify).refresh(), signal),
+    search: (input: RetrievalQuery, signal?: AbortSignal) => withEvidence(verify => createRetrievalOperation(scopeOf, loadSession, verify, project).search(input), signal),
+    open: (reference: RetrievalReference, signal?: AbortSignal) => withEvidence(verify => createRetrievalOperation(scopeOf, loadSession, verify, project).open(reference), signal),
+    refresh: (signal?: AbortSignal) => withEvidence(verify => createRetrievalOperation(scopeOf, loadSession, verify, project).refresh(), signal),
   }
 }
-function createRetrievalOperation(scopeOf: () => RetrievalScope, loadSession?: LoadRetrievalSession, verifyEvidence?: () => Promise<void>) {
-  const indexes = new Map<string, { events: readonly RetrievalEvent[]; rows: { seq: number; content: string }[] }>()
-  const projectors = new Map<string, ReturnType<typeof createRetrievalEventProjection>>()
-  const project = (id: string, events: readonly RetrievalEvent[]) => {
-    let projector = projectors.get(id)
-    if (!projector) { projector = createRetrievalEventProjection(true); projectors.set(id, projector) }
-    return projector(events)
-  }
+function createRetrievalOperation(scopeOf: () => RetrievalScope, loadSession: LoadRetrievalSession | undefined, verifyEvidence: (() => Promise<void>) | undefined,
+  project: (id: string, events: readonly RetrievalEvent[]) => ReturnType<ReturnType<typeof createRetrievalEventProjection>>) {
+  const indexes = new Map<string, { events: readonly RetrievalEvent[]; rows: { seq: number; content: string }[]; projection: ReturnType<ReturnType<typeof createRetrievalEventProjection>> }>()
   const referenceOf = (scope: RetrievalScope, id: string, event: RetrievalEvent, content: string, start: number, end: number): SessionReference => ({
     kind: 'session', moduleId: scope.moduleId, sessionId: id, seqs: [event.seq], start, end,
     revision: 'public1:' + digest(JSON.stringify([retrievalEventRevision(event), content])),
@@ -188,7 +207,7 @@ function createRetrievalOperation(scopeOf: () => RetrievalScope, loadSession?: L
     }
     if (new Set(rows.map(row => row.seq)).size !== rows.length) throw new Error('授权会话事件身份重复')
     if (rows.reduce((bytes, row) => bytes + Buffer.byteLength(row.content), 0) > MAX_ASSET_BYTES) throw new Error('授权会话检索超过64 MiB上限')
-    indexes.set(id, { events, rows })
+    indexes.set(id, { events, rows, projection })
     return { events, rows, session }
   }
   const sessionIds = (scope: RetrievalScope) => new Set([...(scope.session ? [scope.session.id] : []), ...(scope.sessions ?? [])])
@@ -201,11 +220,15 @@ function createRetrievalOperation(scopeOf: () => RetrievalScope, loadSession?: L
       if (reference.kind === 'session') {
         assertSessionAuthorized(current, reference.sessionId)
         if (current.eventAllowed) {
-          const events = indexes.get(reference.sessionId)?.events.filter(event => current.eventAllowed!(reference.sessionId, event)) ?? []
           if (reference.revision.startsWith('public1:')) {
-            const event = events.find(event => event.seq === reference.seqs[0]), content = indexes.get(reference.sessionId)?.rows.find(row => row.seq === reference.seqs[0])?.content
-            if (!event || !content || referenceOf(current, reference.sessionId, event, content, reference.start, reference.end).revision !== reference.revision) throw new Error('历史来源已撤权或失效')
-          } else if (digest(sessionReferenceText(events, reference.seqs)) !== reference.revision) throw new Error('历史来源已撤权或失效')
+            const projection = indexes.get(reference.sessionId)?.projection
+            const event = projection?.bySeq.get(reference.seqs[0]!), content = projection?.contents.get(reference.seqs[0]!)
+            if (!event || !current.eventAllowed(reference.sessionId, event) || !content
+              || referenceOf(current, reference.sessionId, event, content, reference.start, reference.end).revision !== reference.revision) throw new Error('历史来源已撤权或失效')
+          } else {
+            const events = indexes.get(reference.sessionId)?.events.filter(event => current.eventAllowed!(reference.sessionId, event)) ?? []
+            if (digest(sessionReferenceText(events, reference.seqs)) !== reference.revision) throw new Error('历史来源已撤权或失效')
+          }
         }
       }
       else if (reference.kind === 'knowledge') knowledgeContent(current, reference)
