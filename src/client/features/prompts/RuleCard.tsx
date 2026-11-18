@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { AutoSaveSelection } from '../../ui/AutoSaveSelection.ts'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { RuleDiagnosticRecord } from '../../../shared/bridge-contract.ts'
@@ -53,6 +53,7 @@ export function RuleCard(props: {
   const autosave = useAutosave(props.moduleId + ':' + entry.key, () => {
     if (!disabled && !unsupported && rulesDirty(draft) && !hasRuleFields(draft)) void editor.submit()
   })
+  useEffect(() => () => editor.setComposing(entry.key, false), [editor, entry.key])
   // 完整提交资格与未完成草稿仍由 editor 判定。
   const save = (): void => { if (draft.loaded && draft.busy === undefined) autosave.flush() }
   const onDraft = (): void => { editor.changed() }
@@ -92,8 +93,8 @@ export function RuleCard(props: {
   return <AutoSaveSelection.Provider value={save}><CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(props.source ? t('rules.source', { module: props.source }) + ' · ' : '') + (rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + summary}
     expanded={props.expanded} onToggle={() => { if (props.expanded) save(); props.onToggle() }} bodyClassName={`${ui.configForm} ${css.cardPanel}`}
     data-rule-id={rule.id} data-rule-key={entry.key}
-    onCompositionStart={autosave.onCompositionStart}
-    onCompositionEnd={autosave.onCompositionEnd}
+    onCompositionStart={() => { editor.setComposing(entry.key, true); autosave.onCompositionStart() }}
+    onCompositionEnd={() => { editor.setComposing(entry.key, false); autosave.onCompositionEnd() }}
     onFocus={autosave.onFocus} onBlur={(event) => {
       // 批量开关自行提交，避免离卡自动保存抢先发出旧状态。
       if (event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-batch]')) return
@@ -126,7 +127,9 @@ export function RuleCard(props: {
         <section data-config-panel="rule" aria-label={t('rules.stepsTab')} className={css.section}>{draft.meta && <RuleStepsPanel
           t={t} rule={rule} meta={draft.meta} engineMeta={props.meta} fields={draft.fields} expanded={props.expandedRows}
           prefix={props.source ?? rule.id} fieldKey={entry.key} disabled={disabled} onDraft={onDraft}
-          onChange={next => patch(next)} />}</section>
+          onChange={next => patch(next)} onMove={(path, index, offset) => autosave.commit(() => {
+            if (!disabled && !unsupported) void editor.move(entry.key, path, index, offset)
+          })} />}</section>
       <section data-config-panel="definition" aria-label={t('rules.jsonTab')} className={css.section}><TriggerJsonField {...fieldContext} fieldKey={entry.key + ':full'} label={t('triggers.advanced')} shape="object" value={rule} onChange={value => {
         const candidate = asTriggerRecord(value)
         if (typeof candidate.id !== 'string' || !Array.isArray(candidate.then) || !candidate.then.every(isValidNode)

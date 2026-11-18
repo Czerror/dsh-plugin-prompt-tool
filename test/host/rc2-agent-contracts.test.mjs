@@ -193,10 +193,11 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const { revisionOf } = await import('../../src/host/module-write.ts')
   dirty.histories.push({ id: 'legacy-derived-context', sessionId: agent.session.id, seqs: [injected.seq], versions: [revisionOf(JSON.stringify(injected))], scope: dirty.projects.find(row => row.sessionId === agent.session.id).identity, revoked: false, automatic: true })
   dirty.histories.push({ id: 'legacy-derived-state', sessionId: agent.session.id, seqs: [derivedState.seq], versions: [revisionOf(JSON.stringify(derivedState))], scope: dirty.projects.find(row => row.sessionId === agent.session.id).identity, revoked: false, automatic: true })
+  dirty.histories.push({ ...dirty.histories.find(row => row.seqs.includes(privateAssistant.seq)), id: 'same-seq-stale-version', seqs: [privateAssistant.seq], versions: ['stale-version'] })
   await bindingsTable.put(bindingId, dirty)
   await send(createUserMessage({ content: [{ type: 'text', text: 'next retrieval turn' }], source: { kind: 'user' } }))
   const publicHits = (await search('PUBLIC ASSISTANT MARKER')).hits
-  assert.equal(publicHits.length, 1, '既有助手正常公开正文继续可回取')
+  assert.equal(publicHits.length, 1, '同seq多个授权版本中任一匹配即可回取公开正文')
   assert.equal(publicHits[0].reference.seqs[0], privateAssistant.seq)
   assert.doesNotMatch(publicHits[0].content, /PRIVATE REASONING|PRIVATE STREAM|tool-call/)
   assert.deepEqual((await search('DERIVED CONTEXT MARKER')).hits, [], '旧automatic注入污染记录读时也排除')
@@ -353,10 +354,12 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     const received = primaryRequests.at(-1).findLast(message => isDeliverySource(message.source))
     assert.deepEqual(received?.content, delivered.content, '每次差量实际模型请求与接纳正文一致')
   }
-  for (const target of ['middle-update', 'baseline-body']) {
+  for (const target of ['middle-update', 'baseline-body', 'wrong-predecessor']) {
     const prior = deliveryEvents()
     const replaced = target === 'middle-update' ? prior[2] : prior.at(-1)
-    const replacement = createUserMessage({ source: replaced.data.source, content: [{ type: 'text', text: 'replacement retains source but not delivery body' }] })
+    const replacement = target === 'wrong-predecessor'
+      ? createUserMessage({ source: { ...replaced.data.source, soulDelivery: { ...replaced.data.source.soulDelivery, form: 'update', previous: '0'.repeat(64) } }, content: replaced.data.content })
+      : createUserMessage({ source: replaced.data.source, content: [{ type: 'text', text: 'replacement retains source but not delivery body' }] })
     fresh.agent.session.append('user/message', replacement, {
       surfaceOp: { op: 'replace', startSeq: replaced.seq, endSeq: replaced.seq }, sourceEventSeqs: [replaced.seq],
     })
@@ -525,6 +528,12 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   replaceAfterLoads = 2
   await consolidate(publication, true)
   assert.equal((await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.sources(dir, agent.session.id))).documents.length, 0, '最后一次await期间来源变化同时停用既有派生版本')
+  await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => {
+    const records = owner.records(dir, agent.session.id)
+    assert.ok(records.length > 0, '来源事件替换不撤销无关正式记录')
+    assert.equal(records.some(row => row.sessionId === first.value.reference.sessionId && row.seq === replacedSeq), false, '替换事件自己的记录立即失效')
+    assert.ok(owner.learning(dir, agent.session.id, true).some(row => row.inactiveReason), '选中事件替换遮蔽依赖学习正文')
+  })
   replaceEvidence = false
   failPublication = true
   const failedPublication = await consolidate(publication)

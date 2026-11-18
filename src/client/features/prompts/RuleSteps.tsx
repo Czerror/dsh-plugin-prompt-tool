@@ -170,6 +170,7 @@ export function RuleStepsPanel(props: {
   disabled?: boolean
   onDraft: () => void
   onChange: (rule: RuleDefinition) => void
+  onMove: (path: string, index: number, offset: -1 | 1) => void
 }): ReactNode {
   const { t, rule, meta } = props
   const [addActionKind, setAddActionKind] = useState('inject-text')
@@ -195,10 +196,7 @@ export function RuleStepsPanel(props: {
   const renderList = (nodes: RuleNode[], path: string, chain: readonly RuleCondition[], scopeConditional: boolean, onChange: (next: RuleNode[]) => void): ReactNode => {
     const setAt = (index: number, next: RuleNode): void => onChange(nodes.map((node, at) => at === index ? next : node))
     const move = (index: number, offset: -1 | 1): void => {
-      const next = [...nodes], target = index + offset
-      if (target < 0 || target >= next.length) return
-      ;[next[index], next[target]] = [next[target]!, next[index]!]
-      onChange(next)
+      if (!disabled) props.onMove(path, index, offset)
     }
     const candidates = actionSelectable(scopeConditional)
     const selected = candidates.find(action => action.kind === addActionKind) ?? candidates[0]
