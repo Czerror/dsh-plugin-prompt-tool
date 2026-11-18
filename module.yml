@@ -518,8 +518,9 @@ rules:
               fill: tool-catalog
               position: after-all
               dedupe: session
-              text: 常驻工具：{{RESIDENT_TOOLS}}。缺少所需工具时，先用 {{DISCOVERY_TOOL}} 搜索；要用某个工具，先以
-                {"toolNames":["<工具名>"]} 解锁——解锁从下一次请求起生效，之后才可调用。
+              text: 常驻工具：{{RESIDENT_TOOLS}}。{{DISCOVERY_TOOL}} 的 query 只发现工具；精确 toolNames
+                解锁从下一次模型请求起生效。工具就绪以更新后的工具声明（PTC 为
+                tools:sdk）包含所需工具为准；搜索命中或解锁回执尚不代表可调用，当前未声明也不代表不存在。工具操作完成以实际调用结果与任务所需证据为准。
               params:
                 action: narrow-tools
   - id: example-context-activation

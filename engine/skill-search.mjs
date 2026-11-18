@@ -81,7 +81,7 @@ export function renderMatches(scored, query, complete = true) {
       : `Skill discovery did not complete, so nothing can be concluded about "${query}". Retry skill_search before treating a skill as unavailable.`,
     lineOf: ({ skill, name, exact }) => `- ${name}${exact ? ' (exact)' : ''}: ${String(skill?.description ?? '').split('\n')[0]}`,
     warnings: complete ? [] : ['Skill discovery is incomplete; these results may be partial.'],
-    footer: 'Load one with skill_load({"name": "<exact name>"}).',
+    footer: 'Names and descriptions establish relevance, not loaded instructions. skill_load({"name": "<exact name>"}) makes the body available on the next model request; readiness requires its instructions in the current context.',
   })
 }
 
@@ -106,13 +106,12 @@ export function apply(ctx, _config, options = {}) {
   const disposeSearch = ctx.tools.register({
     name: 'skill_search',
     description: [
-      'Search the available skills by keyword and return matching skill names with short descriptions.',
+      'Before starting work, search for skills relevant to the task. Results contain names and short descriptions for judging relevance; applicable skill instructions must be loaded into the current context and followed.',
       '',
       'skill_load loads any exact name in the registry, so a skill the search did not surface still loads by its name.',
       '',
-      'Usage:',
-      '- `query` — search skill names and descriptions (Chinese keywords work).',
-      '- call with NO arguments — list every visible skill (truncation is marked with the matching total).',
+      '`query` searches skill names and descriptions (Chinese keywords work). No arguments lists visible skills, with truncation and the matching total marked.',
+      'When no skill applies, continue the task. A conclusion that a skill is unavailable needs a confirming result; an empty keyword match or incomplete discovery is insufficient.',
     ].join('\n'),
     parameters: toJsonSchema({
       query: { type: 'string', required: false, description: 'search keywords (e.g. "pdf", "obsidian", "代码审查")' },
@@ -149,7 +148,7 @@ export function apply(ctx, _config, options = {}) {
 
   const disposeLoad = ctx.tools.register({
     name: 'skill_load',
-    description: 'Load the full instructions of ONE skill by its exact registered name and inject them for the next request. Call this before acting on a task that matches the skill. The name may come from skill_search, from the skill list, or from the user — any exact name in the registry works, and when nothing matches, ask the user for it.',
+    description: 'Load the full instructions of ONE skill by its exact registered name for the next model request. An applicable skill is ready when its body is present in the current context; a search match or load receipt alone is insufficient. Follow the loaded instructions when working. The name may come from skill_search, the skill list, or the user; any exact name in the registry works. Already visible instructions are reused without another injection.',
     parameters: toJsonSchema({
       name: { type: 'string', required: true, description: 'exact skill name (kebab-case, as registered)' },
     }),
