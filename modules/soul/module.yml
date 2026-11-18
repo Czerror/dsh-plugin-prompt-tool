@@ -209,6 +209,7 @@ rules:
           position: before-all
           role: user
           templateFile: ./assets/layers.md
+          dedupe: session
           params:
             constant: false
             keys: [ 灵魂, 五层, ECHO, VITAL, 架构 ]
@@ -262,6 +263,7 @@ rules:
           position: before-all
           role: user
           templateFile: ./assets/vital.md
+          dedupe: session
           params:
             constant: false
             keys: [ 预算, 烧光, 打转, 空转, 该停, 阈值 ]
@@ -448,7 +450,7 @@ rules:
           order: 126
           role: user
           text: |-
-            账本有未结或历史待核对事项：先用 soul_ledger（moduleId: soul，action: list，view: pending）分页核对稳定 id。
+            核对未结或历史事项时，先用 soul_ledger（moduleId: soul，action: list，view: pending）分页核对稳定 id。
             明确完成或取消时，action: close，targetId: 该 id，outcome: completed/cancelled，reason: 非空依据；ref 仍表示出处。
             promise 仅当前 lead 收口；shelved 允许原作者或当前 lead。执行者可提交证据，不替主导确认承诺。
             暂时搁置仍是未结，不猜测历史已完成，不手工修改计数。仅主会话按集合变化或成功压缩提醒一次。
