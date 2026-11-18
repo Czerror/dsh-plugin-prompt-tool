@@ -1,0 +1,7 @@
+Caveman
+Copyright 2026 Julius Brussee
+
+The prompts in assets/caveman.md, assets/ultracave.md, and assets/megacave.md
+are adapted from JuliusBrussee/caveman under the Apache License, Version 2.0.
+They have been modified for DSH module configuration and injection.
+See SOURCE.md for the source revision and adaptation details.

@@ -1,0 +1,108 @@
+id: caveman
+name: Caveman 精简回答
+version: 1.0.0
+engineCompat: ">=0.4.2"
+description: 基于 Caveman 回答风格，保留技术事实，删去寒暄和重复。三档互斥，默认 caveman；主会话与子代理共用所选档位。原项目：https://github.com/JuliusBrussee/caveman
+meta:
+  source: manual
+modules:
+  - rule-engine
+order: 6
+rules:
+  - id: caveman-level-caveman
+    name: Caveman 档位：caveman（普通精简，默认）
+    enabled: true
+    layer: system-section
+    group: caveman-level
+    exclusive: true
+    then:
+      - if:
+          scope: { audience: main }
+        then:
+          - id: inject-main
+            kind: inject-text
+            config:
+              id: caveman-main
+              strategy: static
+              layer: system-section
+              order: 205
+              templateFile: ./assets/caveman.md
+      - if:
+          scope: { audience: subagent }
+        then:
+          - id: inject-subagent
+            kind: inject-text
+            config:
+              id: caveman-subagent
+              strategy: static
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              order: 205
+              templateFile: ./assets/caveman.md
+  - id: caveman-level-ultracave
+    name: Caveman 档位：ultracave（极简）
+    enabled: false
+    layer: system-section
+    group: caveman-level
+    exclusive: true
+    then:
+      - if:
+          scope: { audience: main }
+        then:
+          - id: inject-main
+            kind: inject-text
+            config:
+              id: ultracave-main
+              strategy: static
+              layer: system-section
+              order: 205
+              templateFile: ./assets/ultracave.md
+      - if:
+          scope: { audience: subagent }
+        then:
+          - id: inject-subagent
+            kind: inject-text
+            config:
+              id: ultracave-subagent
+              strategy: static
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              order: 205
+              templateFile: ./assets/ultracave.md
+  - id: caveman-level-megacave
+    name: Caveman 档位：megacave（文言）
+    enabled: false
+    layer: system-section
+    group: caveman-level
+    exclusive: true
+    then:
+      - if:
+          scope: { audience: main }
+        then:
+          - id: inject-main
+            kind: inject-text
+            config:
+              id: megacave-main
+              strategy: static
+              layer: system-section
+              order: 205
+              templateFile: ./assets/megacave.md
+      - if:
+          scope: { audience: subagent }
+        then:
+          - id: inject-subagent
+            kind: inject-text
+            config:
+              id: megacave-subagent
+              strategy: static
+              layer: pre-step
+              position: before-all
+              dedupe: session
+              order: 205
+              templateFile: ./assets/megacave.md
+configOrder:
+  caveman-level-caveman: 0
+  caveman-level-ultracave: 10
+  caveman-level-megacave: 20

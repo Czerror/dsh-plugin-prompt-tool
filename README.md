@@ -75,6 +75,7 @@ dsh --profile web
 内置模块可按需启停或替换：
 
 - **Ponytail**：注入精简务实的工程规则，提供 lite／full／ultra 三档；来源 [ponytail](https://github.com/DietrichGebert/ponytail)。
+- **Caveman**：保留技术事实，精简回答表达，提供普通／极简／文言三档；改编自 [caveman](https://github.com/JuliusBrussee/caveman)。
 - **PTC 模式**：通过官方执行器将工具呈现为 `run_code` 与 SDK。
 - **技能面收窄**：隐藏完整技能目录，通过 `skill_search`／`skill_load` 按需查找和加载。
 - **Soul**：提供判据、结构化账本、授权检索与动态 SELF 等持续身份能力；改编自 [dsh-agent-soul](https://github.com/cyanwell/dsh-agent-soul)。
