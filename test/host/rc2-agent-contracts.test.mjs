@@ -224,7 +224,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await owner.observe(dir, agent.session.id)
   assert.equal(owner.status(dir).binding.participants.find(row => row.sessionId === agent.session.id).rootMessageId, attachmentInput.id, '无text真实输入仍推进用户根身份')
   await send(message)
-  const fresh = await root.agents.create({ sessionId: 'record-new-main', agentOptions: { provider: 'fixture', model: 'normal' }, meta: { cwd: home } })
+  let fresh = await root.agents.create({ sessionId: 'record-new-main', agentOptions: { provider: 'fixture', model: 'normal' }, meta: { cwd: home } })
   handles.push(fresh)
   fresh.agent.send(createUserMessage({ content: [{ type: 'text', text: 'new same-project material' }], source: { kind: 'user' } }), 'next-turn', true)
   await fresh.agent.whenIdle()
@@ -240,7 +240,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal((await owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], undefined, () => owner.learning(dir, fresh.agent.session.id))).length, 0)
   await manage({ action: 'learning-confirm', sourceId: learned.id })
   assert.equal((await owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], undefined, () => owner.learning(dir, fresh.agent.session.id)))[0].text, 'Keep answers concise')
-  const learningRuntime = createRuleRuntime(fresh.agent.ctx, { agent: fresh.agent, warnOnce: message => { throw new Error(message) } })
+  let learningRuntime = createRuleRuntime(fresh.agent.ctx, { agent: fresh.agent, warnOnce: message => { throw new Error(message) } })
   t.after(() => learningRuntime.dispose())
   const learningRules = [{ moduleId: 'alice', rules: compileRules([{ id: 'self', then: [{ id: 'self', kind: 'inject-text', config: { layer: 'runtime-context', strategy: 'placeholder', fill: 'soul-self' } }, { id: 'persona', kind: 'persona', prefix: 'USER BASE' }] }], { moduleId: 'alice' }) }]
   learningRuntime.replace(learningRules)
@@ -258,6 +258,10 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   t.after(() => { deliveryRetrieval.status = retrievalStatus })
   const isDeliverySource = source => source?.kind?.startsWith('plugin:') && source.moduleId === 'alice' && source.actionId === 'self-changes' && source.ruleId === 'self-changes'
   const deliveryEvents = () => fresh.agent.session.snapshotEvents().filter(event => event.type === 'user/message' && isDeliverySource(event.data.source))
+  const { SOUL_SELF_SERVICE } = await import('../../engine/service-names.mjs')
+  const deliveryService = root.get(SOUL_SELF_SERVICE)
+  assert.ok(await deliveryService.renderChanges('alice', fresh.agent, signal), '未接纳提议不建立基线')
+  assert.ok(await deliveryService.renderChanges('alice', fresh.agent, signal), '取消提议后仍可重提')
   for (const text of ['first identity delivery', 'same identity delivery', 'another unchanged identity delivery']) {
     if (text === 'another unchanged identity delivery') deliveryRetrieval.status = (agent, id) => ({ ...retrievalStatus(agent, id), observedAt: '2099-01-01T00:00:00.000Z', files: 999, sessions: 888, events: 777 })
     fresh.agent.send(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }), 'next-turn', true)
@@ -269,6 +273,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     assert.ok(received, '真实模型请求包含本fixture来源消息，拒绝旧SELF或其他来源代替')
     assert.deepEqual(received.content, delivered.content, '模型实际收到已接纳身份消息的确切正文')
   }
+  assert.equal(await deliveryService.renderChanges('alice', fresh.agent, signal), null, '已接纳可见身份不重复')
   for (const [index, mark] of ['DELTA MARK A', 'DELTA MARK B', 'DELTA MARK A', null].entries()) {
     const state = variables.read(dir, fresh.agent.session.id)
     await variables.edit(dir, fresh.agent.session.id, { changes: { 'soul.mark': mark }, expectedRevision: state.revision }, { signal })
@@ -288,6 +293,30 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     const received = primaryRequests.at(-1).findLast(message => isDeliverySource(message.source))
     assert.deepEqual(received?.content, delivered.content, '每次差量实际模型请求与接纳正文一致')
   }
+  for (const target of ['middle-update', 'baseline-body']) {
+    const prior = deliveryEvents()
+    const replaced = target === 'middle-update' ? prior[2] : prior.at(-1)
+    const replacement = createUserMessage({ source: replaced.data.source, content: [{ type: 'text', text: 'replacement retains source but not delivery body' }] })
+    fresh.agent.session.append('user/message', replacement, {
+      surfaceOp: { op: 'replace', startSeq: replaced.seq, endSeq: replaced.seq }, sourceEventSeqs: [replaced.seq],
+    })
+    const before = deliveryEvents().length
+    fresh.agent.send(createUserMessage({ content: [{ type: 'text', text: `recover ${target}` }], source: { kind: 'user' } }), 'next-turn', true)
+    await fresh.agent.whenIdle()
+    assert.equal(deliveryEvents().length, before + 1, '移出链中段或改写基线正文后补一份当前基线')
+    const recovered = deliveryEvents().at(-1).data
+    assert.equal(recovered.source.soulDelivery.form, 'baseline')
+    assert.match(JSON.stringify(recovered.content), /USER SKELETON/)
+    assert.deepEqual(primaryRequests.at(-1).findLast(message => isDeliverySource(message.source))?.content, recovered.content, '恢复基线进入下一次真实模型请求')
+  }
+  const priorSession = fresh.agent.session
+  learningRuntime.dispose()
+  await fresh.dispose()
+  fresh = await root.agents.resume({ resumeSessionId: priorSession.id, agentOptions: { provider: 'fixture', model: 'normal' } })
+  handles.push(fresh)
+  assert.notEqual(fresh.agent.session, priorSession, '真实工厂从日志重建Session对象')
+  assert.equal(await deliveryService.renderChanges('alice', fresh.agent, signal), null, '重建后从真实可见接纳链恢复，不依赖进程缓存')
+  learningRuntime = createRuleRuntime(fresh.agent.ctx, { agent: fresh.agent, warnOnce: message => { throw new Error(message) } })
   learningRuntime.replace(learningRules)
   deliveryRetrieval.status = retrievalStatus
   const recordsBeforeDisable = (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id)))

@@ -10,7 +10,7 @@ import type { ModuleToolHost } from '../host/module-tool-target.ts'
 import { assertModuleSnapshotSource } from '../host/module-install.ts'
 import { readModuleFacts } from '../host/module-params.ts'
 import { deriveSoulSelfParts, renderSoulSelf, validateSelfBudget, SOUL_CONTEXT_RESET, soulContributionTag } from '../host/soul-self.ts'
-import { eventMessage, visibleMessages } from '../../engine/delivery.mjs'
+import { eventMessage } from '../../engine/delivery.mjs'
 import { readSoulState } from '../host/soul-state.ts'
 import { readSoulLedgerProjection } from '../host/soul-ledger.ts'
 import { readSoulDiagnostics } from '../host/soul-diagnostics.ts'
@@ -69,6 +69,37 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   }
   const rendered = new Map<string, { at: string; candidates: string[]; sessionId: string }>()
   const digest = (text: string): string => createHash('sha256').update(text).digest('hex')
+  const deliveryIndexes = new WeakMap<Agent['session'], { surface: unknown; replace: unknown; content: unknown; length: Agent['session']['seq'] | undefined; nodes: number; chains: Map<string, SoulDeliverySource['soulDelivery']> }>()
+  const acceptedDelivery = (agent: Agent, id: string, audience: string) => {
+    const session = agent.session, surface = session.surface
+    const reliable = Number.isSafeInteger(surface?.replaceGeneration) && Number.isSafeInteger(surface?.contentGeneration)
+    let index = deliveryIndexes.get(session)
+    if (!reliable || !index || index.surface !== surface || index.replace !== surface.replaceGeneration
+      || index.content !== surface.contentGeneration || (index.length !== undefined && index.length > session.seq) || index.nodes > surface.nodes.length) {
+      index = { surface, replace: surface?.replaceGeneration, content: surface?.contentGeneration, length: undefined, nodes: 0, chains: new Map() }
+      deliveryIndexes.set(session, index)
+    }
+    const events = index.length === session.seq ? [] : session.snapshotEvents(index.length)
+    const visible = new Set(surface?.nodes.slice(index.nodes))
+    for (const event of events) {
+      if (event.type !== 'user/message' || event.seq < (session.inheritedEventCount ?? 0) || (surface && !visible.has(event.seq))) continue
+      const raw = deliverySource(eventMessage(event)?.source)
+      if (!raw || raw.sessionId !== session.id) continue
+      const message = session.deriveEventMessage(event)
+      const source = deliverySource(message?.source)
+      if (!source || source.sessionId !== session.id || source.kind !== raw.kind || source.moduleId !== raw.moduleId
+        || source.actionId !== raw.actionId || source.soulDelivery.audience !== raw.soulDelivery.audience) continue
+      const stamp = source.soulDelivery, key = JSON.stringify([source.moduleId, stamp.audience])
+      const body = messageText(message)
+      const summary = digest(JSON.stringify(Object.entries(stamp.parts).sort(([a], [b]) => a.localeCompare(b))))
+      if (body === undefined || digest(body) !== stamp.textDigest || summary !== stamp.digest) { index.chains.delete(key); continue }
+      if (stamp.form === 'baseline' || index.chains.get(key)?.digest === stamp.previous) index.chains.set(key, stamp)
+      else index.chains.delete(key)
+    }
+    index.length = session.seq
+    index.nodes = surface?.nodes.length ?? 0
+    return index.chains.get(JSON.stringify([id, audience]))
+  }
   const delivered = new Map<string, string>()
   const source = (id: string, agent: Agent, signal?: AbortSignal): string => {
     signal?.throwIfAborted()
@@ -222,20 +253,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
       const current = Object.fromEntries(entries.map(([key, text]) => [key, digest(text)]))
       const summarize = (mapping: Record<string, string>) => digest(JSON.stringify(Object.entries(mapping).sort(([a], [b]) => a.localeCompare(b))))
       const summary = summarize(current)
-      const accepted = new Set<number>(agent.session.snapshotEvents().filter(event => event.type === 'user/message').map(event => event.seq))
-      let previous: SoulDeliverySource['soulDelivery'] | undefined
-      for (const { message } of visibleMessages(agent.session).filter(({ seq, message }) => {
-        const stamp = deliverySource(message.source)
-        return accepted.has(seq) && seq >= (agent.session.inheritedEventCount ?? 0)
-          && stamp?.moduleId === id && stamp.sessionId === agent.session.id
-          && typeof stamp.actionId === 'string' && stamp.soulDelivery?.version === 1 && stamp.soulDelivery.sessionId === agent.session.id && stamp.soulDelivery.audience === audience
-      }).sort((a, b) => a.seq - b.seq)) {
-        const stamp = deliverySource(message.source)!.soulDelivery
-        const body = messageText(message)
-        if (body === undefined || digest(body) !== stamp.textDigest || summarize(stamp.parts) !== stamp.digest) { previous = undefined; continue }
-        if (stamp.form === 'baseline') previous = stamp
-        else previous = previous?.digest === stamp.previous ? stamp : undefined
-      }
+      const previous = acceptedDelivery(agent, id, audience)
       if (previous?.digest === summary) return null
       let form: 'baseline' | 'update' = previous ? 'update' : 'baseline'
       if (previous && ('omission:budget' in previous.parts || 'omission:budget' in current)) form = 'baseline'
@@ -316,9 +334,12 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
       && changeSource.sessionId === session.id && changeSource.soulDelivery?.version === 1
       && changeSource.soulDelivery.sessionId === session.id && typeof changeSource.moduleId === 'string'
       && typeof changeSource.actionId === 'string'
-      && visibleMessages(session).some(({ seq, message }) => seq === event.seq
-        && deliverySource(message.source)?.soulDelivery.digest === changeSource.soulDelivery.digest
-        && messageText(message) !== undefined && rendered.get(JSON.stringify([changeSource.moduleId, session.id]))?.candidates.includes(digest(messageText(message)!)))) {
+      && session.surface.nodes.includes(event.seq)
+      && (() => {
+        const message = session.deriveEventMessage(event), text = messageText(message)
+        return deliverySource(message?.source)?.soulDelivery.digest === changeSource.soulDelivery.digest
+          && text !== undefined && rendered.get(JSON.stringify([changeSource.moduleId, session.id]))?.candidates.includes(digest(text))
+      })()) {
       delivered.set(JSON.stringify([changeSource.moduleId, session.id]), new Date(event.time).toISOString())
     }
     if (observed?.kind !== 'runtime-context' || observed.form !== 'snapshot') return
