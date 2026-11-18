@@ -8,7 +8,17 @@ export interface ConfigPageBrowse {
 }
 
 export function createWorkspaceBrowseState() {
+  let diagnosticsOpen = false
+  const diagnosticsListeners = new Set<() => void>()
   return {
+    diagnosticsResults: {
+      getSnapshot: () => diagnosticsOpen,
+      subscribe(listener: () => void) { diagnosticsListeners.add(listener); return () => { diagnosticsListeners.delete(listener) } },
+      toggle() {
+        diagnosticsOpen = !diagnosticsOpen
+        for (const listener of diagnosticsListeners) listener()
+      },
+    },
     configs: new Map<string, ConfigPageBrowse>(),
     scroll: new Map<string, number>(),
     tools: { query: '', selectedId: '', expanded: {} as Record<string, boolean> },

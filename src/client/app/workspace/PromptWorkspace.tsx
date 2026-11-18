@@ -55,7 +55,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       ? <AudiencePage store={store} audience="subagent" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
       : page === 'tools'
         ? <ToolsPreviewPage api={store.api} presetId={store.api.sessionPreset.snapshot()} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
-        : <ModulesWorkspacePage store={store} diagnostics={props.diagnostics} t={t} onReady={markReady} />
+        : <ModulesWorkspacePage store={store} diagnostics={props.diagnostics} resultsDisclosure={browse.diagnosticsResults} t={t} onReady={markReady} />
 
   return (
     <WorkspaceFrame

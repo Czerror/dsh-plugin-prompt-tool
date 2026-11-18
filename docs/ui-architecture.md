@@ -143,7 +143,7 @@ slot 使用 ctx.slots.inject() 等待声明，再调用 ctx.slots.register()。�
 - 右侧工作台使用官方 tab 注册，读取 `useTabInfo().tab.visible`，不能用 signal 未中止或组件仍挂载替代可见性。
 - NativeWorkspace 将宿主可见性与 document 可见性合并，隐藏时卸载编辑视图；草稿与保存应答保留在独立数据 owner 中。
 - 同一会话的三个入口共享所选页、筛选、展开和滚动状态；会话分页的 viewArea 收缩到宿主视口，使 canvas 保持唯一滚动根；业务正文不写 localStorage，刷新或卸载后不承诺恢复未保存正文。
-- 关闭入口或切页不自动诊断。模块页顶部一张诊断概览卡提供唯一“诊断一次”动作：规则诊断与当前会话上下文诊断各请求一次；无会话只读规则，并提示上下文不可用。在途不叠发、不补刷、不自动重试。
+- 关闭入口或切页不自动诊断。模块页顶部的诊断工具条提供唯一“诊断一次”动作：规则诊断与当前会话上下文诊断各请求一次；无会话只读规则，并提示上下文不可用。在途不叠发、不补刷、不自动重试。
 
 ### 4.4 宿主能力采用面
 
@@ -163,7 +163,7 @@ slot 使用 ctx.slots.inject() 等待声明，再调用 ctx.slots.register()。�
           ├─ 工具预览
           └─ 模块
 
-模块运行总闸与手动诊断位于模块页，不另设 settings tab。`app/workspace/pages/ModulesWorkspacePage` 在模块列表前组合统一诊断卡，规则摘要和上下文激活摘要宽屏双栏、窄容器单列；成功时间、空态、错误、截断提示与折叠详情都在卡内。feature 之间不互相导入。数据 store 由 WorkspaceStoreOwner 独立持有，PromptWorkspace 消费其快照；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
+模块运行总闸与手动诊断位于模块页，不另设 settings tab。`app/workspace/pages/ModulesWorkspacePage` 在模块列表前放置紧凑的诊断工具条。首次显示一条“尚未诊断”，不挂载结果栏；运行后可展开规则与当前会话的上下文结果，宽容器双栏、窄容器单列。展开状态按会话保留，同会话的三个入口同步。收起结果仍提示失败或失效；展开和收起均不发请求。feature 之间不互相导入。数据 store 由 WorkspaceStoreOwner 独立持有，PromptWorkspace 消费其快照；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
 
 模块的目录物化、复制、删除和参数由本插件维护；模块不进入官方 `agentPresets` 注册表，编辑目标不驱动官方会话预设切换。工具预览仍可只读官方 roster；默认值 `selectedDefault` / `defaultId` 不参与模块设置。
 

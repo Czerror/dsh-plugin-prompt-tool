@@ -6,28 +6,50 @@ import { ModulesPage } from '../../../features/modules/ModulesPage.tsx'
 import { ContextActivationDiagnosticsCard } from '../../../features/prompts/ContextActivationDiagnosticsCard.tsx'
 import { DiagnosticsPanel } from '../../../features/modules/DiagnosticsPanel.tsx'
 import { Button } from '../../../ui/Button.tsx'
+import type { createWorkspaceBrowseState } from '../workspace-browse-state.ts'
 import css from './diagnostics.module.css'
+
+type ResultsDisclosure = ReturnType<typeof createWorkspaceBrowseState>['diagnosticsResults']
+
+function DiagnosticResults({ children, t, disclosure }: { children: ReactNode; t: PromptToolTranslate; disclosure: ResultsDisclosure }): ReactNode {
+  const open = useSyncExternalStore(disclosure.subscribe, disclosure.getSnapshot, disclosure.getSnapshot)
+  return <details className={css.results} open={open}>
+    <summary onClick={event => { event.preventDefault(); disclosure.toggle() }}>{t(open ? 'diagnostics.hideResults' : 'diagnostics.results')}</summary>
+    {open && <div className={css.groups}>{children}</div>}
+  </details>
+}
 
 export function ModulesWorkspacePage(props: {
   store: PromptToolStore
   diagnostics: RuleDiagnosticsSession
+  resultsDisclosure: ResultsDisclosure
   t: PromptToolTranslate
   onReady: () => void
 }): ReactNode {
   const snapshot = useSyncExternalStore(props.diagnostics.subscribe, props.diagnostics.getSnapshot, props.diagnostics.getSnapshot)
   const sessionId = props.store.api.currentSessionId()
+  const context = snapshot.context?.sessionId === sessionId ? snapshot.context : undefined
+  const showRules = snapshot.diagnosedAt !== undefined || snapshot.status === 'error'
+  const showContext = context !== undefined
+  const status = snapshot.status === 'stale' ? props.t('diagnostics.stale')
+    : snapshot.busy ? props.t('diagnostics.running')
+      : snapshot.status === 'error' ? props.t(context?.error !== undefined ? 'diagnostics.failed' : 'diagnostics.rulesFailed')
+        : context?.error !== undefined ? props.t('diagnostics.contextFailed')
+          : sessionId !== undefined && showRules && !showContext ? props.t('diagnostics.contextPending')
+            : snapshot.status === 'ready' ? props.t('diagnostics.completed') : props.t('diagnostics.never')
   return <>
-    <section className={css.card} aria-label={props.t('diagnostics.title')} aria-busy={snapshot.busy}>
+    <section className={css.card} aria-label={props.t('diagnostics.title')}>
       <header className={css.header}>
-        <div><h2>{props.t('diagnostics.title')}</h2><p>{props.t('diagnostics.hint')}</p></div>
-        <Button shape="pill" variant="outline" disabled={snapshot.busy} onClick={() => { void props.diagnostics.run(sessionId) }}>
+        <div className={css.intro}><h2>{props.t('diagnostics.title')}</h2><p>{props.t(sessionId === undefined ? 'diagnostics.noSession' : 'diagnostics.hint')}</p></div>
+        <Button className={css.run} shape="pill" variant="primary" aria-busy={snapshot.busy} disabled={snapshot.busy} onClick={() => { void props.diagnostics.run(sessionId) }}>
           {props.t(snapshot.busy ? 'diagnostics.running' : 'diagnostics.run')}
         </Button>
       </header>
-      <div className={css.groups}>
-        <DiagnosticsPanel diagnostics={props.diagnostics} t={props.t} />
-        <ContextActivationDiagnosticsCard snapshot={snapshot.context?.sessionId === sessionId ? snapshot.context : undefined} sessionId={sessionId} t={props.t} />
-      </div>
+      <p className={css.notice} role="status" aria-atomic="true">{status}</p>
+      {(showRules || showContext) && <DiagnosticResults t={props.t} disclosure={props.resultsDisclosure}>
+        {showRules && <DiagnosticsPanel diagnostics={props.diagnostics} t={props.t} />}
+        {showContext && <ContextActivationDiagnosticsCard snapshot={context} sessionId={sessionId} t={props.t} />}
+      </DiagnosticResults>}
     </section>
     <ModulesPage {...props} />
   </>
