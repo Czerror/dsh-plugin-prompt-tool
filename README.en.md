@@ -75,6 +75,7 @@ These reference documents are in Chinese:
 Enable, disable, or replace these modules as needed:
 
 - **Ponytail**: Injects concise, pragmatic engineering rules with lite/full/ultra levels; sourced from [ponytail](https://github.com/DietrichGebert/ponytail).
+- **Caveman**: Keeps technical facts while shortening replies, with caveman/ultracave/megacave levels; adapted from [caveman](https://github.com/JuliusBrussee/caveman).
 - **PTC mode**: Presents tools as `run_code` and an SDK through the official executor.
 - **Skill surface**: Hides the full skill catalog and uses `skill_search`/`skill_load` to find and load skills on demand.
 - **Soul**: Provides criteria, structured ledgers, authorized retrieval, and a dynamic SELF for persistent identity; adapted from [dsh-agent-soul](https://github.com/cyanwell/dsh-agent-soul).
