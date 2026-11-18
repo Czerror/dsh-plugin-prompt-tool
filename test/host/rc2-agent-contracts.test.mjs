@@ -50,12 +50,14 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await root.plugin(Loop, { agents: [] })
   let modelCalls = 0
   const auxiliary = []
+  const primaryRequests = []
   let heldAuxiliary = false, omitUsage = false
   class Model extends LlmAdapter {
     async resolveModel(provider, id) { return { provider, id, name: id } }
     async *stream(request) {
       modelCalls++
       if (request.purpose) auxiliary.push(request)
+      else primaryRequests.push(structuredClone(request.messages))
       if (request.purpose && heldAuxiliary) await new Promise((_, reject) => {
         if (request.signal.aborted) reject(request.signal.reason)
         else request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true })
@@ -240,7 +242,8 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal((await owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], undefined, () => owner.learning(dir, fresh.agent.session.id)))[0].text, 'Keep answers concise')
   const learningRuntime = createRuleRuntime(fresh.agent.ctx, { agent: fresh.agent, warnOnce: message => { throw new Error(message) } })
   t.after(() => learningRuntime.dispose())
-  learningRuntime.replace([{ moduleId: 'alice', rules: compileRules([{ id: 'self', then: [{ id: 'self', kind: 'inject-text', config: { layer: 'runtime-context', strategy: 'placeholder', fill: 'soul-self' } }, { id: 'persona', kind: 'persona', prefix: 'USER BASE' }] }], { moduleId: 'alice' }) }])
+  const learningRules = [{ moduleId: 'alice', rules: compileRules([{ id: 'self', then: [{ id: 'self', kind: 'inject-text', config: { layer: 'runtime-context', strategy: 'placeholder', fill: 'soul-self' } }, { id: 'persona', kind: 'persona', prefix: 'USER BASE' }] }], { moduleId: 'alice' }) }]
+  learningRuntime.replace(learningRules)
   const self = async () => {
     const context = { agent: fresh.agent, scope: scopeOf(fresh.agent.ctx), signal }
     const toolSet = await fresh.agent.ctx.tools.resolve(context)
@@ -248,6 +251,26 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
     finally { toolSet.dispose() }
   }
   assert.match(await self(), /Keep answers concise/)
+  learningRuntime.replace([{ moduleId: 'alice', rules: compileRules([{ id: 'self-changes', then: [{ id: 'self-changes', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'placeholder', fill: 'soul-self-changes', dedupe: 'none', mergeMode: 'separate' } }] }], { moduleId: 'alice' }) }])
+  const { toolServiceName } = await import('../../engine/service-names.mjs')
+  const deliveryRetrieval = root.get(toolServiceName('retrieval'))
+  const retrievalStatus = deliveryRetrieval.status.bind(deliveryRetrieval)
+  t.after(() => { deliveryRetrieval.status = retrievalStatus })
+  const isDeliverySource = source => source?.kind?.startsWith('plugin:') && source.moduleId === 'alice' && source.actionId === 'self-changes' && source.ruleId === 'self-changes'
+  const deliveryEvents = () => fresh.agent.session.snapshotEvents().filter(event => event.type === 'user/message' && isDeliverySource(event.data.source))
+  for (const text of ['first identity delivery', 'same identity delivery', 'another unchanged identity delivery']) {
+    if (text === 'another unchanged identity delivery') deliveryRetrieval.status = (agent, id) => ({ ...retrievalStatus(agent, id), observedAt: '2099-01-01T00:00:00.000Z', files: 999, sessions: 888, events: 777 })
+    fresh.agent.send(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }), 'next-turn', true)
+    await fresh.agent.whenIdle()
+    assert.equal(deliveryEvents().length, 1, '首次接纳身份后相同有效正文不新增来源消息')
+    const delivered = deliveryEvents()[0].data
+    assert.match(JSON.stringify(delivered.content), /USER SKELETON/, '新来源接纳正文包含身份')
+    const received = primaryRequests.at(-1).find(message => isDeliverySource(message.source))
+    assert.ok(received, '真实模型请求包含本fixture来源消息，拒绝旧SELF或其他来源代替')
+    assert.deepEqual(received.content, delivered.content, '模型实际收到已接纳身份消息的确切正文')
+  }
+  learningRuntime.replace(learningRules)
+  deliveryRetrieval.status = retrievalStatus
   const recordsBeforeDisable = (await owner.withEvidence([{ directory: dir, sessionId: agent.session.id }], undefined, () => owner.records(dir, agent.session.id)))
   await manage({ action: 'disable' })
   assert.deepEqual((await owner.withEvidence([{ directory: dir, sessionId: fresh.agent.session.id }], undefined, () => owner.learning(dir, fresh.agent.session.id))), [])

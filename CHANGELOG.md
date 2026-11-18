@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+- Soul 新增显式选择的 `soul-self-changes` pre-step 内容源：首次提供身份基线，相同有效状态不追加；保留旧 SELF 完整快照。内置判据与简短工具入口改为可见会话去重，完整工具手册改为按需授权回读。
+
 ## [6.2.0] - 2026-11-18
 
 - **新增 Caveman 模块**：三档互斥的精简回答风格（`caveman` 默认、文言、极简），主会话系统段与子代理 pre-step 投递同一正文，保留技术载荷、用户语言与清晰表达例外；不注册命令、hook 或独立模式状态，档位仍由 DSH 模块开关与互斥规则卡选择。上游 `JuliusBrussee/caveman` 固定提交 `a1928947`，Apache-2.0，随包附 `LICENSE`／`NOTICE`／`SOURCE.md`；提示词已按本插件契约精简并内嵌于 `module.yml`。

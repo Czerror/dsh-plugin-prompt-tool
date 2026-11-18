@@ -2,6 +2,8 @@
 
 本文说明规则编译、宿主接入、模块运行与跨项目复用的契约。插入点载荷见 [九层契约](injection-point-contracts.md)，字段与写盘责任见 [参数框架](architecture-params.md)。
 
+`fill: soul-self-changes` 仅支持 `pre-step`：由 SELF 所有者按当前授权与可见的已接纳来源生成基线或变化，无变化返回空；声明使用 `mergeMode: separate`、`dedupe: none`。引擎保留返回的来源标记，不再次求值模板或以配置正文覆盖 SELF。旧 `fill: soul-self` 仍提供完整快照。内置 Soul 判据与简短工具入口独立使用可见会话去重，工具手册仅按需授权回读。
+
 <a id="soul-证据准备与资源边界"></a>
 
 ## 证据准备与资源边界

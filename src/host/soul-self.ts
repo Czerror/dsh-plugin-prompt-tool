@@ -14,6 +14,43 @@ export interface SoulIndexStatus { state: string; files?: number; sessions?: num
 export interface SoulSelfAgent { session: { id: string; header?: { delegationDepth?: number } } }
 export type SoulSelfTemplate = (source: string) => { text: string; revision: string }
 
+export interface SoulSelfParts {
+  identity: string
+  learning: Array<{ id: string; text: string; protected?: boolean }>
+  facts: Array<{ id: string; text: string }>
+}
+
+/** 变化投递只比较实际获准展示的业务内容，不包含诊断遥测。 */
+export function deriveSoulSelfParts(moduleDir: string, agent: SoulSelfAgent, budgetBytes: number, learning: SoulSelfParts['learning'], facts: SoulSelfParts['facts'], template?: SoulSelfTemplate): SoulSelfParts {
+  if (!agent?.session?.id) throw new Error('SELF 缺少实际 Agent 身份')
+  const source = readModuleFile(moduleDir, SOUL_SELF_SOURCE).content
+  if (!source.trim()) throw new Error('SELF 骨架缺失：data/SELF.src.md')
+  const identity = seal(template?.(source).text ?? source) + `\n## 当前运行身份\n- 本会话：${agent.session.id}\n- 受众：${(agent.session.header?.delegationDepth ?? 0) > 0 ? '子代理' : '主会话'}\n`
+  const parts: SoulSelfParts = { identity, learning: [], facts: [] }
+  const budget = validateSelfBudget(budgetBytes)
+  let text = identity
+  for (const row of learning.filter(row => row.protected)) {
+    const sealed = seal(row.text)
+    parts.learning.push({ id: row.id, text: sealed })
+    text += '\n' + sealed
+  }
+  if (Buffer.byteLength(text) > budget) throw new Error('SELF 动态上下文超预算')
+  const omitted = '- 未注入其余学习或事实。'
+  for (const [rows, output] of [[learning.filter(row => !row.protected), parts.learning], [facts, parts.facts]] as const) {
+    for (const row of rows) {
+      const sealed = seal(row.text)
+      if (Buffer.byteLength(text + '\n' + sealed + '\n' + omitted) > budget) {
+        if (!parts.facts.some(item => item.id === 'omitted')) parts.facts.push({ id: 'omitted', text: omitted })
+        break
+      }
+      output.push({ id: row.id, text: sealed })
+      text += '\n' + sealed
+    }
+  }
+  if (Buffer.byteLength([identity, ...parts.learning.map(row => row.text), ...parts.facts.map(row => row.text)].join('\n')) > budget) throw new Error('SELF 省略说明超预算')
+  return parts
+}
+
 function seal(text: string): string {
   return text.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[凭据已屏蔽]')
     .split('\n').map(line => /sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|Bearer\s+\S+|(?:api[_-]?key|token|secret|password|passwd|pwd|cookie)["']?\s*[:=]/i.test(line) ? '[凭据已屏蔽]' : line).join('\n')
