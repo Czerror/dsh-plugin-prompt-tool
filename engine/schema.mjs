@@ -198,7 +198,7 @@ export const KNOWN_MODEL_SCOPES = new Set(['all', 'pro', 'flash'])
  * 自定义策略或模板 patch 的角色仍由 executor 在出口校验，避免写出非法事件。
  */
 export const KNOWN_ROLES = new Set(['user'])
-export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-catalog', 'tool-catalog', 'soul-self'])
+export const KNOWN_FILLS = new Set(['instruction-hint', 'env-facts', 'skill-catalog', 'tool-catalog', 'soul-self', 'soul-self-changes'])
 
 /** 层能力矩阵：每个字段只在对应注入层生效。客户端表单据此动态渲染。 */
 export const LAYER_FIELD_POLICIES = Object.fromEntries(
@@ -518,6 +518,9 @@ export function createPromptConfigs(specs, options = {}) {
     let fill
     if (strategy === 'placeholder') {
       fill = typeof spec.fill === 'string' && spec.fill.length > 0 ? spec.fill : undefined
+      if (fill === 'soul-self-changes' && layer !== 'pre-step') {
+        throw new TypeError(`${name}: ${label} fill=soul-self-changes requires layer=pre-step`)
+      }
       if (fill === undefined || !KNOWN_FILLS.has(fill)) {
         throw new TypeError(`${name}: ${label} strategy=placeholder requires fill in [${[...KNOWN_FILLS].sort().join(', ')}]`)
       }

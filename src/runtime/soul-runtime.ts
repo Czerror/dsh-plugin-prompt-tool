@@ -9,7 +9,8 @@ import type { SoulStateObservation } from './soul-state-tools.ts'
 import type { ModuleToolHost } from '../host/module-tool-target.ts'
 import { assertModuleSnapshotSource } from '../host/module-install.ts'
 import { readModuleFacts } from '../host/module-params.ts'
-import { renderSoulSelf, validateSelfBudget } from '../host/soul-self.ts'
+import { deriveSoulSelfParts, renderSoulSelf, validateSelfBudget, SOUL_CONTEXT_RESET, soulContributionTag } from '../host/soul-self.ts'
+import { eventMessage } from '../../engine/delivery.mjs'
 import { readSoulState } from '../host/soul-state.ts'
 import { readSoulLedgerProjection } from '../host/soul-ledger.ts'
 import { readSoulDiagnostics } from '../host/soul-diagnostics.ts'
@@ -31,6 +32,34 @@ import { createSoulMaintenanceProvider } from './soul-maintenance.ts'
 import { createSoulAssisted } from './soul-assisted.ts'
 import { SOUL_MAINTENANCE_SERVICE, SOUL_SELF_SERVICE, toolServiceName } from '../../engine/service-names.mjs'
 
+interface SoulDeliverySource {
+  kind: string
+  moduleId: string
+  sessionId: string
+  actionId: string
+  soulDelivery: { version: 1; sessionId: string; audience: string; form: 'baseline' | 'update'; digest: string; previous?: string; parts: Record<string, string>; textDigest: string }
+}
+function deliverySource(value: unknown): SoulDeliverySource | undefined {
+  if (!value || typeof value !== 'object') return
+  const source = value as Record<string, unknown>, delivery = source.soulDelivery
+  if (!delivery || typeof delivery !== 'object') return
+  const stamp = delivery as Record<string, unknown>
+  if (typeof source.kind === 'string' && source.kind.startsWith('plugin:') && source.kind === `plugin:${source.plugin}` && typeof source.moduleId === 'string'
+    && typeof source.sessionId === 'string' && typeof source.actionId === 'string' && stamp.version === 1
+    && stamp.sessionId === source.sessionId && typeof stamp.audience === 'string'
+    && (stamp.form === 'baseline' || stamp.form === 'update') && typeof stamp.digest === 'string' && /^[a-f0-9]{64}$/.test(stamp.digest)
+    && typeof stamp.textDigest === 'string' && /^[a-f0-9]{64}$/.test(stamp.textDigest)
+    && stamp.parts !== null && typeof stamp.parts === 'object' && !Array.isArray(stamp.parts)
+    && Object.values(stamp.parts).every(hash => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash))
+    && (stamp.form === 'baseline' || typeof stamp.previous === 'string')) return value as SoulDeliverySource
+}
+function messageText(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return
+  const content = (value as { content?: unknown }).content
+  if (!Array.isArray(content) || content.some(part => !part || part.type !== 'text' || typeof part.text !== 'string')) return
+  return content.map(part => part.text).join('')
+}
+
 export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds: (id: string) => readonly string[], sessions: () => SessionVariableOwner | undefined, knowledge?: () => SoulKnowledgeOwner | undefined): SoulStateObservation {
   let active = true
   const sessionOwner = (): SessionVariableOwner => {
@@ -40,6 +69,37 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   }
   const rendered = new Map<string, { at: string; candidates: string[]; sessionId: string }>()
   const digest = (text: string): string => createHash('sha256').update(text).digest('hex')
+  const deliveryIndexes = new WeakMap<Agent['session'], { surface: unknown; replace: unknown; content: unknown; length: Agent['session']['seq'] | undefined; nodes: number; chains: Map<string, SoulDeliverySource['soulDelivery']> }>()
+  const acceptedDelivery = (agent: Agent, id: string, audience: string) => {
+    const session = agent.session, surface = session.surface
+    const reliable = Number.isSafeInteger(surface?.replaceGeneration) && Number.isSafeInteger(surface?.contentGeneration)
+    let index = deliveryIndexes.get(session)
+    if (!reliable || !index || index.surface !== surface || index.replace !== surface.replaceGeneration
+      || index.content !== surface.contentGeneration || (index.length !== undefined && index.length > session.seq) || index.nodes > surface.nodes.length) {
+      index = { surface, replace: surface?.replaceGeneration, content: surface?.contentGeneration, length: undefined, nodes: 0, chains: new Map() }
+      deliveryIndexes.set(session, index)
+    }
+    const events = index.length === session.seq ? [] : session.snapshotEvents(index.length)
+    const visible = new Set(surface?.nodes.slice(index.nodes))
+    for (const event of events) {
+      if (event.type !== 'user/message' || event.seq < (session.inheritedEventCount ?? 0) || (surface && !visible.has(event.seq))) continue
+      const raw = deliverySource(eventMessage(event)?.source)
+      if (!raw || raw.sessionId !== session.id) continue
+      const message = session.deriveEventMessage(event)
+      const source = deliverySource(message?.source)
+      if (!source || source.sessionId !== session.id || source.kind !== raw.kind || source.moduleId !== raw.moduleId
+        || source.actionId !== raw.actionId || source.soulDelivery.audience !== raw.soulDelivery.audience) continue
+      const stamp = source.soulDelivery, key = JSON.stringify([source.moduleId, stamp.audience])
+      const body = messageText(message)
+      const summary = digest(JSON.stringify(Object.entries(stamp.parts).sort(([a], [b]) => a.localeCompare(b))))
+      if (body === undefined || digest(body) !== stamp.textDigest || summary !== stamp.digest) { index.chains.delete(key); continue }
+      if (stamp.form === 'baseline' || index.chains.get(key)?.digest === stamp.previous) index.chains.set(key, stamp)
+      else index.chains.delete(key)
+    }
+    index.length = session.seq
+    index.nodes = surface?.nodes.length ?? 0
+    return index.chains.get(JSON.stringify([id, audience]))
+  }
   const delivered = new Map<string, string>()
   const source = (id: string, agent: Agent, signal?: AbortSignal): string => {
     signal?.throwIfAborted()
@@ -169,6 +229,55 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     assertParticipating: source,
     readValue,
     reminder,
+    renderChanges: (id: string, agent: Agent, signal?: AbortSignal) => withEvidence([id], agent, signal, () => {
+      const dir = source(id, agent, signal), owner = knowledge?.()
+      const audience = (agent.session.header.delegationDepth ?? 0) > 0 ? 'subagent' : 'main'
+      const learning = owner?.status(dir).state === 'bound' ? owner.learning(dir, agent.session.id).map(row => ({ id: `learning:${row.id}`, text: `- ${row.text}`, protected: row.layer === 'core' || row.layer === 'locked' })) : []
+      const facts: Array<{ id: string; text: string }> = []
+      const ledger = readSoulLedgerProjection(dir)
+      const allowed = legacyAllowed(dir) ? null : new Set(owner?.status(dir).binding?.continuity?.enabled ? owner.records(dir, agent.session.id).map(row => row.entryId) : [])
+      if (ledger.lead && (allowed === null || allowed.has(ledger.lead.id))) facts.push({ id: 'ledger:lead', text: `- 当前主导：${ledger.lead.by}；${ledger.lead['概要']}` })
+      for (const item of ledger.items) if (allowed === null || allowed.has(item.id)) facts.push({ id: `ledger:${item.id}`, text: `- [${item.status}] ${item.id}：${item.entry['概要']}` })
+      const state = readSoulState(dir, agent.session.id, sessionOwner())
+      if (state.mark) facts.push({ id: 'mark:session', text: `- 显式状态：${state.mark.text}` })
+      const water = pressure(dir, agent)
+      if (water.state === 'known' && water.level !== 'normal') facts.push({ id: 'pressure:warning', text: `- 上下文水位：${water.guidance}` })
+      const parts = deriveSoulSelfParts(dir, agent, readSelfBudget(dir), learning, facts, sourceText => {
+        if (!sourceText.includes('{{')) return { text: sourceText, revision: '' }
+        const snapshot = readModuleVariables(dir, { runtime: true })
+        if (!snapshot.enabled) return { text: stripUnresolvedRefs(interpolateVariables(sourceText, {}, agent.session)).text, revision: '' }
+        const session = sessionOwner().read(dir, agent.session.id)
+        const result = evaluateTemplate(sourceText, { module: snapshot.module, global: snapshot.global, sessionVariables: session.variables, session: agent.session, readOnly: true, sourceId: `${id}:self`, readRuntime: key => readValue(id, key, agent, signal) })
+        return { text: result.text, revision: '' }
+      })
+      const entries = [['identity', parts.identity], ...parts.learning.map(row => [row.id, row.text]), ...parts.facts.map(row => [row.id, row.text])] as Array<[string, string]>
+      const current = Object.fromEntries(entries.map(([key, text]) => [key, digest(text)]))
+      const previous = acceptedDelivery(agent, id, audience)
+      // 未知不是恢复正常；仅保留已送达警告的摘要，不缓存其正文。
+      if (water.state !== 'known' && previous?.parts['pressure:warning']) current['pressure:warning'] = previous.parts['pressure:warning']
+      const summarize = (mapping: Record<string, string>) => digest(JSON.stringify(Object.entries(mapping).sort(([a], [b]) => a.localeCompare(b))))
+      let summary = summarize(current)
+      if (previous?.digest === summary) return null
+      let form: 'baseline' | 'update' = previous ? 'update' : 'baseline'
+      if (previous && ('omission:budget' in previous.parts || 'omission:budget' in current)) form = 'baseline'
+      const changes = entries.filter(([key]) => previous?.parts[key] !== current[key]).map(([, text]) => text)
+      for (const key of Object.keys(previous?.parts ?? {})) if (!(key in current)) changes.push(key === 'pressure:warning'
+        ? '此前水位警告解除。' : `[贡献 ${soulContributionTag(key)}] 已失效，不再依据。`)
+      let text = form === 'baseline' ? [SOUL_CONTEXT_RESET, ...entries.map(([, text]) => text)].filter(Boolean).join('\n') : changes.join('\n')
+      if (Buffer.byteLength(text) > readSelfBudget(dir)) {
+        form = 'baseline'
+        text = [SOUL_CONTEXT_RESET, ...entries.map(([, text]) => text)].filter(Boolean).join('\n')
+      }
+      if (form === 'baseline' && water.state !== 'known') {
+        delete current['pressure:warning']
+        summary = summarize(current)
+      }
+      source(id, agent, signal)
+      const key = keyOf(id, agent)
+      if (rendered.size > 1024) rendered.delete(rendered.keys().next().value!)
+      rendered.set(key, { at: new Date().toISOString(), candidates: [...(rendered.get(key)?.candidates ?? []), digest(text)].slice(-16), sessionId: agent.session.id })
+      return { text, source: { soulDelivery: { version: 1, sessionId: agent.session.id, audience, form, digest: summary, parts: current, textDigest: digest(text), ...(form === 'update' ? { previous: previous!.digest } : {}) } } }
+    }),
     committed: (id: string, agent: Agent) => {
       source(id, agent)
       retrieval.invalidateModule(id)
@@ -227,6 +336,19 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     }
     const data = event.data as { message?: { source?: { kind?: string; form?: string; sections?: Array<{ text?: string }> } } }
     const observed = data.message?.source
+    const changeSource = deliverySource(eventMessage(event)?.source)
+    if (event.type === 'user/message' && changeSource
+      && changeSource.sessionId === session.id && changeSource.soulDelivery?.version === 1
+      && changeSource.soulDelivery.sessionId === session.id && typeof changeSource.moduleId === 'string'
+      && typeof changeSource.actionId === 'string'
+      && session.surface.nodes.includes(event.seq)
+      && (() => {
+        const message = session.deriveEventMessage(event), text = messageText(message)
+        return deliverySource(message?.source)?.soulDelivery.digest === changeSource.soulDelivery.digest
+          && text !== undefined && rendered.get(JSON.stringify([changeSource.moduleId, session.id]))?.candidates.includes(digest(text))
+      })()) {
+      delivered.set(JSON.stringify([changeSource.moduleId, session.id]), new Date(event.time).toISOString())
+    }
     if (observed?.kind !== 'runtime-context' || observed.form !== 'snapshot') return
     for (const [key, candidate] of rendered) if (candidate.sessionId === session.id
       && observed.sections?.some(section => typeof section.text === 'string' && candidate.candidates.includes(digest(section.text)))) {

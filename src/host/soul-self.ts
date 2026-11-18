@@ -1,5 +1,5 @@
 /** SELF 派生快照：骨架与事实共享，运行身份只在模型出口加入。 */
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { assertNoModuleLinks, modulePathExists } from './module-install.ts'
@@ -10,9 +10,54 @@ import { revisionOf, withModuleLock } from './module-write.ts'
 
 export const SOUL_SELF_SOURCE = 'data/SELF.src.md'
 export const SOUL_SELF_SNAPSHOT = 'data/.soul/SELF.md'
+export const SOUL_CONTEXT_RESET = '以下为当前有效上下文；未列出的贡献不再作为当前依据。'
+export const soulContributionTag = (id: string): string => createHash('sha256').update(id).digest('hex')
 export interface SoulIndexStatus { state: string; files?: number; sessions?: number; events?: number; observedAt?: string; error?: string }
 export interface SoulSelfAgent { session: { id: string; header?: { delegationDepth?: number } } }
 export type SoulSelfTemplate = (source: string) => { text: string; revision: string }
+
+export interface SoulSelfParts {
+  identity: string
+  learning: Array<{ id: string; text: string; protected?: boolean }>
+  facts: Array<{ id: string; text: string }>
+}
+
+/** 变化投递只比较实际获准展示的业务内容，不包含诊断遥测。 */
+export function deriveSoulSelfParts(moduleDir: string, agent: SoulSelfAgent, budgetBytes: number, learning: SoulSelfParts['learning'], facts: SoulSelfParts['facts'], template?: SoulSelfTemplate): SoulSelfParts {
+  if (!agent?.session?.id) throw new Error('SELF 缺少实际 Agent 身份')
+  const ids = new Set<string>()
+  for (const row of [...learning, ...facts]) {
+    if (ids.has(row.id)) throw new Error('SELF 贡献 ID 重复')
+    ids.add(row.id)
+  }
+  const contribution = (row: { id: string; text: string }) => `[贡献 ${soulContributionTag(row.id)}] ${seal(row.text)}`
+  const source = readModuleFile(moduleDir, SOUL_SELF_SOURCE).content
+  if (!source.trim()) throw new Error('SELF 骨架缺失：data/SELF.src.md')
+  const identity = seal(template?.(source).text ?? source) + `\n## 当前运行身份\n- 本会话：${agent.session.id}\n- 受众：${(agent.session.header?.delegationDepth ?? 0) > 0 ? '子代理' : '主会话'}\n`
+  const parts: SoulSelfParts = { identity, learning: [], facts: [] }
+  const budget = validateSelfBudget(budgetBytes) - Buffer.byteLength(SOUL_CONTEXT_RESET + '\n')
+  let text = identity
+  for (const row of learning.filter(row => row.protected)) {
+    const sealed = contribution(row)
+    parts.learning.push({ id: row.id, text: sealed })
+    text += '\n' + sealed
+  }
+  if (Buffer.byteLength(text) > budget) throw new Error('SELF 动态上下文超预算')
+  const omitted = '- 未注入其余学习或事实。'
+  for (const [rows, output] of [[learning.filter(row => !row.protected), parts.learning], [facts, parts.facts]] as const) {
+    for (const row of rows) {
+      const sealed = contribution(row)
+      if (Buffer.byteLength(text + '\n' + sealed + '\n' + omitted) > budget) {
+        if (!parts.facts.some(item => item.id === 'omission:budget')) parts.facts.push({ id: 'omission:budget', text: Buffer.byteLength(text + '\n' + omitted) <= budget ? omitted : '' })
+        break
+      }
+      output.push({ id: row.id, text: sealed })
+      text += '\n' + sealed
+    }
+  }
+  if (Buffer.byteLength([identity, ...parts.learning.map(row => row.text), ...parts.facts.map(row => row.text)].filter(Boolean).join('\n')) > budget) throw new Error('SELF 省略说明超预算')
+  return parts
+}
 
 function seal(text: string): string {
   return text.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[凭据已屏蔽]')

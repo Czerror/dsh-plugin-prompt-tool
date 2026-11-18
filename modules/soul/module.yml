@@ -83,9 +83,9 @@ variables:
   scaffold_root: data
 rules:
   - id: soul-core
-    name: 四条判据（常驻）
+    name: 四条判据（可见时不重复）
     enabled: true
-    layer: runtime-context
+    layer: pre-step
     if:
       scope:
         audience: main
@@ -95,42 +95,95 @@ rules:
         config:
           id: soul-core
           strategy: static
-          layer: runtime-context
+          layer: pre-step
+          mergeMode: separate
+          dedupe: session
           order: 132
-          params:
-            contextName: agent:soul-core
+          position: after-all
           templateFile: ./assets/criteria.md
 
   - id: soul-self
-    name: SELF（每步当前事实）
+    name: SELF（按变化投递）
     enabled: true
-    layer: runtime-context
+    layer: pre-step
     then:
       - id: inject
         kind: inject-text
         config:
           strategy: placeholder
-          fill: soul-self
-          layer: runtime-context
+          fill: soul-self-changes
+          layer: pre-step
+          mergeMode: separate
+          dedupe: none
           order: 133
-          params:
-            contextName: agent:soul-self
+          position: after-all
 
   - id: soul-tools
     name: soul 工具速查
     enabled: true
-    layer: runtime-context
+    layer: pre-step
+    if:
+      tool:
+        name: soul_ledger
     then:
       - id: inject
         kind: inject-text
         config:
           id: soul-tools
           strategy: static
-          layer: runtime-context
+          layer: pre-step
+          mergeMode: separate
+          dedupe: session
           order: 134
-          params:
-            contextName: agent:soul-tools
-          templateFile: ./assets/tools.md
+          position: after-all
+          texts:
+            - 重要决定、完成事项或长期反馈及时用 soul_ledger 记录索引；需要既有证据时用当前可用的 module_search/module_open 回取；需操作细节且 module_file_read 已提供时，按模块授权读取本模块 assets/tools.md。
+
+  - id: soul-tools-discovery
+    name: Soul 工具发现入口
+    enabled: true
+    layer: pre-step
+    if:
+      all:
+        - not:
+            tool:
+              name: soul_ledger
+        - tool:
+            name: tool_search
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          strategy: static
+          layer: pre-step
+          mergeMode: separate
+          dedupe: session
+          order: 134
+          position: after-all
+          text: 重要决定、完成事项或长期反馈需记录，既有证据需回取时，先用 tool_search 检索 Soul 工具，确认工具可用后再调用；需操作细节且 module_file_read 已提供时，按模块授权读取本模块 assets/tools.md，不把检索或解锁当作记录或回取成功。
+
+  - id: soul-tools-unavailable
+    name: Soul 工具不可用
+    enabled: true
+    layer: pre-step
+    if:
+      not:
+        any:
+          - tool:
+              name: soul_ledger
+          - tool:
+              name: tool_search
+    then:
+      - id: inject
+        kind: inject-text
+        config:
+          strategy: static
+          layer: pre-step
+          mergeMode: separate
+          dedupe: session
+          order: 134
+          position: after-all
+          text: 当前未提供 Soul 记录或发现工具；需要记录重要决定、完成事项或回取既有证据时说明此限制，不声称已记录或已回取。
 
   - id: soul-core-sub
     name: 子代理硬线
@@ -161,6 +214,7 @@ rules:
           position: before-all
           role: user
           templateFile: ./assets/layers.md
+          dedupe: session
           params:
             constant: false
             keys: [ 灵魂, 五层, ECHO, VITAL, 架构 ]
@@ -214,6 +268,7 @@ rules:
           position: before-all
           role: user
           templateFile: ./assets/vital.md
+          dedupe: session
           params:
             constant: false
             keys: [ 预算, 烧光, 打转, 空转, 该停, 阈值 ]
@@ -400,7 +455,7 @@ rules:
           order: 126
           role: user
           text: |-
-            账本有未结或历史待核对事项：先用 soul_ledger（moduleId: soul，action: list，view: pending）分页核对稳定 id。
+            核对未结或历史事项时，先用 soul_ledger（moduleId: soul，action: list，view: pending）分页核对稳定 id。
             明确完成或取消时，action: close，targetId: 该 id，outcome: completed/cancelled，reason: 非空依据；ref 仍表示出处。
             promise 仅当前 lead 收口；shelved 允许原作者或当前 lead。执行者可提交证据，不替主导确认承诺。
             暂时搁置仍是未结，不猜测历史已完成，不手工修改计数。仅主会话按集合变化或成功压缩提醒一次。

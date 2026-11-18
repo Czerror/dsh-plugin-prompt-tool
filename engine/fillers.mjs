@@ -202,6 +202,11 @@ function createSoulSelfResolver(config) {
 
 /** 动态填充器:strategy=placeholder 时按 fill 键在注入点填充内容。 */
 export const FILLERS = {
+  'soul-self-changes': (config) => ({ ctx, agent, signal }) => {
+    const service = getService(ctx, SOUL_SELF_SERVICE)
+    if (typeof service?.renderChanges !== 'function') throw new Error('SELF dependency missing')
+    return service.renderChanges(config.sourceModuleId, agent, signal)
+  },
   'instruction-hint': (config) => createInstructionHintResolver(config),
   'env-facts': (config) => createEnvFactsResolver(config),
   'skill-catalog': (config) => createSkillCatalogResolver(config),

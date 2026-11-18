@@ -345,7 +345,7 @@ async function runPromptConfigBatch(options) {
         const patched = { ...resolved }
         if (reminder !== undefined) patched.source = { ...patched.source, soulReminder: { pendingVersion: reminder.pendingVersion, epoch: reminder.epoch } }
         // 按来源读取最新持久值；无变量正文不因另一个坏候选的读盘失败撤回。
-        const snapshot = config[SESSION_VARIABLES_DISABLED] !== true && config.fill !== 'soul-self' && config.params?.templateEvaluation !== true
+        const snapshot = config[SESSION_VARIABLES_DISABLED] !== true && config.fill !== 'soul-self' && config.fill !== 'soul-self-changes' && config.params?.templateEvaluation !== true
           && [patched.text, ...config.texts].some(text => typeof text === 'string' && text.includes('{{'))
           ? config.variableStore?.read(config.sourceModuleId, { agent, signal }) : undefined
         const mergedVars = {
@@ -353,7 +353,7 @@ async function runPromptConfigBatch(options) {
           ...(resolved.variables !== null && typeof resolved.variables === 'object' ? resolved.variables : {}),
         }
         const literalKeys = new Set(Object.keys(snapshot?.session ?? {}).filter(key => !Object.hasOwn(resolved.variables ?? {}, key)))
-        if (config.fill === 'soul-self') {
+        if (config.fill === 'soul-self' || config.fill === 'soul-self-changes') {
           patched.content = typeof patched.text === 'string' && patched.text.length > 0 ? [{ type: 'text', text: patched.text }] : []
         } else if (config.params?.templateEvaluation === true) {
           patched.text = await renderTemplateAsync({ ...config, texts: config.texts.length ? config.texts : [patched.text ?? ''] }, { agent, signal }, { enabled: config[SESSION_VARIABLES_DISABLED] !== true, warn: warnOnce })
@@ -365,7 +365,7 @@ async function runPromptConfigBatch(options) {
           // 缺省空串会让不同配置的首个 pick 退化成同一个 seed。
           patched.text = interpolateVariables(patched.text, mergedVars, session, undefined, config.id, literalKeys)
         }
-        if (config.texts.length > 0 && config.params?.templateEvaluation !== true && config.fill !== 'soul-self') {
+        if (config.texts.length > 0 && config.params?.templateEvaluation !== true && config.fill !== 'soul-self' && config.fill !== 'soul-self-changes') {
           const blocks = config.texts
             .map((item, index) => interpolateVariables(item, mergedVars, session, undefined, `${config.id}#${index}`, literalKeys))
             .filter((item) => item.length > 0)
