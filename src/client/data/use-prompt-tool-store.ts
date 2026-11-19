@@ -182,15 +182,22 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 参数草稿广播：未完成的数字输入与错误态按同一草稿键在镜像控件之间同步。
    *  草稿池是可变 Map（不触发 React 重渲染），因此写入方显式发布修订号；
    *  这是既有 subscribeFields 的同一模式，不是第二份状态或事件总线。 */
-  const draftListenersRef = useRef(new Set<() => void>())
+  const draftListenersRef = useRef(new Map<() => void, string | undefined>())
   const draftRevisionRef = useRef(0)
-  const getDraftRevision = useCallback(() => draftRevisionRef.current, [])
-  const publishDrafts = useCallback(() => {
+  const moduleDraftRevisions = useRef(new Map<string, number>()).current
+  const draftInvalidationRef = useRef(0)
+  const getDraftRevision = useCallback((moduleId?: string) => moduleId === undefined
+    ? draftRevisionRef.current : draftInvalidationRef.current + (moduleDraftRevisions.get(moduleId) ?? 0), [moduleDraftRevisions])
+  const publishDrafts = useCallback((moduleId?: string) => {
     draftRevisionRef.current += 1
-    for (const listener of draftListenersRef.current) listener()
-  }, [])
-  const subscribeDrafts = useCallback((listener: () => void) => {
-    draftListenersRef.current.add(listener)
+    if (moduleId === undefined) draftInvalidationRef.current += 1
+    else moduleDraftRevisions.set(moduleId, (moduleDraftRevisions.get(moduleId) ?? 0) + 1)
+    for (const [listener, target] of draftListenersRef.current) {
+      if (moduleId === undefined || target === undefined || target === moduleId) listener()
+    }
+  }, [moduleDraftRevisions])
+  const subscribeDrafts = useCallback((listener: () => void, moduleId?: string) => {
+    draftListenersRef.current.set(listener, moduleId)
     return () => { draftListenersRef.current.delete(listener) }
   }, [])
 
