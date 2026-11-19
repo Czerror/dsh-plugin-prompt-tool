@@ -182,9 +182,10 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     const snapshot = rootSnapshot(root)
     for (const path of read) if (!snapshot.entries.some(item => item.path === path && item.kind === 'file')) throw new Error('所选旧资料不存在或不是普通文件')
     for (const path of write) if (snapshot.entries.some(item => item.path === path && item.kind !== 'directory')) throw new Error('拟创建范围已被文件或链接占用')
+    const readVersions = read.map(path => revisionOf(readFileSync(join(root, path))))
     const current = table.get(revisionOf(key(directory)))
     const moduleStat = lstatSync(join(directory, 'module.yml'))
-    const revision = revisionOf(JSON.stringify([key(directory), identity(directory), moduleStat.size, moduleStat.mtimeMs, moduleStat.ctimeMs, root, read, write, snapshot, current?.revision ?? null]))
+    const revision = revisionOf(JSON.stringify([key(directory), identity(directory), moduleStat.size, moduleStat.mtimeMs, moduleStat.ctimeMs, root, read, write, snapshot, readVersions, current?.revision ?? null]))
     return { root, read: [...read], write: [...write], snapshot, revision }
   }
   const requireBinding = (directory: string) => {
