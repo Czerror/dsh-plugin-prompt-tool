@@ -212,7 +212,7 @@ export function useTemplateCreate(props: {
     const result = await store.createTemplateRule(moduleId, config, target.newlyCreated)
     if (!result.ok) {
       if (writeGeneration.current !== generation) return
-      store.showNotice('error', `${t('rules.create.failed')}（moduleId=${moduleId}）`)
+      store.showNotice('error', result.unconfirmed ? t('rules.savePending') : `${t('rules.create.failed')}（moduleId=${moduleId}）`)
       return
     }
     const createdRuleId = result.value.createdRuleId ?? config.id

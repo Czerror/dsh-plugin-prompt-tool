@@ -6,7 +6,7 @@ import { isWritableTarget } from './module-subject.ts'
 import type { WorkspaceDrafts } from './workspace-drafts.ts'
 import type { ModuleActions } from './module-actions.ts'
 
-export type TemplateWriteResult = BridgeResult<RulesSnapshot> & { moduleEnabled?: boolean; moduleEnableError?: string; refreshError?: string; localConflict?: boolean }
+export type TemplateWriteResult = BridgeResult<RulesSnapshot> & { unconfirmed?: boolean; moduleEnabled?: boolean; moduleEnableError?: string; refreshError?: string; localConflict?: boolean }
 
 /** 操作完成后先接纳共享事实；视图只拥有选择意图、提示与展开。 */
 export function createTemplateRuleWriter(deps: {
@@ -29,7 +29,7 @@ export function createTemplateRuleWriter(deps: {
       onUnconfirmed: deps.reconcileRules,
     })
     const result = await editor.create(rule, declared)
-    if (!result.ok) return result
+    if (!result.ok) return draft.pending ? { ...result, unconfirmed: true } : result
     deps.markDeclared(moduleId, 'rules')
     const committed = { ...result, localConflict: draft.remote !== undefined }
     if (!newlyCreated) return committed

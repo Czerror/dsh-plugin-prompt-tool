@@ -192,6 +192,16 @@ test('rules bridge: first creation stores the complete result without an active 
   assert.equal(h.draft.entries[0].value.name, 'unsaved')
 })
 
+test('rules bridge: unknown create response remains pending and is not replayed', async () => {
+  const h = harness(async () => ({ ok: false, code: 'bridge-response-unknown' }))
+  await h.editor.load()
+  const result = await h.editor.create({ id: 'first', then: [{ id: 'text', kind: 'inject-text', config: { text: 'body' } }] }, true)
+  assert.equal(result.ok, false)
+  assert.equal(h.draft.pending !== undefined, true)
+  assert.equal(h.draft.retryCreate, undefined)
+  assert.equal(h.calls.filter(call => call.createRule).length, 1)
+})
+
 test('rules bridge: queued save and in-flight read survive leaving the view without losing input', async () => {
   let finish
   let dispatch
