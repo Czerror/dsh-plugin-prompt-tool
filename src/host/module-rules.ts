@@ -1,6 +1,7 @@
 /** 经验证规则切片的局部事务；正文和状态各有独立 CAS。 */
 import { basename, dirname, join } from 'node:path'
-import { isMap, isSeq, isScalar, parseDocument } from 'yaml'
+import { isDeepStrictEqual } from 'node:util'
+import { isMap, isSeq, isScalar, isAlias, isNode, parseDocument, stringify, visit } from 'yaml'
 import type { Node, Scalar, YAMLMap, YAMLSeq } from 'yaml'
 import type { RuleDefinition, RuleEdit, RuleRevisions } from '../shared/rules.ts'
 import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, loadModuleDefinition, nextModuleConfigSequence, validateModuleDefinitionText } from './module-slices.ts'
@@ -238,7 +239,8 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     overrides.set(basename(candidate.snapshot.dir), candidate.rules)
   }
   assertCrossModuleGroups(dirname(snapshot.dir), [...participants], overrides)
-  const text = serializeWithoutSharedAlias(snapshot.doc, expected, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
+  const text = singleRuleText(snapshot, request, rules, expected)
+    ?? serializeWithoutSharedAlias(snapshot.doc, expected, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
   // 与保存共用完整候选校验，但验证请求不写切片或完整定义。
   if (request.validateOnly) {
     validateModuleDefinitionText(snapshot.dir, text)
@@ -262,4 +264,34 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     throw pending
   }
   return publicSnapshot(saved)
+}
+
+/** 只对无注释/别名歧义的单条同身份正文编辑复用未改 YAML 原文。 */
+function singleRuleText(snapshot: ModuleDefinitionSnapshot, request: ModuleRuleEditRequest, rules: RuleDefinition[], expected: Record<string, unknown>): string | undefined {
+  if (request.activateRuleId !== undefined || request.edits?.length !== 1 || !isDeepStrictEqual(snapshot.source.configOrder ?? {}, expected.configOrder ?? {})) return undefined
+  const edit = request.edits[0]
+  if (!edit || edit.previousId === null || edit.rule === null || edit.previousId !== edit.rule.id || edit.settingsChanged === true) return undefined
+  let unsafeYaml = false
+  visit(snapshot.doc, (_key, node) => {
+    if (isAlias(node) || isNode(node) && (node.anchor || node.comment || node.commentBefore)) unsafeYaml = true
+  })
+  if (unsafeYaml) return undefined
+  const original = snapshot.doc.get('rules', true)
+  if (!isSeq(original)) return undefined
+  const index = snapshot.source.rules instanceof Array ? snapshot.source.rules.findIndex(rule => record(rule) && rule.id === edit.previousId) : -1
+  const node = original.items[index]
+  if (!isMap(node) || !Array.isArray(node.range) || typeof node.range[0] !== 'number' || typeof node.range[1] !== 'number') return undefined
+  const content = edit.rule
+  const serialized = stringify(content, { indent: 2, lineWidth: 0 }).trimEnd()
+  const prefix = snapshot.text.slice(0, node.range[0])
+  const listIndent = /^(\s*)-\s*$/.exec(prefix.slice(prefix.lastIndexOf('\n') + 1))
+  if (!listIndent) return undefined
+  const indent = listIndent[1] + '  '
+  const replacement = serialized.split('\n').map((line, lineIndex) => lineIndex === 0 ? line : indent + line).join('\n')
+  const text = snapshot.text.slice(0, node.range[0]) + replacement + '\n' + snapshot.text.slice(node.range[1])
+  // Fast path excludes aliases; retain the same complete-definition semantic comparison before validation/commit.
+  const parsed = snapshot.doc.clone()
+  parsed.setIn(['rules', String(index)], content)
+  if (!isDeepStrictEqual(parsed.toJS(), expected)) return undefined
+  return text
 }
