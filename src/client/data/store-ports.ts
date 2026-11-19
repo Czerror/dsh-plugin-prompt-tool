@@ -33,9 +33,9 @@ export interface ModuleFactsPort {
 export interface DraftsPort {
   editorDrafts: WorkspaceDrafts
   /** 草稿修订号与订阅：同一参数的多个镜像渲染点据此同步未完成的输入。 */
-  getDraftRevision: () => number
-  subscribeDrafts: (listener: () => void) => () => void
-  publishDrafts: () => void
+  getDraftRevision: (moduleId?: string) => number
+  subscribeDrafts: (listener: () => void, moduleId?: string) => () => void
+  publishDrafts: (moduleId?: string) => void
 }
 
 /** 公共参数：模块参数与全局层参数共用一套读写（落盘分别走 `persist*`）。 */
