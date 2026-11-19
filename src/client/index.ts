@@ -2,7 +2,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { createElement } from 'react'
 import { install as installStyles } from 'virtual:prompt-tool-styles'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-connection/client'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
@@ -28,6 +28,7 @@ export const inject = [
   'locale',
   'slots',
   'configForms',
+  'connection',
   'uiWorkspace',
   'uiSession',
   'remote',
@@ -46,6 +47,7 @@ export function apply(ctx: ClientContext): void {
   const workspaceState = createNativeWorkspaceState()
   const diagnostics = createRuleDiagnosticsSession()
   const holder = createWorkspaceStoreHolder()
+  const connection = ctx.get('connection') as ConnectionHandle
   ctx.effect(() => () => { diagnostics.dispose(); holder.dispose(); workspaceState.dispose() })
   ctx.effect(() => subscribeConfigurationChanges(() => diagnostics.invalidate()))
   ctx.effect(() => registerRewindSlot(ctx, t))
@@ -54,7 +56,10 @@ export function apply(ctx: ClientContext): void {
   // 目录刷新不是关键路径，失败静默。
   ctx.effect(() => ctx.on('connection/reset', () => {
     diagnostics.invalidate()
-    void bridgeCall('models', { refresh: true }).catch(() => undefined)
+    if (workspaceState.getSnapshot().active) {
+      holder.getSnapshot()?.reconcileRules()
+      void bridgeCall('models', { refresh: true }).catch(() => undefined)
+    }
   }))
   // 0.1.7 ui-settings：标准字段读写复用 ConfigForms 的共享镜像与写入队列。
   // locale 与 settings 共用同一命名空间字面量；换 Loader 行 id 装配时 client transport 需同步（已知边界）。
@@ -70,52 +75,48 @@ export function apply(ctx: ClientContext): void {
   // 当前会话 id：官方在 alpha.2 把「当前选中会话」移出 Session Controller
   // （ISessions 注释：navigation belongs to view owners），SessionListState 不再
   // 有 current；改由 ui-session 的作用域绑定读取。
-  const currentSessionId = (): string | undefined => workspaceState.getSnapshot().sessionId
-  const subscribeCurrent = (listener: () => void): (() => void) => {
-    let previous = currentSessionId()
-    return workspaceState.subscribe(() => {
-      const next = currentSessionId()
-      if (next !== previous) { previous = next; listener() }
-    })
-  }
-  const hostApi: PromptToolHostApi = {
-    currentSessionId,
-    subscribeSessionChange: subscribeCurrent,
-    listAgentPresets: async () => {
-      const result = await ctx.remote.agentPresets.list()
-      if (!result.ok) throw new Error(result.error.message)
-      return result.value.presets.map(({ id, name, description, broken }) => ({
-        id,
-        ...(name === undefined ? {} : { name }),
-        ...(description === undefined ? {} : { description }),
-        ...(broken === undefined ? {} : { broken }),
-      }))
-    },
-    pickDirectory: () => ctx.uiWorkspace.pickDirectory(),
-    openPath: async (path) => {
-      const result = await ctx.remote.session.openWorkspacePath({ path })
-      if (!result.ok) throw new Error(result.error.message)
-    },
-    // 当前会话模型选择：投影 modelSelection.next ?? 宿主默认（UI 回退）；
-    // 写入走官方 session.selectModel（对当前会话生效 + 宿主持久化为新会话默认）。
-    sessionModel: createSessionModelFace(
-      {
+  const sessionApi = (sessionId?: string): PromptToolHostApi => {
+    const currentSessionId = () => sessionId
+    const subscribeCurrent = () => () => {}
+    return {
+      currentSessionId,
+      isConnected: () => connection.generation.getSnapshot() !== undefined,
+      subscribeSessionChange: subscribeCurrent,
+      listAgentPresets: async () => {
+        const result = await ctx.remote.agentPresets.list()
+        if (!result.ok) throw new Error(result.error.message)
+        return result.value.presets.map(({ id, name, description, broken }) => ({
+          id,
+          ...(name === undefined ? {} : { name }),
+          ...(description === undefined ? {} : { description }),
+          ...(broken === undefined ? {} : { broken }),
+        }))
+      },
+      pickDirectory: () => ctx.uiWorkspace.pickDirectory(),
+      openPath: async (path) => {
+        const result = await ctx.remote.session.openWorkspacePath({ path })
+        if (!result.ok) throw new Error(result.error.message)
+      },
+      // 当前会话模型选择：投影 modelSelection.next ?? 宿主默认（UI 回退）；
+      // 写入走官方 session.selectModel（对当前会话生效 + 宿主持久化为新会话默认）。
+      sessionModel: createSessionModelFace(
+        {
+          currentSessionId,
+          subscribeCurrent,
+          // sessionId 是官方 brand 字符串：结构同源，按官方签名断言对齐。
+          binding: (id) => ctx.sessions.binding(id as Parameters<typeof ctx.sessions.binding>[0]),
+          subagentAddress: (id) => ctx.sessions.subagentAddress(id as Parameters<typeof ctx.sessions.subagentAddress>[0]),
+        },
+        (request) => ctx.remote.session.selectModel(request as Parameters<typeof ctx.remote.session.selectModel>[0]),
+      ),
+      // 官方会话预设投影供宿主能力面使用；模块编辑目标由请求身份独立管理。
+      sessionPreset: createSessionPresetFace({
         currentSessionId,
         subscribeCurrent,
-        // sessionId 是官方 brand 字符串：结构同源，按官方签名断言对齐。
         binding: (id) => ctx.sessions.binding(id as Parameters<typeof ctx.sessions.binding>[0]),
-        subagentAddress: (id) => ctx.sessions.subagentAddress(id as Parameters<typeof ctx.sessions.subagentAddress>[0]),
-      },
-      (request) => ctx.remote.session.selectModel(request as Parameters<typeof ctx.remote.session.selectModel>[0]),
-    ),
-    // 官方会话预设投影供宿主能力面使用；模块编辑目标由请求身份独立管理。
-    sessionPreset: createSessionPresetFace({
-      currentSessionId,
-      subscribeCurrent,
-      binding: (id) => ctx.sessions.binding(id as Parameters<typeof ctx.sessions.binding>[0]),
-    }),
+      }),
+    }
   }
-
   // main 面板卸载对话作用域后，仍使用进入面板前最后选中的官方会话。
   let mainSessionId = readCurrentSessionId(ctx.uiSession.adapter, ctx.sessions)
   const mainListeners = new Set<() => void>()
@@ -126,7 +127,7 @@ export function apply(ctx: ClientContext): void {
     for (const listener of mainListeners) listener()
   }))
   const owner: NativeWorkspaceOwner = {
-    state: workspaceState, holder, diagnostics, api: hostApi, settings, t,
+    state: workspaceState, holder, diagnostics, api: sessionApi(), sessionApi, settings, t,
     mainSession: () => mainSessionId,
     subscribeMainSession(listener) { mainListeners.add(listener); return () => { mainListeners.delete(listener) } },
   }

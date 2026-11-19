@@ -1,6 +1,6 @@
 import { useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolStore } from '../../../data/use-prompt-tool-store.ts'
-import type { RuleDiagnosticsSession } from '../../../data/rule-diagnostics-session.ts'
+import type { RuleDiagnosticsSession, RuleDiagnosticTarget } from '../../../data/rule-diagnostics-session.ts'
 import type { PromptToolTranslate } from '../../../locales.ts'
 import { ModulesPage } from '../../../features/modules/ModulesPage.tsx'
 import { ContextActivationDiagnosticsCard } from '../../../features/prompts/ContextActivationDiagnosticsCard.tsx'
@@ -25,6 +25,9 @@ export function ModulesWorkspacePage(props: {
   resultsDisclosure: ResultsDisclosure
   t: PromptToolTranslate
   onReady: () => void
+  onLocate?: (target: RuleDiagnosticTarget) => void
+  returnTarget?: RuleDiagnosticTarget
+  onReturnFocus?: () => void
 }): ReactNode {
   const snapshot = useSyncExternalStore(props.diagnostics.subscribe, props.diagnostics.getSnapshot, props.diagnostics.getSnapshot)
   const sessionId = props.store.api.currentSessionId()
@@ -40,14 +43,14 @@ export function ModulesWorkspacePage(props: {
   return <>
     <section className={css.card} aria-label={props.t('diagnostics.title')}>
       <header className={css.header}>
-        <div className={css.intro}><h2>{props.t('diagnostics.title')}</h2><p>{props.t(sessionId === undefined ? 'diagnostics.noSession' : 'diagnostics.hint')}</p></div>
+        <div className={css.intro}><h2>{props.t('diagnostics.title')}</h2><p>{props.t(sessionId === undefined ? 'diagnostics.noSession' : 'diagnostics.hint')}{sessionId === undefined ? '' : ` · ${sessionId}`}</p></div>
         <Button className={css.run} shape="pill" variant="primary" aria-busy={snapshot.busy} disabled={snapshot.busy} onClick={() => { void props.diagnostics.run(sessionId) }}>
           {props.t(snapshot.busy ? 'diagnostics.running' : 'diagnostics.run')}
         </Button>
       </header>
       <p className={css.notice} role="status" aria-atomic="true">{status}</p>
       {(showRules || showContext) && <DiagnosticResults t={props.t} disclosure={props.resultsDisclosure}>
-        {showRules && <DiagnosticsPanel diagnostics={props.diagnostics} t={props.t} />}
+        {showRules && <DiagnosticsPanel diagnostics={props.diagnostics} t={props.t} onLocate={props.onLocate} returnTarget={props.returnTarget} onReturnFocus={props.onReturnFocus} />}
         {showContext && <ContextActivationDiagnosticsCard snapshot={context} sessionId={sessionId} t={props.t} />}
       </DiagnosticResults>}
     </section>

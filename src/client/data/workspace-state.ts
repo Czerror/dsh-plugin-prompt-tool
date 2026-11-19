@@ -1,14 +1,14 @@
-import type { PromptToolStore } from './use-prompt-tool-store.ts'
+import type { GlobalWorkspaceStore } from './use-prompt-tool-store.ts'
 
 export interface WorkspaceStoreHolder {
   subscribe(listener: () => void): () => void
-  getSnapshot(): PromptToolStore | undefined
-  publish(store: PromptToolStore): void
+  getSnapshot(): GlobalWorkspaceStore | undefined
+  publish(store: GlobalWorkspaceStore): void
   dispose(): void
 }
 
 export function createWorkspaceStoreHolder(): WorkspaceStoreHolder {
-  let current: PromptToolStore | undefined
+  let current: GlobalWorkspaceStore | undefined
   let disposed = false
   const listeners = new Set<() => void>()
   const notify = (): void => { for (const listener of listeners) listener() }

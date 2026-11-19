@@ -19,10 +19,11 @@ export function useModuleRuleEditors(store: RuleEditorStore, moduleIds: readonly
     const draft = getRulesDraft(store.editorDrafts, moduleId)
     return { moduleId, draft, editor: createRuleEditor(moduleId, draft, {
       request: body => bridgeCall('rules', body, moduleId),
+      onUnconfirmed: store.reconcileRules,
       enqueue: (_id, task) => store.enqueueRuleTask(task),
       isCurrent: () => active.current.includes(moduleId), changed: store.publishDrafts,
     }) }
-  }), [identity, store.editorDrafts, store.enqueueRuleTask, store.publishDrafts])
+  }), [identity, store.editorDrafts, store.enqueueRuleTask, store.publishDrafts, store.reconcileRules])
   // 未加载的草稿才重读：全局加载（改总闸、导入）会把 loaded 清成 false，届时按各模块主语重取一次。
   const pending = editors.filter(({ draft }) => !draft.loaded).map(({ moduleId }) => moduleId).join(',')
   useEffect(() => {

@@ -39,6 +39,7 @@ import { createSerialTaskQueue } from './save-queue.ts'
 type BridgeCall = typeof import('./bridge-client.ts').bridgeCall
 
 export interface InstructionEditorDependencies {
+  policyState?: ReturnType<typeof createInstructionPolicyState>
   /** 桥请求面：只用于 agentsFile / instructionsPolicy / promptConfigs 三个端点。 */
   request: BridgeCall
   /** 当前会话身份：与请求时的会话不一致即放弃在途结果。 */
@@ -94,21 +95,28 @@ const parsePolicy = (res: BridgeResponse<'instructionsPolicy'>): InstructionPoli
   }
 }
 
+export function createInstructionPolicyState(changed: () => void) {
+  let snapshot = EMPTY_INSTRUCTION_POLICY_SNAPSHOT
+  return {
+    get: () => snapshot,
+    set(next: InstructionPolicySnapshot) { snapshot = next; changed() },
+    queue: createSerialTaskQueue(),
+  }
+}
+
 export function createInstructionEditor(deps: InstructionEditorDependencies): InstructionEditor {
   let pool: InstructionDraftPool = EMPTY_INSTRUCTION_POOL
-  let policy: InstructionPolicySnapshot = EMPTY_INSTRUCTION_POLICY_SNAPSHOT
+  const policy = deps.policyState ?? createInstructionPolicyState(deps.onChange)
   let shells: PromptConfigDraft[] = []
   let seq = 0
   let session: string | undefined
-  const policyQueue = createSerialTaskQueue()
 
   const setPool = (next: InstructionDraftPool): void => { pool = next; deps.onChange() }
-  const setPolicy = (next: InstructionPolicySnapshot): void => { policy = next; deps.onChange() }
 
   const editor: InstructionEditor = {
     getPool: () => pool,
-    getPolicy: () => policy,
-    projectCards: () => projectInstructionCards(shells, pool, policy),
+    getPolicy: policy.get,
+    projectCards: () => projectInstructionCards(shells, pool, policy.get()),
     clearShells: () => { shells = []; deps.onChange() },
     switchSession: (sessionId) => {
       if (sessionId === session) return
@@ -127,7 +135,7 @@ export function createInstructionEditor(deps: InstructionEditorDependencies): In
         stranded = unsavedInstructionDrafts(pool).filter((draft) => !visible.has(draft.fileId))
       }
       // 策略读取期间有新的策略写入：这次响应已过期，不覆盖用户操作。
-      if (policy === input.expectPolicy) setPolicy(parsePolicy(input.policyResult))
+      if (policy.get() === input.expectPolicy) policy.set(parsePolicy(input.policyResult))
       // 卡片壳只来自 /bootstrap 的会话段；空数组或缺段都是权威结果，会清掉旧壳。
       if (input.promptConfigs !== undefined) {
         shells = instructionShellsFrom(input.promptConfigs.promptConfigs)
@@ -191,19 +199,19 @@ export function createInstructionEditor(deps: InstructionEditorDependencies): In
       deps.notify('ok', `已保存指令文件：${results.length} 个`)
       return true
     },
-    savePolicy: (patch) => policyQueue.enqueue(async () => {
-      const current = policy
+    savePolicy: (patch) => policy.queue.enqueue(async () => {
+      const current = policy.get()
       if (current.error !== undefined) {
         deps.notify('error', `指令策略不可写：${current.error}`)
         return false
       }
       const res = await deps.request('instructionsPolicy', { policy: patch, expectedRevision: current.revision })
-      if (policy !== current) return false
+      if (policy.get() !== current) return false
       if (!res.ok || res.value.policy === undefined || res.value.error !== undefined) {
         deps.notify('error', '指令策略保存失败：' + (res.ok ? res.value.error ?? '响应缺少策略快照' : res.message ?? 'settings bridge unavailable'))
         return false
       }
-      setPolicy({ policy: res.value.policy, revision: res.value.revision, exists: res.value.exists })
+      policy.set({ policy: res.value.policy, revision: res.value.revision, exists: res.value.exists })
       deps.notify('ok', '指令策略已保存（影响后续注入，不撤回已进入会话的内容）')
       return true
     }),

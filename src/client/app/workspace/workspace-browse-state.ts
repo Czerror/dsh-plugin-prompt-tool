@@ -1,8 +1,18 @@
+import type { RuleDiagnosticTarget } from '../../data/rule-diagnostics-session.ts'
+
 /** 仅保留可恢复的浏览上下文；确认、导入、拖拽与业务草稿仍由各自 owner 管理。 */
 export interface ConfigPageBrowse {
   filter: string
   viewFilter: string
   expanded?: string
+  allModules?: boolean
+  rulesScroll?: number
+  ruleNodes?: Map<string, string>
+  combination?: boolean
+  diagnosticTarget?: RuleDiagnosticTarget
+  publish(): void
+  subscribe(listener: () => void): () => void
+  revision(): number
   variablesExpanded: boolean
   feedback?: { kind: 'ok' | 'error'; message: string }
 }
@@ -20,6 +30,7 @@ export function createWorkspaceBrowseState() {
       },
     },
     configs: new Map<string, ConfigPageBrowse>(),
+    diagnosticReturn: undefined as RuleDiagnosticTarget | undefined,
     scroll: new Map<string, number>(),
     tools: { query: '', selectedId: '', expanded: {} as Record<string, boolean> },
   }
@@ -28,7 +39,14 @@ export function createWorkspaceBrowseState() {
 export function configPageBrowse(state: ReturnType<typeof createWorkspaceBrowseState>, key: string): ConfigPageBrowse {
   let value = state.configs.get(key)
   if (value === undefined) {
-    value = { filter: '', viewFilter: 'all', variablesExpanded: false }
+    const listeners = new Set<() => void>()
+    let revision = 0
+    value = {
+      filter: '', viewFilter: 'all', variablesExpanded: false,
+      publish() { revision++; for (const listener of listeners) listener() },
+      subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener) } },
+      revision: () => revision,
+    }
     state.configs.set(key, value)
   }
   return value

@@ -30,17 +30,17 @@ const isBridgeResultPayload = (payload: unknown): payload is BridgeResult<unknow
 async function readBridgeResponse<T, E = unknown>(response: Response): Promise<BridgeResult<T, E>> {
   const text = await response.text()
   if (text.trim().length === 0) {
-    return { ok: false, message: `桥接接口返回空响应（HTTP ${response.status}）` }
+    return { ok: false, code: 'bridge-response-unknown', message: `桥接接口返回空响应（HTTP ${response.status}）` }
   }
   let payload: unknown
   try {
     payload = JSON.parse(text) as unknown
   } catch {
     const preview = text.trim().replace(/\s+/g, ' ').slice(0, 80)
-    return { ok: false, message: `桥接接口返回非 JSON 响应（HTTP ${response.status}：${preview}）` }
+    return { ok: false, code: 'bridge-response-unknown', message: `桥接接口返回非 JSON 响应（HTTP ${response.status}：${preview}）` }
   }
   if (isBridgeResultPayload(payload)) return payload as BridgeResult<T, E>
-  return { ok: false, message: `invalid settings bridge payload (HTTP ${response.status})` }
+  return { ok: false, code: 'bridge-response-unknown', message: `invalid settings bridge payload (HTTP ${response.status})` }
 }
 
 /**
@@ -56,7 +56,7 @@ export async function postBridge<T, E = unknown>(path: string, body: unknown, su
     })
     return await readBridgeResponse<T, E>(response)
   } catch (error) {
-    return { ok: false, message: errorMessage(error) }
+    return { ok: false, code: 'bridge-response-unknown', message: errorMessage(error) }
   }
 }
 
@@ -73,6 +73,6 @@ export async function uploadBridge<T, E = unknown>(path: string, file: Blob, fil
     })
     return await readBridgeResponse<T>(response)
   } catch (error) {
-    return { ok: false, message: errorMessage(error) }
+    return { ok: false, code: 'bridge-response-unknown', message: errorMessage(error) }
   }
 }

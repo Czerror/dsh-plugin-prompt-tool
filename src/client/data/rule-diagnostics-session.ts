@@ -2,6 +2,8 @@ import type { RuleDiagnosticRecord, ContextActivationDiagnosticRecord } from '..
 import { bridgeCall } from './bridge-client.ts'
 import { countEnabledConfigs } from '../../shared/module-config-order.ts'
 
+export interface RuleDiagnosticTarget { moduleId: string; ruleId: string; actionId?: string }
+
 export interface RuleDiagnosticsSnapshot {
   busy: boolean
   status: 'idle' | 'running' | 'ready' | 'stale' | 'error'
@@ -77,7 +79,7 @@ export function createRuleDiagnosticsSession(): RuleDiagnosticsSession {
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) },
     getSnapshot() { return snapshot },
     run,
-    invalidate() { if (!disposed) { generation += 1; if (snapshot.status !== 'idle') publish({ ...snapshot, status: 'stale' }) } },
+    invalidate() { if (!disposed) { generation += 1; if (snapshot.status !== 'idle' && snapshot.status !== 'stale') publish({ ...snapshot, status: 'stale' }) } },
     dispose() { disposed = true; generation += 1; listeners.clear() },
   }
 }

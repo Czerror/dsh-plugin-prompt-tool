@@ -78,6 +78,7 @@ export interface InstructionFilesPort {
 
 /** 规则编辑：已绑定模块身份的规则事务与模板建卡。 */
 export interface RuleEditingPort {
+  reconcileRules: () => void
   enqueueRuleTask: <T>(task: () => Promise<T>) => Promise<T>
   createTemplateRule: ReturnType<typeof createTemplateRuleWriter>
 }
@@ -113,6 +114,7 @@ export interface NoticePort {
 
 /** 当前会话模型事实（模型路由卡）。 */
 export interface ModelsPort {
+  ensureModelReasoning: (provider: string, model: string) => void
   modelCatalog: Record<string, string[]>
   modelReasoning: Record<string, ModelReasoningView>
   hostDefaultModel?: HostDefaultModel

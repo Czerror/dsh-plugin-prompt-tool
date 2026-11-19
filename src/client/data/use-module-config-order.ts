@@ -41,7 +41,7 @@ export interface ModuleConfigOrderSession {
   /** 刷新会变的依赖。 */
   update(runtime: ModuleConfigOrderRuntime): void
   load(): Promise<boolean>
-  save(next: PromptConfigDraft[]): Promise<void>
+  save(next: PromptConfigDraft[]): Promise<boolean>
   retryPublication(): Promise<boolean>
   reset(): void
   dispose(): void
@@ -95,9 +95,9 @@ export function createModuleConfigOrderSession(deps: ModuleConfigOrderDeps): Mod
     if (request === generation) { busy = false; commit({ busy: false }) }
     return loaded
   }
-  const save = async (next: PromptConfigDraft[]): Promise<void> => {
+  const save = async (next: PromptConfigDraft[]): Promise<boolean> => {
     const snapshot = state.snapshot
-    if (busy || snapshot === undefined || next === state.configs) return
+    if (busy || snapshot === undefined || next === state.configs) return false
     busy = true
     const request = generation
     commit({ busy: true, configs: next })
@@ -111,11 +111,11 @@ export function createModuleConfigOrderSession(deps: ModuleConfigOrderDeps): Mod
           return { moduleId: entry.moduleId, configId: entry.configId }
         }),
       })
-      if (request !== generation) return
+      if (request !== generation) return false
       if (!result.ok) throw new Error(result.message ?? runtime.t('moduleOrder.unavailable'))
       // 即使已切到另一页也刷新 store，避免后续单模块编辑沿用旧序号。
       const refreshed = await runtime.reloadConfigs?.()
-      if (request !== generation) return
+      if (request !== generation) return false
       busy = false
       commit({
         snapshot: result.value,
@@ -124,12 +124,14 @@ export function createModuleConfigOrderSession(deps: ModuleConfigOrderDeps): Mod
         publication: readPublication(result.value as ModuleConfigOrderSnapshot & PublicationFields),
         busy: false,
       })
+      return true
     } catch (cause) {
-      if (request !== generation) return
+      if (request !== generation) return false
       busy = false
       commit({ busy: false, error: runtime.t('moduleOrder.saveFailed', { reason: errorMessage(cause) }) })
       // 失败后重读：拖拽用的 revision 已过期，不重读会反复 409；重读不静默清掉这次失败。
       await read(true)
+      return false
     }
   }
   /** 只重试运行发布：不重写排序。 */

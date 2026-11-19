@@ -1,12 +1,35 @@
 /* 统一规则卡、条件树和条件卡/动作卡的私有样式。 */
 .workspace { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; font-feature-settings: "cv01", "ss03"; }
+.workspaceContainer { container: rule-workspace / inline-size; min-width: 0; }
+.ruleWorkspace { display: grid; gap: 12px; min-width: 0; }
+.ruleListPane, .ruleDetail { display: flex; flex-direction: column; align-items: stretch; min-width: 0; gap: 10px; }
+.ruleDetail > button { align-self: flex-start; }
+.ruleWorkspace[data-rule-open] > .ruleListPane { display: none; }
+.workspaceHeading { margin: 0; font: 600 14px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
+.ruleList { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 2px; max-block-size: 60vh; overflow: auto; list-style: none; }
+.ruleList > li { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.moduleParticipation { display: flex; flex-wrap: wrap; gap: 8px 16px; min-width: 0; margin: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.ruleChoice { display: grid; gap: 2px; flex: 1; min-width: 0; min-height: 44px; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; color: inherit; background: var(--dsw-alias-bg-layer-2); font: inherit; text-align: start; overflow-wrap: anywhere; cursor: pointer; }
+.ruleChoice small { color: var(--dsw-alias-label-secondary); }
+.ruleChoice[aria-current], .ruleChoice:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.ruleList button[aria-disabled=true] { opacity: .6; cursor: default; }
+.ruleCanvas { display: grid; gap: 12px; min-width: 0; }
+.ruleCanvas[data-node-open] > .steps, .ruleCanvas:not([data-node-open]) > .ruleProperties { display: none; }
+.ruleProperties { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+.ruleProperties > div { align-self: stretch; min-width: 0; }
+@container rule-workspace (width >= 70rem) {
+  .ruleWorkspace[data-rule-open] { grid-template-columns: minmax(15rem, 1fr) minmax(0, 3fr); }
+  .ruleWorkspace[data-rule-open] > .ruleListPane { display: flex; }
+  .ruleCanvas { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ruleCanvas[data-node-open] > .steps, .ruleCanvas:not([data-node-open]) > .ruleProperties { display: flex; }
+}
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .cardPanel { container: rule-card / inline-size; min-width: 0; }
 .headerActions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; max-width: 100%; }
 .headerActions .row { flex-wrap: nowrap; gap: 4px; }
 .body { container: rule-editor / inline-size; display: flex; flex-direction: column; gap: 16px; padding: 0; min-width: 0; border-top: 0; }
 .fields { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; min-width: 0; }
-.headerFields { display: grid; grid-template-columns: repeat(7, max-content); justify-content: start; justify-items: start; align-items: start; gap: 12px; min-width: 0; overflow-x: auto; padding-bottom: 4px; text-align: start; }
+.headerFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); justify-items: start; align-items: start; gap: 12px; min-width: 0; padding-bottom: 4px; text-align: start; }
 .headerFields > * > span:first-child { white-space: nowrap; }
 .fields > * { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .fields > .full, .fields > .parameterGroup { flex-basis: 100%; }
@@ -26,6 +49,8 @@
 .conditions > button, .condition > button { align-self: flex-start; }
 .conditionChild { display: flex; flex-direction: column; gap: 8px; padding-inline-start: 12px; border-inline-start: 2px solid var(--dsw-alias-border-l2); min-width: 0; }
 .status { margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui,sans-serif; overflow-wrap: anywhere; }
+.saveStatus { margin: 0; overflow-wrap: anywhere; }
+.saveStatus:empty { position: absolute; }
 .surfaceFields, .surfaceSection, .surfaceGroup, .surfaceEntry { display: flex; flex-direction: column; min-width: 0; gap: 12px; }
 .surfaceSection + .surfaceSection { padding-top: 12px; border-top: .5px solid var(--dsw-alias-border-l2); }
 .surfaceHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }

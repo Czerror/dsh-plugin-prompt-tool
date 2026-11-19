@@ -1,4 +1,5 @@
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import type { GlobalWorkspaceStore, PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { PromptToolHostApi } from '../../data/host-api.ts'
 import type { PromptToolSettingsTransport } from '../../data/use-prompt-tool-store.ts'
 import type { WorkspaceStoreHolder } from '../../data/workspace-state.ts'
@@ -14,6 +15,7 @@ export interface NativeWorkspaceOwner {
   holder: WorkspaceStoreHolder
   diagnostics: RuleDiagnosticsSession
   api: PromptToolHostApi
+  sessionApi(sessionId?: string): PromptToolHostApi
   settings: PromptToolSettingsTransport
   t: PromptToolTranslate
   mainSession(): string | undefined
@@ -35,19 +37,46 @@ const subscribeVisibility = (listener: () => void): (() => void) => {
 export function NativeWorkspace(props: NativeWorkbenchRenderProps & { owner: NativeWorkspaceOwner }): ReactNode {
   const { owner } = props
   const selectedSession = useSyncExternalStore(owner.subscribeMainSession, owner.mainSession, owner.mainSession)
-  const sessionId = props.placement === 'main' ? selectedSession : props.sessionId
+  const sessionId = props.sessionId ?? (props.placement === 'main' ? selectedSession : undefined)
   const id = useRef(Symbol('workspace')).current
   const foreground = useSyncExternalStore(subscribeVisibility, documentVisible, () => true)
   const visible = props.visible === true && foreground
   const store = useSyncExternalStore(owner.holder.subscribe, owner.holder.getSnapshot, owner.holder.getSnapshot)
   const activity = useSyncExternalStore(owner.state.subscribe, owner.state.getSnapshot, owner.state.getSnapshot)
   useEffect(() => {
-    if (visible) return owner.state.mount(id, sessionId)
-  }, [owner.state, id, sessionId, visible])
-  if (!visible || !activity.active || activity.sessionId !== sessionId) return null
+    if (visible) return owner.state.mount(id)
+  }, [owner.state, id, visible])
+  if (!visible || !activity.active) return null
   if (store === undefined) return <p role="status">{owner.t('app.loading')}</p>
+  return <VisibleWorkspace owner={owner} global={store} sessionId={sessionId} />
+}
+
+function VisibleWorkspace({ owner, global, sessionId }: { owner: NativeWorkspaceOwner; global: GlobalWorkspaceStore; sessionId?: string }): ReactNode {
+  const api = useMemo(() => owner.sessionApi(sessionId), [owner, sessionId])
+  const context = global.instructionsFor(sessionId)
+  const revision = useSyncExternalStore(context.subscribe, context.snapshot, context.snapshot)
+  const editor = context.editor
+  const cards = useMemo(() => editor.projectCards(), [editor, revision])
+  const fields = useMemo(() => ({ ...global.fields, instructionCards: cards }), [global.fields, cards])
+  const { openWorkspace, releaseInstructions, load } = global
+  const reload = useCallback((options?: { silent?: boolean }) => load({ ...options, sessionId }), [load, sessionId])
+  useEffect(() => {
+    void openWorkspace(sessionId)
+    return () => releaseInstructions(sessionId)
+  }, [openWorkspace, releaseInstructions, sessionId])
+  const store: PromptToolStore = {
+    ...global, api, fields, load: reload, getFields: () => fields,
+    getInstructionPool: editor.getPool, patchInstructionText: editor.patchText,
+    persistInstructionFiles: editor.saveFiles, reloadInstructionFile: editor.reloadFile,
+    instructionPolicy: editor.getPolicy(), updateInstructionPolicy: editor.updatePolicy,
+    async persistBeforeLeave() {
+      const switchesSaved = !global.dirtySwitches || await global.persistSwitches()
+      const filesSaved = await editor.saveFiles()
+      return switchesSaved && filesSaved
+    },
+  }
   return <PromptWorkspace
-    store={store} sessionId={sessionId} view={owner.state.view(sessionId)}
+    store={store} sessionId={sessionId} view={owner.state.view}
     diagnostics={owner.diagnostics} t={owner.t}
   />
 }

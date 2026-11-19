@@ -13,6 +13,7 @@ export function createTemplateRuleWriter(deps: {
   drafts: WorkspaceDrafts
   modules: () => readonly ModuleSummary[] | undefined
   changed: () => void
+  reconcileRules?: () => void
   markDeclared: (moduleId: string, section: string) => void
   enqueue: <T>(task: () => Promise<T>) => Promise<T>
   actions: Pick<ModuleActions, 'enable'>
@@ -25,6 +26,7 @@ export function createTemplateRuleWriter(deps: {
     const editor = createRuleEditor(moduleId, draft, {
       request: body => bridgeCall('rules', body, moduleId), enqueue: (_id, task) => deps.enqueue(task),
       isCurrent: () => true, changed: deps.changed,
+      onUnconfirmed: deps.reconcileRules,
     })
     const result = await editor.create(rule, declared)
     if (!result.ok) return result

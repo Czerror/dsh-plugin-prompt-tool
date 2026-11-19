@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { WorkspaceViewState } from '../workbench/native-workspace-state.ts'
-import type { RuleDiagnosticsSession } from '../../data/rule-diagnostics-session.ts'
+import type { RuleDiagnosticsSession, RuleDiagnosticTarget } from '../../data/rule-diagnostics-session.ts'
 import { ModulesWorkspacePage } from './pages/ModulesWorkspacePage.tsx'
 import { ToolsPreviewPage } from '../../features/tools/ToolsPreviewPage.tsx'
 import { AudiencePage } from './pages/AudiencePage.tsx'
@@ -42,20 +42,27 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   }
   // 页面与滚动 key 只认页面 id：主语由每张卡自报，页面不再随任何模块重挂。
   const scrollKey = page
-  useEffect(() => {
-    void store.load()
-  }, [props.sessionId, store.load])
-  const latestStore = useRef(store)
-  latestStore.current = store
-  useEffect(() => () => { void latestStore.current.persistBeforeLeave() }, [])
+  const openDiagnosticTarget = (target: RuleDiagnosticTarget): void => {
+    const ruleBrowse = configPageBrowse(browse, 'features')
+    ruleBrowse.diagnosticTarget = target
+    ruleBrowse.combination = false
+    browse.diagnosticReturn = target
+    changePage('features')
+  }
+  const returnToDiagnostics = (): void => {
+    configPageBrowse(browse, 'features').diagnosticTarget = undefined
+    changePage('modules')
+  }
+  const finishDiagnosticReturn = useCallback(() => { browse.diagnosticReturn = undefined }, [browse])
 
   const content = page === 'features'
-    ? <AudiencePage store={store} audience="main" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
+    ? <AudiencePage store={store} audience="main" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} onRuleEdit={props.diagnostics.invalidate} onReturnToDiagnostics={returnToDiagnostics} />
     : page === 'subagent'
-      ? <AudiencePage store={store} audience="subagent" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} />
+      ? <AudiencePage store={store} audience="subagent" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} onRuleEdit={props.diagnostics.invalidate} />
       : page === 'tools'
         ? <ToolsPreviewPage api={store.api} presetId={store.api.sessionPreset.snapshot()} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
-        : <ModulesWorkspacePage store={store} diagnostics={props.diagnostics} resultsDisclosure={browse.diagnosticsResults} t={t} onReady={markReady} />
+        : <ModulesWorkspacePage store={store} diagnostics={props.diagnostics} resultsDisclosure={browse.diagnosticsResults} t={t} onReady={markReady}
+            onLocate={openDiagnosticTarget} returnTarget={browse.diagnosticReturn} onReturnFocus={finishDiagnosticReturn} />
 
   return (
     <WorkspaceFrame

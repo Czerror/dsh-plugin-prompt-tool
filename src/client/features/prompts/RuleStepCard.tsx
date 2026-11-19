@@ -1,4 +1,5 @@
 import { useId, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { Button } from '../../ui/Button.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
@@ -38,14 +39,17 @@ export function StepCard(props: {
   onToggle: () => void
   actions?: ReactNode
   level: number
+  property?: { target: HTMLElement | null; id: string; focus: (button: HTMLButtonElement) => void }
+  nodeKey?: string
   children: ReactNode
 }): ReactNode {
   const panelId = useId()
   const toggleRef = useRef<HTMLButtonElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const toggle = (
-    <button ref={toggleRef} type="button" className={css.stepToggle} aria-expanded={props.open} aria-controls={panelId}
-      onClick={() => {
+    <button ref={toggleRef} type="button" className={css.stepToggle} data-rule-node={props.nodeKey} aria-expanded={props.open} aria-controls={props.property?.id ?? panelId}
+      onClick={event => {
+        props.property?.focus(event.currentTarget)
         if (props.open && bodyRef.current !== null && bodyRef.current.contains(document.activeElement)) toggleRef.current?.focus()
         props.onToggle()
       }}>
@@ -59,6 +63,8 @@ export function StepCard(props: {
       {props.hint === undefined ? toggle : <HintTooltip label={props.hint}>{toggle}</HintTooltip>}
       {props.actions !== undefined && <span className={css.stepActions}>{props.actions}</span>}
     </div>
-    <div id={panelId} ref={bodyRef} hidden={!props.open} className={css.stepBody}>{props.open && props.children}</div>
+    {props.property === undefined
+      ? <div id={panelId} ref={bodyRef} hidden={!props.open} className={css.stepBody}>{props.open && props.children}</div>
+      : props.open && props.property.target && createPortal(<div className={css.stepBody}>{props.children}</div>, props.property.target)}
   </section>
 }

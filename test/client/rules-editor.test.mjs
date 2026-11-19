@@ -81,6 +81,27 @@ test('rules bridge: rename/delete use previous identity and CAS; unknown payload
   assert.equal(h.calls.length, 2, 'unchanged submit does not write')
 })
 
+test('lost save receipt is reconciled by reading the original module and preserves later input', async () => {
+  let stored = alpha
+  const h = harness(async body => {
+    if (!body.edits) return { ok: true, value: snapshot([stored, beta], stored === alpha ? 'before' : 'after') }
+    stored = structuredClone(body.edits[0].rule)
+    return { ok: false, code: 'bridge-response-unknown' }
+  })
+  await h.editor.load()
+  const key = h.draft.entries[0].key
+  h.editor.patch(key, { ...alpha, name: 'sent' })
+  assert.equal(await h.editor.submit(), false)
+  h.editor.patch(key, { ...alpha, name: 'later' })
+  assert.equal(h.editor.retryKind, 'read')
+  assert.equal(await h.editor.submit(), false)
+  await h.editor.retry()
+  assert.deepEqual(h.calls[2], { expectedModuleId: 'module-a' })
+  assert.equal(h.draft.saved[0].name, 'sent')
+  assert.equal(h.draft.entries[0].value.name, 'later')
+  assert.equal(h.calls.filter(body => body.edits).length, 1)
+})
+
 test('rules bridge: CAS failure and switched module never discard local input', async () => {
   const h = harness(async body => body.edits ? { ok: false, code: 'rules-conflict', message: 'revision changed' } : { ok: true, value: snapshot() })
   await h.editor.load()

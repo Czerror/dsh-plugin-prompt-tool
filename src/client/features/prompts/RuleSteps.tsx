@@ -8,7 +8,7 @@
  *   否则卡       = 规则级 `else`。
  * 每张卡都是 TagInput 式的小卡：卡头单行摘要，展开才编辑，右侧 ↑↓ 与 × 。
  */
-import { useState, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { RuleAction, RuleCondition, RuleDefinition, RuleEditorMeta } from '../../../shared/rules.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { EngineMeta } from '../../prompt-tool-types.ts'
@@ -59,14 +59,12 @@ interface StepContext {
   disabled: boolean
   onDraft: () => void
   creation: StepCreation
+  selected?: string
+  property: NonNullable<Parameters<typeof StepCard>[0]['property']>
+  select: (path: string) => void
 }
 
-const rowKey = (context: StepContext, path: string): string => `${context.prefix}:${path}`
-const rowOpen = (context: StepContext, path: string): boolean => context.expanded.get(rowKey(context, path)) === true
-function toggleRow(context: StepContext, path: string): void {
-  context.expanded.set(rowKey(context, path), !rowOpen(context, path))
-  context.onDraft()
-}
+const rowOpen = (context: StepContext, path: string): boolean => context.selected === path
 
 /** 叶子动作卡：卡头是动作摘要，展开是该动作的全部字段。 */
 function ActionCard(props: {
@@ -95,7 +93,7 @@ function ActionCard(props: {
       : entry?.example
   const chainLabel = props.chain.length > 0 ? conditionChain(t, props.chain) : undefined
   return <StepCard kind="action" kindLabel={triggerLabel(t, String(action.kind))} summary={actionSummary(t, action)} hint={chainLabel}
-    level={2} open={rowOpen(context, props.path)} onToggle={() => toggleRow(context, props.path)}
+    level={2} nodeKey={`action:${action.id}`} open={rowOpen(context, `action:${action.id}`)} onToggle={() => context.select(`action:${action.id}`)} property={context.property}
     actions={<NodeActions t={t} id={action.id} index={props.index} total={props.total} disabled={context.disabled} onMove={props.onMove} onRemove={props.onRemove} />}>
     {entry === undefined
       ? <><p role="note">{t('rules.unknown')}</p><TriggerJsonField {...context} label={t('rules.rawAction')} shape="object" value={action} fieldKey={fieldKey}
@@ -141,17 +139,19 @@ function BranchCard(props: {
   const elseChain: readonly RuleCondition[] = [...props.chain, ...(branch.if === undefined ? [] : [{ not: branch.if }])]
   const patch = (next: Partial<RuleBranch>): void => props.onChange({ ...branch, ...next })
   const ordinal = String(props.index + 1)
-  return <StepCard kind="branch" kindLabel={t('rules.steps.branchLabel')} summary={branchSummary(t, branch)} hint={conditionChain(t, branchChain)}
-    level={1} open={rowOpen(context, props.path)} onToggle={() => toggleRow(context, props.path)}
+  return <div className={css.stepScope}>
+    <StepCard kind="branch" kindLabel={t('rules.steps.branchLabel')} summary={branchSummary(t, branch)} hint={conditionChain(t, branchChain)}
+    level={1} nodeKey={props.path} open={rowOpen(context, props.path)} onToggle={() => context.select(props.path)} property={context.property}
     actions={<NodeActions t={t} id={ordinal} index={props.index} total={props.total} disabled={context.disabled} onMove={props.onMove} onRemove={props.onRemove} />}>
     <RuleConditionFields {...context} fieldKey={`${props.path}:if`} meta={context.meta} value={branch.if} onChange={condition => patch({ if: condition })} />
+    </StepCard>
     <p className={css.stepSlot}>{t('rules.steps.then')}</p>
     <div className={css.stepScope} data-step-scope="then">{props.renderList(nodeList(branch.then), `${props.path}:then`, branchChain, true, nodes => patch({ then: nodes }))}</div>
     <p className={css.stepSlot}>{t('rules.steps.else')}</p>
     {branch.else === undefined
       ? <div className={css.stepAdd}><Button shape="pill" variant="outline" disabled={context.disabled} onClick={() => patch({ else: [] })}>{t('rules.steps.addElse')}</Button></div>
       : <div className={css.stepScope} data-step-scope="else">{props.renderList(nodeList(branch.else), `${props.path}:else`, elseChain, true, nodes => patch({ else: nodes }))}</div>}
-  </StepCard>
+  </div>
 }
 
 /**
@@ -167,23 +167,65 @@ export function RuleStepsPanel(props: {
   expanded: Map<string, boolean>
   prefix: string
   fieldKey: string
+  nodeBrowse?: Map<string, string>
+  browseKey: string
+  onBrowseChange?: () => void
+  diagnosticActionId?: string
   disabled?: boolean
   onDraft: () => void
   onChange: (rule: RuleDefinition) => void
   onMove: (path: string, index: number, offset: -1 | 1) => void
 }): ReactNode {
   const { t, rule, meta } = props
-  const [addActionKind, setAddActionKind] = useState('inject-text')
-  const [addConditionKind, setAddConditionKind] = useState('')
-  const [activeCreation, setActiveCreation] = useState(`${props.fieldKey}:then`)
   const disabled = props.disabled === true
   const then = nodeList(rule.then), otherwise = nodeList(rule.else)
   const usedIds = collectActionIds([...then, ...otherwise])
+  const diagnosticNode = props.diagnosticActionId === undefined || !usedIds.has(props.diagnosticActionId) ? undefined : `action:${props.diagnosticActionId}`
+  const [addActionKind, setAddActionKind] = useState('inject-text')
+  const [addConditionKind, setAddConditionKind] = useState('')
+  const [activeCreation, setActiveCreation] = useState(`${props.fieldKey}:then`)
+  const [localSelectedNode, selectNode] = useState(diagnosticNode ?? props.nodeBrowse?.get(props.browseKey))
+  const [initialDiagnostic, setInitialDiagnostic] = useState(diagnosticNode)
+  const selectedNode = initialDiagnostic ?? (props.onBrowseChange ? props.nodeBrowse?.get(props.browseKey) : localSelectedNode)
+  const [propertyTarget, setPropertyTarget] = useState<HTMLDivElement | null>(null)
+  const propertyId = useId()
+  const structureHeading = useRef<HTMLHeadingElement>(null)
+  const propertyHeading = useRef<HTMLHeadingElement>(null)
+  const nodeButton = useRef<HTMLButtonElement | null>(null)
+  const focusPane = useRef<'structure' | 'properties' | undefined>(diagnosticNode ? 'properties' : undefined)
+  const structureRef = useRef<HTMLDivElement>(null)
+  const lastNodeKey = useRef(selectedNode)
+  const select = (path: string | undefined): void => {
+    if (path === undefined) props.nodeBrowse?.delete(props.browseKey)
+    else props.nodeBrowse?.set(props.browseKey, path)
+    if (props.onBrowseChange) props.onBrowseChange()
+    else selectNode(path)
+    setInitialDiagnostic(undefined)
+  }
+  useLayoutEffect(() => {
+    if (focusPane.current === 'properties') propertyHeading.current?.focus()
+    if (focusPane.current === 'structure') {
+      const previous = nodeButton.current?.isConnected ? nodeButton.current : lastNodeKey.current === undefined ? undefined
+        : structureRef.current?.querySelector<HTMLButtonElement>(`[data-rule-node="${CSS.escape(lastNodeKey.current)}"]`)
+      const returnFocus = previous ?? structureHeading.current
+      returnFocus?.focus()
+    }
+    focusPane.current = undefined
+  })
+  const shownNode = selectedNode?.startsWith('action:') && !usedIds.has(selectedNode.slice('action:'.length)) ? undefined : selectedNode
   const conditional = rule.if !== undefined
   const context: StepContext = {
     t, meta, engineMeta: props.engineMeta, fields: props.fields, expanded: props.expanded,
     prefix: props.prefix, disabled, onDraft: props.onDraft,
     creation: { active: activeCreation, select: setActiveCreation },
+    selected: shownNode,
+    select: path => {
+      lastNodeKey.current = path
+      focusPane.current = 'properties'
+      select(path)
+      if (path === selectedNode) { propertyHeading.current?.focus(); focusPane.current = undefined }
+    },
+    property: { target: propertyTarget, id: propertyId, focus: button => { nodeButton.current = button } },
   }
   const patch = (next: Partial<RuleDefinition>): void => { if (!disabled) props.onChange({ ...rule, ...next }) }
   const setNodes = (next: RuleNode[]): void => patch({ then: next as RuleAction[] })
@@ -197,6 +239,7 @@ export function RuleStepsPanel(props: {
     const setAt = (index: number, next: RuleNode): void => onChange(nodes.map((node, at) => at === index ? next : node))
     const move = (index: number, offset: -1 | 1): void => {
       if (!disabled) props.onMove(path, index, offset)
+      if (!selectedNode?.startsWith('action:')) select(undefined)
     }
     const candidates = actionSelectable(scopeConditional)
     const selected = candidates.find(action => action.kind === addActionKind) ?? candidates[0]
@@ -217,7 +260,7 @@ export function RuleStepsPanel(props: {
           index={index} total={nodes.length} onMove={offset => move(index, offset)} onRemove={() => { cleared(props.fields, nodePath); onChange(nodes.filter((_, at) => at !== index)) }}
           onChange={next => setAt(index, next)} renderList={renderList} />
         return <StepCard key={nodePath} kind="unknown" kindLabel={t('rules.steps.unknown')} summary={nodeSummary(t, node)} level={1}
-          open={rowOpen(context, nodePath)} onToggle={() => toggleRow(context, nodePath)}
+          nodeKey={nodePath} open={rowOpen(context, nodePath)} onToggle={() => context.select(nodePath)} property={context.property}
           actions={<NodeActions t={t} id={String(index + 1)} index={index} total={nodes.length} disabled={disabled} onMove={offset => move(index, offset)} onRemove={() => onChange(nodes.filter((_, at) => at !== index))} />}>
           <p role="note">{t('rules.unknown')}</p>
           <TriggerJsonField {...context} label={t('rules.rawAction')} shape="object" value={node} fieldKey={nodePath}
@@ -236,15 +279,19 @@ export function RuleStepsPanel(props: {
     </>
   }
 
-  return <div className={css.steps} data-rule-steps>
+  return <div className={css.ruleCanvas} data-node-open={shownNode !== undefined || undefined} data-rule-steps>
+    <div className={css.steps} ref={structureRef}>
+    <h3 ref={structureHeading} tabIndex={-1}>{t('rules.structure')}</h3>
+    {props.diagnosticActionId !== undefined && diagnosticNode === undefined && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
     {/* IF 卡：规则级条件；下面的节点卡都属于这个条件作用域。 */}
     <StepCard kind="if" kindLabel={t('rules.steps.ifLabel')} summary={conditionSummary(t, rule.if)} level={0}
-      open={rowOpen(context, `${props.fieldKey}:if`)} onToggle={() => toggleRow(context, `${props.fieldKey}:if`)}
+      nodeKey={`${props.fieldKey}:if`} open={rowOpen(context, `${props.fieldKey}:if`)} onToggle={() => context.select(`${props.fieldKey}:if`)} property={context.property}
       actions={rule.if === undefined ? undefined : <CloseButton label={t('rules.clearCondition')} disabled={disabled} onClick={() => patch({ if: undefined })} />}>
       <RuleConditionFields {...context} fieldKey={`${props.fieldKey}:if`} meta={meta} value={rule.if} onChange={condition => patch({ if: condition })} />
     </StepCard>
     {/* then：任务卡与分支卡在顶层并列，收起时就是一张「条件 → 动作」一览。 */}
     <div className={css.stepScope} data-step-scope="then">
+      <p className={css.stepSlot}>{t('rules.steps.then')}</p>
       {renderList(then, `${props.fieldKey}:then`, rule.if === undefined ? [] : [rule.if], conditional, setNodes)}
     </div>
     {/* 规则级 else：`if` 不命中时执行，条件自带 not(if)。 */}
@@ -255,5 +302,14 @@ export function RuleStepsPanel(props: {
           removeLabel={t('rules.steps.removeElse')} onRemove={() => patch({ else: undefined })} />
         {renderList(otherwise, `${props.fieldKey}:else`, rule.if === undefined ? [] : [{ not: rule.if }], rule.if !== undefined, nodes => patch({ else: nodes as RuleAction[] }))}
       </div>}
+    </div>
+    <section className={css.ruleProperties}>
+      <h3 ref={propertyHeading} tabIndex={-1}>{t('rules.properties')}</h3>
+      {shownNode === undefined ? <p>{t('rules.chooseNode')}</p> : <Button shape="pill" variant="outline" onClick={() => {
+        focusPane.current = 'structure'
+        select(undefined)
+      }}>{t('rules.backToStructure')}</Button>}
+      <div id={propertyId} ref={setPropertyTarget} />
+    </section>
   </div>
 }

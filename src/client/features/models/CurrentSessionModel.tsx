@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { HostApiPort, ModelsPort, NoticePort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
@@ -13,6 +13,7 @@ export function CurrentSessionModel(props: { store: HostApiPort & ModelsPort & N
   const [busy, setBusy] = useState(false)
   const provider = view.selection?.provider ?? store.hostDefaultModel?.provider ?? ''
   const model = view.selection?.model ?? store.hostDefaultModel?.model ?? ''
+  useEffect(() => store.ensureModelReasoning(provider, model), [provider, model, store.ensureModelReasoning, store.modelCatalog])
   const reasoningEffort = view.selection?.reasoningEffort ?? store.hostDefaultModel?.reasoningEffort ?? ''
   const options = buildModelOptions(store.modelCatalog, provider && model ? [{ provider, model }] : []).filter(option => option.value !== '')
   const efforts = buildEffortOptions(store.modelReasoning[modelChoiceValue(provider, model)], reasoningEffort)
@@ -23,7 +24,7 @@ export function CurrentSessionModel(props: { store: HostApiPort & ModelsPort & N
     void face.select({ provider: selection.provider, model: selection.model, ...(selection.reasoningEffort ? { reasoningEffort: selection.reasoningEffort } : {}) }).then(() => { store.showNotice('ok', t('rules.sessionModelSaved')); void store.load() })
       .catch((error: unknown) => store.showNotice('error', String(error))).finally(() => setBusy(false))
   }
-  return <EngineModuleCard name={t('rules.sessionModel')} embedded>
+  return <EngineModuleCard name={[t('rules.sessionModel'), view.sessionId].filter(Boolean).join(' · ')} embedded>
     <div className={styles.sessionModelRow}>
       <MenuSelect compact ariaLabel={t('rules.sessionModel')} placeholder={t('field.default')} value={provider && model ? modelChoiceValue(provider, model) : ''} options={options} disabled={!view.selectable || busy}
         onChange={value => { const next = parseModelChoice(value); if (next) select(next) }} />
