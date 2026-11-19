@@ -31,9 +31,10 @@ function replaceNode(doc: ReturnType<typeof parseDocument>, original: unknown, v
   }
   if (Array.isArray(value) && isSeq(original)) {
     const node = original.clone() as YAMLSeq
+    const byId = new Map(original.items.filter(isMap).map(item => [item.get('id'), item]))
     node.items = value.map((child, index) => {
       const previous = record(child) && typeof child.id === 'string'
-        ? original.items.find(item => isMap(item) && item.get('id') === child.id) : original.items[index]
+        ? byId.get(child.id) : original.items[index]
       return replaceNode(doc, previous, child)
     })
     return node
@@ -121,7 +122,7 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
   const checkRule = (id: string) => { if (expectedRevisions.rules?.[id] !== snapshot.revisions.rules[id]) throw new ModuleWriteError(`规则 ${id} 正文已变化，请重新读取`, 409, 'rules-conflict') }
   if (!Array.isArray(snapshot.source.modules)) throw new ModuleWriteError('当前组合没有可编辑的 modules 清单')
   const previous = (snapshot.source.rules ?? []) as RuleDefinition[]
-  const rules = structuredClone(previous)
+  const rules = request.activateRuleId === undefined ? [...previous] : structuredClone(previous)
   const originalRules = snapshot.doc.get('rules', true)
   const ruleNodes = (isSeq(originalRules) ? originalRules.clone() : snapshot.doc.createNode([])) as YAMLSeq
   const originalOrder = snapshot.doc.get('configOrder', true)
@@ -185,13 +186,13 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     tail += 10
   }
   if (request.activateRuleId === undefined && JSON.stringify(previous) === JSON.stringify(rules) && JSON.stringify(snapshot.source.configOrder ?? {}) === JSON.stringify(order)) return publicSnapshot(snapshot)
-  snapshot.doc.set('rules', replaceNode(snapshot.doc, ruleNodes, rules))
+  snapshot.doc.set('rules', request.activateRuleId === undefined ? ruleNodes : replaceNode(snapshot.doc, ruleNodes, rules))
   if (Object.keys(order).length > 0) snapshot.doc.set('configOrder', replaceNode(snapshot.doc, orderNodes, order))
   else snapshot.doc.delete('configOrder')
   let expected = { ...snapshot.source, rules, configOrder: order } as Record<string, unknown>
   if (Object.keys(order).length === 0) delete expected.configOrder
   // 跨模块互斥只触及当前参与装配的模块与显式目标；停用模块的草稿不读不写。
-  const crossCandidates: Array<{ snapshot: ModuleDefinitionSnapshot; doc: ReturnType<typeof parseDocument>; rules: RuleDefinition[] }> = []
+  const crossCandidates: Array<{ snapshot: ModuleDefinitionSnapshot; text: string; prepared: ModuleDefinitionSnapshot; rules: RuleDefinition[] }> = []
   if (request.activateRuleId !== undefined) {
     const target = rules.find(rule => rule.id === request.activateRuleId)
     if (target?.group !== undefined && (target.groupScope ?? 'module') === 'cross-module' && target.enabled !== false) {
@@ -217,9 +218,9 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
         for (const peerRule of nextRules) if (peerRule.group === target.group && (peerRule.groupScope ?? 'module') === 'cross-module') peerRule.enabled = false
         const doc = peer.doc
         doc.set('rules', replaceNode(doc, doc.get('rules', true), nextRules))
-        serializeWithoutSharedAlias(doc, { ...peer.source, rules: nextRules }, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
-        validateModuleDefinitionText(peer.dir, doc.toString())
-        crossCandidates.push({ snapshot: peer, doc, rules: nextRules })
+        const text = serializeWithoutSharedAlias(doc, { ...peer.source, rules: nextRules }, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
+        const prepared = validateModuleDefinitionText(peer.dir, text)
+        crossCandidates.push({ snapshot: peer, text, prepared, rules: nextRules })
       }
     }
   }
@@ -234,19 +235,18 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     overrides.set(basename(candidate.snapshot.dir), candidate.rules)
   }
   assertCrossModuleGroups(dirname(snapshot.dir), [...participants], overrides)
-  // 序列化本身也受检（别名锚点失配时 toString 会抛），故不取返回值。
-  serializeWithoutSharedAlias(snapshot.doc, expected, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
+  const text = serializeWithoutSharedAlias(snapshot.doc, expected, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
   // 与保存共用完整候选校验，但验证请求不写切片或完整定义。
   if (request.validateOnly) {
-    validateModuleDefinitionText(snapshot.dir, snapshot.doc.toString())
+    validateModuleDefinitionText(snapshot.dir, text)
     return publicSnapshot(snapshot, rules)
   }
   let saved: ModuleDefinitionSnapshot | undefined
   try {
-    saved = commitModuleDefinition(snapshot, snapshot.doc)
+    saved = commitModuleDefinition(snapshot, text)
     invalidateModuleSpec(snapshot.dir)
     for (const candidate of crossCandidates) {
-      commitModuleDefinition(candidate.snapshot, candidate.doc)
+      commitModuleDefinition(candidate.snapshot, candidate.text, candidate.prepared)
       invalidateModuleSpec(candidate.snapshot.dir)
     }
   } catch (error) {

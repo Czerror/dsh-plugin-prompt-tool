@@ -120,7 +120,7 @@ export interface ModuleDefinitionValidationOptions {
   loadTemplate?: (file: unknown) => unknown
 }
 
-function projection(source: Record<string, unknown>, directory: string, sourceRevision: string, validation: ModuleDefinitionValidationOptions = {}): Projection {
+function projection(source: Record<string, unknown>, directory: string, sourceRevision: string, validation: ModuleDefinitionValidationOptions = {}, dependOn?: (file: string) => void): Projection {
   assertCanonicalRuleSource(source)
   const rules = (source.rules ?? []) as RuleDefinition[]
   const seen = new Set<string>()
@@ -147,7 +147,7 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   const options = record(configs['rule-engine']) ? configs['rule-engine'] : {}
   try {
     compileRules(rules, { moduleId: basename(directory), configOrder: order, variables, variablesEnabled,
-      promptConfigOptions: { ...rulePromptConfigOptions(directory, options.strategyDir), ...(validation.loadTemplate === undefined ? {} : { loadTemplate: validation.loadTemplate }) } })
+      promptConfigOptions: { ...rulePromptConfigOptions(directory, options.strategyDir, dependOn), ...(validation.loadTemplate === undefined ? {} : { loadTemplate: validation.loadTemplate }) } })
   } catch (error) { throw new ModuleWriteError(String((error as Error).message ?? error)) }
   const contents: RuleContent[] = []
   const settings: Record<string, RuleSettings> = Object.create(null)
@@ -176,6 +176,17 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   return { contents, settings, variables, variablesEnabled, revisions, files }
 }
 
+// 投影仅对应不可变原文；调用方可编辑的 doc/source 不作为缓存键或缓存内容。
+const projections = new WeakMap<ModuleDefinitionSnapshot, { text: string; dir: string; projected: Projection; dependencies: Map<string, string> }>()
+function projectedSnapshot(snapshot: ModuleDefinitionSnapshot): Projection {
+  const cached = projections.get(snapshot)!
+  for (const [file, revision] of cached.dependencies) {
+    assertNoModuleLinks(file)
+    if (revisionOf(readFileSync(file)) !== revision) throw sourceConflict()
+  }
+  return cached.projected
+}
+
 function snapshotFromText(dir: string, text: string, validation: ModuleDefinitionValidationOptions = {}): ModuleDefinitionSnapshot {
   const doc = parseDocument(text, { logLevel: 'silent' })
   if (doc.errors.length > 0) throw new ModuleWriteError(`模块 YAML 无法解析：${doc.errors[0]!.message}`)
@@ -184,10 +195,19 @@ function snapshotFromText(dir: string, text: string, validation: ModuleDefinitio
   if (source.id !== undefined && source.id !== basename(dir)) throw new ModuleWriteError('模块定义身份不匹配')
   readModuleLayerSettings(source)
   const revision = revisionOf(text)
-  const projected = projection(source, dir, revision, validation)
+  const dependencies = new Map<string, string>()
+  const projected = projection(source, dir, revision, validation, file => {
+    assertNoModuleLinks(file)
+    const current = revisionOf(readFileSync(file))
+    if (dependencies.has(file) && dependencies.get(file) !== current) throw sourceConflict()
+    dependencies.set(file, current)
+  })
   const configOrder = Object.fromEntries(Object.entries(projected.settings).map(([id, settings]) => [id, settings.order]))
   const rules = projected.contents.map(content => { const { order: _order, ...settings } = projected.settings[content.id]!; return { ...content, ...settings } }).sort((left, right) => configOrder[left.id]! - configOrder[right.id]!)
-  return { dir, file: join(dir, MODULE_DEFINITION_FILE), text, doc, source, revision, revisions: projected.revisions, rules, configOrder, variables: projected.variables, variablesEnabled: projected.variablesEnabled }
+  const snapshot = { dir, file: join(dir, MODULE_DEFINITION_FILE), text, doc, source, revision, revisions: projected.revisions, rules, configOrder, variables: projected.variables, variablesEnabled: projected.variablesEnabled }
+  projections.set(snapshot, { text, dir, projected, dependencies })
+  projectedSnapshot(snapshot)
+  return snapshot
 }
 
 /** 导入、预览与规则 validateOnly 复用同一完整定义校验，不访问或写入切片。 */
@@ -218,14 +238,15 @@ function isRulesTemporary(filename: string): boolean {
 }
 
 function readProjection(snapshot: ModuleDefinitionSnapshot): Projection {
-  const expected = projection(snapshot.source, snapshot.dir, snapshot.revision)
+  const expected = projectedSnapshot(snapshot)
   const dir = join(snapshot.dir, RULES_DIR)
   assertPlain(dir, true)
   // 只认名单内切片：名单外文件不读、不校验，也不参与集合比对。
   const files = readdirSync(dir)
+  const present = new Set(files)
   for (const file of Object.keys(expected.files)) {
     const path = join(dir, file)
-    if (!files.includes(file)) throw new ModuleWriteError(`规则切片缺失：${file}`, 409, 'rules-slices-invalid')
+    if (!present.has(file)) throw new ModuleWriteError(`规则切片缺失：${file}`, 409, 'rules-slices-invalid')
     assertPlain(path)
     if (readFileSync(path, 'utf8') !== expected.files[file]) throw new ModuleWriteError(`规则切片与完整定义失配：${file}`, 409, 'rules-slices-invalid')
   }
@@ -291,8 +312,8 @@ function removedRuleSlices(dir: string, projected: Projection): string[] {
   }).map(id => `${id}.yml`)
 }
 
-function writeProjection(snapshot: ModuleDefinitionSnapshot, phase: 'contents' | 'all'): void {
-  const projected = projection(snapshot.source, snapshot.dir, snapshot.revision)
+function writeProjection(snapshot: ModuleDefinitionSnapshot, phase: 'contents' | 'all', contentsPrepared = false): void {
+  const projected = projectedSnapshot(snapshot)
   const dir = join(snapshot.dir, RULES_DIR)
   if (existsSync(dir)) assertPlain(dir, true)
   else mkdirSync(dir)
@@ -300,6 +321,7 @@ function writeProjection(snapshot: ModuleDefinitionSnapshot, phase: 'contents' |
   const removed = phase === 'all' ? removedRuleSlices(dir, projected) : []
   for (const [file, text] of Object.entries(projected.files)) {
     if (phase === 'contents' && file === RULES_SETTINGS_FILE) continue
+    if (contentsPrepared && file !== RULES_SETTINGS_FILE) continue
     const target = join(dir, file)
     if (existsSync(target)) { assertPlain(target); if (readFileSync(target, 'utf8') === text) continue }
     atomicWriteTextFile(target, text, { beforeReplace: () => { assertPlain(dir, true); if (existsSync(target)) assertPlain(target) } })
@@ -356,8 +378,11 @@ export function ensureModuleSlices(directory: string, options: { writable?: bool
 }
 
 /** 唯一保存顺序：正文/变量 → module.yml 原子提交 → 状态清单 → 校验发布。 */
-export function commitModuleDefinition(snapshot: ModuleDefinitionSnapshot, next: string | ReturnType<typeof parseDocument>): ModuleDefinitionSnapshot {
-  const candidate = snapshotFromText(snapshot.dir, typeof next === 'string' ? next : next.toString())
+export function commitModuleDefinition(snapshot: ModuleDefinitionSnapshot, next: string | ReturnType<typeof parseDocument>, prepared?: ModuleDefinitionSnapshot): ModuleDefinitionSnapshot {
+  const text = typeof next === 'string' ? next : next.toString()
+  const cached = prepared === undefined ? undefined : projections.get(prepared)
+  const candidate = prepared?.dir === snapshot.dir && prepared.text === text && cached?.text === text && cached.dir === snapshot.dir
+    ? prepared : snapshotFromText(snapshot.dir, text)
   if (candidate.text === snapshot.text) return ensureModuleSlices(snapshot.dir)
   return coordinated(snapshot.dir, () => {
     let persisted = false
@@ -372,11 +397,11 @@ export function commitModuleDefinition(snapshot: ModuleDefinitionSnapshot, next:
           return { revision: revisionOf(bytes), value: undefined, mode: statSync(snapshot.file).mode }
         },
         prepare: () => candidate.text,
-        recheck: () => assertSource(snapshot),
+        recheck: () => { assertSource(snapshot); projectedSnapshot(candidate) },
         conflict: sourceConflict,
       })
       persisted = true
-      writeProjection(candidate, 'all')
+      writeProjection(candidate, 'all', true)
       readProjection(candidate)
       publish(candidate)
       return candidate
