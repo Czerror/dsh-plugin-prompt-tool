@@ -4,6 +4,7 @@ import { ACTION_KINDS, actionExecutionPoint, prepareAction, validateActionOption
 import { ACTION_FIELDS } from './actions/catalog.mjs'
 import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, FACT_PREDICATE_SUBJECTS, channelFactSubjects, channelTextSubjects } from './conditions/index.mjs'
 import { createPromptConfigs, INJECT_CONFIG_FIELDS, KNOWN_LAYERS, SESSION_VARIABLES_DISABLED, assertLlmCallPatch } from './schema.mjs'
+import { bindResolver } from './strategies.mjs'
 import { stripDeclaredRefs } from './interpolate.mjs'
 import { matchesAudience, validateConfig } from './shared.mjs'
 import { WATERFALL_POSITIONS } from './trigger.mjs'
@@ -410,6 +411,22 @@ export function compileRules(specs, options = {}) {
   for (const rule of rules) validateActionLinks(rule)
   validateDeliverySources([{ moduleId, rules }])
   return rules
+}
+
+/** 从内部准备期产物生成独立的作用域状态。程序化挂载仍接收调用方持有的原产物。 */
+export function instantiateCompiledRules(rules) {
+  return rules.map(rule => {
+    const actions = rule.actions.map(action => {
+      const copy = { ...action, actionWhen: compileWhen(rule.conditionTrees.actions[action.id]) }
+      if (action.compiledConfig !== undefined) {
+        const { resolve: _resolve, ...input } = action.compiledConfig
+        const config = { ...input, ...structuredClone(input) }
+        copy.compiledConfig = Object.assign(config, { resolve: bindResolver(config, rule.promptConfigOptions?.strategyDir) })
+      }
+      return copy
+    })
+    return { ...rule, actions, when: compileWhen(rule.conditionTrees.when) }
+  })
 }
 
 /**

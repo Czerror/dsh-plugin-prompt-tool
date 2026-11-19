@@ -31,7 +31,7 @@ export function moduleFile(name: string): string {
   return file
 }
 
-function assembleModules(spec: ModuleSpec): string {
+function assembleModules(spec: ModuleSpec, read: (file: string, encoding: 'utf8') => string): string {
   const parts: string[] = []
   const seen = new Set<string>()
   for (const name of spec.modules ?? []) {
@@ -44,7 +44,7 @@ function assembleModules(spec: ModuleSpec): string {
     seen.add(name)
     // 模块名 containment：只允许裸库名（禁路径分隔符 / .. / 点目录）。
     try {
-      parts.push(readFileSync(moduleFile(name), 'utf8'))
+      parts.push(read(moduleFile(name), 'utf8'))
     } catch (error) {
       throw new Error(`module ${spec.id}: ${String((error as Error).message ?? error)}`)
     }
@@ -119,7 +119,8 @@ export function applyModuleConfigs(raw: string, configs: Record<string, Record<s
  * 需要「参数桥那层的声明」时，由调用方算好传进来。这条入参边界是模块拆分的前提：文本簇
  * 因此不依赖参数/事实簇（见 docs/ui-architecture.md 的组合渲染链路）。
  */
-export function loadCompositionText(spec: ModuleSpec, params: Record<string, unknown>, templateDir?: string): string {
+export function loadCompositionText(spec: ModuleSpec, params: Record<string, unknown>, templateDir?: string,
+  read: (file: string, encoding: 'utf8') => string = readFileSync): string {
   let raw: string
   let modules = spec.modules
   if (Array.isArray(modules)) {
@@ -131,7 +132,7 @@ export function loadCompositionText(spec: ModuleSpec, params: Record<string, unk
     ].filter((module) => !declared.includes(module))
     if (extra.length > 0) modules = [...declared, ...extra]
   }
-  if (Array.isArray(modules)) raw = assembleModules({ ...spec, modules })
+  if (Array.isArray(modules)) raw = assembleModules({ ...spec, modules }, read)
   else {
     const name = typeof spec.composition === 'string' ? spec.composition : ''
     if (name.includes('\n')) raw = name
@@ -147,14 +148,14 @@ export function loadCompositionText(spec: ModuleSpec, params: Record<string, unk
         throw new Error(`module ${spec.id}: composition path escapes template dir (${JSON.stringify(name)})`)
       }
       try {
-        raw = readFileSync(file, 'utf8')
+        raw = read(file, 'utf8')
       } catch (error) {
         throw new Error(`module ${spec.id}: composition file not found (${file}): ${String((error as Error).message ?? error)}`)
       }
     }
     else if (name.length > 0) {
       try {
-        raw = readFileSync(moduleFile(name), 'utf8')
+        raw = read(moduleFile(name), 'utf8')
       } catch (error) {
         throw new Error(`module ${spec.id}: ${String((error as Error).message ?? error)}`)
       }

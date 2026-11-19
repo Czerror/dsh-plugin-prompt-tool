@@ -87,6 +87,7 @@ export interface RuleEditorMeta {
 export function assertRuleId(id: unknown): void
 
 export function compileRules(specs: readonly unknown[], options?: CompileRulesOptions): CompiledRule[]
+export function instantiateCompiledRules(rules: readonly CompiledRule[]): CompiledRule[]
 
 /** 该受众下独占的 `complete` 系统段，身份是 `rule.id/action.id`。 */
 export function completeRuleSections(rules: readonly unknown[], audience: RuleAudience): string[]

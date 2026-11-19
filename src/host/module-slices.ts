@@ -75,7 +75,7 @@ export function assertCanonicalRuleSource(source: unknown): asserts source is Re
   if (names.some(name => retired.includes(String(name)))) throw new ModuleWriteError('旧角色/世界书/会话变量能力已退役；请重新导入或显式转换为模块工具')
 }
 
-export function rulePromptConfigOptions(directory: string, strategy?: unknown) {
+export function rulePromptConfigOptions(directory: string, strategy?: unknown, dependOn?: (file: string) => void) {
   const templateBaseUrl = pathToFileURL(join(directory, MODULE_DEFINITION_FILE))
   const strategyDir = typeof strategy !== 'string' || strategy.length === 0 ? undefined
     : isAbsolute(strategy) ? pathToFileURL(strategy).href : new URL(strategy, templateBaseUrl).href
@@ -85,10 +85,11 @@ export function rulePromptConfigOptions(directory: string, strategy?: unknown) {
     const target = fileURLToPath(new URL(file, templateBaseUrl))
     const path = relative(directory, target).split(sep).join('/')
     if (path.startsWith('assets/')) {
-      const resolved = resolveModuleReadPath(directory, path, ['assets'])
+      const resolved = resolveModuleReadPath(directory, path, ['assets'], {}, dependOn)
       return loadTemplate(pathToFileURL(resolved).href, templateBaseUrl, pathToFileURL(dirname(resolved) + '/'))
     }
     assertNoModuleLinks(target)
+    if (path === '' || (path !== '..' && !path.startsWith('../') && !isAbsolute(path))) dependOn?.(target)
     return loadTemplate(file, templateBaseUrl, templateModuleRoot)
   } }
 }

@@ -94,6 +94,7 @@ export function resolveModuleFacts(
   spec: ModuleSpec,
   templateDir?: string,
   editable = false,
+  readComposition?: Parameters<typeof loadCompositionText>[3],
 ): ModuleFacts {
   const declaredModules = Array.isArray(spec.modules)
     ? [...new Set(spec.modules.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map((item) => item.trim()))]
@@ -117,7 +118,7 @@ export function resolveModuleFacts(
     const factsSpec = sourceMode === 'explicit' && declaredModules !== null
       ? { ...spec, modules: declaredModules }
       : spec
-    raw = loadCompositionText(factsSpec, resolveModuleParams(factsSpec, {}), templateDir)
+    raw = loadCompositionText(factsSpec, resolveModuleParams(factsSpec, {}), templateDir, readComposition)
   } catch {
     return { declaredModules, effectiveModules: null, rowIds: [], disabledRows: [], sourceMode: 'unknown', editable: false }
   }

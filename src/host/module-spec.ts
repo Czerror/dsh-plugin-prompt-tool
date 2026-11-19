@@ -91,9 +91,10 @@ function withGlobalParams(spec: ModuleSpec, dir: string): ModuleSpec {
 }
 
 /** 加载某个模块模板的单一参数文件 modules/<name>/module.yml。 */
-export function loadModuleSpec(dir: string): ModuleSpec {
+export function loadModuleSpec(dir: string, verifyRevision?: (revision: string) => void): ModuleSpec {
   // 完整性检查先于缓存；mtime/size 不能掩盖手改切片或伪造清单。
   const snapshot = ensureModuleSlices(dir, { writable: !resolve(dir).startsWith(resolve(packageModulesDir()) + sep) })
+  verifyRevision?.(snapshot.revision)
   const cached = moduleSpecCache.get(snapshot.file)
   if (cached?.revision === snapshot.revision) return withGlobalParams(structuredClone(cached.spec), dir)
   const parsed = { ...snapshot.source, id: snapshot.source.id ?? basename(dir), rules: snapshot.rules,
@@ -119,10 +120,13 @@ export function readModulesRevision(moduleRoot: string, ids: readonly string[]):
   }
   // 启用表与全局 layerSettings 是同一个存储根 config.yml。
   stamp(enableTablePath(moduleRoot))
+  if (moduleRoot !== userModulesDir()) stamp(enableTablePath(userModulesDir()))
   for (const id of ids) {
     assertModuleId(id)
     const dir = join(moduleRoot, id)
-    stamp(join(dir, MODULE_DEFINITION_FILE))
+    const definition = join(dir, MODULE_DEFINITION_FILE)
+    stamp(definition)
+    if (parts.at(-1) === `${definition}:missing`) stamp(join(packageModulesDir(), id, MODULE_DEFINITION_FILE))
     const rules = join(dir, RULES_DIR)
     try {
       for (const entry of readdirSync(rules, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {

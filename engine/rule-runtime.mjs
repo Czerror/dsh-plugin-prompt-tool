@@ -524,7 +524,7 @@ export function createRuleRuntime(ctx, options = {}) {
       }
       const old = records
       const changed = [...old.values()].filter(record => desired.get(record.source.moduleId)?.rules !== record.source.rules)
-      if (changed.length === 0 && sources.length === old.size) return
+      if (changed.length === 0 && sources.length === old.size && [...old.keys()].every((id, index) => id === sources[index].moduleId)) return
       for (const record of changed) record.dispose()
       const created = []
       try {
