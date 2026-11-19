@@ -96,7 +96,7 @@ export function createModuleRule(directory: string, request: ModuleRuleCreateReq
   throw new ModuleWriteError('规则创建冲突，请重试', 409, 'rules-conflict')
 }
 
-export function editModuleRules(directory: string, request: ModuleRuleEditRequest): ModuleRulesSnapshot {
+export function editModuleRules(directory: string, request: ModuleRuleEditRequest, onCommitted?: (revision: string) => void): ModuleRulesSnapshot {
   const snapshot = ensureModuleSlices(directory, { writable: request?.expectedRulesAbsent !== true && request?.validateOnly !== true })
   const hash = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value)
   if (!record(request) || !record(request.expectedRevisions)
@@ -185,7 +185,10 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     order[rule.id] = tail
     tail += 10
   }
-  if (request.activateRuleId === undefined && JSON.stringify(previous) === JSON.stringify(rules) && JSON.stringify(snapshot.source.configOrder ?? {}) === JSON.stringify(order)) return publicSnapshot(snapshot)
+  if (request.activateRuleId === undefined && JSON.stringify(previous) === JSON.stringify(rules) && JSON.stringify(snapshot.source.configOrder ?? {}) === JSON.stringify(order)) {
+    onCommitted?.(snapshot.revision)
+    return publicSnapshot(snapshot)
+  }
   snapshot.doc.set('rules', request.activateRuleId === undefined ? ruleNodes : replaceNode(snapshot.doc, ruleNodes, rules))
   if (Object.keys(order).length > 0) snapshot.doc.set('configOrder', replaceNode(snapshot.doc, orderNodes, order))
   else snapshot.doc.delete('configOrder')
@@ -244,6 +247,7 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
   let saved: ModuleDefinitionSnapshot | undefined
   try {
     saved = commitModuleDefinition(snapshot, text)
+    onCommitted?.(saved.revision)
     invalidateModuleSpec(snapshot.dir)
     for (const candidate of crossCandidates) {
       commitModuleDefinition(candidate.snapshot, candidate.text, candidate.prepared)

@@ -5,7 +5,7 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { ModuleVariablesRequest, ModuleVariablesSnapshot } from './module-variables.ts'
-import type { RulesRequest, RulesSnapshot } from './rules.ts'
+import type { CompactRulesSnapshot, RulesRequest, RulesSnapshot } from './rules.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
 import type { AssetSummary, BridgeAssetImportRequest, ImportKind, ModuleExportRequest, ModuleExportResult } from './asset-transfer.ts'
 import type { PublicationFailure, PublicationFields } from './publication.ts'
@@ -511,7 +511,7 @@ export interface BridgeValueMap {
   /** 参数/提示词配置只保存当前模块，不同步宿主全局默认模型。 */
   paramOverrides: { overrides?: Record<string, unknown>; effective?: Record<string, unknown>; promptConfigs?: unknown[] } & PublicationFields
   triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }
-  rules: RulesSnapshot
+  rules: RulesSnapshot | CompactRulesSnapshot
   moduleVariables: ModuleVariablesSnapshot
   customTools: { customTools?: unknown[] } & PublicationFields
   importModulePackage: {

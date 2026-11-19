@@ -24,7 +24,7 @@ export function createTemplateRuleWriter(deps: {
     const module = deps.modules()?.find(candidate => candidate.id === moduleId)
     const declared = newlyCreated ? false : module?.declares?.includes('rules')
     const editor = createRuleEditor(moduleId, draft, {
-      request: body => bridgeCall('rules', body, moduleId), enqueue: (_id, task) => deps.enqueue(task),
+      request: body => bridgeCall('rules', body, moduleId) as Promise<BridgeResult<RulesSnapshot>>, enqueue: (_id, task) => deps.enqueue(task),
       isCurrent: () => true, changed: deps.changed,
       onUnconfirmed: deps.reconcileRules,
     })

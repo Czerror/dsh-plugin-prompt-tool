@@ -1,4 +1,4 @@
-import type { RuleDefinition, RuleEdit, RuleRevisions, RulesRequest, RulesSnapshot } from '../../shared/rules.ts'
+import type { CompactRulesSnapshot, RuleDefinition, RuleEdit, RuleRevisions, RulesRequest, RulesSnapshot } from '../../shared/rules.ts'
 import type { BridgeResult } from './bridge-client.ts'
 import type { FieldDraft, WorkspaceDrafts } from './workspace-drafts.ts'
 import { deepEqual } from './dirty-state.ts'
@@ -27,6 +27,7 @@ export interface RulesDraft {
   fields: Map<string, FieldDraft>
   composing?: Set<string>
   revisions?: RuleRevisions
+  definitionRevision?: string
   meta?: RulesSnapshot['meta']
   remote?: RulesSnapshot
   pending?: { checked: boolean; read: () => Promise<boolean>; entries?: RuleEntry[]; request: RulesRequest }
@@ -130,6 +131,30 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     })
     for (const value of returned.values()) draft.entries.push({ key: `rule-${draft.nextKey++}`, previousId: value.id, value: structuredClone(value) })
     draft.saved = structuredClone(snapshot.rules); draft.revisions = snapshot.revisions; draft.meta = snapshot.meta; draft.rulesDeclared = true; draft.loaded = true
+  }
+  const acceptCompactSent = (entries: RuleEntry[], snapshot: CompactRulesSnapshot): void => {
+    const sent = entries[0]
+    if (!sent || sent.deleted || snapshot.rule.id !== sent.value.id) throw new Error('紧凑规则确认身份不匹配')
+    const current = draft.entries.find(entry => entry.key === sent.key)
+    if (!current) throw new Error('紧凑规则确认目标已不存在')
+    if (![snapshot.ruleRevision, snapshot.definitionRevision, snapshot.settingsRevision, snapshot.variablesRevision].every(value => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value))) throw new Error('紧凑规则确认版本不合法')
+    const isLatestBody = current.value.id === sent.value.id && deepEqual(current.value, sent.value)
+    const base = sent.value
+    const value = structuredClone(snapshot.rule)
+    for (const key of new Set([...Object.keys(base), ...Object.keys(current.value)])) {
+      const field = key as keyof RuleDefinition
+      if (!deepEqual(current.value[field], base[field])) {
+        if (Object.hasOwn(current.value, field)) Object.assign(value, { [field]: structuredClone(current.value[field]) })
+        else delete value[field]
+      }
+    }
+    draft.entries = draft.entries.map(entry => entry.key === sent.key ? { ...entry, previousId: value.id, value } : entry)
+    draft.saved = draft.saved.map(rule => rule.id === value.id ? structuredClone(snapshot.rule) : rule)
+    draft.revisions = { ...draft.revisions!, rules: { ...draft.revisions!.rules, [value.id]: snapshot.ruleRevision },
+      settings: snapshot.settingsRevision, variables: snapshot.variablesRevision }
+    if (isLatestBody) draft.definitionRevision = snapshot.definitionRevision
+    draft.meta = snapshot.meta
+    draft.loaded = true
   }
   const unknown = (request: RulesRequest, entries?: RuleEntry[]): false => {
     draft.pending = { checked: false, read: () => reconcile(), request, entries }
@@ -276,25 +301,33 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     const sequence = beginLatest(draft), entries = structuredClone(key === undefined ? draft.entries : draft.entries.filter(entry => entry.key === key))
     const completed = Promise.withResolvers<void>()
     draft.saving = completed.promise
-    const request = { expectedModuleId: moduleId, expectedRevisions, edits, ...options }
+    const compactEdit = !options.validateOnly && options.activateRuleId === undefined && key !== undefined
+      && edits.length === 1 && edits[0]!.previousId !== null && edits[0]!.rule !== null
+      && edits[0]!.previousId === edits[0]!.rule.id && edits[0]!.settingsChanged !== true
+    const request = { expectedModuleId: moduleId, expectedRevisions, edits, ...options, ...(compactEdit ? { compactEdit: true as const } : {}) }
     draft.busy = options.validateOnly ? 'validate' : 'save'; draft.error = undefined; deps.changed()
     try {
       const result = await deps.enqueue(moduleId, async () => isLatest(draft, sequence)
         ? deps.request(request) : undefined)
       // 入口确认操作资格；入队后的显式目标事务与结果归共享草稿，不随切页取消。
       if (!isLatest(draft, sequence) || result === undefined) return false
-      if (!options.validateOnly && ((!result.ok && result.code === 'bridge-response-unknown') || (result.ok && !validSnapshot(result.value)))) return unknown(request, entries)
+      const compactValue = result?.ok && compactEdit ? result.value : undefined
+      const compactResult = compactValue && 'rule' in compactValue
+        && 'definitionRevision' in compactValue && 'ruleRevision' in compactValue
+        && 'settingsRevision' in compactValue && 'variablesRevision' in compactValue
+        ? compactValue as CompactRulesSnapshot : undefined
+      if (!options.validateOnly && ((!result.ok && result.code === 'bridge-response-unknown')
+        || (result.ok && !(compactResult ? compactResult.rule?.id === edits[0]!.rule!.id : validSnapshot(result.value as RulesSnapshot))))) return unknown(request, entries)
       if (!result.ok) {
         draft.retry = READ_FIRST_CODES.includes(result.code ?? '') ? 'read' : 'save'
         draft.error = result.message ?? result.code ?? 'rules-save-failed'; return false
       }
       draft.retry = undefined
       if (options.validateOnly) draft.validated = deepEqual(draft.entries, entries) && !hasRuleFields(draft)
-      else {
-        acceptSent(entries, result.value)
-      }
+      else if (compactResult) acceptCompactSent(entries, compactResult)
+      else acceptSent(entries, result.value as RulesSnapshot)
       if (!options.validateOnly) {
-        publication(result.value)
+        if (!compactResult) publication(result.value as RulesSnapshot)
       }
       if (draft.publicationError) { draft.error = draft.publicationError; return false }
       return true
