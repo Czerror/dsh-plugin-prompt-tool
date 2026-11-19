@@ -210,7 +210,8 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
           tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...publication } })
           return
         }
-        const result = writing ? readModuleRules(dir) : candidate
+        // A persisted candidate was already checked under the module lock; reuse it.
+        const result = writing && publication?.persisted !== true ? readModuleRules(dir) : candidate
         if (writing && !isDeepStrictEqual(result.rules, candidate.rules)) {
           tx.write(409, { ok: false, code: 'rules-conflict', message: '重建期间规则再次变化；请重新读取，当前草稿仍保留' })
           return
