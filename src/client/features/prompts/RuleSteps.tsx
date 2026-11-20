@@ -28,7 +28,7 @@ import { ModulePersonaCard } from './ModulePersonaCard.tsx'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { triggerLabel } from './rule-labels.ts'
 import { ruleExecutionPoint } from '../../data/rule-execution-point.ts'
-import { fitCanvasView, instructionNodes, RuleCanvas, type CanvasInstructionFile, type RuleCanvasView } from './RuleCanvas.tsx'
+import { instructionNodes, RuleCanvas, type CanvasInstructionFile, type RuleCanvasView } from './RuleCanvas.tsx'
 import { projectRuleCanvas, type RuleCanvasTarget } from './rule-canvas-projection.ts'
 import {
   actionSummary, collectActionIds, conditionSummary, nodeList,
@@ -60,13 +60,13 @@ function RuleLibrary({ t, meta, libraryOpen, libraryId, onCloseLibrary, disabled
     if (kind === 'action') items.push({ kind: 'branch', name: 'branch', label: branchLabel })
     return { kind, items: items.map(item => ({ item, search: `${item.name} ${item.label}`.toLowerCase() })) }
   }), [meta, t, branchLabel])
-  if (!libraryOpen) return <section id={libraryId} className={css.canvasLibrary} hidden />
+  if (!libraryOpen) return <section id={libraryId} className={css.canvasLibrary} data-canvas-obstacle="left" hidden />
   const filter = query.trim().toLowerCase()
   const visible = groups.map(group => ({
     ...group,
     items: filter ? group.items.filter(item => item.search.includes(filter)) : group.items,
   }))
-  return <section id={libraryId} className={css.canvasLibrary} aria-label={t('rules.nodeLibrary')} onKeyDown={event => {
+  return <section id={libraryId} className={css.canvasLibrary} data-canvas-obstacle="left" aria-label={t('rules.nodeLibrary')} onKeyDown={event => {
     if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
     event.stopPropagation()
     onCloseLibrary(true)
@@ -279,17 +279,10 @@ export function RuleStepsPanel(props: {
   const selectedNode = props.onBrowseChange ? props.nodeBrowse?.get(props.browseKey) : localSelectedNode
   const [localView, setLocalView] = useState<RuleCanvasView>({ x: 260, y: 110, scale: 0.8, positions: {} })
   const view = props.canvasBrowse?.get(props.browseKey) ?? localView
-  const needsInitialFit = useRef(!props.canvasBrowse?.has(props.browseKey))
-  const userAdjustedView = useRef(!needsInitialFit.current)
-  const fitIncludedFiles = useRef(false)
   const changeView = (next: RuleCanvasView): void => {
     props.canvasBrowse?.set(props.browseKey, next)
     if (props.onBrowseChange) props.onBrowseChange()
     else setLocalView(next)
-  }
-  const adjustView = (next: RuleCanvasView): void => {
-    userAdjustedView.current = true
-    changeView(next)
   }
   const localIdentity = useRef<CanvasIdentity>({ next: 0, objects: new WeakMap(), paths: new Map() })
   let identityState = localIdentity.current
@@ -343,22 +336,6 @@ export function RuleStepsPanel(props: {
       && getComputedStyle(structureRef.current).getPropertyValue('--pt-stacked-panes').trim() === '1') {
       props.onCloseLibrary(false)
     }
-  })
-  const revealedNode = useRef<string>()
-  useLayoutEffect(() => {
-    if (!selectedNode) { revealedNode.current = undefined; return }
-    if (revealedNode.current === selectedNode) return
-    const node = nodeById.get(selectedNode)
-    const stage = structureRef.current?.querySelector<HTMLElement>('[data-rule-stage]')
-    if (!node || !stage || stage.clientWidth < 896) return
-    revealedNode.current = selectedNode
-    const point = view.positions[node.id] ?? node
-    const left = libraryOpen ? 256 : 24, right = stage.clientWidth - 356
-    const top = 110, bottom = stage.clientHeight - 100
-    const x = point.x * view.scale + view.x, y = point.y * view.scale + view.y
-    const dx = x + 216 * view.scale > right ? right - x - 216 * view.scale : x < left ? left - x : 0
-    const dy = y + 112 * view.scale > bottom ? bottom - y - 112 * view.scale : y < top ? top - y : 0
-    if (dx || dy) adjustView({ ...view, x: view.x + dx, y: view.y + dy })
   })
   const lastNodeKey = useRef(selectedNode)
   const select = (path: string | undefined): void => {
@@ -602,32 +579,6 @@ export function RuleStepsPanel(props: {
   const fileNodes = useMemo(() => instructionNodes(props.instructionFiles, props.activeInstructionId, 2, top),
     [props.instructionFiles, props.activeInstructionId, top])
 
-  const fit = (): boolean => {
-    const element = structureRef.current?.querySelector<HTMLElement>('[data-rule-stage]')
-    if (!element?.clientWidth || !element.clientHeight) return false
-    const width = element.clientWidth, height = element.clientHeight
-    const wide = width >= 900
-    const toolbarBottom = Number.parseFloat(getComputedStyle(element).getPropertyValue('--pt-canvas-top')) || 100
-    needsInitialFit.current = false
-    if (fileNodes.length > 0) fitIncludedFiles.current = true
-    changeView(fitCanvasView([...nodes, ...fileNodes], view, width, height, {
-      left: wide && libraryOpen ? 256 : 24, right: wide && (shownNode || libraryDetail || props.activeInstructionId) ? 344 : 24, top: toolbarBottom, bottom: 80,
-    }))
-    return true
-  }
-  useLayoutEffect(() => {
-    const needsFileFit = fileNodes.length > 0 && !fitIncludedFiles.current && !userAdjustedView.current
-    if (!needsInitialFit.current && !needsFileFit) return
-    const element = structureRef.current?.querySelector<HTMLElement>('[data-rule-stage]')
-    if (!element) return
-    if (fit()) return
-    const observer = new ResizeObserver(() => {
-      if (userAdjustedView.current || fit()) observer.disconnect()
-    })
-    observer.observe(element)
-    return () => observer.disconnect()
-  })
-
   const libraryPayload = libraryDetail && payload(libraryDetail.kind, libraryDetail.name)
   const libraryTargets = libraryPayload ? graph.targets.filter(target => canAdd(target.id, libraryPayload)) : []
   const inspectorTitle = libraryDetail?.label ?? nodeTitle ?? t('rules.ruleEditor')
@@ -650,18 +601,19 @@ export function RuleStepsPanel(props: {
     <RuleLibrary t={t} meta={meta} libraryOpen={libraryOpen} libraryId={props.libraryId} onCloseLibrary={props.onCloseLibrary}
       selected={libraryDetail} onSelect={openLibraryDetail} disabled={disabled} payload={payload} setDragPayload={setDragPayload} />
     <RuleCanvas t={t} nodes={nodes} fileNodes={fileNodes} edges={graph.edges} view={view}
+      activeInstructionId={props.activeInstructionId} selectedNodeId={selectedCanvasNode} hasStoredView={props.canvasBrowse?.has(props.browseKey)}
       onSelectInstruction={id => { closeLibraryDetail(false); props.onSelectInstruction(id) }}
-      onViewChange={adjustView} onSelect={id => { closeLibraryDetail(false); props.onCanvasInteract(); context.select(id) }}
+      onViewChange={changeView} onSelect={id => { closeLibraryDetail(false); props.onCanvasInteract(); context.select(id) }}
       onPaneClick={() => {
         closeLibraryDetail(false)
         props.onCanvasInteract()
         if (shownNode !== undefined) select(undefined)
       }}
-      onMove={(id, x, y) => adjustView({ ...view, positions: { ...view.positions, [id]: { x, y } } })}
-      canDropNode={(id, data) => canAdd(id, data || dragPayload)} onDropNode={dropNode} onFit={() => { userAdjustedView.current = true; fit() }} />
+      onMove={(id, x, y) => changeView({ ...view, positions: { ...view.positions, [id]: { x, y } } })}
+      canDropNode={(id, data) => canAdd(id, data || dragPayload)} onDropNode={dropNode} />
     </div>
     </div>
-    <section className={css.ruleProperties} data-node-inspector aria-labelledby={`${propertyId}-heading`}>
+    <section className={css.ruleProperties} data-node-inspector data-canvas-obstacle="right" aria-labelledby={`${propertyId}-heading`}>
       <header className={css.inspectorHeading}>
         <div><h3 id={`${propertyId}-heading`} ref={propertyHeading} tabIndex={-1} title={inspectorTitle}>{inspectorTitle}</h3>
           {nodeIdentity && <small>{selectedDescriptor?.kind === 'action' && 'ID '}{nodeIdentity}</small>}</div>

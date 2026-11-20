@@ -28,10 +28,9 @@ import css from './rules.module.css'
 
 export function RuleCard(props: {
   t: PromptToolTranslate; entry: RuleEntry; draft: RulesDraft; editor: RuleEditor; meta: EngineMeta
-  expanded: boolean; disabled?: boolean; onDuplicate: () => void
+  disabled?: boolean; onDuplicate: () => void
   /** 折叠卡状态池（工作台草稿池，跨折叠与切页保留）。 */
   expandedRows: Map<string, boolean>
-  headerActions?: ReactNode
   source?: string
   /** 本卡的主语（它所属的模块）：层内设置按它取，不从任何会话状态兜底。 */
   moduleId: string
@@ -171,7 +170,7 @@ export function RuleCard(props: {
     onCompositionStart={() => { editor.setComposing(entry.key, true); autosave.onCompositionStart() }}
     onCompositionEnd={() => { editor.setComposing(entry.key, false); autosave.onCompositionEnd() }}
     >
-    <header className={css.canvasTopbar}>
+    <header className={css.canvasTopbar} data-canvas-obstacle="top">
       <div className={css.contextCluster}>
         <button type="button" className={css.canvasIdentity} title={`${props.moduleId} / ${rule.id} · ${summary}`}
           aria-expanded={drawer === 'identity'} data-rule-drawer-trigger onClick={event => openDrawer('identity', event.currentTarget)}>
@@ -190,7 +189,6 @@ export function RuleCard(props: {
       </div>
       <div className={css.commandCluster}>
         <span className={css.headerActions} data-rule-header-actions>
-          {props.headerActions}
           <label className={css.ruleEnable}>
             <AutoSaveSelection.Provider value={undefined}><Switch label={enableRuleLabel} checked={rule.enabled !== false} disabled={disabled || hasRuleFields(draft, entry.key)} onChange={enabled => {
               patch({ enabled }); void editor.submitRule(entry.key, enabled ? { activateRuleId: rule.id } : {}).then(() => { if (enabled) props.onActivate?.() })
@@ -227,7 +225,7 @@ export function RuleCard(props: {
         disabled={draft.busy !== undefined} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         onRetry={() => { void editor.retryPublication() }} />
       {targets.size > 0 && (reason ? <HintTooltip label={reason}><p role="status" className={css.status} tabIndex={0} aria-label={status + ' · ' + reason}>{status}</p></HintTooltip> : <p role="status" className={css.status}>{status}</p>)}
-      {drawer !== undefined && <aside data-rule-drawer className={`${css.definitionDrawer} ${ui.configForm}`} aria-label={drawerLabel}
+      {drawer !== undefined && <aside data-rule-drawer data-canvas-obstacle="right" className={`${css.definitionDrawer} ${ui.configForm}`} aria-label={drawerLabel}
         onKeyDown={event => {
           if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
           event.stopPropagation()

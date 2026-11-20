@@ -1,0 +1,22 @@
+.streak { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (offset-path: path("M 0 0 L 10 0")) {
+    .streak {
+      display: inline;
+      fill: var(--edge-color, #72aaff);
+      pointer-events: none;
+      offset-anchor: 0 0;
+      transform-box: view-box;
+      opacity: 0;
+      animation: travel 1.8s linear 140ms 2;
+    }
+  }
+}
+
+@keyframes travel {
+  from { offset-distance: 0%; opacity: 0; }
+  8% { opacity: 1; }
+  92% { opacity: 1; }
+  to { offset-distance: 100%; opacity: 0; }
+}

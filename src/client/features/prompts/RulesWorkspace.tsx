@@ -6,7 +6,7 @@ import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { DraftsPort, InstructionFilesPort, ModuleActionsPort, ModuleFactsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { useModuleRuleEditors, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
-import { BLANK_MODULE_TEMPLATE, canEditModule, moduleDeclares, writableModuleTargets } from '../../data/module-subject.ts'
+import { canEditModule, moduleDeclares, writableModuleTargets } from '../../data/module-subject.ts'
 import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import type { RuleDiagnosticTarget } from '../../data/rule-diagnostics-session.ts'
 import { configPositionKey, reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
@@ -31,7 +31,6 @@ import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleCard } from './RuleCard.tsx'
 import { useTemplateCreate } from './useTemplatePicker.tsx'
-import { TemplateTargetPicker } from '../../ui/TemplatePicker.tsx'
 import type { ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import ui from '../../ui/controls.module.css'
 import css from './rules.module.css'
@@ -103,10 +102,8 @@ export interface RulesWorkspaceProps {
   /** 某层某模块的卡片（不含 add 与 missingCapability）：规则卡与能力补卡的搜索共用。 */
   layerCards?: (layer: string, moduleId: string) => readonly LayerCardView[]
   renderModuleSettings?: (moduleId: string, layer: string) => ReactNode
-  /** 页级「添加」下拉的创建项（注入模板按层）：创建编排由本组件统一持有，两页只传清单。 */
+  /** 模板选择器按注入层分组。 */
   createItems?: readonly ModuleCreateItem[]
-  /** SSR 可断言的入口：直接以「模板已选完、等选目标」的状态渲染目标选择浮层本身。 */
-  addingTarget?: boolean
 }
 
 /** 两个受众页共用各模块规则草稿；排序只写身份，指令文件只走原文件通道。
@@ -493,7 +490,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         if (!target.closest('[data-rule-drawer], [data-rule-drawer-trigger]')) dismissDrawer.current?.()
         if (!target.closest('[data-open-module-settings]')) closeSettings(false)
       }}>
-    <div ref={nav} className={css.moduleScope} role="group" aria-label={t('rules.sidebar')}>
+    <div ref={nav} className={css.moduleScope} data-canvas-obstacle="top" role="group" aria-label={t('rules.sidebar')}>
       <Button aria-pressed={sidebar === 'modules'} aria-controls={modulePaneId} onClick={() => setSidebar(sidebar === 'modules' ? 'hidden' : 'modules')}>
         {t('rules.sidebarModules')}{enableFeedback && <span className={css.modulePickerIndicator} aria-label={t('rules.moduleFeedback')}>!</span>}
       </Button>
@@ -527,7 +524,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         dismissDrawer.current?.()
         closeSettings(false)
       }} />}
-    <aside id={modulePaneId} className={css.ruleListPane} hidden={sidebar !== 'modules'} aria-label={t('rules.sidebarModules')}
+    <aside id={modulePaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={sidebar !== 'modules'} aria-label={t('rules.sidebarModules')}
       onKeyDown={event => {
         if (event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing && event.currentTarget.contains(event.target as Node)) {
           event.stopPropagation(); closeList(true)
@@ -536,13 +533,13 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       <ModuleBrowser store={store} t={t} open={sidebar === 'modules'} scope={moduleFilter ? `module:${moduleFilter}` : allModules ? 'all' : 'active'}
         editingModule={selected?.moduleId} onBrowse={(id, key) => changeModuleScope(`module:${id}`, key)} feedback={enableFeedback} />
     </aside>
-    <aside id={diagnosticPaneId} className={css.ruleListPane} hidden={sidebar !== 'diagnostics'} aria-label={t('rules.sidebarDiagnostics')}
+    <aside id={diagnosticPaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={sidebar !== 'diagnostics'} aria-label={t('rules.sidebarDiagnostics')}
       onKeyDown={event => {
         if (event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing) { event.stopPropagation(); closeList(true) }
       }}>
       {sidebar === 'diagnostics' && <><h2 className={css.workspaceHeading}>{t('rules.sidebarDiagnostics')}</h2>{props.renderDiagnostics?.()}</>}
     </aside>
-    <div id={listPaneId} className={css.ruleListPane} hidden={!showList} onKeyDown={event => {
+    <div id={listPaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={!showList} onKeyDown={event => {
       if (event.key !== 'Escape' || event.nativeEvent.isComposing || event.defaultPrevented) return
       event.stopPropagation()
       event.preventDefault()
@@ -556,9 +553,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     <div className={ui.listFilterRow} data-module-toolbar>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
       {!combination && create.toolbar}
-      {props.addingTarget && <TemplateTargetPicker t={t} modules={writableModuleTargets(store.meta.modules)}
-        existingIds={(store.meta.modules ?? []).map(module => module.id)}
-        newModuleTemplate={BLANK_MODULE_TEMPLATE} onPick={() => {}} onClose={() => {}} />}
       <details className={css.listOptions}>
         <summary>{t('rules.listOptions')}{view !== 'all' && ' · ' + (view === 'context-activation' ? t('rules.worldBook') : translateLabel(t, LAYER_LABEL_KEYS, view))}</summary>
         <div className={css.browseScopes} role="group" aria-label={t('rules.browseScope')}>
@@ -662,7 +656,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         dismissDrawer={dismissDrawer} instructionFiles={files} activeInstructionId={activeFileId} onSelectInstruction={openInstruction}
         onCloseInstruction={closeRightEditor} hideNodeInspector={activeSettings !== undefined}
         moduleName={modules.find(module => module.id === selected.moduleId)?.name || selected.moduleId} moduleEnabled={enabledIds.has(selected.moduleId)} modulesEnabled={fields.modulesEnabled}
-        expanded onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
+        onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
         libraryOpen={libraryOpen} libraryId={libraryId} onCloseLibrary={restoreFocus => {
           setSidebar('hidden')
           if (restoreFocus) libraryToggle.current?.focus({ preventScroll: true })
@@ -677,7 +671,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       {fileInspector}
     </div>}
     {activeSettings && settingsModule && <aside key={configIdentityKey({ moduleId: activeSettings.moduleId, configId: activeSettings.layer })}
-      className={css.moduleSettingsInspector} data-module-settings-inspector={settingsModule.id} data-layer-settings={activeSettings.layer}
+      className={css.moduleSettingsInspector} data-canvas-obstacle="right" data-module-settings-inspector={settingsModule.id} data-layer-settings={activeSettings.layer}
       aria-labelledby={settingsTitleId} onKeyDown={event => {
         if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
           || !(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return

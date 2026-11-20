@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { PromptToolTranslate } from '../../locales.ts'
+import { EdgeFlow } from './EdgeFlow.tsx'
 import css from './rule-canvas.module.css'
 
 export interface CanvasInstructionFile {
@@ -31,6 +32,10 @@ export interface RuleCanvasProps {
   t: PromptToolTranslate
   nodes: readonly RuleCanvasNode[]
   fileNodes?: readonly RuleCanvasNode[]
+  instructionFiles?: readonly CanvasInstructionFile[]
+  activeInstructionId?: string
+  selectedNodeId?: string
+  hasStoredView?: boolean
   edges?: readonly RuleCanvasEdge[]
   view: RuleCanvasView
   onViewChange: (view: RuleCanvasView) => void
@@ -38,7 +43,6 @@ export interface RuleCanvasProps {
   onSelectInstruction?: (id: string) => void
   onPaneClick: () => void
   onMove?: (id: string, x: number, y: number) => void
-  onFit?: () => void
   canDropNode?: (targetId: string, data: string) => boolean
   onDropNode?: (targetId: string, data: string) => void
   children?: ReactNode
@@ -48,6 +52,70 @@ const FILE_WIDTH = 236
 const FILE_HEIGHT = 96
 const FILE_GAP = 24
 const fileStride = FILE_HEIGHT + FILE_GAP
+const READABLE_SCALE = .75
+const CANVAS_GAP = 12
+const OBSTACLE = '[data-canvas-obstacle], [data-instruction-inspector]'
+
+interface CanvasRect { left: number; right: number; top: number; bottom: number }
+interface CanvasArea { stageWidth: number; base: CanvasRect; visible: CanvasRect; spaces: CanvasRect[] }
+
+const areaSize = (rect: CanvasRect) => (rect.right - rect.left) * (rect.bottom - rect.top)
+const containsRect = (rect: CanvasRect, other: CanvasRect) =>
+  rect.left <= other.left && rect.right >= other.right && rect.top <= other.top && rect.bottom >= other.bottom
+const sameRect = (rect: CanvasRect, other: CanvasRect) => containsRect(rect, other) && containsRect(other, rect)
+
+function readCanvasArea(stage: HTMLElement, obstacles: ReadonlySet<HTMLElement>): CanvasArea | undefined {
+  const { left, top, width, height } = stage.getBoundingClientRect()
+  if (width <= CANVAS_GAP * 2 || height <= CANVAS_GAP * 2 || getComputedStyle(stage).visibility === 'hidden') return
+  const base: CanvasRect = { left: CANVAS_GAP, right: width - CANVAS_GAP, top: CANVAS_GAP, bottom: height - CANVAS_GAP }
+  const panels: CanvasRect[] = []
+  for (const obstacle of obstacles) {
+    const rect = obstacle.getBoundingClientRect()
+    if (!rect.width || !rect.height || rect.right <= left || rect.left >= left + width
+      || rect.bottom <= top || rect.top >= top + height || getComputedStyle(obstacle).visibility === 'hidden') continue
+    const edge = obstacle.dataset.canvasObstacle
+    if (edge === 'top') base.top = Math.max(base.top, rect.bottom - top + CANVAS_GAP)
+    else if (edge === 'bottom') base.bottom = Math.min(base.bottom, rect.top - top - CANVAS_GAP)
+    else panels.push({ left: rect.left - left - CANVAS_GAP, right: rect.right - left + CANVAS_GAP,
+      top: rect.top - top - CANVAS_GAP, bottom: rect.bottom - top + CANVAS_GAP })
+  }
+  if (base.bottom <= base.top) return
+  // Keep the rectangles around each panel so an already visible node stays in place.
+  let spaces = [base]
+  for (const panel of panels) {
+    const next = spaces.flatMap(rect => {
+      if (panel.left >= rect.right || panel.right <= rect.left || panel.top >= rect.bottom || panel.bottom <= rect.top) return [rect]
+      const parts = [
+        { ...rect, right: panel.left }, { ...rect, left: panel.right },
+        { ...rect, bottom: panel.top }, { ...rect, top: panel.bottom },
+      ]
+      return parts.filter(part => part.right > part.left && part.bottom > part.top)
+    })
+    spaces = next.filter((rect, index) => !next.some((other, i) =>
+      i !== index && containsRect(other, rect) && (i < index || areaSize(other) > areaSize(rect))))
+  }
+  const visible = spaces.reduce<CanvasRect | undefined>((best, rect) => !best || areaSize(rect) > areaSize(best) ? rect : best, undefined)
+  return visible && { stageWidth: width, base, visible, spaces }
+}
+
+function revealCanvasNode(node: RuleCanvasNode, view: RuleCanvasView, spaces: readonly CanvasRect[]): RuleCanvasView {
+  const point = view.positions[node.id] ?? node
+  const width = node.width ?? 216, height = node.height ?? 112
+  const left = point.x * view.scale + view.x, top = point.y * view.scale + view.y
+  let nearest: RuleCanvasView | undefined, distance = Infinity
+  for (const rect of spaces) {
+    const scale = Math.min(view.scale, (rect.right - rect.left) / width, (rect.bottom - rect.top) / height)
+    if (scale < Math.min(view.scale, READABLE_SCALE) || (nearest && scale < nearest.scale)) continue
+    const dx = clamp(left, rect.left, Math.max(rect.left, rect.right - width * scale)) - left
+    const dy = clamp(top, rect.top, Math.max(rect.top, rect.bottom - height * scale)) - top
+    const offset = Math.hypot(dx, dy)
+    if (scale === view.scale && offset === 0) return view
+    if (nearest && scale === nearest.scale && offset >= distance) continue
+    nearest = { ...view, scale, x: left + dx - point.x * scale, y: top + dy - point.y * scale }
+    distance = offset
+  }
+  return nearest ?? view
+}
 
 export function instructionNodes(files: readonly CanvasInstructionFile[], activeId: string | undefined, columns: number, beforeY?: number): RuleCanvasNode[] {
   const top = beforeY === undefined ? 0 : beforeY - Math.ceil(files.length / columns) * fileStride - FILE_GAP
@@ -82,33 +150,10 @@ export function InstructionCanvas({ t, files, activeId, onSelect, onPaneClick }:
   onSelect: (id: string) => void
   onPaneClick: () => void
 }): ReactNode {
-  const surface = useRef<HTMLDivElement>(null)
-  const initialized = useRef(false)
-  const [columns, setColumns] = useState(1)
   const [view, setView] = useState<RuleCanvasView>({ scale: 1, x: 12, y: 72, positions: {} })
-  const nodes = useMemo(() => instructionNodes(files, activeId, columns), [files, activeId, columns])
-  const fit = () => {
-    const stage = surface.current
-    if (!stage?.clientWidth || !stage.clientHeight || !files.length) return
-    const width = stage.clientWidth, height = stage.clientHeight
-    const nextColumns = clamp(Math.floor((width - 24 + FILE_GAP) / (FILE_WIDTH + FILE_GAP)), 1, 3)
-    const fitted = nextColumns === columns ? nodes : instructionNodes(files, activeId, nextColumns)
-    initialized.current = true
-    setColumns(nextColumns)
-    setView(current => fitCanvasView(fitted, current, width, height,
-      { left: 12, right: 12, top: 72, bottom: 68 }))
-  }
-  useLayoutEffect(() => {
-    if (initialized.current || !surface.current || !files.length) return
-    fit()
-    if (initialized.current) return
-    const observer = new ResizeObserver(() => { fit(); if (initialized.current) observer.disconnect() })
-    observer.observe(surface.current)
-    return () => observer.disconnect()
-  })
-  return <div className={css.instructionsOnly} ref={surface}>
-    <RuleCanvas t={t} nodes={EMPTY_NODES} fileNodes={nodes} view={view} onViewChange={setView}
-      onSelect={onSelect} onSelectInstruction={onSelect} onPaneClick={onPaneClick} onFit={fit} />
+  return <div className={css.instructionsOnly}>
+    <RuleCanvas t={t} nodes={EMPTY_NODES} instructionFiles={files} activeInstructionId={activeId} view={view} onViewChange={setView}
+      onSelect={onSelect} onSelectInstruction={onSelect} onPaneClick={onPaneClick} />
   </div>
 }
 
@@ -131,6 +176,57 @@ const roundedRoute = (points: Array<[number, number]>): string => {
 
 export function RuleCanvas(props: RuleCanvasProps) {
   const stage = useRef<HTMLDivElement>(null)
+  const dock = useRef<HTMLDivElement>(null)
+  const [area, setArea] = useState<CanvasArea>()
+  const firstFit = useRef(!props.hasStoredView)
+  const userAdjustedView = useRef(Boolean(props.hasStoredView))
+  const fitIncludedFiles = useRef(false)
+  const previousTarget = useRef<{ id?: string; ruleId?: string; area?: CanvasArea }>({})
+  const [instructionColumns, setInstructionColumns] = useState<number>()
+  const columns = instructionColumns ?? clamp(Math.floor(((area?.stageWidth ?? 0) - 2 * CANVAS_GAP + FILE_GAP) / (FILE_WIDTH + FILE_GAP)), 1, 3)
+  const fileNodes = useMemo(() => props.instructionFiles
+    ? instructionNodes(props.instructionFiles, props.activeInstructionId, columns) : props.fileNodes ?? EMPTY_NODES,
+  [props.instructionFiles, props.activeInstructionId, props.fileNodes, columns])
+  const adjustView = (view: RuleCanvasView) => {
+    userAdjustedView.current = true
+    props.onViewChange(view)
+  }
+  useLayoutEffect(() => {
+    const element = stage.current, controls = dock.current
+    if (!element || !controls) return
+    const root = element.closest('[data-canvas-workspace]') ?? element.parentElement
+    if (!root) return
+    let obstacles = new Set<HTMLElement>()
+    const measure = () => {
+      const next = readCanvasArea(element, obstacles)
+      setArea(current => current && next && current.stageWidth === next.stageWidth && sameRect(current.base, next.base)
+        && current.spaces.length === next.spaces.length
+        && current.spaces.every((rect, index) => sameRect(rect, next.spaces[index]!)) ? current : next)
+    }
+    const resize = new ResizeObserver(measure)
+    const observeObstacles = () => {
+      const next = new Set([controls, ...root.querySelectorAll<HTMLElement>(OBSTACLE)])
+      for (const item of obstacles) if (!next.has(item)) resize.unobserve(item)
+      for (const item of next) if (!obstacles.has(item)) resize.observe(item)
+      obstacles = next
+    }
+    const mutation = new MutationObserver(records => {
+      const changed = records.some(({ target, addedNodes, removedNodes, type }) => {
+        if (!(target instanceof Element) || element.contains(target)) return false
+        if (type === 'attributes') return target.matches(OBSTACLE)
+        if (target.closest(OBSTACLE)) return false
+        return [...addedNodes, ...removedNodes].some(node => node instanceof Element && (node.matches(OBSTACLE) || node.querySelector(OBSTACLE)))
+      })
+      if (!changed) return
+      observeObstacles()
+      measure()
+    })
+    observeObstacles()
+    resize.observe(element)
+    mutation.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden'] })
+    measure()
+    return () => { resize.disconnect(); mutation.disconnect() }
+  }, [])
   const drag = useRef<{ id?: string; pointerId: number; startX: number; startY: number; baseX: number; baseY: number; moved: boolean; dismissOnClick: boolean }>()
   const suppressClick = useRef(false)
   const paneClick = useRef(false)
@@ -167,7 +263,7 @@ export function RuleCanvas(props: RuleCanvasProps) {
     const { x, y, scale } = props.view
     const next = clamp(scale + delta, Math.min(scale, 0.35), 2.5)
     const cx = viewport.clientWidth / 2, cy = viewport.clientHeight / 2
-    props.onViewChange({ ...props.view, scale: next, x: cx - (cx - x) * next / scale, y: cy - (cy - y) * next / scale })
+    adjustView({ ...props.view, scale: next, x: cx - (cx - x) * next / scale, y: cy - (cy - y) * next / scale })
   }
   useEffect(() => {
     const element = stage.current
@@ -179,6 +275,7 @@ export function RuleCanvas(props: RuleCanvasProps) {
       const next = clamp(oldScale * Math.exp(-event.deltaY * 0.001), Math.min(oldScale, 0.35), 2.5)
       const localX = event.clientX - rect.left, localY = event.clientY - rect.top
       const worldX = (localX - props.view.x) / oldScale, worldY = (localY - props.view.y) / oldScale
+      userAdjustedView.current = true
       props.onViewChange({ ...props.view, scale: next, x: localX - worldX * next, y: localY - worldY * next })
     }
     element.addEventListener('wheel', wheel, { passive: false })
@@ -200,24 +297,69 @@ export function RuleCanvas(props: RuleCanvasProps) {
       height: Math.max(...members.map(item => item.y + (item.height ?? 112))) - top + 72,
     }]] as const
   })), [props.nodes, byId])
+  const fit = (area: CanvasArea, automatic: boolean) => {
+    const { visible, base, stageWidth } = area
+    const nodes = props.nodes.map(node => {
+      const region = regions.get(node.id)
+      return region ? { ...node, x: region.left, y: region.top, width: region.width, height: region.height } : node
+    })
+    const view = fitCanvasView([...nodes, ...fileNodes], props.view, visible.right, visible.bottom,
+      { left: visible.left, right: 0, top: visible.top, bottom: 0 })
+    if (!automatic || stageWidth > 480 || view.scale >= READABLE_SCALE) return view
+    const anchor = fileNodes.find(node => node.selected) ?? nodes.find(node => node.id === props.selectedNodeId && !node.region)
+      ?? nodes.find(node => !node.region) ?? fileNodes[0]
+    if (!anchor) return view
+    const point = props.view.positions[anchor.id] ?? anchor
+    const rect = (visible.right - visible.left) >= READABLE_SCALE * (anchor.width ?? 216)
+      && (visible.bottom - visible.top) >= READABLE_SCALE * (anchor.height ?? 112) ? visible : base
+    return { ...view, scale: READABLE_SCALE,
+      x: (rect.left + rect.right - (anchor.width ?? 216) * READABLE_SCALE) / 2 - point.x * READABLE_SCALE,
+      y: (rect.top + rect.bottom - (anchor.height ?? 112) * READABLE_SCALE) / 2 - point.y * READABLE_SCALE }
+  }
+  const fitManually = () => {
+    if (area) adjustView(fit(area, false))
+  }
+  useLayoutEffect(() => {
+    if (!area || drag.current) return
+    if (!userAdjustedView.current && (firstFit.current || (!fitIncludedFiles.current && fileNodes.length))
+      && (props.nodes.length || fileNodes.length)) {
+      firstFit.current = false
+      fitIncludedFiles.current = fileNodes.length > 0
+      if (props.instructionFiles) setInstructionColumns(columns)
+      props.onViewChange(fit(area, true))
+      return
+    }
+    const id = props.activeInstructionId !== undefined ? `instruction:${props.activeInstructionId}` : props.selectedNodeId
+    const previous = previousTarget.current
+    if (id === previous.id && props.selectedNodeId === previous.ruleId && area === previous.area) return
+    previousTarget.current = { id, ruleId: props.selectedNodeId, area }
+    if (props.activeInstructionId === undefined && previous.id?.startsWith('instruction:') && previous.ruleId === id) return
+    if (!id || (id === previous.id && previous.area?.spaces.every(old => area.spaces.some(rect => containsRect(rect, old))))) return
+    const node = props.activeInstructionId !== undefined ? fileNodes.find(item => item.id === id) : byId.get(id)
+    if (!node) return
+    const next = revealCanvasNode(node, props.view, area.spaces)
+    if (next !== props.view) props.onViewChange(next)
+  })
+  const inspectingInstruction = props.activeInstructionId !== undefined
   const edges = useMemo(() => {
     if (!props.edges?.length) return null
-    const hasSelection = props.nodes.some(node => node.selected)
+    const hasSelection = !inspectingInstruction && props.nodes.some(node => node.selected)
     return <svg className={css.edges} aria-hidden="true">{props.edges.map(edge => {
       const from = byId.get(edge.from), to = byId.get(edge.to)
       if (!from || !to) return null
       const x1 = from.x + 216, y1 = from.y + 50, x2 = to.x, y2 = to.y + 50
       const path = x2 > x1 ? roundedRoute([[x1, y1], [(x1 + x2) / 2, y1], [(x1 + x2) / 2, y2], [x2, y2]])
         : roundedRoute([[x1, y1], [x1 + 24, y1], [x1 + 24, Math.min(y1, y2) - 24], [x2 - 24, Math.min(y1, y2) - 24], [x2 - 24, y2], [x2, y2]])
-      const active = from.selected || to.selected
+      const active = hasSelection && (from.selected || to.selected)
       const labelX = (x1 + x2) / 2, labelY = (y1 + y2) / 2
       return <g key={`${edge.from}-${edge.to}`} className={edge.kind ? css[edge.kind] : undefined} data-emphasis={active ? 'active' : hasSelection ? 'inactive' : undefined}>
         <path d={path} />
+        {active && <EdgeFlow path={path} />}
         <circle className={css.outPort} cx={x1} cy={y1} r="5" /><circle className={css.inPort} cx={x2} cy={y2} r="5" />
         {edge.label && <g className={css.edgeLabel}><rect x={labelX - edge.label.length * 3.5 - 8} y={labelY - 10} width={edge.label.length * 7 + 16} height="20" rx="10" /><text x={labelX} y={labelY}>{edge.label}</text></g>}
       </g>
     })}</svg>
-  }, [props.edges, props.nodes, byId])
+  }, [props.edges, props.nodes, byId, inspectingInstruction])
   const begin = (event: ReactPointerEvent<HTMLElement>, node?: RuleCanvasNode) => {
     if (event.button !== 0) return
     paneClick.current = false
@@ -233,8 +375,10 @@ export function RuleCanvas(props: RuleCanvasProps) {
     current.moved = true
     const dx = (event.clientX - current.startX) / props.view.scale
     const dy = (event.clientY - current.startY) / props.view.scale
-    if (current.id) props.onMove?.(current.id, current.baseX + dx, current.baseY + dy)
-    else props.onViewChange({ ...props.view, x: current.baseX + event.clientX - current.startX, y: current.baseY + event.clientY - current.startY })
+    if (current.id) {
+      userAdjustedView.current = true
+      props.onMove?.(current.id, current.baseX + dx, current.baseY + dy)
+    } else adjustView({ ...props.view, x: current.baseX + event.clientX - current.startX, y: current.baseY + event.clientY - current.startY })
   }
   const end = (event: ReactPointerEvent<HTMLDivElement>) => {
     const current = drag.current
@@ -277,11 +421,11 @@ export function RuleCanvas(props: RuleCanvasProps) {
       const offset = offsets[event.key]
       if (!offset) return
       event.preventDefault()
-      props.onViewChange({ ...props.view, x: props.view.x + offset[0], y: props.view.y + offset[1] })
+      adjustView({ ...props.view, x: props.view.x + offset[0], y: props.view.y + offset[1] })
     }}>
     <div className={css.world} style={{ transform: `translate(${props.view.x}px, ${props.view.y}px) scale(${props.view.scale})` }}>
       {edges}
-      {props.fileNodes?.map(node => {
+      {fileNodes.map(node => {
           const file = node.instruction
           if (!file) return null
           return <button key={node.id} type="button" className={css.instructionCard} data-rule-node={node.id}
@@ -303,7 +447,7 @@ export function RuleCanvas(props: RuleCanvasProps) {
           const delta = event.shiftKey ? 40 : 16
           const offsets: Record<string, [number, number]> = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] }
           const offset = offsets[event.key]
-          if (offset) { event.preventDefault(); const point = props.view.positions[node.id] ?? node; props.onMove?.(node.id, point.x + offset[0], point.y + offset[1]) }
+          if (offset && props.onMove) { event.preventDefault(); userAdjustedView.current = true; const point = props.view.positions[node.id] ?? node; props.onMove(node.id, point.x + offset[0], point.y + offset[1]) }
         }} onPointerDown={event => { event.stopPropagation(); begin(event, node) }}>
           <small>{node.kind === 'action' ? '动作' : node.kind === 'group' ? '分组' : '条件'}</small><strong>{node.title}</strong>{node.value && <span>{node.value}</span>}
         </button>
@@ -311,7 +455,7 @@ export function RuleCanvas(props: RuleCanvasProps) {
       {props.children}
     </div>
     </div>
-    <div className={css.dock} onPointerDown={event => event.stopPropagation()}
+    <div ref={dock} className={css.dock} data-canvas-obstacle="bottom" onPointerDown={event => event.stopPropagation()}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) { setKeysOpen(false); setLegendOpen(false) } }}
       onKeyDown={event => {
         if (event.key !== 'Escape' || event.nativeEvent.isComposing || (!keysOpen && !legendOpen)) return
@@ -339,7 +483,7 @@ export function RuleCanvas(props: RuleCanvasProps) {
       <button type="button" aria-label={t('canvas.zoomOut')} title={t('canvas.zoomOut')} aria-disabled={props.view.scale <= .35} onClick={() => { if (props.view.scale > .35) zoom(-.1) }}>−</button>
       <span className={css.percent}>{props.view.scale < .01 ? '<1' : Math.round(props.view.scale * 100)}%</span>
       <button type="button" aria-label={t('canvas.zoomIn')} title={t('canvas.zoomIn')} aria-disabled={props.view.scale >= 2.5} onClick={() => { if (props.view.scale < 2.5) zoom(.1) }}>+</button>
-      <button type="button" aria-label={t('canvas.fit')} title={t('canvas.fit')} onClick={props.onFit}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4m6 0h4v4m0 6v4h-4m-6 0H3v-4"/></svg></button>
+      <button type="button" aria-label={t('canvas.fit')} title={t('canvas.fit')} onClick={event => { event.stopPropagation(); fitManually() }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4m6 0h4v4m0 6v4h-4m-6 0H3v-4"/></svg></button>
       </div>
       <span className={css.dockSeparator} role="separator" aria-orientation="vertical" />
       <button type="button" ref={keysButton} aria-label={t('canvas.keys')} title={t('canvas.keys')} aria-expanded={keysOpen} aria-controls={keysId} onClick={() => { setKeysOpen(!keysOpen); setLegendOpen(false) }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 5.5h16v9H2zM5 8.5h1m2 0h1m2 0h1m2 0h1m-9 3h8"/></svg></button>
@@ -348,8 +492,8 @@ export function RuleCanvas(props: RuleCanvasProps) {
       <div className={css.keysPanel} id={keysId} hidden={!keysOpen}>
         <p><kbd>↑ ↓ ← →</kbd> {t('canvas.pan')}</p><p><kbd>Shift</kbd> {t('canvas.panFast')}</p>
         <button type="button" onClick={() => {
-          if (props.edges) props.onViewChange({ scale: .8, x: 260, y: 110, positions: {} })
-          else props.onFit?.()
+          if (props.edges) adjustView({ scale: .8, x: 260, y: 110, positions: {} })
+          else fitManually()
           setKeysOpen(false); keysButton.current?.focus()
         }}>{t('canvas.reset')}</button>
       </div>
