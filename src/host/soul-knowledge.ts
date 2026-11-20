@@ -1,7 +1,7 @@
 /** 本机知识库授权：只由用户命令确认，模块导出不包含官方持久域。 */
 import { constants, lstatSync, mkdirSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Stats } from 'node:fs'
-import { lstat, open, readdir, realpath } from 'node:fs/promises'
+import { lstat, open, opendir, realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
@@ -82,13 +82,14 @@ async function asyncIdentity(path: string, check: () => void): Promise<string> {
     current = join(current, part)
     const stat = await lstat(current)
     check()
-    if (stat.isSymbolicLink()) throw new Error('知识库路径含链接，授权不可用')
+    if (!stat.isDirectory()) throw new Error('知识库路径含链接或非目录，授权不可用')
   }
   const stat = await lstat(absolute)
   check()
   if (!stat.isDirectory()) throw new Error('知识库根不是目录')
   const physical = await realpath(absolute)
   check()
+  if (directoryKey(physical) !== directoryKey(absolute)) throw new Error('知识库实际路径已变化，请重新预览')
   return revisionOf(JSON.stringify([physical, stat.dev, stat.ino, stat.birthtimeMs]))
 }
 async function selectedFileDigest(path: string, version: string, buffer: Buffer, check: () => void) {
@@ -117,30 +118,70 @@ async function selectedFileDigest(path: string, version: string, buffer: Buffer,
   } finally { await file.close() }
 }
 async function rootSnapshot(root: string, check: () => void) {
-  let rootIdentity: string
-  try { rootIdentity = await asyncIdentity(root, check) }
+  const parent = await asyncIdentity(dirname(root), check)
+  const changed = () => new Error('知识库目录已变化，预览已失效，请重新预览')
+  let rootStat: Stats
+  try { rootStat = await lstat(root) }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     check()
-    return { identity: null, parent: await asyncIdentity(dirname(root), check), entries: [] }
+    if (await asyncIdentity(dirname(root), check) !== parent) throw changed()
+    const appeared = await lstat(root, { throwIfNoEntry: false })
+    check()
+    if (appeared) throw changed()
+    return { identity: null, parent, entries: [] }
+  }
+  check()
+  if (!rootStat.isDirectory()) throw changed()
+  const rootIdentity = await asyncIdentity(root, check)
+  type DirectoryVersion = { path: string; version: string }
+  const rootVersion = { path: root, version: fileVersion(rootStat) }
+  const directories = [rootVersion]
+  async function verify(directory: DirectoryVersion) {
+    const stat = await lstat(directory.path)
+    check()
+    if (!stat.isDirectory() || fileVersion(stat) !== directory.version) throw changed()
+  }
+  async function verifyChain(chain: DirectoryVersion[]) {
+    if (await asyncIdentity(root, check) !== rootIdentity) throw changed()
+    for (const directory of chain) await verify(directory)
   }
   const entries: { path: string; size: number; kind: string; version: string }[] = []
-  async function visit(directory: string, prefix: string, depth: number): Promise<void> {
-    const names = await readdir(directory)
-    check()
+  async function visit(chain: DirectoryVersion[], directory: string, prefix: string, depth: number): Promise<void> {
+    await verifyChain(chain)
+    const names: string[] = [], remaining = 2000 - entries.length
+    const opened = await opendir(directory, { bufferSize: 1 })
+    try {
+      check()
+      await verifyChain(chain)
+      for (let index = 0; index <= remaining; index++) {
+        const item = await opened.read()
+        check()
+        if (!item) break
+        if (index === remaining) throw new Error('知识库预览超过2000项，请选择更小的根')
+        names.push(item.name)
+      }
+    } finally { await opened.close() }
+    await verifyChain(chain)
     for (const name of names.sort()) {
       if (entries.length >= 2000) throw new Error('知识库预览超过2000项，请选择更小的根')
-      const path = prefix + name, stat = await lstat(join(directory, name))
+      const path = prefix + name, absolute = join(directory, name), stat = await lstat(absolute)
       check()
-      entries.push({ path, size: stat.size, kind: stat.isSymbolicLink() ? 'link' : stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'special', version: fileVersion(stat) })
+      const version = fileVersion(stat)
+      entries.push({ path, size: stat.size, kind: stat.isSymbolicLink() ? 'link' : stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'special', version })
       if (stat.isDirectory() && !protectedPath(path)) {
         if (depth >= 8) throw new Error('知识库层级过深，请选择更小的根')
-        await visit(join(directory, name), path + '/', depth + 1)
+        const child = { path: absolute, version }
+        directories.push(child)
+        await visit([...chain, child], absolute, path + '/', depth + 1)
       }
     }
+    await verifyChain(chain)
   }
-  await visit(root, '', 0)
-  return { identity: rootIdentity, parent: await asyncIdentity(dirname(root), check), entries }
+  await visit([rootVersion], root, '', 0)
+  for (const directory of directories) await verify(directory)
+  if (await asyncIdentity(root, check) !== rootIdentity || await asyncIdentity(dirname(root), check) !== parent) throw changed()
+  return { identity: rootIdentity, parent, entries }
 }
 export async function openSoulKnowledge(facility: DomainFacility, loadSession?: LoadRetrievalSession): Promise<SoulKnowledgeOwner> {
   const assisted = await openAssistedBudget(facility)
