@@ -105,8 +105,7 @@ export interface ModuleActionsPort {
 export interface NoticePort {
   notice: string
   noticeKind: 'ok' | 'error'
-  noticePill: string | undefined
-  showNotice: (kind: 'ok' | 'error', message: string, pill?: string) => void
+  showNotice: (kind: 'ok' | 'error', message: string) => void
   load: (options?: { silent?: boolean }) => Promise<Fields>
   patch: (partial: Partial<Omit<Fields, 'instructionCards'>>) => void
   loading: boolean

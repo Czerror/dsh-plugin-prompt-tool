@@ -28,7 +28,9 @@ Each instruction file discovered for the session, such as `AGENTS.md` or `CLAUDE
 
 You can import [YAML](https://yaml.org/)/[JSON](https://www.json.org/json-en.html) module files, folders/[ZIP archives](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), SillyTavern presets, [PNG images](https://www.w3.org/TR/png/)/JSON character cards, and world books. New and imported modules start disabled. See [SillyTavern import details](docs/SillyTavern.md) for conversion limits.
 
-The inspector groups content and placement fields. Short option sets can be selected directly or with the arrow keys. Long or grouped sets open a searchable dialog. Click empty canvas to dismiss the current panel, or drag to pan with the node selected. If publication fails after saving module status, retry from the Modules sidebar in any workspace entry point.
+Use the right panel to edit node properties, instruction files, module settings, and custom tools. When adding an injection template, use the searchable dialog to choose the template and target module. Click empty canvas to dismiss the current panel, or drag to pan with the node selected. If publication fails after saving module status, retry from the Modules sidebar in any workspace entry point.
+
+On narrow screens, the canvas starts zoomed in for readability. Use the bottom toolbar to fit the full diagram. Selecting a node briefly highlights its directly connected lines in their direction of flow. With reduced motion enabled, the highlight stays static.
 
 All three workspace entry points share browsing position and rule drafts in one layout. Template insertion preserves its declared audience; existing separate rules are never merged automatically. Wait for save confirmation before refreshing. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
 

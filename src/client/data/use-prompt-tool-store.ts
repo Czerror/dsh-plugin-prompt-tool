@@ -164,7 +164,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
   /** 通知前导胶囊（会话名）：与 notice 同批更新，清空时一并清掉。 */
-  const [noticePill, setNoticePill] = useState<string | undefined>(undefined)
   const fieldsRef = useRef<Fields>(EMPTY_FIELDS)
   /** fields 订阅者集合：patch/load 每次产生新 fields 引用时广播。
    *  shortcut: 单订阅通道（无 selector 缓存层），selector 在消费侧 useRef 缓存。 */
@@ -239,16 +238,14 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     for (const draft of editorDrafts.rules.values()) if (draft.pending) void draft.pending.read()
   }, [api, editorDrafts])
 
-  const showNotice = useCallback((kind: 'ok' | 'error', message: string, pill?: string) => {
+  const showNotice = useCallback((kind: 'ok' | 'error', message: string) => {
     setNotice(message)
     setNoticeKind(kind)
-    setNoticePill(pill)
   }, [])
 
   /** 清空通知（含胶囊）：快照应用完成后调用，旧提示不跨加载常驻。 */
   const clearNotice = useCallback(() => {
     setNotice('')
-    setNoticePill(undefined)
   }, [])
 
   const contexts = useRef(new Map<string | undefined, ReturnType<typeof createWorkspaceInstructions>>()).current
@@ -700,7 +697,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     releaseInstructions,
     notice,
     noticeKind,
-    noticePill,
     load,
     showNotice,
     patch,

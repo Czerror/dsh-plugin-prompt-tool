@@ -220,7 +220,6 @@ export function LayerSettingsContent(props: {
               }}
               publicationPending={variables.publicationPending}
               retryPublication={() => store.retryModuleVariablesPublication(moduleId)}
-              embedded
               disabled={!canEdit}
             />
           )}

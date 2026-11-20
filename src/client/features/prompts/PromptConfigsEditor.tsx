@@ -1,6 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from 'react'
-import clsx from 'clsx'
-import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
+import { useRef, useState, type ReactNode } from 'react'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
@@ -18,8 +16,7 @@ const styles = { ...sharedCss, ...featureCss }
 
 
 /** 两级持久变量共用一张卡；保存走 /module-variables 的范围与版本事务。
- *  模块值拥有同名覆盖，全局值在同一安装内共享。
- *  可折叠（chevron）/ 可删除（清空全部变量，两段式确认）/ 可新建（VariablesEditor 添加变量）。 */
+ *  模块值拥有同名覆盖，全局值在同一安装内共享。 */
 export function TemplateVariablesModuleCard(props: {
   t: PromptToolTranslate
   scope: ModuleVariableScope
@@ -34,16 +31,12 @@ export function TemplateVariablesModuleCard(props: {
   saveTemplateVariables: (next?: Record<string, string>, enabled?: boolean) => Promise<boolean | void>
   publicationPending?: boolean
   retryPublication?: () => Promise<boolean>
-  expanded?: boolean
-  embedded?: boolean
   disabled?: boolean
-  onToggleExpanded?: () => void
 }): ReactNode {
   const t = props.t
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const cardRef = useRef<HTMLElement>(null)
   const deleteRef = useRef<HTMLButtonElement>(null)
-  const panelId = useId()
   const count = Object.keys(props.templateVariables).length
   const disabled = props.disabled || props.loading
   const autosave = useAutosave(props.scope, () => {
@@ -52,32 +45,21 @@ export function TemplateVariablesModuleCard(props: {
   const overrides = Object.keys(props.templateVariables).filter(key => Object.hasOwn(props.inheritedVariables, key))
   const inherited = Object.keys(props.inheritedVariables).filter(key => !Object.hasOwn(props.templateVariables, key))
   const enabled = props.templateVariablesEnabled
-  const expanded = props.embedded || props.expanded === true
   const addRef = useRef<HTMLButtonElement>(null)
   // 空态也保留本层创建入口，不依赖已退场的顶部变量菜单。
   const clearAll = async (): Promise<void> => {
     if (disabled) return
     if (await props.saveTemplateVariables({}) === false) throw new Error(t('variables.deleteFailed'))
     setConfirmingDelete(false)
-    if (!props.embedded && props.expanded) props.onToggleExpanded?.()
     requestAnimationFrame(() => addRef.current?.focus())
   }
   return (
-    <article ref={cardRef} className={props.embedded ? styles.moduleEmbedded : styles.configCard}
+    <article ref={cardRef} className={styles.moduleEmbedded}
       onFocus={autosave.onFocus} onBlur={autosave.onBlur}
       onCompositionStart={autosave.onCompositionStart} onCompositionEnd={autosave.onCompositionEnd}>
-      <header className={props.embedded ? styles.moduleEmbeddedHeader : styles.configHeader}>
-        {props.embedded ? <>
-          <h4 className={styles.moduleEmbeddedTitle}>{t('variables.title')}</h4>
-          <span className={styles.configMeta}>{t('variables.cardMeta', { count })}</span>
-        </> : <button type="button" className={styles.configToggle} aria-expanded={expanded} aria-controls={expanded ? panelId : undefined}
-          onClick={() => { if (expanded) autosave.flush(); props.onToggleExpanded?.() }}>
-          <span className={styles.configTitle}>
-            <span className={styles.configName}>{t('variables.title')}</span>
-            <span className={styles.configMeta}>{t('variables.cardMeta', { count })}</span>
-          </span>
-          <IconChevronDownOutlineRegular className={clsx(styles.chevron, expanded && styles.chevronOpen)} />
-        </button>}
+      <header className={styles.moduleEmbeddedHeader}>
+        <h4 className={styles.moduleEmbeddedTitle}>{t('variables.title')}</h4>
+        <span className={styles.configMeta}>{t('variables.cardMeta', { count })}</span>
         <span className={styles.configHeaderActions}>
           <MenuSelect value={props.scope} ariaLabel={t('form.section.scope')} compact
             options={[{ value: 'module', label: t('variables.scope.module') }, { value: 'global', label: t('variables.scope.global') }]}
@@ -93,7 +75,6 @@ export function TemplateVariablesModuleCard(props: {
             {count === 0 && <Button ref={addRef} shape="pill" variant="outline" disabled={disabled} onClick={() => {
               if (disabled) return
               props.setTemplateVariables({ '': '' })
-              if (!expanded) props.onToggleExpanded?.()
               requestAnimationFrame(() => cardRef.current?.querySelector<HTMLInputElement>('input')?.focus())
             }}>{t('variables.add')}</Button>}
             {count > 0 && <Button ref={deleteRef} shape="pill" variant="outline" disabled={disabled} data-danger onClick={() => setConfirmingDelete(true)}>{t('variables.delete')}</Button>}
@@ -104,18 +85,16 @@ export function TemplateVariablesModuleCard(props: {
       <PublicationNotice publication={{ pending: props.publicationPending === true, error: props.publicationPending ? props.error : undefined }}
         pendingLabel={t('publication.pending')} retryLabel={t('workspace.retry')} disabled={props.disabled}
         onRetry={props.retryPublication === undefined ? undefined : () => { void props.retryPublication?.() }} />
-      {expanded && (
-        <div id={panelId} className={props.embedded ? styles.moduleEmbeddedBody : styles.configForm}>
-          {props.scope === 'global' ? <p className={styles.configFieldHint}>{t('variables.globalHint')}</p> : <>
-            {!enabled && <p className={styles.configFieldHint}>{t('variables.disabledHint')}</p>}
-            {overrides.length > 0 && <p className={styles.configFieldHint}>{t('variables.overridden', { names: overrides.join(t('variables.nameSeparator')) })}</p>}
-            {inherited.length > 0 && <p className={styles.configFieldHint}>{t('variables.inherited', { names: inherited.join(t('variables.nameSeparator')) })}</p>}
-          </>}
-          {props.loading ? (!props.error && <p className={styles.configFieldHint}>{t('variables.loading')}</p>)
-            : count === 0 ? <p className={styles.configFieldHint}>{t('variables.empty')}</p>
-              : <VariablesEditor t={t} value={props.templateVariables} disabled={disabled} hideHeading={props.embedded} onChange={(next) => { if (!disabled) props.setTemplateVariables(next ?? {}) }} />}
-        </div>
-      )}
+      <div className={styles.moduleEmbeddedBody}>
+        {props.scope === 'global' ? <p className={styles.configFieldHint}>{t('variables.globalHint')}</p> : <>
+          {!enabled && <p className={styles.configFieldHint}>{t('variables.disabledHint')}</p>}
+          {overrides.length > 0 && <p className={styles.configFieldHint}>{t('variables.overridden', { names: overrides.join(t('variables.nameSeparator')) })}</p>}
+          {inherited.length > 0 && <p className={styles.configFieldHint}>{t('variables.inherited', { names: inherited.join(t('variables.nameSeparator')) })}</p>}
+        </>}
+        {props.loading ? (!props.error && <p className={styles.configFieldHint}>{t('variables.loading')}</p>)
+          : count === 0 ? <p className={styles.configFieldHint}>{t('variables.empty')}</p>
+            : <VariablesEditor t={t} value={props.templateVariables} disabled={disabled} hideHeading onChange={(next) => { if (!disabled) props.setTemplateVariables(next ?? {}) }} />}
+      </div>
       {confirmingDelete && <ConfirmDialog title={t('variables.deleteTitle')} description={props.scope === 'global' ? t('variables.globalDeleteDescription') : t('variables.deleteDescription')}
         confirmLabel={t('variables.confirmClear')} cancelLabel={t('variables.cancel')} failureMessage={t('variables.deleteFailed')}
         returnFocusRef={deleteRef} onConfirm={clearAll} onCancel={() => setConfirmingDelete(false)} />}
