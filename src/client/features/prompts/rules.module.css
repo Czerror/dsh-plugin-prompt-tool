@@ -312,13 +312,13 @@
 .inspectorBody :is(button[aria-haspopup=menu], input[aria-labelledby]:not([type=checkbox], [type=radio]), textarea) {
   inline-size: 100%;
   max-inline-size: 100%;
-  min-block-size: 36px;
   border: 1px solid #3c4859;
   border-radius: 7px;
   background: #222b38;
   color: #e7edf6;
   scroll-margin-block: 6px;
 }
+.inspectorBody :is(button[aria-haspopup=menu], input[aria-labelledby]:not([type=checkbox], [type=radio])) { min-block-size: 36px; }
 .inspectorBody button[aria-haspopup=menu] { justify-content: space-between; gap: 8px; padding-inline: 10px; font: 13px/19px system-ui, sans-serif; }
 .inspectorBody button[aria-haspopup=menu]:hover:not(:disabled) { background: #293649; }
 .inspectorBody .fields textarea { min-block-size: 5rem; }
