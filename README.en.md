@@ -19,8 +19,8 @@ In the Prompt Tool workspace, you can:
 
 After [installing the plugin](#install-the-plugin) below, open **Prompt Tool** from the sidebar:
 
-1. The workspace opens directly on a shared canvas. Open **Module center** at the top left, create or import a module, enable it, and turn on the module runtime switch.
-2. Search for and select a rule in the unified canvas list. Express main-session and subagent actions through scope conditions and branches within the same rule. The list defaults to participating modules; switch to all modules to edit disabled ones. The combination view also opens over the canvas.
+1. The workspace opens on a shared canvas. Search for a module in the top-left picker. Select its name to browse its rules, or use the switch on the same row to enable or disable the module. Open **Module center** to create or import modules or change the global runtime switch.
+2. The rule list defaults to participating modules and can also show all modules. Select a rule to see its owning module and rule name in the canvas header. **Enable rule** controls that rule alone. Use scope conditions and branches to express main-session and subagent actions within the same rule. The combination view also opens over the canvas.
 3. Add nodes from the left library and edit selected conditions or actions in the right properties overlay. Separate overlays provide the full JSON definition and rule settings; zoom controls and a legend sit at the bottom. Returning to the list keeps you on the same canvas.
 4. Open **Module center**, search or filter the module cards, then open a module's rules directly from its card. Opening and editing do not enable modules. Rules load on demand; existing rule drafts provide counts and a short list. Expand diagnostics when needed; results with rule or action identities can take you back to that rule.
 

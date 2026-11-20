@@ -25,6 +25,8 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { useAnchoredPopoverStyle } from '../../ui/anchored-popover.ts'
 import { useDismissOnOutsidePointer } from '../../ui/outside-pointer.ts'
+import { errorMessage } from '../../data/bridge-client.ts'
+import type { ModuleActionResult } from '../../data/module-actions.ts'
 import { IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular } from '../../ui/icons.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
@@ -48,14 +50,28 @@ function searchableRule(rule: RuleDefinition): string {
   return text
 }
 
-function ModuleScopePicker({ value, options, onChange, t }: {
-  value: string; options: readonly { value: string; label: string; id?: string; enabled?: boolean }[]
-  onChange: (value: string) => void; t: PromptToolTranslate
+function selectedRuleIdentity(expanded: string | undefined): [string, string] | undefined {
+  if (!expanded?.startsWith('[')) return undefined
+  try {
+    const identity: unknown = JSON.parse(expanded)
+    if (Array.isArray(identity) && identity.length === 2 && typeof identity[0] === 'string' && typeof identity[1] === 'string') {
+      return [identity[0], identity[1]]
+    }
+  } catch {
+    // 共享选择也可能是指令文件 ID。
+  }
+}
+
+type ModuleSummary = NonNullable<ModuleFactsPort['meta']['modules']>[number]
+
+function ModuleScopePicker({ value, modules, editingModule, open, setOpen, onChange, onEnable, enableDisabled, feedback, t }: {
+  value: string; modules: readonly ModuleSummary[]; editingModule?: string; open: boolean; setOpen: (open: boolean) => void
+  onChange: (value: string) => void; onEnable: (id: string, enabled: boolean) => void
+  enableDisabled: (module: ModuleSummary) => boolean; feedback: ReactNode; t: PromptToolTranslate
 }): ReactNode {
   const id = useId()
   const trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
-  const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const native = typeof HTMLElement !== 'undefined' && 'popover' in HTMLElement.prototype
   const anchored = native && CSS.supports('position-area: block-end span-inline-end')
@@ -67,7 +83,7 @@ function ModuleScopePicker({ value, options, onChange, t }: {
     const sync = () => setOpen(element.matches(':popover-open'))
     element.addEventListener('toggle', sync)
     return () => element.removeEventListener('toggle', sync)
-  }, [native])
+  }, [native, setOpen])
   useLayoutEffect(() => {
     if (open) panel.current?.querySelector('input')?.focus()
     else setQuery('')
@@ -78,13 +94,24 @@ function ModuleScopePicker({ value, options, onChange, t }: {
     trigger.current?.focus({ preventScroll: true })
   }
   const needle = query.trim().toLowerCase()
-  const matched = options.filter(option => !needle || `${option.label} ${option.id ?? ''}`.toLowerCase().includes(needle))
-  const current = options.find(option => option.value === value)?.label
+  const scopes = [
+    { value: 'active', label: t('rules.participatingModules') },
+    { value: 'all', label: t('rules.allModules') },
+  ]
+  const matched = !open ? [] : needle ? modules.filter(module => `${module.name ?? ''} ${module.id}`.toLowerCase().includes(needle)) : modules
+  const currentModule = modules.find(module => `module:${module.id}` === value)
+  const current = (currentModule?.name || currentModule?.id) ?? scopes.find(scope => scope.value === value)?.label
+  const choose = (next: string): void => {
+    if (value !== next) onChange(next)
+    close()
+  }
   return <>
     <button ref={trigger} className={css.modulePicker} type="button" aria-controls={id} aria-expanded={open}
-      aria-label={`${t('rules.module')} · ${current ?? ''}`}
+      aria-label={`${t('rules.browseScope')} · ${current ?? ''}${!open && feedback ? ` · ${t('rules.moduleFeedback')}` : ''}`}
       {...(native ? { popovertarget: id } : { onClick: () => setOpen(!open) })}>
-      <IconFolderOpenOutlineRegular /><strong>{current}</strong><IconChevronDownOutlineRegular />
+      <IconFolderOpenOutlineRegular /><strong>{current}</strong>
+      {!open && feedback && <span className={css.modulePickerIndicator} aria-hidden="true">!</span>}
+      <IconChevronDownOutlineRegular />
     </button>
     <div ref={panel} id={id} className={css.modulePickerPanel} {...(native ? { popover: 'auto' } : { hidden: !open })}
       data-position-fallback={!anchored || undefined} style={anchored ? undefined : position ?? undefined} onKeyDown={event => {
@@ -93,17 +120,45 @@ function ModuleScopePicker({ value, options, onChange, t }: {
         event.preventDefault()
         close()
       }}>
-      <SearchInput aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query} onChange={event => setQuery(event.currentTarget.value)} />
-      <div className={css.modulePickerItems}>
-        {matched.map(option => <button key={option.value} type="button" aria-current={value === option.value || undefined} onClick={() => {
-          if (value !== option.value) onChange(option.value)
-          close()
-        }}>
-          <span><strong>{option.label}</strong>{option.id && option.id !== option.label && <small>{option.id}</small>}</span>
-          {option.id && option.enabled === false && <small>{t('rules.moduleInactive')}</small>}
-        </button>)}
-        {matched.length === 0 && <p role="status">{t('rules.noMatch')}</p>}
-      </div>
+      <SearchInput aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query}
+        onChange={event => setQuery(event.currentTarget.value)} onKeyDown={event => {
+          if (event.key !== 'Enter' || event.nativeEvent.isComposing || !needle) return
+          const exactId = matched.find(module => module.id.toLowerCase() === needle)
+          const target = exactId ?? (matched.length === 1 ? matched[0] : undefined)
+          if (!target) return
+          event.preventDefault()
+          choose(`module:${target.id}`)
+        }} />
+      {open && feedback}
+      {open && <div className={css.modulePickerItems}>
+        {!needle && <div className={css.modulePickerGroup}>
+          <h3>{t('rules.browseScope')}</h3>
+          {scopes.map(scope => <button key={scope.value} className={css.modulePickerChoice} type="button"
+            aria-current={value === scope.value || undefined} onClick={() => choose(scope.value)}>
+            <span><strong>{scope.label}</strong></span>
+          </button>)}
+        </div>}
+        {matched.length > 0 && <div className={css.modulePickerGroup}>
+          <h3>{t('rules.installedModules')}</h3>
+          {matched.map(module => {
+            const name = module.name || module.id
+            const option = `module:${module.id}`
+            const enabled = module.enabled === true
+            return <div key={module.id} className={css.modulePickerRow} data-enabled={enabled}>
+              <button className={css.modulePickerChoice} type="button" aria-current={value === option || undefined}
+                onClick={() => choose(option)}>
+                <span><strong>{name}</strong>{module.id !== name && <small>{module.id}</small>}
+                  {editingModule === module.id && <small className={css.modulePickerEditing}>{t('rules.editingModule')}</small>}
+                </span>
+              </button>
+              <small className={css.modulePickerState}>{t(enabled ? 'moduleSwitcher.enabled' : 'rules.moduleDisabled')}</small>
+              <Switch checked={enabled} disabled={enableDisabled(module)} label={t('rules.moduleSwitchLabel', { name })}
+                onChange={next => onEnable(module.id, next)} />
+            </div>
+          })}
+        </div>}
+        {needle && matched.length === 0 && <p role="status">{t('rules.noMatch')}</p>}
+      </div>}
     </div>
   </>
 }
@@ -145,13 +200,17 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const libraryId = useId()
   const libraryToggle = useRef<HTMLButtonElement>(null)
   const [localAllModules, setAllModules] = useState(props.browse?.allModules ?? false)
+  const [modulePickerOpen, setModulePickerOpen] = useState(false)
   const [localModuleFilter, setModuleFilter] = useState(props.browse?.moduleFilter)
   const [localCombination, setCombination] = useState(props.browse?.combination ?? false)
   const expanded = props.browse?.publish ? props.browse.expanded : localExpanded
   const allModules = props.browse?.publish ? props.browse.allModules === true : localAllModules
   const combination = props.browse?.publish ? props.browse.combination === true : localCombination
-  const [modulePending, setModulePending] = useState<string>()
+  const [modulePending, setModulePending] = useState<string | null>()
+  const moduleWrite = useRef(false)
   const [enablePublication, setEnablePublication] = useState<{ pending: boolean; error?: string }>()
+  const [enableError, setEnableError] = useState<string>()
+  const [enableRefreshFailed, setEnableRefreshFailed] = useState(false)
   const [orderFeedback, setOrderFeedback] = useState('')
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   const nodeBrowse = props.browse && (props.browse.ruleNodes ??= new Map())
@@ -161,8 +220,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const diagnosticTarget = props.browse?.diagnosticTarget
   const enabledModules = modules.filter(module => module.enabled === true)
   const enabledIds = new Set(enabledModules.map(module => module.id))
+  const [editingModule, editingKey] = (!moduleFilter && !allModules ? selectedRuleIdentity(expanded) : undefined) ?? []
+  // 参与范围内停用当前模块后，只保留正在编辑的规则。
+  const pinnedModule = editingModule !== undefined && !enabledIds.has(editingModule) && editingModule !== diagnosticTarget?.moduleId ? editingModule : undefined
   const ownerIds = (moduleFilter ? modules.filter(module => module.id === moduleFilter)
-    : allModules ? modules : modules.filter(module => enabledIds.has(module.id) || module.id === diagnosticTarget?.moduleId))
+    : allModules ? modules : modules.filter(module => enabledIds.has(module.id) || module.id === diagnosticTarget?.moduleId || module.id === pinnedModule))
     .filter(module => moduleDeclares(modules, module.id, 'rules') !== false).map(module => module.id)
   // 排序请求生命周期归 useModuleConfigOrder（全仓唯一一份实现）；页面只提供「保存成功后要刷新哪些编辑器」。
   const ownersRef = useRef<ModuleRuleEditor[]>([])
@@ -212,7 +274,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     return facts
   }
   const orderByIdentity = new Map(order.snapshot?.entries.map(entry => [configIdentityKey(entry), entry]) ?? [])
-  const entries = owners.flatMap(owner => owner.draft.entries.map(entry => ({ ...owner, entry,
+  const entries = owners.flatMap(owner => (owner.moduleId === pinnedModule
+    ? owner.draft.entries.filter(entry => entry.key === editingKey)
+    : owner.draft.entries).map(entry => ({ ...owner, entry,
     key: configIdentityKey({ moduleId: owner.moduleId, configId: entry.key }),
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
     facts: factsFor(entry.value),
@@ -237,18 +301,19 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       || props.layerCards?.(layer, module.id)?.some((card) => card.kind === 'capability' && card.searchText.includes(query)))
     return visible.length === 0 ? [] : [{ moduleId: module.id, layers: visible }]
   })
-  const batchOwners = new Set(entries.map(row => row.editor))
-  const batchDisabled = entries.length === 0 || owners.some(({ moduleId: id, draft, editor }) => batchOwners.has(editor)
+  const batchEntries = pinnedModule === undefined ? entries : entries.filter(row => row.moduleId !== pinnedModule)
+  const batchOwners = new Set(batchEntries.map(row => row.editor))
+  const batchDisabled = batchEntries.length === 0 || owners.some(({ moduleId: id, draft, editor }) => batchOwners.has(editor)
     && (readOnly(id) || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined))
   const batchSetEnabled = (enabled: boolean): void => {
     if (batchDisabled) return
-    for (const { entry, editor } of entries) {
+    for (const { entry, editor } of batchEntries) {
       if ((entry.value.enabled !== false) !== enabled) editor.patch(entry.key, { ...entry.value, enabled })
     }
     props.onRuleEdit?.()
     for (const editor of batchOwners) void editor.submit()
   }
-  const visibleIdentities = new Set(entries.map(row => row.identity))
+  const visibleIdentities = new Set(batchEntries.map(row => row.identity))
   const peersByPosition = new Map<string, ModuleConfigOrderEntry[]>()
   const peerIndex = new Map<string, number>()
   if (combination) for (const item of order.snapshot?.entries ?? []) {
@@ -386,16 +451,63 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     setListOpen(false)
     listToggle.current?.focus({ preventScroll: true })
   }
-  const setModuleEnabled = async (id: string, enabled: boolean): Promise<void> => {
+  const enableDisabled = (module: ModuleSummary): boolean =>
+    modulePending !== undefined || order.busy || enableRefreshFailed || module.broken !== undefined || module.renderable === false
+  const writeEnable = async (id: string | null, run?: () => Promise<ModuleActionResult<unknown>>): Promise<void> => {
+    if (moduleWrite.current || order.busy) return
+    const action = document.activeElement
+    const actionPanel = action?.closest(`.${css.modulePickerPanel}`)
+    moduleWrite.current = true
     setModulePending(id)
+    setEnableError(undefined)
+    const reportFailure = (reason: string): void => {
+      if (run === undefined) setEnableError(t('moduleSwitcher.notice.refreshFailed'))
+      else if (id === null) setEnablePublication({ pending: true, error: reason })
+      else setEnableError(t('moduleSwitcher.notice.enableFailed', { reason }))
+    }
     try {
-      const result = await store.moduleActions.enable(id, enabled)
+      if (run === undefined) {
+        const refreshed = await store.moduleActions.refresh()
+        setEnableRefreshFailed(!refreshed)
+        if (!refreshed) reportFailure('')
+        return
+      }
+      const result = await run()
       if (result.ok) {
         setEnablePublication(result.publication)
-        if (result.refreshError) store.showNotice('error', result.refreshError)
-      } else store.showNotice('error', t('moduleSwitcher.notice.enableFailed', { reason: result.message ?? id }))
-    } finally { setModulePending(undefined) }
+        setEnableRefreshFailed(result.refreshError !== undefined)
+        if (result.refreshError !== undefined) setEnableError(t('moduleSwitcher.notice.refreshFailed'))
+      } else reportFailure(result.message ?? result.code ?? t('workspace.retry'))
+    } catch (error) {
+      reportFailure(errorMessage(error))
+    } finally {
+      moduleWrite.current = false
+      setModulePending(undefined)
+      requestAnimationFrame(() => {
+        if (document.activeElement !== document.body || !(action instanceof HTMLElement)) return
+        if (action.getClientRects().length) action.focus({ preventScroll: true })
+        else if (!action.isConnected) {
+          const fallback = actionPanel ? actionPanel.querySelector('input') : workspaceHeading.current
+          if (fallback?.getClientRects().length) fallback.focus({ preventScroll: true })
+        }
+      })
+    }
   }
+  const setModuleEnabled = (id: string, enabled: boolean): void => {
+    const module = modules.find(item => item.id === id)
+    if (!module || enableDisabled(module) || (module.enabled === true) === enabled) return
+    void writeEnable(id, () => store.moduleActions.enable(id, enabled))
+  }
+  const enableFeedback = (modulePending !== undefined || enableError !== undefined || enablePublication?.pending === true) && <div className={css.modulePickerFeedback}>
+    {modulePending !== undefined && <p role="status">{t('rules.moduleChanging')}</p>}
+    {enableError && <p role="alert" className={css.error}>{enableError}</p>}
+    {enableRefreshFailed && enablePublication?.pending !== true &&
+      <Button variant="outline" shape="pill" size="sm" disabled={modulePending !== undefined || order.busy}
+        onClick={() => { void writeEnable(null) }}>{t('rules.refreshModules')}</Button>}
+    <PublicationNotice publication={enablePublication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+      disabled={modulePending !== undefined || order.busy}
+      onRetry={() => { void writeEnable(null, store.moduleActions.retryEnable) }} />
+  </div>
   const refreshExclusivePeers = (id: string, rule: RuleDefinition): void => {
     if (!enabledIds.has(id) || rule.groupScope !== 'cross-module' || rule.exclusive !== true || !rule.group) return
     for (const owner of ownersRef.current) {
@@ -413,11 +525,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     </div>}
     <div className={css.ruleWorkspace} data-rule-open={selected !== undefined || undefined} data-list-open={showList || undefined} data-canvas-workspace>
     <div className={css.moduleScope}>
-      <ModuleScopePicker t={t} value={moduleFilter ? `module:${moduleFilter}` : allModules ? 'all' : 'active'} onChange={changeModuleScope} options={[
-        { value: 'active', label: t('rules.participatingModules') },
-        { value: 'all', label: t('rules.allModules') },
-        ...modules.map(module => ({ value: `module:${module.id}`, label: module.name || module.id, id: module.id, enabled: module.enabled === true })),
-      ]} />
+      <ModuleScopePicker t={t} value={moduleFilter ? `module:${moduleFilter}` : allModules ? 'all' : 'active'} onChange={changeModuleScope}
+        modules={modules} editingModule={selected?.moduleId} onEnable={setModuleEnabled} enableDisabled={enableDisabled}
+        open={modulePickerOpen} setOpen={setModulePickerOpen} feedback={enableFeedback} />
       <Button ref={listToggle} shape="pill" variant="outline" aria-controls={listPaneId} aria-expanded={showList} onClick={showList ? closeList : openList}>
         <span className={css.disclosureMarker} aria-hidden="true" />{t('rules.list')}
       </Button>
@@ -467,17 +577,12 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       <div role="status">{orderFeedback}</div>
       <PublicationNotice publication={order.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         onRetry={() => { void order.retryPublication() }} />
-      <PublicationNotice publication={enablePublication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
-        onRetry={() => { void store.moduleActions.retryEnable().then(result => {
-          if (result.ok) setEnablePublication(result.publication)
-          else setEnablePublication({ pending: true, error: result.message })
-        }) }} />
+      {!modulePickerOpen && enableFeedback}
       <fieldset className={css.moduleParticipation}><legend>{t('rules.participatingModules')}</legend>
         {modules.map(module => <div key={module.id} className={css.row}>
           <span>{module.name || module.id}</span>
-          <Switch label={t('rules.source', { module: module.id })} checked={module.enabled === true}
-            disabled={modulePending !== undefined || order.busy || module.broken !== undefined || module.renderable === false}
-            onChange={enabled => { void setModuleEnabled(module.id, enabled) }} />
+          <Switch label={t('rules.moduleSwitchLabel', { name: module.name || module.id })} checked={module.enabled === true}
+            disabled={enableDisabled(module)} onChange={enabled => setModuleEnabled(module.id, enabled)} />
         </div>)}
       </fieldset>
     </>}
@@ -506,7 +611,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
             }}>
             <span aria-hidden="true">↗</span>
           </button>
-          {combination && orderEntry && moveButtons(orderEntry)}
+          {combination && id !== pinnedModule && orderEntry && moveButtons(orderEntry)}
           {combination && selectableWinner && <Button shape="pill" variant="outline" disabled={readOnly(id) || modulePending !== undefined || order.busy || orderBlocked.has(id)}
             onClick={() => {
               const rule = entry.value
@@ -526,6 +631,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {selected && <div className={css.ruleDetail}>
       <h2 ref={detailHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{selected.moduleId} / {selected.entry.value.id}</h2>
       <RuleCard key={selected.key} t={t} entry={selected.entry} draft={selected.draft} editor={selected.editor} meta={store.meta} source={selected.moduleId} moduleId={selected.moduleId} disabled={readOnly(selected.moduleId)}
+        moduleName={modules.find(module => module.id === selected.moduleId)?.name || selected.moduleId} moduleEnabled={enabledIds.has(selected.moduleId)} modulesEnabled={fields.modulesEnabled}
         expanded onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
         libraryOpen={libraryOpen} libraryId={libraryId} onCloseLibrary={restoreFocus => {
           setLibraryOpen(false)

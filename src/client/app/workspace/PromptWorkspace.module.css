@@ -70,6 +70,7 @@
 .surfaceNavigation { position: absolute; z-index: 30; inset: 12px 12px auto auto; max-inline-size: 8rem; }
 .surfaceNavigation > * { border: 1px solid #313844; border-radius: 8px; background: #181c23; box-shadow: 0 8px 24px #0003; }
 .moduleCenterEntry { min-block-size: 40px; }
+.moduleCenterEntry > svg { display: none; }
 .surfaceActions { position: fixed; inline-size: max-content; max-inline-size: calc(100% - 24px); padding: 10px; border: 1px solid #394452; border-radius: 10px; background: #181c23; color: #e7edf6; box-shadow: 0 8px 24px #0005; }
 .surfaceActions > button { display: block; margin-block: 4px; }
 @supports (position-area: block-end) { .surfaceActions[popover] { inset: auto; margin: 0; position-area: block-end span-inline-start; position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline; } }
@@ -80,6 +81,11 @@
 .surfaceDrawer { overflow: auto; padding: 16px; border: 1px solid #313844; border-radius: 12px; background: #181c23; box-shadow: 0 8px 24px #0005; overscroll-behavior: contain; }
 .surfaceFeedback { position: absolute; inset: 100px auto auto 24px; padding: 16px; background: #181c23; border: 1px solid #313844; border-radius: 10px; }
 @container workspace (width < 56rem) { .surfaceNavigation { inset: 8px 8px auto auto; max-inline-size: 7rem; } }
+@container workspace (width < 30rem) {
+  .moduleCenterEntry { inline-size: 44px; min-block-size: 44px; }
+  .moduleCenterEntry > svg { display: block; }
+  .moduleCenterEntry > span { display: none; }
+}
 .canvas:has([data-rule-editor]) { overflow: clip; scrollbar-gutter: auto; }
 .canvas > div:has([data-rule-editor]) { height: 100%; padding: 0; }
 .canvas > div:has([data-rule-editor]) > section { height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; }

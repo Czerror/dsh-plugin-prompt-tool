@@ -33,6 +33,9 @@ export function RuleCard(props: {
   source?: string
   /** 本卡的主语（它所属的模块）：层内设置按它取，不从任何会话状态兜底。 */
   moduleId: string
+  moduleName: string
+  moduleEnabled: boolean
+  modulesEnabled: boolean
   diagnostics?: readonly RuleDiagnosticRecord[]
   leaveSave?: MutableRefObject<(() => void) | undefined>
   nodeBrowse?: Map<string, string>
@@ -46,7 +49,8 @@ export function RuleCard(props: {
   onActivate?: () => void
   renderSettings?: (rule: RuleDefinition, moduleId: string) => ReactNode
 }): ReactNode {
-  const { t, entry, editor, draft } = props, rule = entry.value
+  const { t, entry, editor, draft, moduleName, moduleEnabled, modulesEnabled } = props, rule = entry.value
+  const ruleName = rule.name || rule.id
   const panelId = useId()
   const [confirming, setConfirming] = useState(false)
   const [discarding, setDiscarding] = useState(false)
@@ -62,7 +66,7 @@ export function RuleCard(props: {
     if (!element || !header) return
     const measure = () => element.style.setProperty('--pt-canvas-top', `${(header as HTMLElement).offsetTop + header.getBoundingClientRect().height + 16}px`)
     const observer = new ResizeObserver(measure)
-    observer.observe(header); measure()
+    observer.observe(header); observer.observe(element); measure()
     return () => observer.disconnect()
   }, [])
   useLayoutEffect(() => {
@@ -131,33 +135,59 @@ export function RuleCard(props: {
     + t(rule.enabled === false || props.disabled ? 'rules.identity.unverified' : rule.executionScope === 'process' && availability === 'rules.identity.matched' ? targets.has('host:command-confine') ? 'rules.commandReady' : 'rules.processReady' : availability)
   const activationPending = draft.activationPending === rule.id
   const publication = draft.activationPending === undefined && draft.publicationPending
+  const dirty = rulesDirty(draft, entry.key)
+  const enableRuleLabel = t('rules.enableRuleLabel')
   const saveStatus = draft.pending ? t('rules.savePending')
     : draft.busy === 'save' ? t('rules.saving')
       : hasRuleFields(draft, entry.key) ? t('rules.fieldsPending')
         : draft.remote ? t('rules.conflict') : !publication && !activationPending ? draft.error : undefined
   const retry = editor.retryKind
-  return <AutoSaveSelection.Provider value={save}><section ref={surface} id={panelId} className={css.canvasSurface} aria-label={rule.name || rule.id}
+  return <AutoSaveSelection.Provider value={save}><section ref={surface} id={panelId} className={css.canvasSurface} aria-label={ruleName}
     data-rule-id={rule.id} data-rule-key={entry.key}
     onCompositionStart={() => { editor.setComposing(entry.key, true); autosave.onCompositionStart() }}
     onCompositionEnd={() => { editor.setComposing(entry.key, false); autosave.onCompositionEnd() }}
     >
     <header className={css.canvasTopbar}>
       <div className={css.contextCluster}>
-      <div className={css.canvasIdentity} title={`${props.source} / ${rule.id} · ${summary}`}><strong>{rule.name || rule.id}</strong><small role="status" data-clean={!saveStatus && !publication && !rulesDirty(draft, entry.key) || undefined}>{saveStatus ?? t(rulesDirty(draft, entry.key) ? 'rules.dirty' : 'rules.clean')}{publication ? ' · ' + t('publication.pending') : ''}</small></div>
+        <div className={css.canvasIdentity} title={`${props.moduleId} / ${rule.id} · ${summary}`}>
+          <span>{moduleName}</span>
+          <span aria-hidden="true">›</span>
+          <strong>{ruleName}</strong>
+        </div>
+        <div className={css.canvasStates}>
+          <small className={css.moduleState} data-enabled={moduleEnabled}>{t(moduleEnabled ? 'rules.moduleIsEnabled' : 'rules.moduleIsDisabled')}</small>
+          {!modulesEnabled && <small className={css.pausedState}>{t('rules.modulePaused')}</small>}
+          <small className={css.canvasSaveState} role="status" data-clean={!saveStatus && !publication && !dirty || undefined}>
+            {saveStatus ?? t(dirty ? 'rules.dirty' : 'rules.clean')}{publication ? ' · ' + t('publication.pending') : ''}
+          </small>
+        </div>
       </div>
       <div className={css.commandCluster}>
-      <span className={css.headerActions} data-rule-header-actions>{props.headerActions}<span className={css.switchLine}>
-      <AutoSaveSelection.Provider value={undefined}><Switch label={t('rules.enable', { name: rule.name || rule.id })} checked={rule.enabled !== false} disabled={disabled || hasRuleFields(draft, entry.key)} onChange={enabled => {
-        patch({ enabled }); void editor.submitRule(entry.key, enabled ? { activateRuleId: rule.id } : {}).then(() => { if (enabled) props.onActivate?.() })
-      }} /></AutoSaveSelection.Provider>
-      </span></span>
-      <Button variant="outline" shape="pill" aria-expanded={drawer === 'properties'} onClick={() => openDrawer('properties')}>{t('rules.ruleSettings')}</Button>
-      <Button variant="outline" shape="pill" aria-expanded={drawer === 'definition'} onClick={() => openDrawer('definition')}>{t('rules.definition')}</Button>
-      <Button variant="outline" shape="pill" disabled={disabled || hasRuleFields(draft, entry.key) || unsupported} onClick={save}>{t('rules.save')}</Button>
+        <span className={css.headerActions} data-rule-header-actions>
+          {props.headerActions}
+          <label className={css.ruleEnable}>
+            <AutoSaveSelection.Provider value={undefined}><Switch label={enableRuleLabel} checked={rule.enabled !== false} disabled={disabled || hasRuleFields(draft, entry.key)} onChange={enabled => {
+              patch({ enabled }); void editor.submitRule(entry.key, enabled ? { activateRuleId: rule.id } : {}).then(() => { if (enabled) props.onActivate?.() })
+            }} /></AutoSaveSelection.Provider>
+            <span>{enableRuleLabel}</span>
+          </label>
+        </span>
+        <HintTooltip label={t('rules.ruleSettings')}><span className={css.compactCommand}>
+          <Button variant="outline" shape="pill" aria-label={t('rules.ruleSettings')} aria-expanded={drawer === 'properties'} onClick={() => openDrawer('properties')}>
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M2 4h3m3 0h6M2 8h7m3 0h2M2 12h2m3 0h7M5 2.5v3M9 6.5v3M4 10.5v3" /></svg>
+            <span>{t('rules.ruleSettings')}</span>
+          </Button>
+        </span></HintTooltip>
+        <HintTooltip label={t('rules.definition')}><span className={css.compactCommand}>
+          <Button variant="outline" shape="pill" aria-label={t('rules.definition')} aria-expanded={drawer === 'definition'} onClick={() => openDrawer('definition')}>
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><path d="m5.5 4.5-3.5 3.5 3.5 3.5m5-7 3.5 3.5-3.5 3.5m-1-8-3 9" /></svg>
+            <span>{t('rules.definition')}</span>
+          </Button>
+        </span></HintTooltip>
+        <Button variant="outline" shape="pill" disabled={disabled || hasRuleFields(draft, entry.key) || unsupported} onClick={save}>{t('rules.save')}</Button>
       </div>
     </header>
     <div className={css.body} data-rule-editor>
-      <p className={css.saveStatus} role="status" aria-atomic="true">{saveStatus}</p>
       {(draft.pending || activationPending || (draft.error && !publication)) && <div className={css.row}>
         <Button shape="pill" variant="outline" disabled={draft.busy !== undefined} onClick={() => {
           if (draft.pending) void editor.reconcile(true)
