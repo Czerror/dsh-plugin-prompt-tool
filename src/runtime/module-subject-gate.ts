@@ -39,9 +39,9 @@ import {
 } from '../shared/bridge-contract.ts'
 import type { BridgeTransaction } from './bridge-transaction.ts'
 import { DECLARED_SECTIONS, moduleDeclarations } from '../host/module-declarations.ts'
-import { ModuleLayerSettingsError, readModuleLayerSettings } from '../host/module-layer-settings.ts'
+import { ModuleLayerSettingsError } from '../host/module-layer-settings.ts'
 import { isEditableModuleDir } from '../host/module-dirs.ts'
-import { loadModuleDefinition } from '../host/module-slices.ts'
+import { assertModuleDefinitionFormat } from '../host/module-slices.ts'
 import { ModuleWriteError } from '../host/module-write.ts'
 
 /** 写一次响应；事务的 `tx.write` 与门内判据共用这一个形态。 */
@@ -70,7 +70,7 @@ function guardEditableModuleDir(dir: string, write: GateWrite): boolean {
 /** 目标模块的层设置/规则形状；空目标没有形状可核。 */
 function guardModuleFormat(dir: string, write: GateWrite): boolean {
   if (dir.length === 0) return true
-  try { readModuleLayerSettings(loadModuleDefinition(dir).source) } catch (error) {
+  try { assertModuleDefinitionFormat(dir) } catch (error) {
     if (writeLayerSettingsError(write, error)) return false
   }
   return true

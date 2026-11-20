@@ -291,13 +291,42 @@ function shiftRanges(node: unknown, from: number, delta: number): void {
   else if (isSeq(node)) for (const item of node.items) shiftRanges(item, from, delta)
 }
 
-/** 纯读完整源；无效源绝不会触发分解或恢复。 */
-export function loadModuleDefinition(directory: string, takeOwnership = false): ModuleDefinitionSnapshot {
+function readDefinitionText(directory: string): { dir: string; text: string } {
   let dir: string
   try { dir = canonicalDirectory(directory); assertModuleId(basename(dir)); assertPlain(join(dir, MODULE_DEFINITION_FILE)) }
   catch (error) { throw new ModuleWriteError(String((error as Error).message ?? error)) }
   const bytes = readFileSync(join(dir, MODULE_DEFINITION_FILE))
   const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  return { dir, text }
+}
+
+// 模块实例仅保留最近一份实际源的格式摘要；不保留或外泄可变 AST，内容/依赖变化即失效。
+let lastFormat: { dir: string; text: string; dependencies: ReadonlyMap<string, string> } | undefined
+
+/** 归属门只核完整定义与层设置，不需要取得可编辑快照。每次仍读取实际字节与依赖。 */
+export function assertModuleDefinitionFormat(directory: string): void {
+  const { dir, text } = readDefinitionText(directory)
+  if (lastFormat?.dir === dir && lastFormat.text === text) {
+    let current = true
+    for (const [file, revision] of lastFormat.dependencies) {
+      assertNoModuleLinks(file)
+      if (revisionOf(readFileSync(file)) !== revision) { current = false; break }
+    }
+    if (current) return
+  }
+  let snapshot: ModuleDefinitionSnapshot | undefined
+  if (lastVerified?.dir === dir && lastVerified.text === text) {
+    try { projectedSnapshot(lastVerified); snapshot = lastVerified }
+    catch (error) { if (!(error instanceof ModuleWriteError) || error.code !== 'rules-conflict') throw error }
+  }
+  snapshot ??= snapshotFromText(dir, text)
+  readModuleLayerSettings(snapshot.source)
+  lastFormat = { dir, text, dependencies: new Map(projections.get(snapshot)!.dependencies) }
+}
+
+/** 纯读完整源；无效源绝不会触发分解或恢复。 */
+export function loadModuleDefinition(directory: string, takeOwnership = false): ModuleDefinitionSnapshot {
+  const { dir, text } = readDefinitionText(directory)
   if (lastVerified?.dir === dir && lastVerified.text === text) {
     try {
       projectedSnapshot(lastVerified)

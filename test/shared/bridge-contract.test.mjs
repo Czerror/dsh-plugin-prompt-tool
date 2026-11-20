@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fakeReq, fakeRes, handlerTable, isolatedHome } from '../fixtures/host-harness.mjs'
@@ -192,6 +192,17 @@ test('契约：moduleName 的公开主语与身份安全边界', async () => {
   await handlers.get(path)(fakeReq({ body: { name: '过期写入', expectedRevision: initial.revision, expectedModuleId: 'module-name-subject' }, headers: { 'x-module-id': 'module-name-subject' } }), stale)
   assert.equal(stale.status, 409)
   assert.equal(JSON.parse(stale.body).code, 'module-name-conflict')
+  const definitionFile = join(subjectDir, 'module.yml')
+  const savedBytes = readFileSync(definitionFile)
+  const invalidFormat = fakeRes()
+  writeFileSync(definitionFile, 'id: module-name-subject\nname: external\nmodules: []\nrules: []\nlayerSettings: []\n')
+  await handlers.get(path)(fakeReq({ body: {}, headers: { 'x-module-id': 'module-name-subject' } }), invalidFormat)
+  assert.equal(invalidFormat.status, 400, '已通过格式检查的同目录仍拒绝外部非法层设置')
+  assert.equal(JSON.parse(invalidFormat.body).code, 'module-layer-settings-invalid')
+  writeFileSync(definitionFile, savedBytes)
+  const restored = fakeRes()
+  await handlers.get(path)(fakeReq({ body: {}, headers: { 'x-module-id': 'module-name-subject' } }), restored)
+  assert.equal(restored.status, 200, '外部修正后恢复，不保留负缓存')
 })
 
 test('契约：全部桥路径拒绝非 loopback，无一条绕过事务', async () => {

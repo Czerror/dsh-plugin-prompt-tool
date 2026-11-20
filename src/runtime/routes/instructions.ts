@@ -224,22 +224,17 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
             return
           }
           if (candidateRevision === undefined) throw new Error('紧凑保存事务没有返回已验证版本')
-          const committed = loadModuleDefinition(dir)
-          if (committed.revision !== candidateRevision) {
-            tx.write(409, { ok: false, code: 'rules-conflict', message: '保存后模块再次变化；请重新读取，当前草稿仍保留' })
-            return
-          }
-          const saved = committed.rules.find(rule => rule.id === edit.rule!.id)
+          const saved = candidate.rules.find(rule => rule.id === edit.rule!.id)
           if (!saved) {
             tx.write(409, { ok: false, code: 'rules-conflict', message: '目标规则保存后不存在；请重新读取，当前草稿仍保留' })
             return
           }
           const compact: CompactRulesSnapshot = {
             rule: saved,
-            ruleRevision: committed.revisions.rules[saved.id]!,
-            definitionRevision: committed.revision,
-            settingsRevision: committed.revisions.settings,
-            variablesRevision: committed.revisions.variables,
+            ruleRevision: candidate.revisions.rules[saved.id]!,
+            definitionRevision: candidateRevision,
+            settingsRevision: candidate.revisions.settings,
+            variablesRevision: candidate.revisions.variables,
             meta: await ruleEditorMeta(),
             ...publication,
           }
