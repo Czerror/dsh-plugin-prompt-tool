@@ -1,6 +1,6 @@
 export const RULES_ZH = {
   'rules.editNamed': '编辑规则「{name}」',
-  'canvas.controls': '画布视图', 'canvas.zoomOut': '缩小', 'canvas.zoomIn': '放大', 'canvas.fit': '适应画布',
+  'canvas.controls': '画布视图', 'canvas.zoom': '缩放', 'canvas.zoomOut': '缩小', 'canvas.zoomIn': '放大', 'canvas.fit': '适应画布',
   'canvas.keys': '画布快捷键', 'canvas.pan': '聚焦画布后平移', 'canvas.panFast': '配合方向键加速平移', 'canvas.reset': '复位节点与视角',
   'canvas.legend': '图例', 'canvas.condition': '条件', 'canvas.order': '同点次序', 'canvas.orderHint': '同一执行点内的动作次序', 'canvas.in': '入口', 'canvas.out': '出口',
   'rules.definition': '定义',
@@ -118,7 +118,7 @@ export const RULES_ZH = {
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.editNamed': 'Edit rule “{name}”',
-  'canvas.controls': 'Canvas view', 'canvas.zoomOut': 'Zoom out', 'canvas.zoomIn': 'Zoom in', 'canvas.fit': 'Fit to view',
+  'canvas.controls': 'Canvas view', 'canvas.zoom': 'Zoom', 'canvas.zoomOut': 'Zoom out', 'canvas.zoomIn': 'Zoom in', 'canvas.fit': 'Fit to view',
   'canvas.keys': 'Canvas shortcuts', 'canvas.pan': 'Pan the focused canvas', 'canvas.panFast': 'Hold with arrow keys to pan faster', 'canvas.reset': 'Reset positions and view',
   'canvas.legend': 'Legend', 'canvas.condition': 'Condition', 'canvas.order': 'Step order', 'canvas.orderHint': 'Action order within the same execution point', 'canvas.in': 'Input', 'canvas.out': 'Output',
   'rules.definition': 'Definition',

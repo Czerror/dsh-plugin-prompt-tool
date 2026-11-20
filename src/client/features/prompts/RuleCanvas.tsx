@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { PromptToolTranslate } from '../../locales.ts'
 import css from './rule-canvas.module.css'
 
@@ -59,6 +59,26 @@ export function RuleCanvas(props: RuleCanvasProps) {
   const keysId = useId(), legendId = useId()
   const keysButton = useRef<HTMLButtonElement>(null)
   const legendButton = useRef<HTMLButtonElement>(null)
+  const toolbar = useRef<HTMLDivElement>(null)
+  const activeControl = useRef<HTMLButtonElement>()
+  const nativeFocusGroup = typeof HTMLElement !== 'undefined' && 'focusGroup' in HTMLElement.prototype
+  const visibleControls = (bar: HTMLDivElement) => Array.from(bar.querySelectorAll('button'))
+    .filter(button => button.getClientRects().length > 0)
+  const setActiveControl = (bar: HTMLDivElement, target?: HTMLButtonElement) => {
+    const buttons = visibleControls(bar)
+    const next = target && buttons.includes(target) ? target : buttons[0]
+    activeControl.current = next
+    for (const button of bar.querySelectorAll('button')) button.tabIndex = button === next ? 0 : -1
+  }
+  useLayoutEffect(() => {
+    const bar = toolbar.current
+    if (nativeFocusGroup || !bar) return
+    const sync = () => setActiveControl(bar, activeControl.current)
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(bar)
+    return () => observer.disconnect()
+  }, [nativeFocusGroup])
   const { t } = props
   const zoom = (delta: number) => {
     const viewport = stage.current
@@ -175,24 +195,44 @@ export function RuleCanvas(props: RuleCanvasProps) {
       {props.children}
     </div>
     </div>
-    <div className={css.dock} role="group" aria-label={t('canvas.controls')} onPointerDown={event => event.stopPropagation()}
+    <div className={css.dock} onPointerDown={event => event.stopPropagation()}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) { setKeysOpen(false); setLegendOpen(false) } }}
       onKeyDown={event => {
-        if (event.key !== 'Escape' || (!keysOpen && !legendOpen)) return
+        if (event.key !== 'Escape' || event.nativeEvent.isComposing || (!keysOpen && !legendOpen)) return
         event.stopPropagation()
         ;(keysOpen ? keysButton : legendButton).current?.focus()
         setKeysOpen(false); setLegendOpen(false)
       }}>
-      <button type="button" aria-label={t('canvas.zoomOut')} title={t('canvas.zoomOut')} disabled={props.view.scale <= .35} onClick={() => zoom(-.1)}>−</button>
+      <div ref={toolbar} className={css.dockToolbar} role="toolbar" aria-label={t('canvas.controls')}
+        {...{ focusgroup: 'toolbar wrap' }} onFocus={event => {
+          if (!nativeFocusGroup && event.target instanceof HTMLButtonElement) setActiveControl(event.currentTarget, event.target)
+        }} onKeyDown={event => {
+          if (nativeFocusGroup || event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey) return
+          const { key, currentTarget, target } = event
+          if (key !== 'Home' && key !== 'End' && key !== 'ArrowLeft' && key !== 'ArrowRight') return
+          const buttons = visibleControls(currentTarget)
+          if (!(target instanceof HTMLButtonElement) || buttons.length === 0) return
+          const direction = getComputedStyle(currentTarget).direction === 'rtl' ? -1 : 1
+          const index = buttons.indexOf(target)
+          const next = key === 'Home' ? 0 : key === 'End' ? buttons.length - 1
+            : (index + (key === 'ArrowRight' ? direction : -direction) + buttons.length) % buttons.length
+          event.preventDefault()
+          buttons[next]?.focus()
+        }}>
+      <div className={css.dockGroup} role="group" aria-label={t('canvas.zoom')}>
+      <button type="button" aria-label={t('canvas.zoomOut')} title={t('canvas.zoomOut')} aria-disabled={props.view.scale <= .35} onClick={() => { if (props.view.scale > .35) zoom(-.1) }}>−</button>
       <span className={css.percent}>{Math.round(props.view.scale * 100)}%</span>
-      <button type="button" aria-label={t('canvas.zoomIn')} title={t('canvas.zoomIn')} disabled={props.view.scale >= 2.5} onClick={() => zoom(.1)}>+</button>
+      <button type="button" aria-label={t('canvas.zoomIn')} title={t('canvas.zoomIn')} aria-disabled={props.view.scale >= 2.5} onClick={() => { if (props.view.scale < 2.5) zoom(.1) }}>+</button>
       <button type="button" aria-label={t('canvas.fit')} title={t('canvas.fit')} onClick={props.onFit}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4m6 0h4v4m0 6v4h-4m-6 0H3v-4"/></svg></button>
-      <button type="button" ref={keysButton} className={css.keysButton} aria-label={t('canvas.keys')} title={t('canvas.keys')} aria-expanded={keysOpen} aria-controls={keysId} onClick={() => { setKeysOpen(!keysOpen); setLegendOpen(false) }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 5.5h16v9H2zM5 8.5h1m2 0h1m2 0h1m2 0h1m-9 3h8"/></svg></button>
+      </div>
+      <span className={css.dockSeparator} role="separator" aria-orientation="vertical" />
+      <button type="button" ref={keysButton} aria-label={t('canvas.keys')} title={t('canvas.keys')} aria-expanded={keysOpen} aria-controls={keysId} onClick={() => { setKeysOpen(!keysOpen); setLegendOpen(false) }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 5.5h16v9H2zM5 8.5h1m2 0h1m2 0h1m2 0h1m-9 3h8"/></svg></button>
+      <button type="button" ref={legendButton} className={css.legendToggle} aria-controls={legendId} aria-expanded={legendOpen} onClick={() => { setLegendOpen(!legendOpen); setKeysOpen(false) }}>{t('canvas.legend')}</button>
+      </div>
       <div className={css.keysPanel} id={keysId} hidden={!keysOpen}>
         <p><kbd>↑ ↓ ← →</kbd> {t('canvas.pan')}</p><p><kbd>Shift</kbd> {t('canvas.panFast')}</p>
         <button type="button" onClick={() => { props.onViewChange({ scale: .8, x: 260, y: 110, positions: {} }); setKeysOpen(false); keysButton.current?.focus() }}>{t('canvas.reset')}</button>
       </div>
-      <button type="button" ref={legendButton} className={css.legendToggle} aria-controls={legendId} aria-expanded={legendOpen} onClick={() => { setLegendOpen(!legendOpen); setKeysOpen(false) }}>{t('canvas.legend')}</button>
       <div className={css.legend} id={legendId} data-open={legendOpen || undefined} aria-label={t('canvas.legend')}>
         <span className={css.condition}><i />{t('canvas.condition')}</span><span className={css.then}><i />THEN</span><span className={css.else}><i />ELSE</span>
         <span className={css.order} title={t('canvas.orderHint')}><i />{t('canvas.order')}</span>
