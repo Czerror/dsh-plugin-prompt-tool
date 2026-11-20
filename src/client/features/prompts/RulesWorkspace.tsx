@@ -171,7 +171,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const diagnosticOwner = owners.find(owner => owner.moduleId === diagnosticTarget?.moduleId)
   const diagnosticEntry = diagnosticOwner?.draft.entries.find(entry => !entry.deleted && (entry.previousId ?? entry.value.id) === diagnosticTarget?.ruleId)
   const diagnosticKey = diagnosticEntry && diagnosticOwner && configIdentityKey({ moduleId: diagnosticOwner.moduleId, configId: diagnosticEntry.key })
-  const pendingDiagnostic = useRef(diagnosticTarget)
+  const handledDiagnostic = useRef<RuleDiagnosticTarget>()
   ownersRef.current = owners
   const revisions = JSON.stringify(owners.map(owner => [owner.moduleId, owner.draft.revisions?.settings]))
   const [discard, setDiscard] = useState<string>()
@@ -330,10 +330,13 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const saveSelected = useRef<() => void>()
   const scrollRestored = useRef(false)
   useLayoutEffect(() => {
-    if (pendingDiagnostic.current && diagnosticKey !== undefined) {
-      pendingDiagnostic.current = undefined
+    if (diagnosticTarget === undefined) handledDiagnostic.current = undefined
+    else if (diagnosticKey !== undefined && handledDiagnostic.current !== diagnosticTarget) {
       if (expanded !== diagnosticKey) select(diagnosticKey)
-      if (diagnosticTarget?.actionId === undefined) focus.current = 'detail'
+      else {
+        handledDiagnostic.current = diagnosticTarget
+        if (diagnosticTarget.actionId === undefined) focus.current = 'detail'
+      }
     }
     if (list.current?.getClientRects().length && !scrollRestored.current && entries.length > 0) {
       list.current.scrollTop = props.browse?.rulesScroll ?? 0
@@ -524,9 +527,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       <h2 ref={detailHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{selected.moduleId} / {selected.entry.value.id}</h2>
       <RuleCard key={selected.key} t={t} entry={selected.entry} draft={selected.draft} editor={selected.editor} meta={store.meta} source={selected.moduleId} moduleId={selected.moduleId} disabled={readOnly(selected.moduleId)}
         expanded onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
-        libraryOpen={libraryOpen} libraryId={libraryId} onCloseLibrary={() => {
+        libraryOpen={libraryOpen} libraryId={libraryId} onCloseLibrary={restoreFocus => {
           setLibraryOpen(false)
-          libraryToggle.current?.focus({ preventScroll: true })
+          if (restoreFocus) libraryToggle.current?.focus({ preventScroll: true })
         }}
         diagnosticActionId={diagnosticKey === selected.key ? diagnosticTarget?.actionId : undefined}
         onRuleEdit={props.onRuleEdit}

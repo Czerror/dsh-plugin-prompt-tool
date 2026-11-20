@@ -61,8 +61,18 @@
   .contextCluster, .commandCluster { padding: 8px; }
   .canvasIdentity { flex-basis: 100%; }
   .canvasSurface .canvasLibrary:not([hidden]) { max-block-size: calc(100% - var(--pt-canvas-top, 148px) - 96px); }
-  .canvasSurface[data-rule-id] .ruleCanvas[data-node-open] > .steps { display: none; }
+  .canvasSurface .steps { --pt-stacked-panes: 1; }
+  .canvasSurface .ruleCanvas[data-node-open] > .steps { display: flex; }
+  .canvasSurface .ruleCanvas[data-node-open] .canvasLayout > :not(.canvasLibrary) { display: none; }
   .canvasSurface .ruleProperties { inset-inline: 8px; inline-size: auto; }
+  .canvasSurface .ruleCanvas[data-node-open]:has([data-library-open]) .ruleProperties {
+    inset-block-end: calc(8px + (100% - var(--pt-canvas-top, 110px)) / 2);
+  }
+  .canvasSurface .ruleCanvas[data-node-open] .canvasLibrary:not([hidden]) {
+    inset: calc((100% + var(--pt-canvas-top, 110px)) / 2) 8px 8px;
+    inline-size: auto;
+    max-block-size: none;
+  }
 }
 @container rule-workspace (width >= 56rem) {
   .canvasSurface .ruleCanvas[data-node-open] > .steps { display: flex; }

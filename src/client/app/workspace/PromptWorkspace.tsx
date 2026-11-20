@@ -54,10 +54,14 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     ruleBrowse.moduleFilter = undefined
     ruleBrowse.combination = false
     browse.diagnosticReturn = target
+    auxiliaryTrigger.current = undefined
+    ruleBrowse.publish()
     changePage('features')
   }
   const returnToDiagnostics = (): void => {
-    configPageBrowse(browse, 'features').diagnosticTarget = undefined
+    const ruleBrowse = configPageBrowse(browse, 'features')
+    ruleBrowse.diagnosticTarget = undefined
+    ruleBrowse.publish()
     changePage('modules')
   }
   const finishDiagnosticReturn = useCallback(() => { browse.diagnosticReturn = undefined }, [browse])

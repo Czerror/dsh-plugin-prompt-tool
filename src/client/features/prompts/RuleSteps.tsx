@@ -211,7 +211,7 @@ export function RuleStepsPanel(props: {
   browseKey: string
   libraryOpen: boolean
   libraryId: string
-  onCloseLibrary: () => void
+  onCloseLibrary: (restoreFocus: boolean) => void
   onBrowseChange?: () => void
   diagnosticActionId?: string
   disabled?: boolean
@@ -227,9 +227,8 @@ export function RuleStepsPanel(props: {
   const [addActionKind, setAddActionKind] = useState('inject-text')
   const [addConditionKind, setAddConditionKind] = useState('')
   const [activeCreation, setActiveCreation] = useState(`${props.fieldKey}:then`)
-  const [localSelectedNode, selectNode] = useState(diagnosticNode ?? props.nodeBrowse?.get(props.browseKey))
-  const [initialDiagnostic, setInitialDiagnostic] = useState(diagnosticNode)
-  const selectedNode = initialDiagnostic ?? (props.onBrowseChange ? props.nodeBrowse?.get(props.browseKey) : localSelectedNode)
+  const [localSelectedNode, selectNode] = useState(props.nodeBrowse?.get(props.browseKey))
+  const selectedNode = props.onBrowseChange ? props.nodeBrowse?.get(props.browseKey) : localSelectedNode
   const [propertyTarget, setPropertyTarget] = useState<HTMLDivElement | null>(null)
   const [localView, setLocalView] = useState<RuleCanvasView>({ x: 260, y: 110, scale: 0.8, positions: {} })
   const view = props.canvasBrowse?.get(props.browseKey) ?? localView
@@ -275,8 +274,18 @@ export function RuleStepsPanel(props: {
   const structureHeading = useRef<HTMLHeadingElement>(null)
   const propertyHeading = useRef<HTMLHeadingElement>(null)
   const nodeButton = useRef<HTMLButtonElement | null>(null)
-  const focusPane = useRef<'structure' | 'properties' | undefined>(diagnosticNode ? 'properties' : undefined)
+  const focusPane = useRef<'structure' | 'properties'>()
+  const handledDiagnosticNode = useRef<string>()
   const structureRef = useRef<HTMLDivElement>(null)
+  const libraryNode = useRef<string>()
+  useLayoutEffect(() => {
+    const changed = selectedNode !== libraryNode.current
+    libraryNode.current = selectedNode
+    if (changed && selectedNode && libraryOpen && structureRef.current
+      && getComputedStyle(structureRef.current).getPropertyValue('--pt-stacked-panes').trim() === '1') {
+      props.onCloseLibrary(false)
+    }
+  })
   const revealedNode = useRef<string>()
   useLayoutEffect(() => {
     if (!selectedNode) { revealedNode.current = undefined; return }
@@ -299,9 +308,16 @@ export function RuleStepsPanel(props: {
     else props.nodeBrowse?.set(props.browseKey, path)
     if (props.onBrowseChange) props.onBrowseChange()
     else selectNode(path)
-    setInitialDiagnostic(undefined)
   }
   useLayoutEffect(() => {
+    if (diagnosticNode !== handledDiagnosticNode.current) {
+      handledDiagnosticNode.current = diagnosticNode
+      if (diagnosticNode !== undefined) {
+        lastNodeKey.current = diagnosticNode
+        focusPane.current = 'properties'
+        if (diagnosticNode !== selectedNode) { select(diagnosticNode); return }
+      }
+    }
     if (focusPane.current === 'properties') propertyHeading.current?.focus()
     if (focusPane.current === 'structure') {
       const previous = lastNodeKey.current === undefined ? undefined
@@ -460,7 +476,7 @@ export function RuleStepsPanel(props: {
     <section id={libraryId} className={css.canvasLibrary} hidden={!libraryOpen} aria-label={t('rules.nodeLibrary')} onKeyDown={event => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
       event.stopPropagation()
-      props.onCloseLibrary()
+      props.onCloseLibrary(true)
     }}>
       <header className={css.libraryHeading}><strong>{t('rules.nodeLibrary')}</strong></header>
       <div className={css.libraryBody}>

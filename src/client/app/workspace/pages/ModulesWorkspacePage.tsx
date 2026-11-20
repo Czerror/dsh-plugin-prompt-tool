@@ -43,7 +43,7 @@ export function ModulesWorkspacePage(props: {
             : snapshot.status === 'ready' ? props.t('diagnostics.completed') : props.t('diagnostics.never')
   return <>
     <ModulesPage {...props} />
-    <details><summary>{props.t('diagnostics.title')}</summary><section className={css.card} aria-label={props.t('diagnostics.title')}>
+    <details ref={details => { if (details && props.returnTarget) details.open = true }}><summary>{props.t('diagnostics.title')}</summary><section className={css.card} aria-label={props.t('diagnostics.title')}>
       <header className={css.header}>
         <div className={css.intro}><h2>{props.t('diagnostics.title')}</h2><p>{props.t(sessionId === undefined ? 'diagnostics.noSession' : 'diagnostics.hint')}{sessionId === undefined ? '' : ` · ${sessionId}`}</p></div>
         <Button className={css.run} shape="pill" variant="primary" aria-busy={snapshot.busy} disabled={snapshot.busy} onClick={() => { void props.diagnostics.run(sessionId) }}>

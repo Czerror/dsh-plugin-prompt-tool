@@ -21,9 +21,12 @@ export function DiagnosticsPanel(props: {
   useLayoutEffect(() => {
     if (props.returnTarget) {
       if (records.current) records.current.open = true
-      const target = returnButton.current ?? heading.current
-      target?.focus()
-      props.onReturnFocus?.()
+      const frame = requestAnimationFrame(() => {
+        const target = returnButton.current ?? heading.current
+        target?.focus()
+        props.onReturnFocus?.()
+      })
+      return () => cancelAnimationFrame(frame)
     }
   }, [props.returnTarget, props.onReturnFocus])
   const time = snapshot.diagnosedAt === undefined ? '' : new Date(snapshot.diagnosedAt).toLocaleString()

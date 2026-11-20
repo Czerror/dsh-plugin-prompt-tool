@@ -40,7 +40,7 @@ export function RuleCard(props: {
   onBrowseChange?: () => void
   libraryOpen: boolean
   libraryId: string
-  onCloseLibrary: () => void
+  onCloseLibrary: (restoreFocus: boolean) => void
   diagnosticActionId?: string
   onRuleEdit?: () => void
   onActivate?: () => void
