@@ -279,8 +279,8 @@ export const ModulePickerCards = memo(function ModulePickerCards(props: {
           aria-pressed={option.value === status} onClick={() => setStatus(option.value)}>{option.label}</Button>)}
       </div>
       <div className={css.toolbar}>
-        <Button shape="pill" variant="primary" size="sm" onClick={() => setPickerOpen(true)}>{t('moduleSwitcher.new')}</Button>
-        <Button shape="pill" variant="outline" size="sm" onClick={() => setImportOpen(true)}>{t('assetImport.moduleTitle')}</Button>
+        <Button shape="pill" variant="primary" size="sm" aria-label={t('moduleSwitcher.new')} title={t('moduleSwitcher.new')} onClick={() => setPickerOpen(true)}>{t('configList.create')}</Button>
+        <Button shape="pill" variant="outline" size="sm" aria-label={t('assetImport.moduleTitle')} title={t('assetImport.moduleTitle')} onClick={() => setImportOpen(true)}>{t('canvas.import')}</Button>
       </div>
       <div className={css.cards}>
         {visibleModules.length === 0

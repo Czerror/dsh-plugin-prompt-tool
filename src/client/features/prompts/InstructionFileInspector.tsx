@@ -75,14 +75,14 @@ export function InstructionFileInspector({ store, t, config, renderInstructionSe
       <textarea id={textId} className={css.text} value={config.text ?? ''} spellCheck={false} readOnly={isReadOnly}
         onChange={event => store.patchInstructionText(fileId, event.currentTarget.value)} />
       <div className={css.fileActions}>
-        <span role="status" aria-atomic="true">{status}</span>
+        {renderInstructionSettings?.(config)}
         {isReadOnly ? <Button ref={reloadButton} variant="outline" disabled={config.contentSaving}
           onClick={() => { if (config.contentDirty) setConfirmReload(true); else void store.reloadInstructionFile(fileId) }}>{t('card.reloadFile')}</Button>
           : <Button variant="outline" disabled={!config.contentDirty || config.contentSaving} onClick={autosave.flush}>{t('card.saveFile')}</Button>}
+        <span className={css.fileStatus} role="status" aria-atomic="true">{status}</span>
       </div>
       {config.contentMessage && <p role="alert">{config.contentMessage}</p>}
       {config.contentConflict && <p>{t('card.fileConflictDetail')}</p>}
-      {renderInstructionSettings?.(config)}
     </div>
     {confirmReload && <ConfirmDialog title={t('card.reloadTitle', { name })} description={t('card.reloadDescription')}
       confirmLabel={t('card.reloadFile')} cancelLabel={t('card.cancel')} failureMessage={t('card.operationFailed')}

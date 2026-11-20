@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { RuleDefinition } from '../../../shared/rules.ts'
-import { MODULE_CAPABILITIES, isModuleCapabilityDeclared } from '../../../shared/engine-capabilities.ts'
+import type { InjectionPoint } from '../../../shared/engine-capabilities.ts'
 import type { ModuleConfigOrderEntry } from '../../../shared/module-config-order.ts'
 import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { DraftsPort, InstructionFilesPort, ModuleActionsPort, ModuleFactsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
@@ -13,7 +13,7 @@ import { configPositionKey, reorderToView, sameConfigPosition } from '../../data
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import { ruleFacts, type RuleFacts } from '../../data/rule-facts.ts'
-import type { LayerCardView } from '../../data/layer-cards.ts'
+import { isModuleSettingsCard, moduleSettingsLayers, toolSettingsDeclared, type LayerCardView } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { CanvasChoiceContext, MenuSelect } from '../../ui/MenuSelect.tsx'
@@ -25,6 +25,7 @@ import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { ModulePickerCards } from '../modules/ModuleSwitcher.tsx'
 import type { WorkspaceSidebar } from '../../app/workspace/workspace-browse-state.ts'
 import { IconChevronDownOutlineRegular, IconCloseFillRegular } from '../../ui/icons.tsx'
+import { ActivityIcon, BlocksIcon, LibraryBigIcon, ListChecksIcon, PanelLeftCloseIcon } from './canvas-sidebar-icons.tsx'
 import { InstructionFileInspector } from './InstructionFileInspector.tsx'
 import { InstructionCanvas, type CanvasInstructionFile } from './RuleCanvas.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
@@ -101,7 +102,7 @@ export interface RulesWorkspaceProps {
   hasLayerSettings?: (layer: string, moduleId: string) => boolean
   /** 某层某模块的卡片（不含 add 与 missingCapability）：规则卡与能力补卡的搜索共用。 */
   layerCards?: (layer: string, moduleId: string) => readonly LayerCardView[]
-  renderModuleSettings?: (moduleId: string, layer: string) => ReactNode
+  renderModuleSettings?: (moduleId: string, layer: string, onChooseToolTemplate: (moduleId: string, anchor: HTMLButtonElement) => void) => ReactNode
   /** 模板选择器按注入层分组。 */
   createItems?: readonly ModuleCreateItem[]
 }
@@ -114,7 +115,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const workspace = useRef<HTMLDivElement>(null)
   const saveInstruction = useRef<() => void>()
   const [fileSelection, setFileSelection] = useState<{ id: string; owner: typeof store.getInstructionPool; contextId: string | null }>()
-  const [settingsSelection, setSettingsSelection] = useState<{ moduleId: string; layer: string; owner: typeof store.editorDrafts }>()
+  const [settingsSelection, setSettingsSelection] = useState<{ moduleId: string; layer: InjectionPoint; owner: typeof store.editorDrafts }>()
   const settingsTitleId = useId()
   const settingsHeading = useRef<HTMLHeadingElement>(null)
   const settingsTrigger = useRef<HTMLButtonElement>()
@@ -217,8 +218,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const settingsModule = !combination && settingsSelection?.owner === store.editorDrafts && props.renderModuleSettings
     ? enabledModules.find(module => module.id === settingsSelection.moduleId && (!moduleFilter || module.id === moduleFilter)
       && module.broken === undefined && module.renderable !== false
-      && MODULE_CAPABILITIES.some(capability => capability.displayLayer === settingsSelection.layer
-        && isModuleCapabilityDeclared(capability.id, module.facts))) : undefined
+      && moduleSettingsLayers(module).has(settingsSelection.layer)) : undefined
   const activeSettings = settingsModule === undefined ? undefined : settingsSelection
   const settingOwners = showList && !combination ? new Map(owners.map(owner => [owner.moduleId, owner])) : undefined
   const moduleSettings = settingOwners === undefined || props.renderModuleSettings === undefined ? [] : enabledModules.flatMap(module => {
@@ -228,15 +228,12 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
     const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted)
       .map(entry => entry.value.layer))
-    const missing = MODULE_CAPABILITIES.filter(capability => isModuleCapabilityDeclared(capability.id, module.facts)
-      && !layers.has(capability.displayLayer))
-      .map(capability => capability.displayLayer)
-      .filter((layer, index, all) => all.indexOf(layer) === index)
-      .filter(layer => view === 'all' || view === layer)
+    const missing = [...moduleSettingsLayers(module)].filter(layer => !layers.has(layer) && (view === 'all' || view === layer))
     if (missing.length === 0) return []
     const name = `${module.name ?? ''} ${module.id}`.toLowerCase()
     const visible = missing.filter(layer => !query || name.includes(query)
-      || props.layerCards?.(layer, module.id)?.some((card) => card.kind === 'capability' && card.searchText.includes(query)))
+      || props.layerCards?.(layer, module.id)?.some((card) => card.kind !== 'param'
+        && isModuleSettingsCard(card, toolSettingsDeclared(module)) && card.searchText.includes(query)))
     return visible.length === 0 ? [] : [{ moduleId: module.id, name: module.name || module.id, layers: visible }]
   })
   useLayoutEffect(() => {
@@ -463,8 +460,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {enableRefreshFailed && <p role="alert" className={css.error}>{t('rules.moduleListRefreshFailed')}</p>}
     {enableRefreshFailed && enablePublication?.pending !== true &&
       <Button variant="outline" shape="pill" size="sm" disabled={modulePending || order.busy}
-        onClick={() => { void withEnableFocus(retryEnable) }}>{t('rules.refreshModules')}</Button>}
-    <PublicationNotice publication={enablePublication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+        aria-label={t('rules.refreshModules')} title={t('rules.refreshModules')} onClick={() => { void withEnableFocus(retryEnable) }}>{t('canvas.refresh')}</Button>}
+    <PublicationNotice publication={enablePublication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')} retryButtonLabel={t('publication.retryButton')}
       disabled={modulePending || order.busy}
       onRetry={() => { void withEnableFocus(retryEnable) }} />
   </div>
@@ -477,6 +474,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       }
     }
   }
+  const diagnosticsLabel = t(diagnosticTarget && props.onReturnToDiagnostics ? 'diagnostics.return' : 'rules.sidebarDiagnostics')
+  const libraryLabel = t(libraryOpen ? 'rules.hideLibrary' : 'rules.showLibrary')
   return <CanvasChoiceContext.Provider value={t}><section className={css.workspaceContainer} aria-label={t('rules.list')}>
     {diagnosticTarget && diagnosticKey === undefined && (diagnosticOwner === undefined || diagnosticOwner.draft.loaded || diagnosticOwner.draft.error) &&
       <p role="status">{t('diagnostics.targetUnavailable')}</p>}
@@ -491,24 +490,33 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         if (!target.closest('[data-open-module-settings]')) closeSettings(false)
       }}>
     <div ref={nav} className={css.moduleScope} data-canvas-obstacle="top" role="group" aria-label={t('rules.sidebar')}>
-      <Button aria-pressed={sidebar === 'modules'} aria-controls={modulePaneId} onClick={() => setSidebar(sidebar === 'modules' ? 'hidden' : 'modules')}>
-        {t('rules.sidebarModules')}{enableFeedback && <span className={css.modulePickerIndicator} aria-label={t('rules.moduleFeedback')}>!</span>}
-      </Button>
-      <Button aria-pressed={sidebar === 'diagnostics'} aria-controls={diagnosticPaneId}
-        title={diagnosticTarget ? t('diagnostics.return') : undefined} onClick={() => {
+      <HintTooltip label={enableFeedback ? `${t('rules.sidebarModules')} · ${t('rules.moduleFeedback')}` : t('rules.sidebarModules')}>
+        <button type="button" aria-label={t('rules.sidebarModules')} aria-description={enableFeedback ? t('rules.moduleFeedback') : undefined}
+          aria-pressed={sidebar === 'modules'} aria-controls={modulePaneId} onClick={() => setSidebar(sidebar === 'modules' ? 'hidden' : 'modules')}>
+          <BlocksIcon />{enableFeedback && <span className={css.modulePickerIndicator} aria-hidden="true">!</span>}
+        </button>
+      </HintTooltip>
+      <HintTooltip label={diagnosticsLabel}>
+        <button type="button" aria-label={diagnosticsLabel} aria-pressed={sidebar === 'diagnostics'} aria-controls={diagnosticPaneId} onClick={() => {
           if (diagnosticTarget && props.onReturnToDiagnostics) {
             saveSelected.current?.()
             closeRightEditor()
             props.onReturnToDiagnostics()
           } else setSidebar(sidebar === 'diagnostics' ? 'hidden' : 'diagnostics')
-        }}>{t('rules.sidebarDiagnostics')}</Button>
-      <Button aria-pressed={showList} aria-controls={listPaneId} onClick={() => { if (showList) closeList(false); else openList() }}>{t('rules.sidebarRules')}</Button>
-      <Button ref={libraryToggle} className={css.libraryToggle} disabled={!selected?.draft.meta} aria-pressed={libraryOpen && Boolean(selected?.draft.meta)}
-        aria-label={t(libraryOpen ? 'rules.hideLibrary' : 'rules.showLibrary')} title={t('rules.nodeLibrary')}
-        aria-controls={selected?.draft.meta ? libraryId : undefined} onClick={() => setSidebar(libraryOpen ? 'hidden' : 'library')}>
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" /><path d="M6 3v10m2.5-7h3.5m-3.5 3h3.5" /></svg>
-      </Button>
-      <Button aria-pressed={sidebar === 'hidden'} onClick={() => setSidebar('hidden')}>{t('rules.sidebarHide')}</Button>
+        }}><ActivityIcon /></button>
+      </HintTooltip>
+      <HintTooltip label={t('rules.sidebarRules')}>
+        <button type="button" aria-label={t('rules.sidebarRules')} aria-pressed={showList} aria-controls={listPaneId}
+          onClick={() => { if (showList) closeList(false); else openList() }}><ListChecksIcon /></button>
+      </HintTooltip>
+      <HintTooltip label={libraryLabel}>
+        <button type="button" ref={libraryToggle} disabled={!selected?.draft.meta} aria-pressed={libraryOpen && Boolean(selected?.draft.meta)}
+          aria-label={libraryLabel} title={!selected?.draft.meta ? t('rules.nodeLibrary') : undefined}
+          aria-controls={selected?.draft.meta ? libraryId : undefined} onClick={() => setSidebar(libraryOpen ? 'hidden' : 'library')}><LibraryBigIcon /></button>
+      </HintTooltip>
+      <HintTooltip label={t('rules.sidebarHide')}>
+        <button type="button" aria-label={t('rules.sidebarHide')} aria-pressed={sidebar === 'hidden'} onClick={() => setSidebar('hidden')}><PanelLeftCloseIcon /></button>
+      </HintTooltip>
     </div>
     {panelOpen && <div className={css.ruleListBackdrop} aria-hidden="true"
       onPointerDown={event => {
@@ -547,7 +555,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     }}>
     <div className={css.ruleListHeader}>
       <h2 ref={workspaceHeading} tabIndex={-1} className={css.workspaceHeading}>{t('rules.list')}</h2>
-      <Button shape="pill" variant="outline" aria-pressed={combination} onClick={() => changeCombination(!combination)}>{t('rules.combination')}</Button>
+      <Button shape="pill" variant="outline" aria-label={t('rules.combination')} title={t('rules.combination')} aria-pressed={combination} onClick={() => changeCombination(!combination)}>{t('canvas.combine')}</Button>
       <Button icon aria-label={t('rules.closePanel', { name: t('rules.list') })} onClick={() => closeList(true)}><IconCloseFillRegular /></Button>
     </div>
     <div className={ui.listFilterRow} data-module-toolbar>
@@ -556,8 +564,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       <details className={css.listOptions}>
         <summary>{t('rules.listOptions')}{view !== 'all' && ' · ' + (view === 'context-activation' ? t('rules.worldBook') : translateLabel(t, LAYER_LABEL_KEYS, view))}</summary>
         <div className={css.browseScopes} role="group" aria-label={t('rules.browseScope')}>
-          <button type="button" aria-pressed={!moduleFilter && !allModules} onClick={() => changeModuleScope('active')}>{t('rules.participatingModules')}</button>
-          <button type="button" aria-pressed={!moduleFilter && allModules} onClick={() => changeModuleScope('all')}>{t('rules.allModules')}</button>
+          <button type="button" aria-label={t('rules.participatingModules')} aria-pressed={!moduleFilter && !allModules} onClick={() => changeModuleScope('active')}>{t('canvas.participating')}</button>
+          <button type="button" aria-label={t('rules.allModules')} aria-pressed={!moduleFilter && allModules} onClick={() => changeModuleScope('all')}>{t('configs.view.all')}</button>
         </div>
         <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
         <span className={ui.batchControls}>
@@ -566,14 +574,15 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         </span>
       </details>
     </div>
-    {create.dialogs}
     {owners.map(({ moduleId: id, draft, editor }) => {
       return (draft.error || hasRuleFields(draft)) && <div key={id}>
         {draft.error && <div className={css.row}>
           <span>{t('rules.source', { module: id })}</span>
           <p role="alert" className={css.error}>{draft.remote ? t('rules.conflict') : draft.error}</p>
-          <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => { void editor.retry() }}>{t(editor.retryKind === 'save' ? 'rules.retrySave' : 'workspace.retry')}</Button>
-          {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} onClick={() => setDiscard(id)}>{t('triggers.discard')}</Button>}
+          <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} aria-label={t(editor.retryKind === 'save' ? 'rules.retrySave' : 'workspace.retry')}
+            title={t(editor.retryKind === 'save' ? 'rules.retrySave' : 'workspace.retry')} onClick={() => { void editor.retry() }}>{t(editor.retryKind === 'save' ? 'rules.retrySaveButton' : 'rules.reloadButton')}</Button>
+          {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
+            aria-label={t('triggers.discard')} title={t('triggers.discard')} onClick={() => setDiscard(id)}>{t('rules.discardButton')}</Button>}
         </div>}
         {hasRuleFields(draft) && <p role="alert" className={css.error}>{t('rules.source', { module: id })} · {t('rules.fieldsPending')}</p>}
       </div>
@@ -581,7 +590,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {order.error && <p role="alert" className={css.error}>{order.error}</p>}
     {combination && <>
       <div role="status">{orderFeedback}</div>
-      <PublicationNotice publication={order.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+      <PublicationNotice publication={order.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')} retryButtonLabel={t('publication.retryButton')}
         onRetry={() => { void order.retryPublication() }} />
     </>}
     {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
@@ -614,12 +623,14 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
           </details>
           {combination && id !== pinnedModule && orderEntry && moveButtons(orderEntry)}
           {combination && selectableWinner && <Button shape="pill" variant="outline" disabled={readOnly(id) || modulePending || order.busy || orderBlocked.has(id)}
+            aria-label={pendingWinner ? t('rules.resumeWinner') : t('rules.selectWinner', { id: entry.value.id })}
+            title={pendingWinner ? t('rules.resumeWinner') : t('rules.selectWinner', { id: entry.value.id })}
             onClick={() => {
               const rule = entry.value
               if (!pendingWinner && rule.enabled === false) editor.patch(entry.key, { ...rule, enabled: true })
               const result = pendingWinner ? editor.retry() : editor.submit({ activateRuleId: rule.id })
               void result.then(() => refreshExclusivePeers(id, rule))
-            }}>{pendingWinner ? t('rules.resumeWinner') : t('rules.selectWinner', { id: entry.value.id })}</Button>}
+            }}>{pendingWinner ? t('rules.resumeWinnerButton') : t('rules.selectWinnerButton')}</Button>}
         </li>
       })}
     </ul>
@@ -648,7 +659,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {!selected && files.length === 0 && !panelOpen && <div className={css.emptyCanvas}
       onClick={event => { if (event.target === event.currentTarget) closeSettings(false) }}>
       <h2>{t('rules.noOpenRule')}</h2>
-      <Button variant="outline" aria-controls={listPaneId} onClick={openList}>{t('rules.list')}</Button>
+      <Button variant="outline" aria-label={t('rules.list')} aria-controls={listPaneId} onClick={openList}>{t('rules.sidebarRules')}</Button>
     </div>}
     {selected && <div className={css.ruleDetail}>
       <h2 ref={detailHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{selected.moduleId} / {selected.entry.value.id}</h2>
@@ -686,9 +697,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         </div>
         <Button icon aria-label={t('rules.closePanel', { name: t('form.navigation.settings') })} onClick={() => closeSettings(true)}><IconCloseFillRegular /></Button>
       </header>
-      <div className={css.inspectorBody}>{props.renderModuleSettings?.(settingsModule.id, activeSettings.layer)}</div>
+      <div className={css.inspectorBody}>{props.renderModuleSettings?.(settingsModule.id, activeSettings.layer, create.openToolsForModule)}</div>
     </aside>}
     </div>
+    {create.dialogs}
     {discard && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')} onCancel={() => setDiscard(undefined)} onConfirm={() => { owners.find(owner => owner.moduleId === discard)?.editor.discard(); setDiscard(undefined) }} />}
   </section></CanvasChoiceContext.Provider>
 }

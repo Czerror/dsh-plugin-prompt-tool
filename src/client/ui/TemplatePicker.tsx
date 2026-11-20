@@ -167,7 +167,8 @@ export function TemplateTargetPicker(props: {
       <div className={styles.dialogFooter}>
         <Button shape="pill" variant="outline" onClick={onClose}>{t('rules.create.cancel')}</Button>
         <Button shape="pill" variant="primary" data-template-new-submit disabled={onCreate === undefined || busy}
-          onClick={() => { void submitNew() }}>{t('rules.create.submit')}</Button>
+          aria-label={t('rules.create.submit')} title={t('rules.create.submit')}
+          onClick={() => { void submitNew() }}>{t('rules.create.submitButton')}</Button>
       </div>
     </section>
   </CanvasChoiceDialog>

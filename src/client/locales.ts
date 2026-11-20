@@ -53,6 +53,8 @@ const ZH_CORE = {
   'main.addTemplate': '添加模板 · {layer}',
   'main.addToolTemplate': '添加工具模板…',
   'main.newBlankTool': '新建空白工具',
+  'main.addToolTemplateButton': '模板',
+  'main.newBlankToolButton': '新建',
   'subagent.aria': '子代理',
   'configList.create': '新建',
 
@@ -184,6 +186,8 @@ const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
   'main.addTemplate': 'Add template · {layer}',
   'main.addToolTemplate': 'Add tool template…',
   'main.newBlankTool': 'New blank tool',
+  'main.addToolTemplateButton': 'Template',
+  'main.newBlankToolButton': 'New',
   'subagent.aria': 'Subagent',
   'configList.create': 'New',
 

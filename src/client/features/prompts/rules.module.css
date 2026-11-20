@@ -6,11 +6,13 @@
 .moduleScope > button, .browseScopes button { min-block-size: 34px; padding-inline: 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #c7d0dc; cursor: pointer; font: inherit; }
 .moduleScope > button[aria-pressed=true], .browseScopes button[aria-pressed=true] { color: #eaf1fd; border-color: #445879; background: #273547; }
 .moduleScope > button:hover:not(:disabled), .browseScopes button:hover { background: #263141; }
-.moduleScope > .libraryToggle { display: grid; place-items: center; inline-size: 34px; padding: 0; }
+.moduleScope > button { position: relative; display: grid; place-items: center; inline-size: 34px; padding: 0; }
+.moduleScope > button:disabled { cursor: not-allowed; opacity: .4; }
+.moduleScope > button:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 1px; }
 .browseScopes { display: flex; gap: 4px; align-items: center; }
 .browseScopes button { min-block-size: 30px; }
 .modulePickerFeedback { overflow-wrap: anywhere; }
-.modulePickerIndicator { margin-inline-start: 4px; color: #f0c480; font-weight: 700; }
+.modulePickerIndicator { position: absolute; inset: 1px 2px auto auto; padding-inline: 2px; border-radius: 3px; background: #171c24; color: #f0c480; font: 700 10px/12px system-ui, sans-serif; }
 .ruleListPane :global([data-module-toolbar]) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .ruleListPane :global([data-module-toolbar]) > * { min-block-size: 0; block-size: auto; }
 .emptyCanvas { display: grid; align-content: center; justify-items: center; flex: 1; min-inline-size: 0; padding: 60px 16px 16px; text-align: center; }
@@ -101,8 +103,15 @@
   .commandCluster { justify-content: flex-start; margin-inline-start: 0; }
 }
 @container rule-workspace (width < 30rem) {
-  .moduleScope > button { min-block-size: 40px; }
-  .moduleScope > .libraryToggle { inline-size: 36px; }
+  /* Leave a readable strip of canvas above the editor and keep its fit control reachable. */
+  .ruleWorkspace { --pt-inspector-top: calc(var(--pt-canvas-top, 68px) + clamp(0px, (100% - var(--pt-canvas-top, 68px) - 64px) / 3, 9rem)); }
+  .ruleWorkspace :global([data-instruction-inspector]), .ruleWorkspace .moduleSettingsInspector,
+  .canvasSurface .definitionDrawer, .canvasSurface .ruleCanvas:not(:has([data-library-open])) > .ruleProperties {
+    inset-block: var(--pt-inspector-top) 64px;
+    inset-inline: 8px;
+    inline-size: auto;
+  }
+  .moduleScope > button { min-block-size: 44px; inline-size: 44px; }
   .commandCluster { gap: 4px; }
   .headerActions { margin-inline-end: auto; }
   .compactCommand svg { display: block; }
@@ -193,8 +202,8 @@
 @media (pointer: coarse) {
   .switchLine { height: 44px; min-height: 44px; }
   .canvasIdentity { min-block-size: 44px; }
-  .moduleScope > button { min-block-size: 44px; }
-  .moduleScope > .libraryToggle, .compactCommand button { min-inline-size: 44px; }
+  .moduleScope > button { min-block-size: 44px; inline-size: 44px; }
+  .compactCommand button { min-inline-size: 44px; }
 }
 .libraryExample { margin: 0; overflow-wrap: anywhere; color: #b5c2d4; }
 .libraryHeading { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 2px 5px; border-block-end: 1px solid #313b4b; }

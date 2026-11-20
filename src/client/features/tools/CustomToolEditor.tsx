@@ -79,8 +79,9 @@ function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft |
         </span>
       })}
       <span>
-        <Button shape="pill" size="sm" variant="outline" type="button" onClick={() => commit([...rows, ['', { type: 'string' }]])}>
-          {t('toolEditor.params.add')}
+        <Button shape="pill" size="sm" variant="outline" type="button" aria-label={t('toolEditor.params.add')} title={t('toolEditor.params.add')}
+          onClick={() => commit([...rows, ['', { type: 'string' }]])}>
+          {t('toolEditor.params.addButton')}
         </Button>
       </span>
     </span>

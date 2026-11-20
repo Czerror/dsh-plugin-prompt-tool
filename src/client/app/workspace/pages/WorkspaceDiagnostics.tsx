@@ -28,8 +28,9 @@ export function WorkspaceDiagnostics(props: {
   return <section className={css.card} aria-label={props.t('diagnostics.title')}>
       <header className={css.header}>
         <p>{props.t(sessionId === undefined ? 'diagnostics.noSession' : 'diagnostics.hint')}{sessionId === undefined ? '' : ` · ${sessionId}`}</p>
-        <Button className={css.run} shape="pill" variant="primary" aria-busy={snapshot.busy} disabled={snapshot.busy} onClick={() => { void props.diagnostics.run(sessionId) }}>
-          {props.t(snapshot.busy ? 'diagnostics.running' : 'diagnostics.run')}
+        <Button className={css.run} shape="pill" variant="primary" aria-label={props.t(snapshot.busy ? 'diagnostics.running' : 'diagnostics.run')}
+          aria-busy={snapshot.busy} disabled={snapshot.busy} onClick={() => { void props.diagnostics.run(sessionId) }}>
+          {props.t(snapshot.busy ? 'diagnostics.running' : 'rules.sidebarDiagnostics')}
         </Button>
       </header>
       <p className={css.notice} role="status" aria-atomic="true">{status}</p>

@@ -148,8 +148,10 @@ export function useCustomToolsEditor(props: {
       {undeclared && <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>}
       {props.disabled && <p className={styles.configFieldHint} role="status">{t('customTools.readonly')}</p>}
       {loading && <p className={styles.configFieldHint} role="status">{t('customTools.loading')}</p>}
-      {loadError && <p role="alert">{loadError} <Button shape="pill" size="md" variant="outline" type="button" onClick={() => { void owner.load() }}>{t('customTools.retry')}</Button></p>}
+      {loadError && <p role="alert">{loadError} <Button shape="pill" size="md" variant="outline" type="button"
+        aria-label={t('customTools.retry')} title={t('customTools.retry')} onClick={() => { void owner.load() }}>{t('customTools.retryButton')}</Button></p>}
       <PublicationNotice publication={publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+        retryButtonLabel={t('publication.retryButton')}
         disabled={saving}
         onRetry={() => { void owner.retryPublication().then((result) => {
           if (!active.current) return
@@ -159,9 +161,11 @@ export function useCustomToolsEditor(props: {
         }).catch(() => { if (active.current) props.onNotice('error', t('customTools.saveFailed')) }) }} />
       <fieldset className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
-          <Button ref={createButton} shape="pill" size="sm" variant="outline" type="button" disabled={disabled || saving} onClick={createTool}>{t('main.newBlankTool')}</Button>
+          <Button ref={createButton} shape="pill" size="sm" variant="outline" type="button" disabled={disabled || saving}
+            aria-label={t('main.newBlankTool')} title={t('main.newBlankTool')} onClick={createTool}>{t('main.newBlankToolButton')}</Button>
           {props.onChooseTemplate !== undefined && <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled || saving}
-            onClick={(event) => props.onChooseTemplate?.(event.currentTarget)}>{t('main.addToolTemplate')}</Button>}
+            aria-label={t('main.addToolTemplate')} title={t('main.addToolTemplate')}
+            onClick={(event) => props.onChooseTemplate?.(event.currentTarget)}>{t('main.addToolTemplateButton')}</Button>}
           {(tools.length > 0 || hasPersistedTools) && (
             <Button type="button" variant="primary" size="sm" disabled={disabled || saving} onClick={save}>
               {saving ? t('customTools.saving') : t('customTools.save')}

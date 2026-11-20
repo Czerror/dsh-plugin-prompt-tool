@@ -41,7 +41,7 @@ export interface RuleCanvasProps {
   onViewChange: (view: RuleCanvasView) => void
   onSelect: (id: string) => void
   onSelectInstruction?: (id: string) => void
-  onPaneClick: () => void
+  onPaneClick: (fullView?: boolean) => void
   onMove?: (id: string, x: number, y: number) => void
   canDropNode?: (targetId: string, data: string) => boolean
   onDropNode?: (targetId: string, data: string) => void
@@ -319,7 +319,13 @@ export function RuleCanvas(props: RuleCanvasProps) {
       y: (rect.top + rect.bottom - (anchor.height ?? 112) * READABLE_SCALE) / 2 - point.y * READABLE_SCALE }
   }
   const fitManually = () => {
-    if (area) adjustView(fit(area, false))
+    if (!area) return
+    if (area.stageWidth <= 480 && !sameRect(area.visible, area.base)) {
+      props.onPaneClick(true)
+      adjustView(fit({ ...area, visible: area.base }, false))
+      return
+    }
+    adjustView(fit(area, false))
   }
   useLayoutEffect(() => {
     if (!area || drag.current) return
@@ -447,14 +453,14 @@ export function RuleCanvas(props: RuleCanvasProps) {
         if (node.region) return <button key={node.id} type="button" className={css.region} data-rule-node={node.id} data-canvas-target={node.dropTarget}
           data-drop-ready={node.dropTarget === dropTarget || undefined} aria-pressed={node.selected} onClick={() => props.onSelect(node.id)}
           onPointerDown={event => event.stopPropagation()} style={regions.get(node.id)}><strong>{node.title}</strong></button>
-        return <button key={node.id} type="button" className={css.node} data-rule-node={node.id} data-node-kind={node.kind ?? 'condition'} data-canvas-target={node.dropTarget} data-drop-ready={node.dropTarget !== undefined && node.dropTarget === dropTarget || undefined} aria-pressed={node.selected} aria-description="方向键移动节点；Enter 编辑属性" style={{ left: position.x, top: position.y, width: node.width ?? 216 }} onClick={event => { if (event.detail === 0 || !suppressClick.current) props.onSelect(node.id); suppressClick.current = false }} onKeyDown={event => {
+        return <button key={node.id} type="button" className={css.node} data-rule-node={node.id} data-node-kind={node.kind ?? 'condition'} data-canvas-target={node.dropTarget} data-drop-ready={node.dropTarget !== undefined && node.dropTarget === dropTarget || undefined} aria-pressed={node.selected} aria-description={t('canvas.nodeKeys')} style={{ left: position.x, top: position.y, width: node.width ?? 216 }} onClick={event => { if (event.detail === 0 || !suppressClick.current) props.onSelect(node.id); suppressClick.current = false }} onKeyDown={event => {
           if (event.nativeEvent.isComposing) return
           const delta = event.shiftKey ? 40 : 16
           const offsets: Record<string, [number, number]> = { ArrowLeft: [-delta, 0], ArrowRight: [delta, 0], ArrowUp: [0, -delta], ArrowDown: [0, delta] }
           const offset = offsets[event.key]
           if (offset && props.onMove) { event.preventDefault(); userAdjustedView.current = true; const point = props.view.positions[node.id] ?? node; props.onMove(node.id, point.x + offset[0], point.y + offset[1]) }
         }} onPointerDown={event => { event.stopPropagation(); begin(event, node) }}>
-          <small>{node.kind === 'action' ? '动作' : node.kind === 'group' ? '分组' : '条件'}</small><strong>{node.title}</strong>{node.value && <span>{node.value}</span>}
+          <small>{t(node.kind === 'action' ? 'canvas.action' : node.kind === 'group' ? 'canvas.group' : 'canvas.condition')}</small><strong>{node.title}</strong>{node.value && <span>{node.value}</span>}
         </button>
       })}
       {props.children}

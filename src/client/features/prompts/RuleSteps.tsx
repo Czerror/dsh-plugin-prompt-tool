@@ -604,9 +604,10 @@ export function RuleStepsPanel(props: {
       activeInstructionId={props.activeInstructionId} selectedNodeId={selectedCanvasNode} hasStoredView={props.canvasBrowse?.has(props.browseKey)}
       onSelectInstruction={id => { closeLibraryDetail(false); props.onSelectInstruction(id) }}
       onViewChange={changeView} onSelect={id => { closeLibraryDetail(false); props.onCanvasInteract(); context.select(id) }}
-      onPaneClick={() => {
+      onPaneClick={fullView => {
         closeLibraryDetail(false)
         props.onCanvasInteract()
+        if (fullView && libraryOpen) props.onCloseLibrary(false)
         if (shownNode !== undefined) select(undefined)
       }}
       onMove={(id, x, y) => changeView({ ...view, positions: { ...view.positions, [id]: { x, y } } })}

@@ -49,6 +49,7 @@ export const PARAMS_ZH = {
 
   // 能力与模板创建菜单（EngineModuleList）。
   'modules.addTemplates': '添加注入模板',
+  'modules.addTemplatesButton': '模板',
   'modules.addCapability': '添加能力 / 工具模块',
   'modules.addCapabilityItem': '添加模块 · {id}',
   'modules.createRecipeItem': '连锁创建 · {id}',
@@ -116,6 +117,7 @@ export const PARAMS_EN: Record<keyof typeof PARAMS_ZH, string> = {
   'modules.group.tool-git-bash': 'Git Bash',
 
   'modules.addTemplates': 'Add injection template',
+  'modules.addTemplatesButton': 'Template',
   'modules.addCapability': 'Add capability / tool module',
   'modules.addCapabilityItem': 'Add module · {id}',
   'modules.createRecipeItem': 'Create chained modules · {id}',

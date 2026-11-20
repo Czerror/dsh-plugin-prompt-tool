@@ -165,6 +165,7 @@ export function RuleCard(props: {
   const saveText = (saveStatus ?? t(dirty ? 'rules.dirty' : 'rules.clean')) + (publication ? ' · ' + t('publication.pending') : '')
   const drawerLabel = t(drawer === 'identity' ? 'rules.identityDetails' : drawer === 'properties' ? 'rules.ruleSettings' : 'rules.definition')
   const retry = editor.retryKind
+  const retryLabel = t(draft.pending ? 'rules.checkSave' : activationPending ? 'rules.resumeWinner' : retry === 'save' ? 'rules.retrySave' : 'rules.reloadAria')
   return <AutoSaveSelection.Provider value={save}><section ref={surface} id={panelId} className={css.canvasSurface} aria-label={ruleName}
     data-rule-id={rule.id} data-rule-key={entry.key}
     onCompositionStart={() => { editor.setComposing(entry.key, true); autosave.onCompositionStart() }}
@@ -199,7 +200,7 @@ export function RuleCard(props: {
         <HintTooltip label={t('rules.ruleSettings')}><span className={css.compactCommand}>
           <Button variant="outline" shape="pill" aria-label={t('rules.ruleSettings')} aria-expanded={drawer === 'properties'} data-rule-drawer-trigger onClick={event => openDrawer('properties', event.currentTarget)}>
             <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M2 4h3m3 0h6M2 8h7m3 0h2M2 12h2m3 0h7M5 2.5v3M9 6.5v3M4 10.5v3" /></svg>
-            <span>{t('rules.ruleSettings')}</span>
+            <span>{t('rules.ruleSettingsButton')}</span>
           </Button>
         </span></HintTooltip>
         <HintTooltip label={t('rules.definition')}><span className={css.compactCommand}>
@@ -208,21 +209,24 @@ export function RuleCard(props: {
             <span>{t('rules.definition')}</span>
           </Button>
         </span></HintTooltip>
-        <Button variant="outline" shape="pill" disabled={disabled || hasRuleFields(draft, entry.key) || unsupported} onClick={save}>{t('rules.save')}</Button>
+        <Button variant="outline" shape="pill" aria-label={t('rules.save')} title={t('rules.save')}
+          disabled={disabled || hasRuleFields(draft, entry.key) || unsupported} onClick={save}>{t('rules.saveButton')}</Button>
       </div>
     </header>
     <div className={css.body} data-rule-editor>
       {(draft.pending || activationPending || (draft.error && !publication)) && <div className={css.row}>
-        <Button shape="pill" variant="outline" disabled={draft.busy !== undefined} onClick={() => {
+        <Button shape="pill" variant="outline" aria-label={retryLabel} title={retryLabel} disabled={draft.busy !== undefined} onClick={() => {
           if (draft.pending) void editor.reconcile(true)
           else if (activationPending) void editor.submitRule(entry.key, { activateRuleId: rule.id }).then(() => props.onActivate?.())
           else if (retry === 'save') void editor.submitRule(entry.key)
           else void editor.retry()
-        }}>{t(draft.pending ? 'rules.checkSave' : activationPending ? 'rules.resumeWinner' : retry === 'save' ? 'rules.retrySave' : 'workspace.retry')}</Button>
-        {(draft.pending || draft.remote) && <Button shape="pill" variant="outline" disabled={draft.busy !== undefined} onClick={() => setDiscarding(true)}>{t('triggers.discard')}</Button>}
+        }}>{t(draft.pending ? 'rules.checkSaveButton' : activationPending ? 'rules.resumeWinnerButton' : retry === 'save' ? 'rules.retrySaveButton' : 'rules.reloadButton')}</Button>
+        {(draft.pending || draft.remote) && <Button shape="pill" variant="outline" aria-label={t('triggers.discard')} title={t('triggers.discard')}
+          disabled={draft.busy !== undefined} onClick={() => setDiscarding(true)}>{t('rules.discardButton')}</Button>}
       </div>}
       <PublicationNotice publication={publication ? { pending: true, error: draft.publicationError } : undefined}
         disabled={draft.busy !== undefined} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+        retryButtonLabel={t('publication.retryButton')}
         onRetry={() => { void editor.retryPublication() }} />
       {targets.size > 0 && (reason ? <HintTooltip label={reason}><p role="status" className={css.status} tabIndex={0} aria-label={status + ' · ' + reason}>{status}</p></HintTooltip> : <p role="status" className={css.status}>{status}</p>)}
       {drawer !== undefined && <aside data-rule-drawer data-canvas-obstacle="right" className={`${css.definitionDrawer} ${ui.configForm}`} aria-label={drawerLabel}
@@ -258,8 +262,10 @@ export function RuleCard(props: {
       </div>
       {props.renderSettings?.(rule, props.moduleId)}
       <div className={css.row}>
-        <Button variant="outline" shape="pill" disabled={disabled || draft.busy !== undefined || hasRuleFields(draft, entry.key)} onClick={props.onDuplicate}>{t('rules.duplicate')}</Button>
-        <Button variant="outline" shape="pill" data-danger disabled={disabled || draft.busy !== undefined} onClick={() => setConfirming(true)}>{t('rules.delete')}</Button>
+        <Button variant="outline" shape="pill" aria-label={t('rules.duplicate')} title={t('rules.duplicate')}
+          disabled={disabled || draft.busy !== undefined || hasRuleFields(draft, entry.key)} onClick={props.onDuplicate}>{t('rules.duplicateButton')}</Button>
+        <Button variant="outline" shape="pill" data-danger aria-label={t('rules.delete')} title={t('rules.delete')}
+          disabled={disabled || draft.busy !== undefined} onClick={() => setConfirming(true)}>{t('rules.deleteButton')}</Button>
       </div></>}
       {drawer === 'definition' && <TriggerJsonField {...fieldContext} fieldKey={entry.key + ':full'} label={t('triggers.advanced')} shape="object" value={rule} onChange={value => {
         const candidate = asTriggerRecord(value)
@@ -284,9 +290,9 @@ export function RuleCard(props: {
             if (!disabled && !unsupported) void editor.move(entry.key, path, index, offset)
           })} />}</section>
     </div>
-    {confirming && <ConfirmDialog title={t('rules.delete')} description={t('rules.deleteHint', { id: rule.id })} confirmLabel={t('rules.delete')} cancelLabel={t('triggers.cancel')}
+    {confirming && <ConfirmDialog title={t('rules.delete')} description={t('rules.deleteHint', { id: rule.id })} confirmLabel={t('rules.deleteButton')} cancelLabel={t('triggers.cancel')}
       onCancel={() => setConfirming(false)} onConfirm={() => { editor.remove(entry.key); props.onRuleEdit?.(); void editor.submitRule(entry.key) }} />}
-    {discarding && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')}
+    {discarding && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('rules.discardButton')} cancelLabel={t('triggers.cancel')}
       onCancel={() => setDiscarding(false)} onConfirm={() => { editor.discard(); setDiscarding(false) }} />}
   </section></AutoSaveSelection.Provider>
 }

@@ -223,7 +223,8 @@ export function useTemplateCreate(props: {
   }, [picker, store, t])
   const toolbar = items.length > 0 && <Button shape="pill" variant="outline" aria-haspopup="dialog"
     aria-expanded={!picker.toolsOnly && (picker.open || picker.targetOpen)}
-    onClick={event => picker.openPicker(event.currentTarget)}>{t('modules.addTemplates')}</Button>
+    aria-label={t('modules.addTemplates')} title={t('modules.addTemplates')}
+    onClick={event => picker.openPicker(event.currentTarget)}>{t('modules.addTemplatesButton')}</Button>
   const dialogs = <>
     {picker.open && <TemplatePicker t={t} templates={picker.toolsOnly ? [] : picker.templates.filter(template =>
       items.some(item => item.id === `tpl:${template.spec.layer ?? 'pre-step'}`))}

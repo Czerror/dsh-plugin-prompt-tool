@@ -56,11 +56,11 @@ export function projectRuleCanvas(input: {
     const invalidComposite = (kind === 'not' || kind === 'all' || kind === 'any' || kind === 'notAny') && !validComposite
     const id = composite ? groupId(path) : invalidComposite ? `unknown-condition:${identity.get(path)}` : `condition:${identity.get(path)}`
     const x = 40 - depth * 280
-    addNode({ id, title: composite ? (kind === 'all' ? 'AND' : kind === 'any' ? 'OR' : kind === 'notAny' ? 'NOT ANY' : 'NOT') : condition === undefined ? '无条件' : kind ? triggerLabel(t, kind) : t('rules.steps.unknown'),
-      value: composite ? undefined : invalidComposite ? '原文保留' : condition === undefined ? undefined : conditionSummary(t, condition), x, y, width: 216, height: 112, kind: composite ? 'group' : 'condition' },
+    addNode({ id, title: composite ? (kind === 'all' ? 'AND' : kind === 'any' ? 'OR' : kind === 'notAny' ? 'NOT ANY' : 'NOT') : condition === undefined ? t('triggers.unconditional') : kind ? triggerLabel(t, kind) : t('rules.steps.unknown'),
+      value: composite ? undefined : invalidComposite ? t('canvas.rawPreserved') : condition === undefined ? undefined : conditionSummary(t, condition), x, y, width: 216, height: 112, kind: composite ? 'group' : 'condition' },
     composite ? { kind: 'group', path, value: condition } : invalidComposite ? { kind: 'unknown', path, value: condition } : { kind: 'condition', path, value: condition ?? {} })
-    if (parent) edges.push({ from: id, to: parent, label: parentKind === 'not' ? '否定' : parentKind === 'any' ? '任一' : parentKind === 'notAny' ? '均不' : '全部', kind: 'condition' })
-    if (!invalidComposite) targets.push({ id: `${id}:target`, label: composite ? '条件组' : '条件', kind: 'condition', path })
+    if (parent) edges.push({ from: id, to: parent, label: t(parentKind === 'not' ? 'canvas.negate' : parentKind === 'any' ? 'canvas.any' : parentKind === 'notAny' ? 'canvas.none' : 'configs.view.all'), kind: 'condition' })
+    if (!invalidComposite) targets.push({ id: `${id}:target`, label: t(composite ? 'canvas.conditionGroup' : 'canvas.condition'), kind: 'condition', path })
     y += 136
     if (composite && value !== undefined) {
       const children = kind === 'not' ? [value] : value as unknown[]
@@ -70,6 +70,7 @@ export function projectRuleCanvas(input: {
   }
   const rootCondition = addCondition(rule.if, 'if')
   const addActions = (items: readonly RuleNode[], path: string, branchId: string, branchKind: 'then' | 'else', startY: number): number => {
+    const branchLabel = t(branchKind === 'then' ? 'canvas.match' : 'rules.steps.elseLabel')
     const byPoint = new Map<string, Array<{ id: string; index: number }>>()
     const unknowns: Array<{ id: string; index: number }> = []
     const branches: Array<{ node: Record<string, unknown>; path: string; id: string; conditionId: string }> = []
@@ -79,10 +80,10 @@ export function projectRuleCanvas(input: {
         const point = input.resolveExecution(item, rule)
         const execution = point === undefined ? `unknown:${nodePath}` : pointKey(point)
         const id = `action:${item.id}`
-        const executionLabel = point === undefined ? '执行点未知' : `${point.channel} · ${point.phase}`
+        const executionLabel = point === undefined ? t('canvas.unknownExecutionPoint') : `${point.channel} · ${point.phase}`
         const sequence = byPoint.get(execution) ?? []
         sequence.push({ id, index }); byPoint.set(execution, sequence)
-        if (point !== undefined) targets.push({ id: `${id}:target`, label: `${branchKind === 'then' ? '成立' : '否则'} · ${executionLabel}`, kind: branchKind, path, executionPoint: execution })
+        if (point !== undefined) targets.push({ id: `${id}:target`, label: `${branchLabel} · ${executionLabel}`, kind: branchKind, path, executionPoint: execution })
       } else if (isBranchNode(item)) {
         const branch = item as Record<string, unknown>
         const id = `branch:${identity.get(nodePath)}`
@@ -97,66 +98,65 @@ export function projectRuleCanvas(input: {
     for (const [execution, sequence] of byPoint) {
       const x = laneX(execution || `unknown:${path}:${sequence[0]!.index}`)
       const laneId = `lane:${identity.get(`${path}:${execution}`)}`
-      const laneLabel = execution.startsWith('unknown:') ? '执行点未知' : execution.replaceAll('\u0000', ' · ')
+      const laneLabel = execution.startsWith('unknown:') ? t('canvas.unknownExecutionPoint') : execution.replaceAll('\u0000', ' · ')
       addNode({ id: laneId, title: `${branchKind.toUpperCase()} · ${laneLabel}`, x: x - 16, y: startY, width: 248, height: 72 + sequence.length * 136, kind: 'group', region: true, members: sequence.map(entry => entry.id) },
         { kind: 'group', path })
-      if (!execution.startsWith('unknown:')) targets.push({ id: `${laneId}:target`, label: `${branchKind === 'then' ? '成立' : '否则'} · ${laneLabel}`, kind: branchKind, path, executionPoint: execution })
+      if (!execution.startsWith('unknown:')) targets.push({ id: `${laneId}:target`, label: `${branchLabel} · ${laneLabel}`, kind: branchKind, path, executionPoint: execution })
       sequence.forEach((entry, order) => {
         const item = items[entry.index] as RuleAction
         const nodePath = `${path}:${entry.index}`
-        const point = input.resolveExecution(item, rule)
         const id = entry.id
         addNode({ id, title: triggerLabel(t, String(item.kind)), value: actionSummary(t, item),
           x, y: startY + 56 + order * 136, width: 216, height: 112, kind: 'action' },
         { kind: 'action', path: nodePath, actionId: item.id, value: item })
-        edges.push({ from: order === 0 ? branchId : sequence[order - 1]!.id, to: id, label: order === 0 ? branchKind.toUpperCase() : '同点内次序', kind: order === 0 ? branchKind : 'order' })
+        edges.push({ from: order === 0 ? branchId : sequence[order - 1]!.id, to: id, label: order === 0 ? branchKind.toUpperCase() : t('canvas.order'), kind: order === 0 ? branchKind : 'order' })
       })
     }
     for (const unknown of unknowns) {
       const x = laneX(`unknown:${path}:${unknown.index}`)
       const id = unknown.id
-      addNode({ id, title: t('rules.steps.unknown'), value: '原文保留', x, y: startY, width: 216, height: 112, kind: 'action' }, descriptors.get(id)!)
-      edges.push({ from: branchId, to: id, label: '未知结构', kind: branchKind })
+      addNode({ id, title: t('rules.steps.unknown'), value: t('canvas.rawPreserved'), x, y: startY, width: 216, height: 112, kind: 'action' }, descriptors.get(id)!)
+      edges.push({ from: branchId, to: id, label: t('canvas.unknownStructure'), kind: branchKind })
     }
     let bottom = startY + 136 + [...byPoint.values()].reduce((height, sequence) => Math.max(height, sequence.length * 136), 0) + (unknowns.length ? 136 : 0)
     for (const branch of branches) {
       const branchY = bottom
-      addNode({ id: branch.id, title: conditionSummary(t, branch.node.if as RuleCondition | undefined), value: '条件分支', x: 360, y: branchY, width: 216, height: 112, kind: 'condition' },
+      addNode({ id: branch.id, title: conditionSummary(t, branch.node.if as RuleCondition | undefined), value: t('canvas.conditionalBranch'), x: 360, y: branchY, width: 216, height: 112, kind: 'condition' },
         { kind: 'branch', path: branch.path, value: branch.node })
-      edges.push({ from: branchId, to: branch.conditionId, label: branchKind === 'then' ? '成立' : '否则', kind: branchKind }, { from: branch.conditionId, to: branch.id, label: '分支', kind: 'then' })
+      edges.push({ from: branchId, to: branch.conditionId, label: branchLabel, kind: branchKind }, { from: branch.conditionId, to: branch.id, label: t('rules.steps.branchLabel'), kind: 'then' })
       const branchThenPath = `${branch.path}:then`, branchElsePath = `${branch.path}:else`
       const branchThenId = `scope:${branchThenPath}:${identity.get(branchThenPath)}`
       const branchThenY = branchY + 136
-      addNode({ id: branchThenId, title: '成立 THEN', x: 360, y: branchThenY, width: 216, height: 112, kind: 'group' }, { kind: 'group', path: branchThenPath, value: branch.node.if as RuleCondition | undefined })
-      targets.push({ id: `${branchThenId}:target`, label: '成立分支', kind: 'then', path: branchThenPath })
-      edges.push({ from: branch.id, to: branchThenId, label: '成立', kind: 'then' })
+      addNode({ id: branchThenId, title: t('canvas.thenTitle'), x: 360, y: branchThenY, width: 216, height: 112, kind: 'group' }, { kind: 'group', path: branchThenPath, value: branch.node.if as RuleCondition | undefined })
+      targets.push({ id: `${branchThenId}:target`, label: t('canvas.thenBranch'), kind: 'then', path: branchThenPath })
+      edges.push({ from: branch.id, to: branchThenId, label: t('canvas.match'), kind: 'then' })
       const childThen = addActions(nodeList(branch.node.then), branchThenPath, branchThenId, 'then', branchThenY + 136)
       let childElse = childThen
       if (Array.isArray(branch.node.else)) {
         const branchElseId = `scope:${branchElsePath}:${identity.get(branchElsePath)}`
         const branchElseY = childThen + 24
-        addNode({ id: branchElseId, title: '否则 ELSE', x: 360, y: branchElseY, width: 216, height: 112, kind: 'group' }, { kind: 'group', path: branchElsePath, value: branch.node.if as RuleCondition | undefined })
-        targets.push({ id: `${branchElseId}:target`, label: '否则分支', kind: 'else', path: branchElsePath })
-        edges.push({ from: branch.id, to: branchElseId, label: '否则', kind: 'else' })
+        addNode({ id: branchElseId, title: t('canvas.elseTitle'), x: 360, y: branchElseY, width: 216, height: 112, kind: 'group' }, { kind: 'group', path: branchElsePath, value: branch.node.if as RuleCondition | undefined })
+        targets.push({ id: `${branchElseId}:target`, label: t('canvas.elseBranch'), kind: 'else', path: branchElsePath })
+        edges.push({ from: branch.id, to: branchElseId, label: t('rules.steps.elseLabel'), kind: 'else' })
         childElse = addActions(nodeList(branch.node.else), branchElsePath, branchElseId, 'else', branchElseY + 136)
-      } else targets.push({ id: `${branchElsePath}:target`, label: '创建否则分支', kind: 'else', path: branchElsePath })
+      } else targets.push({ id: `${branchElsePath}:target`, label: t('rules.steps.addElse'), kind: 'else', path: branchElsePath })
       bottom = Math.max(childThen, childElse) + 32
     }
     return bottom
   }
   const thenRoot = `scope:then:${identity.get('then')}`
-  addNode({ id: thenRoot, title: '成立 THEN', x: 360, y: 48, width: 216, height: 112, kind: 'group' }, { kind: 'group', path: 'then', value: rule.if })
-  edges.push({ from: rootCondition, to: thenRoot, label: '成立', kind: 'then' })
-  targets.push({ id: `${thenRoot}:target`, label: '成立分支', kind: 'then', path: 'then' })
+  addNode({ id: thenRoot, title: t('canvas.thenTitle'), x: 360, y: 48, width: 216, height: 112, kind: 'group' }, { kind: 'group', path: 'then', value: rule.if })
+  edges.push({ from: rootCondition, to: thenRoot, label: t('canvas.match'), kind: 'then' })
+  targets.push({ id: `${thenRoot}:target`, label: t('canvas.thenBranch'), kind: 'then', path: 'then' })
   const thenBottom = addActions(nodeList(rule.then), 'then', thenRoot, 'then', 48)
   if (rule.else !== undefined) {
     const elseRoot = `scope:else:${identity.get('else')}`
-    addNode({ id: elseRoot, title: '否则 ELSE', x: 360, y: thenBottom + 32, width: 216, height: 112, kind: 'group' }, { kind: 'group', path: 'else', value: rule.if })
-    edges.push({ from: rootCondition, to: elseRoot, label: '否则', kind: 'else' })
-    targets.push({ id: `${elseRoot}:target`, label: '否则分支', kind: 'else', path: 'else' })
+    addNode({ id: elseRoot, title: t('canvas.elseTitle'), x: 360, y: thenBottom + 32, width: 216, height: 112, kind: 'group' }, { kind: 'group', path: 'else', value: rule.if })
+    edges.push({ from: rootCondition, to: elseRoot, label: t('rules.steps.elseLabel'), kind: 'else' })
+    targets.push({ id: `${elseRoot}:target`, label: t('canvas.elseBranch'), kind: 'else', path: 'else' })
     addActions(nodeList(rule.else), 'else', elseRoot, 'else', thenBottom + 168)
   } else {
-    targets.push({ id: 'else:target', label: '创建否则分支', kind: 'else', path: 'else' })
+    targets.push({ id: 'else:target', label: t('rules.steps.addElse'), kind: 'else', path: 'else' })
   }
   const offset = Math.max(0, 40 - Math.min(...nodes.map(node => node.x)))
   if (offset) for (const node of nodes) node.x += offset
