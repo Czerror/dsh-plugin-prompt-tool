@@ -3,6 +3,11 @@
  * Not a plugin row: no name/inject exports and no listeners.
  */
 
+/** Cordis exposes the root via Context.root in newer hosts and .root in older ones. */
+export function cordisRoot(ctx) {
+  return ctx?.[Symbol.for('cordis.root')] ?? ctx?.root
+}
+
 /** Durable session event types that count as a promotion signal per mode. */
 export const PROMOTE_EVENTS = {
   'tool-call': ['tool/call'],
