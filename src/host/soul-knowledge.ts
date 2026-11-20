@@ -147,24 +147,25 @@ async function rootSnapshot(root: string, check: () => void) {
     for (const directory of chain) await verify(directory)
   }
   const entries: { path: string; size: number; kind: string; version: string }[] = []
+  let enumerated = 0
   async function visit(chain: DirectoryVersion[], directory: string, prefix: string, depth: number): Promise<void> {
     await verifyChain(chain)
-    const names: string[] = [], remaining = 2000 - entries.length
+    const names: string[] = []
     const opened = await opendir(directory, { bufferSize: 1 })
     try {
       check()
       await verifyChain(chain)
-      for (let index = 0; index <= remaining; index++) {
+      for (;;) {
         const item = await opened.read()
         check()
         if (!item) break
-        if (index === remaining) throw new Error('知识库预览超过2000项，请选择更小的根')
+        enumerated++
+        if (enumerated > 2000) throw new Error('知识库预览超过2000项，请选择更小的根')
         names.push(item.name)
       }
     } finally { await opened.close() }
     await verifyChain(chain)
     for (const name of names.sort()) {
-      if (entries.length >= 2000) throw new Error('知识库预览超过2000项，请选择更小的根')
       const path = prefix + name, absolute = join(directory, name), stat = await lstat(absolute)
       check()
       const version = fileVersion(stat)
