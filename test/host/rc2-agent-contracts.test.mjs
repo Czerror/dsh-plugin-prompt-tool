@@ -130,7 +130,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   await new Promise(resolve => setImmediate(resolve))
   const signal = new AbortController().signal
   const previewRequest = { moduleId: 'alice', action: 'preview', write: ['general', 'projects'] }
-  const preview = owner.preview(dir, previewRequest)
+  const preview = await owner.preview(dir, previewRequest, signal)
   await owner.confirm(dir, { ...previewRequest, action: 'confirm', expectedRevision: preview.revision }, signal)
   const manage = async action => owner.manage(dir, { moduleId: 'alice', ...action, expectedRevision: owner.status(dir).binding.revision }, agent.session.id, signal)
   await manage({ action: 'project', projectDirectory: home })
