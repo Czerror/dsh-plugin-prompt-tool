@@ -31,8 +31,8 @@
   padding: 16px;
   border: 1px solid var(--dsw-alias-border-l3);
   border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-primary);
+  background: #181f2a;
+  color: #e7edf6;
   overscroll-behavior: contain;
 }
 .dialog::backdrop { background: var(--dsw-alias-bg-mask-1); overflow: hidden; overscroll-behavior: contain; }
@@ -43,7 +43,8 @@
 .group + .group { margin-block-start: 12px; }
 .group h3 { margin: 4px 0; color: var(--dsw-alias-label-secondary); font-size: 13px; overflow-wrap: anywhere; }
 .option { justify-content: flex-start; min-block-size: 36px; text-align: start; overflow-wrap: anywhere; }
-.option[aria-pressed=true] { border-color: var(--dsw-alias-state-business-primary); }
+.option[aria-pressed=true] { color: #e7f1ff; background: #26344a; border: 1px solid #445879; }
+.option[aria-pressed=true]::after { content: '✓'; margin-inline-start: auto; }
 
 @media (pointer: coarse) {
   .radio, .trigger, .option, .heading button { min-block-size: 44px; }

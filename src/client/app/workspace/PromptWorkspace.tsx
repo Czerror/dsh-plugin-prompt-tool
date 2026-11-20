@@ -23,7 +23,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const ruleBrowse = configPageBrowse(browse, 'features')
   const openDiagnosticTarget = useCallback((target: RuleDiagnosticTarget): void => {
     ruleBrowse.diagnosticTarget = target
-    ruleBrowse.moduleFilter = undefined
+    ruleBrowse.moduleFilter = target.moduleId
     ruleBrowse.combination = false
     ruleBrowse.sidebar = 'hidden'
     browse.diagnosticReturn = target

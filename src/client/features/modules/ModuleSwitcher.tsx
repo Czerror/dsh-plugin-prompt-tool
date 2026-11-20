@@ -254,6 +254,7 @@ export const ModulePickerCards = memo(function ModulePickerCards(props: {
   return (
     <>
       {open && <div className={css.collection}>
+      {store.meta.moduleWarnings?.map(message => <p key={message} role="alert" className={css.warning}>{message}</p>)}
       {publicationRetry && <PublicationNotice publication={{ pending: true, error: publicationRetry.error }}
         pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         onRetry={() => { void publicationRetry.run().then((result) => {
@@ -292,9 +293,8 @@ export const ModulePickerCards = memo(function ModulePickerCards(props: {
         onClose={() => { flow.cancel(); setImportOpen(false) }} onReset={flow.cancel} onSkip={flow.skip} onEnd={flow.end}
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
         publication={flow.publication} onRetryPublication={() => { void flow.retryPublication() }}
-        onUse={flow.resultLabel === undefined || enableState.busy || enableState.refreshFailed ? undefined : () => {
-          if (getEnableState().busy || getEnableState().refreshFailed) return
-          void setModuleEnabled(flow.resultLabel!, true)
+        onUse={flow.resultLabel === undefined ? undefined : () => {
+          if (flow.resultLabel !== undefined) props.onBrowse(flow.resultLabel)
           flow.cancel()
           setImportOpen(false)
         }} />}
