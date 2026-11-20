@@ -17,7 +17,9 @@ export function DiagnosticsPanel(props: {
   const heading = useRef<HTMLHeadingElement>(null)
   const records = useRef<HTMLDetailsElement>(null)
   const returnIndex = props.returnTarget === undefined ? -1 : snapshot.records.findIndex(item =>
-    item.moduleId === props.returnTarget?.moduleId && item.ruleId === props.returnTarget?.ruleId && item.actionId === props.returnTarget?.actionId)
+    item.moduleId === props.returnTarget?.moduleId && item.ruleId === props.returnTarget?.ruleId
+    && item.channel === props.returnTarget?.channel && item.actionId === props.returnTarget?.actionId
+    && item.agentId === props.returnTarget?.agentId)
   useLayoutEffect(() => {
     if (props.returnTarget) {
       if (records.current) records.current.open = true
@@ -52,7 +54,7 @@ export function DiagnosticsPanel(props: {
         <strong>{[record.moduleId, record.ruleId, record.actionId, record.channel].filter(Boolean).join(' / ')}</strong>
         {record.moduleId !== undefined && props.onLocate && <Button shape="pill" variant="outline"
           ref={returnIndex === index ? returnButton : undefined}
-          onClick={() => props.onLocate?.({ moduleId: record.moduleId!, ruleId: record.ruleId, actionId: record.actionId })}>
+          onClick={() => props.onLocate?.({ moduleId: record.moduleId!, ruleId: record.ruleId, channel: record.channel, actionId: record.actionId, agentId: record.agentId })}>
           {t('diagnostics.openRule', { target: [record.moduleId, record.ruleId, record.actionId].filter(Boolean).join(' / ') })}
         </Button>}
         <p className={ui.configFieldHint}>{t('diagnostics.record', { hit: record.hit, miss: record.miss, unavailable: record.unavailable, error: record.error })}</p>

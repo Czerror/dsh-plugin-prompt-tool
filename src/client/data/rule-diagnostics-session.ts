@@ -2,7 +2,7 @@ import type { RuleDiagnosticRecord, ContextActivationDiagnosticRecord } from '..
 import { bridgeCall } from './bridge-client.ts'
 import { countEnabledConfigs } from '../../shared/module-config-order.ts'
 
-export interface RuleDiagnosticTarget { moduleId: string; ruleId: string; actionId?: string }
+export interface RuleDiagnosticTarget { moduleId: string; ruleId: string; channel: string; actionId?: string; agentId?: string }
 
 export interface RuleDiagnosticsSnapshot {
   busy: boolean
