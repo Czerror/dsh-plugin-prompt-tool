@@ -461,7 +461,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     setModulePending(id)
     setEnableError(undefined)
     const reportFailure = (reason: string): void => {
-      if (run === undefined) setEnableError(t('moduleSwitcher.notice.refreshFailed'))
+      if (run === undefined) setEnableError(t('rules.moduleListRefreshFailed'))
       else if (id === null) setEnablePublication({ pending: true, error: reason })
       else setEnableError(t('moduleSwitcher.notice.enableFailed', { reason }))
     }
@@ -476,7 +476,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       if (result.ok) {
         setEnablePublication(result.publication)
         setEnableRefreshFailed(result.refreshError !== undefined)
-        if (result.refreshError !== undefined) setEnableError(t('moduleSwitcher.notice.refreshFailed'))
+        if (result.refreshError !== undefined) setEnableError(t('rules.moduleListRefreshFailed'))
       } else reportFailure(result.message ?? result.code ?? t('workspace.retry'))
     } catch (error) {
       reportFailure(errorMessage(error))
