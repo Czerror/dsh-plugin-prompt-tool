@@ -2,6 +2,7 @@ import { actionMatches } from './conditions/evaluation.mjs'
 import { bindHostDependency } from './conditions/host-dependencies.mjs'
 import { Context } from '@deepseek-ai/cordis'
 import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
+import { cordisRoot } from './shared.mjs'
 
 export const providerHookDecisionsState = globalThis[Symbol.for('prompt-tool:provider-hook-decisions')] ??= {
   'claude-code': { available: false, reason: 'official Claude hook early owner unavailable; restart DSH with early entry' },
@@ -22,7 +23,7 @@ export function prepareProviderHookDecisions(entries, frame) {
 }
 const integrations = new Set()
 const owners = new Set()
-const reachable = (owner, agent) => agent?.ctx?.root === owner.ctx.root
+const reachable = (owner, agent) => cordisRoot(agent?.ctx) === cordisRoot(owner.ctx)
   && scopeTarget(agent, scopeOf(agent.ctx))[Context.filter](owner.ctx)
 function status(action, agent) {
   for (const kind of Object.keys(action.value)) {
@@ -31,7 +32,7 @@ function status(action, agent) {
     if (matching.length === 0) return { available: false, reason: `current Agent official ${kind} hook owner not mounted` }
     const known = new Set(matching.flatMap(owner => [owner.fiber, owner.ctx]))
     for (const owner of matching) {
-      const entries = [...(owner.ctx.root?.registry?.entries?.() ?? owner.ctx.registry?.entries?.() ?? [])]
+      const entries = [...(cordisRoot(owner.ctx)?.registry?.entries?.() ?? owner.ctx.registry?.entries?.() ?? [])]
       for (const [, runtime] of entries) {
         if (runtime.name !== `hooks-${kind}`) continue
         for (const fiber of runtime.fibers ?? []) {
@@ -78,7 +79,7 @@ providerHookDecisionsState.register = (ctx, agent, resolve) => {
 }
 providerHookDecisionsState.accept = (input, channel, result) => {
   for (const entry of integrations) {
-    if (entry.agent !== input?.agent || entry.ctx.root !== input?.agent?.ctx?.root) continue
+    if (entry.agent !== input?.agent || cordisRoot(entry.ctx) !== cordisRoot(input?.agent?.ctx)) continue
     const plan = entry.resolve(input, channel, result)
     if (plan !== undefined) return plan
   }
