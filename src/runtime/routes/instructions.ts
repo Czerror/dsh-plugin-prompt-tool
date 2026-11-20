@@ -10,7 +10,7 @@ import { writeAgentsFileChecked } from '../../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, writeInstructionPolicy } from '../../host/instructions-policy.ts'
 import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
 import { published } from '../../shared/publication.ts'
-import type { RuleDefinition, RuleEdit, RuleEditorMeta, RuleRevisions } from '../../shared/rules.ts'
+import type { CompactRulesSnapshot, RuleDefinition, RuleEdit, RuleEditorMeta, RuleRevisions } from '../../shared/rules.ts'
 import { writeLayerSettingsError } from '../module-subject-gate.ts'
 import {
   instructionOwner,
@@ -189,7 +189,14 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         tx.write(400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevisions' })
         return
       }
+      if (record.compactEdit !== undefined && (record.compactEdit !== true || !Array.isArray(record.edits)
+        || record.edits.length !== 1 || record.createRule !== undefined || record.activateRuleId !== undefined
+        || record.validateOnly !== undefined || record.refreshOnly !== undefined)) {
+        tx.write(400, { ok: false, code: 'rules-invalid', message: '紧凑保存只接受单条已存在规则正文编辑' })
+        return
+      }
       let createdRuleId: string | undefined
+      let candidateRevision: string | undefined
       try {
         // 动态 import 之后的写前复检：可写 + 身份都在这里再判一次（豁免不适用，写端点默认核形状）。
         if (runtime.gate(tx, 'rules').inspect(writing) === undefined) return
@@ -204,10 +211,39 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
           ...(record.edits === undefined ? {} : { edits: record.edits as RuleEdit[] }),
           ...(record.activateRuleId === undefined ? {} : { activateRuleId: record.activateRuleId as string }),
           ...(record.validateOnly === undefined ? {} : { validateOnly: record.validateOnly as boolean }),
-        }) : isEditableModuleDir(dir) ? readModuleRules(dir) : ensureModuleSlices(dir, { writable: false })
+        }, revision => { candidateRevision = revision }) : isEditableModuleDir(dir) ? readModuleRules(dir) : ensureModuleSlices(dir, { writable: false })
         const publication = writing ? await runtime.schedulePublication(basename(dir)) : undefined
         if (publication?.publicationPending) {
           tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...publication } })
+          return
+        }
+        if (record.compactEdit === true) {
+          const edit = (record.edits as RuleEdit[])[0]!
+          if (edit.previousId === null || edit.rule === null || edit.previousId !== edit.rule.id || edit.settingsChanged === true) {
+            tx.write(400, { ok: false, code: 'rules-invalid', message: '紧凑保存只接受单条已存在规则正文编辑' })
+            return
+          }
+          if (candidateRevision === undefined) throw new Error('紧凑保存事务没有返回已验证版本')
+          const committed = loadModuleDefinition(dir)
+          if (committed.revision !== candidateRevision) {
+            tx.write(409, { ok: false, code: 'rules-conflict', message: '保存后模块再次变化；请重新读取，当前草稿仍保留' })
+            return
+          }
+          const saved = committed.rules.find(rule => rule.id === edit.rule!.id)
+          if (!saved) {
+            tx.write(409, { ok: false, code: 'rules-conflict', message: '目标规则保存后不存在；请重新读取，当前草稿仍保留' })
+            return
+          }
+          const compact: CompactRulesSnapshot = {
+            rule: saved,
+            ruleRevision: committed.revisions.rules[saved.id]!,
+            definitionRevision: committed.revision,
+            settingsRevision: committed.revisions.settings,
+            variablesRevision: committed.revisions.variables,
+            meta: await ruleEditorMeta(),
+            ...publication,
+          }
+          tx.write(200, { ok: true, value: compact })
           return
         }
         const result = writing ? readModuleRules(dir) : candidate

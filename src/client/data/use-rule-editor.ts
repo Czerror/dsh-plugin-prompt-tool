@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import { bridgeCall } from './bridge-client.ts'
+import { bridgeCall, type BridgeResult } from './bridge-client.ts'
+import type { RulesSnapshot } from '../../shared/rules.ts'
 import { createRuleEditor, getRulesDraft, type RuleEditor, type RulesDraft } from './rule-drafts.ts'
 import type { DraftsPort, RuleEditingPort } from './store-ports.ts'
 
@@ -24,7 +25,7 @@ export function useModuleRuleEditors(store: RuleEditorStore, moduleIds: readonly
   const editors = useMemo(() => (JSON.parse(identity) as string[]).map(moduleId => {
     const draft = getRulesDraft(store.editorDrafts, moduleId)
     return { moduleId, draft, editor: createRuleEditor(moduleId, draft, {
-      request: body => bridgeCall('rules', body, moduleId),
+      request: body => bridgeCall('rules', body, moduleId) as Promise<BridgeResult<RulesSnapshot>>,
       onUnconfirmed: store.reconcileRules,
       enqueue: (_id, task) => store.enqueueRuleTask(task),
       isCurrent: () => active.current.includes(moduleId), changed: () => store.publishDrafts(moduleId),
