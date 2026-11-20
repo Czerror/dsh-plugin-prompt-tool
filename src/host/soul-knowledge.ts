@@ -1,7 +1,7 @@
 /** 本机知识库授权：只由用户命令确认，模块导出不包含官方持久域。 */
 import { constants, lstatSync, mkdirSync, readdirSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Stats } from 'node:fs'
-import { open } from 'node:fs/promises'
+import { lstat, open, readdir, realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
@@ -75,16 +75,33 @@ function identity(path: string): string {
 function fileVersion(stat: Stats) {
   return revisionOf(JSON.stringify([stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs]))
 }
+async function asyncIdentity(path: string, check: () => void): Promise<string> {
+  const absolute = resolve(path), anchor = parse(absolute).root
+  let current = anchor
+  for (const part of relative(anchor, absolute).split(/[\\/]/).filter(Boolean)) {
+    current = join(current, part)
+    const stat = await lstat(current)
+    check()
+    if (stat.isSymbolicLink()) throw new Error('知识库路径含链接，授权不可用')
+  }
+  const stat = await lstat(absolute)
+  check()
+  if (!stat.isDirectory()) throw new Error('知识库根不是目录')
+  const physical = await realpath(absolute)
+  check()
+  return revisionOf(JSON.stringify([physical, stat.dev, stat.ino, stat.birthtimeMs]))
+}
 async function selectedFileDigest(path: string, version: string, buffer: Buffer, check: () => void) {
   const changed = () => new Error('所选旧资料已变化，请重新预览')
   check()
-  identity(dirname(path))
+  await asyncIdentity(dirname(path), check)
   const file = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0))
   try {
     const stat = await file.stat()
     check()
-    identity(dirname(path))
-    const current = lstatSync(path)
+    await asyncIdentity(dirname(path), check)
+    const current = await lstat(path)
+    check()
     if (!stat.isFile() || !current.isFile() || fileVersion(stat) !== version || fileVersion(current) !== version) throw changed()
     const hash = createHash('sha256')
     let remaining = stat.size
@@ -99,27 +116,31 @@ async function selectedFileDigest(path: string, version: string, buffer: Buffer,
     return hash.digest('hex')
   } finally { await file.close() }
 }
-function rootSnapshot(root: string) {
+async function rootSnapshot(root: string, check: () => void) {
   let rootIdentity: string
-  try { rootIdentity = identity(root) }
+  try { rootIdentity = await asyncIdentity(root, check) }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    return { identity: null, parent: identity(dirname(root)), entries: [] }
+    check()
+    return { identity: null, parent: await asyncIdentity(dirname(root), check), entries: [] }
   }
   const entries: { path: string; size: number; kind: string; version: string }[] = []
-  function visit(directory: string, prefix: string, depth: number): void {
-    for (const name of readdirSync(directory).sort()) {
+  async function visit(directory: string, prefix: string, depth: number): Promise<void> {
+    const names = await readdir(directory)
+    check()
+    for (const name of names.sort()) {
       if (entries.length >= 2000) throw new Error('知识库预览超过2000项，请选择更小的根')
-      const path = prefix + name, stat = lstatSync(join(directory, name))
+      const path = prefix + name, stat = await lstat(join(directory, name))
+      check()
       entries.push({ path, size: stat.size, kind: stat.isSymbolicLink() ? 'link' : stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'special', version: fileVersion(stat) })
       if (stat.isDirectory() && !protectedPath(path)) {
         if (depth >= 8) throw new Error('知识库层级过深，请选择更小的根')
-        visit(join(directory, name), path + '/', depth + 1)
+        await visit(join(directory, name), path + '/', depth + 1)
       }
     }
   }
-  visit(root, '', 0)
-  return { identity: rootIdentity, parent: identity(dirname(root)), entries }
+  await visit(root, '', 0)
+  return { identity: rootIdentity, parent: await asyncIdentity(dirname(root), check), entries }
 }
 export async function openSoulKnowledge(facility: DomainFacility, loadSession?: LoadRetrievalSession): Promise<SoulKnowledgeOwner> {
   const assisted = await openAssistedBudget(facility)
@@ -157,6 +178,11 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   const bindingPreviews = new Map<string, { revision?: string; metadataRevision?: string }>()
   const key = (directory: string) => directoryKey(canonicalDirectory(directory))
   const assertActive = () => { if (!active) throw new Error('知识库持久状态已释放') }
+  const moduleStamp = (directory: string) => {
+    const stat = lstatSync(join(directory, 'module.yml'))
+    if (!stat.isFile()) throw new Error('预设定义不是普通文件')
+    return revisionOf(JSON.stringify([identity(directory), fileVersion(stat)]))
+  }
   const consolidationRevision = (value: Binding) => {
     const recordedSources = new Set(value.records?.map(record => record.sourceId))
     return revisionOf(JSON.stringify({ ...value, revision: undefined,
@@ -176,8 +202,9 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     copy.histories = copy.histories?.filter(row => !row.automatic || row.revoked)
     return JSON.stringify({ ...copy, revision: undefined })
   }
-  const assertIdentity = (directory: string, current: Pick<Binding, 'moduleIdentity' | 'root' | 'identity' | 'read' | 'write'>) => {
-    assertModuleSnapshotSource(dirname(directory), basename(directory))
+  const assertIdentity = (directory: string, current: Pick<Binding, 'moduleIdentity' | 'root' | 'identity' | 'read' | 'write'>, verifiedModuleStamp?: string) => {
+    if (verifiedModuleStamp === undefined) assertModuleSnapshotSource(dirname(directory), basename(directory))
+    else if (moduleStamp(directory) !== verifiedModuleStamp) throw new Error('来源模块身份已变化，请重新预览确认')
     if (identity(directory) !== current.moduleIdentity) throw new Error('来源模块身份已变化，请重新预览确认')
     if (identity(current.root) !== current.identity) throw new Error('知识库真实身份已变化，请重新预览确认')
     for (const path of [...current.read, ...current.write]) {
@@ -188,19 +215,17 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       if (stat.isSymbolicLink() || current.read.includes(path) && !stat.isFile() || current.write.includes(path) && !stat.isDirectory()) throw new Error('授权资料类型已变化或被替换为链接')
     }
   }
-  const status: SoulKnowledgeOwner['status'] = directory => {
+  const status = (directory: string, verifiedModuleStamp?: string): ReturnType<SoulKnowledgeOwner['status']> => {
     assertActive()
     const current = table.get(revisionOf(key(directory))), entry = '/prompt-tool knowledge <JSON：moduleId、action=preview|confirm|status>'
     if (!current) return { state: 'unbound', entry }
     try {
-      assertIdentity(directory, current)
+      assertIdentity(directory, current, verifiedModuleStamp)
       const revision = consolidationRevision(current)
       return { state: 'bound', binding: structuredClone(current), consolidationRevision: revision, learningRevision: revision, entry }
     } catch (error) { return { state: 'unavailable', reason: String((error as Error).message), entry } }
   }
-  const prepare = (directory: string, request: SoulKnowledgeRequest) => {
-    assertActive()
-    assertModuleSnapshotSource(dirname(directory), basename(directory))
+  const prepareTarget = (directory: string, request: SoulKnowledgeRequest) => {
     if (!request || Object.keys(request).some(k => !['moduleId', 'action', 'root', 'read', 'write', 'expectedRevision'].includes(k)) || request.moduleId !== basename(directory)) throw new Error('知识库请求必须声明准确模块主语，不能含未知字段')
     if (request.root !== undefined && (typeof request.root !== 'string' || !isAbsolute(request.root))) throw new Error('知识库根必须为绝对路径')
     const root = resolve(request.root ?? join(directory, 'data'))
@@ -209,23 +234,33 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     if (!Array.isArray(read) || !Array.isArray(write) || read.length > 200 || write.length > 2) throw new Error('知识库授权范围非法')
     for (const path of [...read, ...write]) safePath(path)
     if (write.some(path => !['general', 'projects'].includes(path))) throw new Error('写入范围只能明确选择general或projects')
-    const snapshot = rootSnapshot(root)
+    const stamp = moduleStamp(directory)
+    assertModuleSnapshotSource(dirname(directory), basename(directory))
+    if (moduleStamp(directory) !== stamp) throw new Error('来源模块身份已变化，请重新预览确认')
+    return { root, read: [...read], write: [...write], stamp }
+  }
+  const inspectTarget = async (id: string, directory: string, target: ReturnType<typeof prepareTarget>, check: () => void) => {
+    const { root, read, write, stamp } = target
+    const snapshot = await rootSnapshot(root, check)
+    check()
+    if (moduleStamp(directory) !== stamp) throw new Error('来源模块身份已变化，请重新预览确认')
     const byPath = new Map(snapshot.entries.map(entry => [entry.path, entry]))
     const selected = [...new Set(read)].map(path => {
       const entry = byPath.get(path)
       if (entry?.kind !== 'file') throw new Error('所选旧资料不存在或不是普通文件')
       return entry
     })
-    for (const path of write) if (byPath.has(path) && byPath.get(path)?.kind !== 'directory') throw new Error('拟创建范围已被文件或链接占用')
-    const current = table.get(revisionOf(key(directory)))
-    const moduleRevision = fileVersion(lstatSync(join(directory, 'module.yml')))
-    const metadataRevision = revisionOf(JSON.stringify([key(directory), identity(directory), moduleRevision, root, read, write, snapshot, current?.revision ?? null]))
-    return { root, read: [...read], write: [...write], snapshot, selected, metadataRevision }
+    for (const path of write) {
+      const entry = byPath.get(path)
+      if (entry && entry.kind !== 'directory') throw new Error('拟创建范围已被文件或链接占用')
+    }
+    const current = table.get(revisionOf(id))
+    const metadataRevision = revisionOf(JSON.stringify([id, stamp, root, read, write, snapshot, current?.revision ?? null]))
+    return { snapshot, selected, metadataRevision }
   }
-  const digestSelection = async (value: ReturnType<typeof prepare>, check: () => void) => {
-    if (!value.selected.length) return []
+  const digestSelection = async (root: string, selected: Awaited<ReturnType<typeof inspectTarget>>['selected'], check: () => void) => {
     const buffer = Buffer.allocUnsafe(64 * 1024), digests: string[] = []
-    for (const { path, version } of value.selected) digests.push(await selectedFileDigest(join(value.root, path), version, buffer, check))
+    for (const { path, version } of selected) digests.push(await selectedFileDigest(join(root, path), version, buffer, check))
     return digests
   }
   const stalePreview = () => new Error('知识库预览已失效，请重新预览确认')
@@ -810,8 +845,8 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       return operation
     },
     async preview(directory, request, signal) {
-      signal.throwIfAborted()
-      const value = prepare(directory, request), id = key(directory)
+      signal.throwIfAborted(); assertActive()
+      const target = prepareTarget(directory, request), id = key(directory)
       const preview: { revision?: string; metadataRevision?: string } = {}
       bindingPreviews.set(id, preview)
       const check = () => {
@@ -819,10 +854,12 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         if (bindingPreviews.get(id) !== preview) throw stalePreview()
       }
       const operation = (async () => {
-        const digests = value.selected.length ? await digestSelection(value, check) : []
+        const value = await inspectTarget(id, directory, target, check)
+        const digests = value.selected.length ? await digestSelection(target.root, value.selected, check) : []
+        if (value.selected.length && (await inspectTarget(id, directory, target, check)).metadataRevision !== value.metadataRevision) throw stalePreview()
         check()
-        if (value.selected.length && prepare(directory, request).metadataRevision !== value.metadataRevision) throw stalePreview()
-        const { root, read, write, snapshot, metadataRevision } = value
+        const { root, read, write } = target
+        const { snapshot, metadataRevision } = value
         const revision = revisionOf(JSON.stringify([metadataRevision, digests]))
         Object.assign(preview, { metadataRevision, revision })
         return { state: 'preview', root, read, write, snapshot, revision, create: [...(snapshot.identity ? [] : [root]), ...write.filter(path => !snapshot.entries.some(item => item.path === path))], protected: ['ledger', 'SELF', 'AGENTS.md', 'CLAUDE.md', '.soul', '.runtime', '未知文件不授权、不搬迁、不覆盖'], scopes: { general: '通用资料', projects: '项目资料：接入本身不授予跨项目使用权限' } }
@@ -841,18 +878,22 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
       }
       const operation = queue.run(id, async () => {
         check()
-        const value = prepare(directory, request)
+        const target = prepareTarget(directory, request)
+        const value = await inspectTarget(id, directory, target, check)
         if (preview?.metadataRevision !== value.metadataRevision) throw stalePreview()
-        const digests = value.selected.length ? await digestSelection(value, check) : []
+        const digests = value.selected.length ? await digestSelection(target.root, value.selected, check) : []
+        if (preview.revision !== revisionOf(JSON.stringify([value.metadataRevision, digests]))) throw stalePreview()
+        if (value.selected.length && (await inspectTarget(id, directory, target, check)).metadataRevision !== value.metadataRevision) throw stalePreview()
         check()
-        if (preview.revision !== revisionOf(JSON.stringify([value.metadataRevision, digests])) || value.selected.length && prepare(directory, request).metadataRevision !== value.metadataRevision) throw stalePreview()
-        if (!value.snapshot.identity) mkdirSync(value.root)
-        for (const path of value.write) if (!value.snapshot.entries.some(item => item.path === path)) mkdirSync(join(value.root, path))
-        const next = { directory: canonicalDirectory(directory), moduleIdentity: identity(directory), root: realpathSync(value.root), identity: identity(value.root), read: value.read, write: value.write, revision: revisionOf(randomUUID()), generation: randomUUID() }
+        const { root, read, write, stamp } = target
+        if (identity(dirname(root)) !== value.snapshot.parent || value.snapshot.identity && identity(root) !== value.snapshot.identity) throw stalePreview()
+        if (!value.snapshot.identity) mkdirSync(root)
+        for (const path of write) if (!value.snapshot.entries.some(item => item.path === path)) mkdirSync(join(root, path))
+        const next = { directory: canonicalDirectory(directory), moduleIdentity: identity(directory), root: realpathSync(root), identity: identity(root), read, write, revision: revisionOf(randomUUID()), generation: randomUUID() }
         signal.throwIfAborted(); assertActive()
         await saveBinding(revisionOf(key(directory)), next)
         if (bindingPreviews.get(id) === preview) bindingPreviews.delete(id)
-        return status(directory)
+        return status(directory, stamp)
       })
       pending.add(operation)
       void operation.then(() => pending.delete(operation), () => pending.delete(operation))
