@@ -571,7 +571,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 
 ### 9.3 Dialog、表单与排序
 
-- DialogSurface/TemplatePicker 使用 body portal、backdrop、Escape、首控件聚焦、Tab/Shift+Tab 循环、关闭后焦点恢复、role=dialog 和 aria-modal。
+- 模板和目标模块选择由 `CanvasChoiceDialog` 调用原生 `showModal()`，搜索框获得初始焦点，支持 Escape、外点关闭和焦点恢复。其余仍使用 `DialogSurface` 的确认与管理操作沿用 portal 和各自的焦点处理。
 - 工作台是宿主原生页面，不声明模态语义或圈住整页焦点；必要的业务弹窗仍由共享 DialogSurface 管理焦点循环。
 - 弹窗只操作自己的 ref，不查询宿主页面结构。
 - 数值输入在提交点解析，草稿期保留字符串，避免输入中间态跳动。
