@@ -116,7 +116,7 @@ interface Projection {
   revisions: RuleRevisions
   files: Record<string, string>
 }
-interface ReusableRuleContent { json: string; text: string; revision: string; content: RuleContent }
+interface ReusableRuleContent { json: string; text: string; revision: string; fileRevision: string; content: RuleContent }
 const reusableContents = new WeakMap<Projection, Map<string, ReusableRuleContent>>()
 const ownedSnapshots = new WeakSet<ModuleDefinitionSnapshot>()
 export interface ModuleDefinitionValidationOptions {
@@ -156,6 +156,7 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   const contents: RuleContent[] = []
   const settings: Record<string, RuleSettings> = Object.create(null)
   const files: Record<string, string> = Object.create(null)
+  const fileRevisions: Record<string, string> = Object.create(null)
   const ruleRevisions: Record<string, string> = Object.create(null)
   const previousContents = previous === undefined ? undefined : reusableContents.get(previous)
   const reusable = new Map<string, ReusableRuleContent>()
@@ -164,7 +165,7 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
     const previousContent = previousContents?.get(rule.id)
     const trusted = unchangedRules?.has(rule.id) && previousContent !== undefined
     const { enabled, group, groupScope, exclusive, ...rawContent } = rule
-    const content = structuredClone(trusted ? previousContent.content : rawContent)
+    const content = trusted ? previousContent.content : structuredClone(rawContent)
     contents.push(content)
     let sequence = order[rule.id]
     if (sequence === undefined) {
@@ -177,17 +178,22 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
     settings[rule.id] = { order: sequence, ...(enabled === undefined ? {} : { enabled }), ...(group === undefined ? {} : { group }), ...(groupScope === undefined ? {} : { groupScope }), ...(exclusive === undefined ? {} : { exclusive }) }
     // 只复用不可变投影的纯内容产物；全局编译、模板依赖和状态仍逐次校验。
     const json = trusted ? previousContent.json : JSON.stringify(content)
-    const unchanged = previousContent?.json === json
-    const text = unchanged ? previousContent.text : yaml(content)
-    const revision = unchanged ? previousContent.revision : digest(content)
-    files[`${rule.id}.yml`] = text
-    ruleRevisions[rule.id] = revision
-    reusable.set(rule.id, unchanged ? previousContent : { json, text, revision, content: structuredClone(content) })
+    let entry = previousContent
+    if (entry?.json !== json) {
+      const text = yaml(content)
+      entry = { json, text, revision: digest(content), fileRevision: revisionOf(text), content: structuredClone(content) }
+    }
+    const filename = `${rule.id}.yml`
+    files[filename] = entry.text
+    fileRevisions[filename] = entry.fileRevision
+    ruleRevisions[rule.id] = entry.revision
+    reusable.set(rule.id, entry)
   }
   files[RULES_VARIABLES_FILE] = yaml(variables)
+  fileRevisions[RULES_VARIABLES_FILE] = revisionOf(files[RULES_VARIABLES_FILE])
   const state = { rules: settings, variablesEnabled }
   const revisions: RuleRevisions = { rules: ruleRevisions, settings: digest(state), variables: digest(variables) }
-  files[RULES_SETTINGS_FILE] = yaml({ ...state, _integrity: { version: 1, module: sourceRevision, files: Object.fromEntries(Object.entries(files).map(([file, text]) => [file, revisionOf(text)])), settings: revisions.settings } })
+  files[RULES_SETTINGS_FILE] = yaml({ ...state, _integrity: { version: 1, module: sourceRevision, files: fileRevisions, settings: revisions.settings } })
   const projected = { contents, settings, variables, variablesEnabled, revisions, files }
   reusableContents.set(projected, reusable)
   return projected
@@ -266,8 +272,9 @@ export function validateModuleRuleText(snapshot: ModuleDefinitionSnapshot, expec
     if (isAlias(node) || isNode(node) && (node.anchor || node.tag || node.comment || node.commentBefore)) unsafe = true
   })
   if (unsafe) return undefined
-  const source: unknown = snapshot.doc.toJS()
-  if (!isDeepStrictEqual(source, expected)) return undefined
+  const owned = ownedSnapshots.has(snapshot)
+  // 独占文档的其余原文未变，被替换的节点用实际写入片段验证并重建。
+  if (!owned && !isDeepStrictEqual(snapshot.doc.toJS(), expected)) return undefined
   const fragmentNodes = fragment.contents
   if (!isSeq(fragmentNodes) || !isSeq(nodes) || !isMap(fragmentNodes.items[0])) return undefined
   const replacementNode = fragmentNodes.items[0]
@@ -277,7 +284,7 @@ export function validateModuleRuleText(snapshot: ModuleDefinitionSnapshot, expec
   shiftRanges(replacementNode, 0, offset)
   nodes.items[index] = replacementNode
   // 只有从私有槽取走的独占源能以引用证明未改；普通调用仍逐条按内容比对。
-  const unchangedRules = ownedSnapshots.has(snapshot)
+  const unchangedRules = owned
     ? new Set(before.filter((rule, at) => rule === after[at]).map(rule => (rule as RuleDefinition).id)) : undefined
   const candidate = snapshotFromDocument(snapshot.dir, text, snapshot.doc, expected, {}, projectedSnapshot(snapshot), unchangedRules)
   plainRuleDocuments.add(candidate)
@@ -349,10 +356,14 @@ export function loadModuleDefinition(directory: string, takeOwnership = false): 
 
 const sourceConflict = (): ModuleWriteError => new ModuleWriteError('写入前模块再次变化，请重新读取', 409, 'rules-conflict')
 
-function assertSource(snapshot: ModuleDefinitionSnapshot): void {
+function assertSourcePath(snapshot: ModuleDefinitionSnapshot): void {
   if (canonicalDirectory(snapshot.dir) !== snapshot.dir) throw sourceConflict()
   assertModuleId(basename(snapshot.dir))
   assertPlain(snapshot.file)
+}
+
+function assertSource(snapshot: ModuleDefinitionSnapshot): void {
+  assertSourcePath(snapshot)
   // 身份已由快照完整解析校验；相同字节版本无需再次解析整份 YAML。
   if (revisionOf(readFileSync(snapshot.file)) !== snapshot.revision) throw sourceConflict()
 }
@@ -542,11 +553,12 @@ export function commitModuleDefinition(snapshot: ModuleDefinitionSnapshot, next:
         file: snapshot.file,
         expectedRevision: snapshot.revision,
         read: () => {
-          const bytes = readFileSync(snapshot.file)
-          return { revision: revisionOf(bytes), value: undefined, mode: statSync(snapshot.file).mode }
+          assertSourcePath(snapshot)
+          const mode = statSync(snapshot.file).mode
+          return { revision: revisionOf(readFileSync(snapshot.file)), value: undefined, mode }
         },
         prepare: () => candidate.text,
-        recheck: () => { assertSource(snapshot); projectedSnapshot(candidate) },
+        recheck: () => { assertSourcePath(snapshot); projectedSnapshot(candidate) },
         conflict: sourceConflict,
       })
       persisted = true
