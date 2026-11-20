@@ -50,6 +50,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const openDiagnosticTarget = (target: RuleDiagnosticTarget): void => {
     const ruleBrowse = configPageBrowse(browse, 'features')
     ruleBrowse.diagnosticTarget = target
+    ruleBrowse.moduleFilter = undefined
     ruleBrowse.combination = false
     browse.diagnosticReturn = target
     changePage('features')
@@ -62,6 +63,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const openModule = (moduleId: string, ruleKey?: string): void => {
     const current = configPageBrowse(browse, 'features')
     current.allModules = true
+    current.moduleFilter = moduleId
     current.filter = moduleId
     current.viewFilter = 'all'
     current.combination = false
@@ -70,7 +72,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     navigate('features')
   }
 
-  const auxiliary = page === 'modules' ? <ModulesWorkspacePage store={store} moduleBrowse={browse.moduleManager} onOpenModule={openModule} diagnostics={props.diagnostics} resultsDisclosure={browse.diagnosticsResults} t={t} onReady={markReady}
+  const auxiliary = page === 'modules' ? <ModulesWorkspacePage store={store} onOpenModule={openModule} diagnostics={props.diagnostics} resultsDisclosure={browse.diagnosticsResults} t={t} onReady={markReady}
             onLocate={openDiagnosticTarget} returnTarget={browse.diagnosticReturn} onReturnFocus={finishDiagnosticReturn} /> : undefined
 
   return (

@@ -8,7 +8,6 @@ import { DiagnosticsPanel } from '../../../features/modules/DiagnosticsPanel.tsx
 import { Button } from '../../../ui/Button.tsx'
 import type { createWorkspaceBrowseState } from '../workspace-browse-state.ts'
 import css from './diagnostics.module.css'
-import { useModuleRuleEditors } from '../../../data/use-rule-editor.ts'
 
 type ResultsDisclosure = ReturnType<typeof createWorkspaceBrowseState>['diagnosticsResults']
 
@@ -24,7 +23,6 @@ export function ModulesWorkspacePage(props: {
   store: PromptToolStore
   diagnostics: RuleDiagnosticsSession
   resultsDisclosure: ResultsDisclosure
-  moduleBrowse: ReturnType<typeof createWorkspaceBrowseState>['moduleManager']
   onOpenModule: (moduleId: string, ruleKey?: string) => void
   t: PromptToolTranslate
   onReady: () => void
@@ -33,16 +31,6 @@ export function ModulesWorkspacePage(props: {
   onReturnFocus?: () => void
 }): ReactNode {
   const snapshot = useSyncExternalStore(props.diagnostics.subscribe, props.diagnostics.getSnapshot, props.diagnostics.getSnapshot)
-  const selectedId = useSyncExternalStore(props.moduleBrowse.subscribe, props.moduleBrowse.getSnapshot)
-  const selectedModule = props.store.meta.modules?.find(module => module.id === selectedId) ?? props.store.meta.modules?.[0]
-  const selectedOwner = useModuleRuleEditors(props.store, selectedModule ? [selectedModule.id] : [])[0]
-  const overview = selectedModule && <section aria-label={props.t('rules.ruleOverview')}>
-    <h3>{props.t('rules.ruleOverview')}</h3>
-    <Button variant="primary" onClick={() => props.onOpenModule(selectedModule.id)}>{props.t('rules.openModule')}</Button>
-    {selectedOwner?.draft.error && <p role="alert">{selectedOwner.draft.error}</p>}
-    {selectedOwner?.draft.entries.filter(entry => !entry.deleted).map(entry => <Button key={entry.key} variant="outline"
-      onClick={() => props.onOpenModule(selectedModule.id, entry.key)}>{entry.value.name || entry.value.id}</Button>)}
-  </section>
   const sessionId = props.store.api.currentSessionId()
   const context = snapshot.context?.sessionId === sessionId ? snapshot.context : undefined
   const showRules = snapshot.diagnosedAt !== undefined || snapshot.status === 'error'
@@ -54,7 +42,7 @@ export function ModulesWorkspacePage(props: {
           : sessionId !== undefined && showRules && !showContext ? props.t('diagnostics.contextPending')
             : snapshot.status === 'ready' ? props.t('diagnostics.completed') : props.t('diagnostics.never')
   return <>
-    <ModulesPage {...props} moduleDetail={overview} />
+    <ModulesPage {...props} />
     <details><summary>{props.t('diagnostics.title')}</summary><section className={css.card} aria-label={props.t('diagnostics.title')}>
       <header className={css.header}>
         <div className={css.intro}><h2>{props.t('diagnostics.title')}</h2><p>{props.t(sessionId === undefined ? 'diagnostics.noSession' : 'diagnostics.hint')}{sessionId === undefined ? '' : ` · ${sessionId}`}</p></div>

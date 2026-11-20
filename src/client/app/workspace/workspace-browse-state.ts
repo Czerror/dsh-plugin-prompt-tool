@@ -6,6 +6,7 @@ export interface ConfigPageBrowse {
   viewFilter: string
   expanded?: string
   allModules?: boolean
+  moduleFilter?: string
   rulesScroll?: number
   ruleNodes?: Map<string, string>
   ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>
@@ -21,14 +22,7 @@ export interface ConfigPageBrowse {
 export function createWorkspaceBrowseState() {
   let diagnosticsOpen = false
   const diagnosticsListeners = new Set<() => void>()
-  let moduleId: string | undefined
-  const moduleListeners = new Set<() => void>()
   return {
-    moduleManager: {
-      getSnapshot: () => moduleId,
-      subscribe(listener: () => void) { moduleListeners.add(listener); return () => { moduleListeners.delete(listener) } },
-      select(id: string) { if (id !== moduleId) { moduleId = id; for (const listener of moduleListeners) listener() } },
-    },
     diagnosticsResults: {
       getSnapshot: () => diagnosticsOpen,
       subscribe(listener: () => void) { diagnosticsListeners.add(listener); return () => { diagnosticsListeners.delete(listener) } },

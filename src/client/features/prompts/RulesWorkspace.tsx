@@ -48,7 +48,7 @@ function searchableRule(rule: RuleDefinition): string {
 export interface RulesWorkspaceProps {
   store: ModuleFactsPort & DraftsPort & RuleEditingPort & InstructionFilesPort & NoticePort & ModuleActionsPort
   t: PromptToolTranslate
-  browse?: { filter: string; expanded?: string; allModules?: boolean; rulesScroll?: number; ruleNodes?: Map<string, string>; ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>; combination?: boolean; diagnosticTarget?: RuleDiagnosticTarget; publish?: () => void }
+  browse?: { filter: string; expanded?: string; allModules?: boolean; moduleFilter?: string; rulesScroll?: number; ruleNodes?: Map<string, string>; ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>; combination?: boolean; diagnosticTarget?: RuleDiagnosticTarget; publish?: () => void }
   onRuleEdit?: () => void
   onReturnToDiagnostics?: () => void
   createdHidden?: boolean; onShowCreated?: () => void
@@ -90,7 +90,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const diagnosticTarget = props.browse?.diagnosticTarget
   const enabledModules = modules.filter(module => module.enabled === true)
   const enabledIds = new Set(enabledModules.map(module => module.id))
-  const ownerIds = (allModules ? modules : modules.filter(module => enabledIds.has(module.id) || module.id === diagnosticTarget?.moduleId))
+  const ownerIds = (props.browse?.moduleFilter ? modules.filter(module => module.id === props.browse?.moduleFilter)
+    : allModules ? modules : modules.filter(module => enabledIds.has(module.id) || module.id === diagnosticTarget?.moduleId))
     .filter(module => moduleDeclares(modules, module.id, 'rules') !== false).map(module => module.id)
   // 排序请求生命周期归 useModuleConfigOrder（全仓唯一一份实现）；页面只提供「保存成功后要刷新哪些编辑器」。
   const ownersRef = useRef<ModuleRuleEditor[]>([])
@@ -110,6 +111,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const sortDisabled = order.busy || orderBlocked.size > 0
   const query = (props.keyword ?? filter).trim().toLowerCase(), view = props.viewFilter ?? 'all'
   const changeFilter = (value: string): void => {
+    if (props.browse) props.browse.moduleFilter = undefined
     if (props.browse?.publish) { props.browse.filter = value; props.browse.publish() }
     else { setFilter(value); props.onKeywordChange?.(value); if (props.browse) props.browse.filter = value }
   }
@@ -277,7 +279,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     select(undefined)
   }
   const changeCombination = (next: boolean): void => {
-    if (props.browse) { props.browse.combination = next; props.browse.publish?.() }
+    if (props.browse) { props.browse.combination = next; if (next) props.browse.moduleFilter = undefined; props.browse.publish?.() }
     if (!props.browse?.publish) setCombination(next)
     if (next) setListOpen(true)
   }
@@ -319,7 +321,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         { value: 'active', label: t('rules.participatingModules') }, { value: 'all', label: t('rules.allModules') },
       ]} onChange={value => {
         const next = value === 'all'
-        if (props.browse) { props.browse.allModules = next; props.browse.publish?.() }
+        if (props.browse) { props.browse.allModules = next; props.browse.moduleFilter = undefined; props.browse.publish?.() }
         if (!props.browse?.publish) setAllModules(next)
         if (!next && selected && !enabledIds.has(selected.moduleId)) back()
       }} />

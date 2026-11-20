@@ -1,5 +1,5 @@
 /** 模块管理：名称与创建归模块页；规则编辑仍归主会话／子代理。 */
-import { memo, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import clsx from 'clsx'
 import { IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
@@ -19,16 +19,12 @@ import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { TextInput } from '../../ui/TextInput.tsx'
+import { SearchInput } from '../../ui/SearchInput.tsx'
+import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
 
 const styles = sharedCss
-export interface ModuleManagerBrowse {
-  getSnapshot(): string | undefined
-  subscribe(listener: () => void): () => void
-  select(id: string): void
-}
-const noSubscribe = () => () => {}
 
 function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions; t: PromptToolTranslate; onClose: () => void; onSaved: (publication?: { pending: boolean; error?: string }) => void }): ReactNode {
   const { module, t } = props
@@ -106,7 +102,7 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
   </span>
 }
 
-export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort; t: PromptToolTranslate; browse?: ModuleManagerBrowse; detail?: ReactNode }): ReactNode {
+export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort; t: PromptToolTranslate; onOpenModule?: (moduleId: string, ruleKey?: string) => void }): ReactNode {
   const { store, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   const modules = store.meta.modules ?? []
@@ -116,10 +112,10 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
   const [importOpen, setImportOpen] = useState(false)
   const [exportTarget, setExportTarget] = useState<{ id: string; name: string }>()
   const [nameTarget, setNameTarget] = useState<ModuleSummary | undefined>()
-  const [localSelectedModuleId, setLocalSelectedModuleId] = useState<string>()
-  const selectedModuleId = useSyncExternalStore(props.browse?.subscribe ?? noSubscribe, props.browse?.getSnapshot ?? (() => localSelectedModuleId))
-  const setSelectedModuleId = (id: string): void => { if (props.browse) props.browse.select(id); else setLocalSelectedModuleId(id) }
-  const selectedModule = modules.find(module => module.id === selectedModuleId) ?? modules[0]
+  const [query, setQuery] = useState('')
+  const [status, setStatus] = useState('all')
+  const visibleModules = modules.filter(module => `${module.id} ${module.name} ${module.description ?? ''}`.toLowerCase().includes(query.toLowerCase())
+    && (status === 'all' || (module.enabled === true) === (status === 'on')))
   const [creating, setCreating] = useState(false)
   const [publicationRetry, setPublicationRetry] = useState<{ error?: string; run: () => Promise<ModuleActionResult<unknown>> }>()
   const creatingRef = useRef(false)
@@ -267,17 +263,16 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
         publication={flow.publication} onRetryPublication={() => { void flow.retryPublication() }}
         onUse={flow.resultLabel === undefined ? undefined : () => { void setModuleEnabled(flow.resultLabel!, true); flow.cancel(); setImportOpen(false) }} />}
       {exportTarget && <ModuleExportDialog t={t} module={exportTarget} onClose={() => setExportTarget(undefined)} />}
-      <div className={styles.moduleManager}>
-        <nav className={styles.moduleManagerList} aria-label={t('page.modules.label')}>
-          {modules.map(module => <Button key={module.id} variant="outline" aria-pressed={selectedModule?.id === module.id}
-            onClick={() => setSelectedModuleId(module.id)}>{module.name}</Button>)}
-        </nav>
-        <div className={styles.moduleManagerDetail}>
-        {modules.length === 0 ? (
+      <div className={styles.inlineControls}>
+        <SearchInput aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query} onChange={event => setQuery(event.target.value)} />
+        <MenuSelect ariaLabel={t('rules.moduleFilter')} value={status} onChange={setStatus} options={[
+          { value: 'all', label: t('rules.moduleAll') }, { value: 'on', label: t('moduleSwitcher.enabled') }, { value: 'off', label: t('rules.moduleDisabled') },
+        ]} />
+      </div>
+      <div className={styles.moduleGrid}>
+        {visibleModules.length === 0 ? (
           <p className={styles.readOnly} role="status">{t('moduleSwitcher.empty')}</p>
-        ) : selectedModule && renderCard(selectedModule)}
-        {props.detail}
-        </div>
+        ) : visibleModules.map(renderCard)}
       </div>
       {pickerOpen && (
         <DialogSurface title={t('moduleSwitcher.dialog.title')} closeLabel={t('moduleSwitcher.dialog.close')} anchorRef={pickerAnchorRef} onClose={() => setPickerOpen(false)}>
@@ -300,6 +295,8 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
   )
 
   function renderCard(module: ModuleSummary): ReactNode {
+    const draft = store.editorDrafts.rules.get(module.id)
+    const rules = draft?.loaded ? draft.entries.filter(entry => !entry.deleted) : undefined
     const confirming = confirmingDelete === module.id
     // 不可渲染（缺 modules/组合文件，包内也无同名模板可回退）：灰显禁切换，
     // 提示还原路径——避免点击后宿主挂载失败的哑弹。
@@ -325,6 +322,9 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
             && <p className={styles.moduleCardDesc}>{module.description}</p>}
           {module.broken !== undefined && <p className={styles.moduleBlocked} role="alert">{module.broken}</p>}
           <code className={styles.moduleCardId}>{module.id}</code>
+          <p className={styles.configFieldHint}>{rules ? t('rules.moduleRuleCount', { count: rules.length }) : t('rules.moduleRulesOnOpen')}</p>
+          {props.onOpenModule && <Button variant="primary" disabled={blocked} onClick={() => props.onOpenModule?.(module.id)}>{t('rules.openModule')}</Button>}
+          {rules?.slice(0, 3).map(entry => <Button key={entry.key} variant="outline" onClick={() => props.onOpenModule?.(module.id, entry.key)}>{entry.value.name || entry.value.id}</Button>)}
         </div>
         <span className={styles.moduleCardFooter}>
           {/* 开关与卡头徽章都表达启用状态；模块页只回答「谁参与装配」，没有「当前模块」高亮。 */}
