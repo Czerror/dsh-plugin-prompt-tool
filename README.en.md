@@ -11,7 +11,7 @@ Manage prompts and rules in [DeepSeek Harness (DSH)](https://deepseek-harness.gi
 In the Prompt Tool workspace, you can:
 
 - Edit prompts, personas, conditions, variables, and model parameters for main sessions and subagents
-- Create, enable, disable, copy, and share modules; preview available tools
+- Create, enable, disable, copy, and share modules; edit custom tools and tool permission rules
 - Import SillyTavern presets, character cards, and world books as modules
 - Configure ledgers, knowledge retrieval, and continuous memory in modules as needed; knowledge access and continuous memory require separate authorization
 
@@ -19,14 +19,16 @@ In the Prompt Tool workspace, you can:
 
 After [installing the plugin](#install-the-plugin) below, open **Prompt Tool** from the sidebar:
 
-1. Create a module on the **Modules** page, or import existing files.
-2. Enable the module on the **Modules** page and confirm the module runtime switch is on.
-3. Edit the module’s rules on **Main session** or **Subagent**. Save the text, conditions, and actions, and enable rules as needed.
-4. To check the result, click **Run diagnostics once** for rule and current-session diagnostics.
+1. The workspace opens directly on a shared canvas. Open **Module center** at the top left, create or import a module, enable it, and turn on the module runtime switch.
+2. Choose **Main session** or **Subagent** in the top bar, then search for and select a rule in the canvas list. The list defaults to participating modules; switch to all modules to edit disabled ones. The combination view also opens over the canvas.
+3. Add nodes from the left library and edit selected conditions or actions in the right properties overlay. Separate overlays provide the full JSON definition and rule settings; zoom controls and a legend sit at the bottom. Returning to the list keeps you on the same canvas.
+4. Open **Module center** and click **Run diagnostics once**. Results with rule or action identities can take you back to that rule. Select modules on the left and manage details on the right; selection and editing do not enable modules.
 
 You can import [YAML](https://yaml.org/)/[JSON](https://www.json.org/json-en.html) module files, folders/[ZIP archives](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), SillyTavern presets, [PNG images](https://www.w3.org/TR/png/)/JSON character cards, and world books. New and imported modules start disabled. See [SillyTavern import details](docs/SillyTavern.md) for conversion limits.
 
-Save before refreshing the page: unsaved drafts may be lost. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
+Click a library item to inspect it; drag onto a target or explicitly add it to create a node. The inspector shows selected node parameters first, with deletion at the bottom and a collapsible rule overview. Tool preview has been removed; custom tool editing and actual tool permissions remain available.
+
+All three workspace entry points share the selected audience, browsing position, and rule drafts. Opening or closing the module center does not automatically save rules. Wait for save confirmation before refreshing. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
 
 ## Install the plugin
 

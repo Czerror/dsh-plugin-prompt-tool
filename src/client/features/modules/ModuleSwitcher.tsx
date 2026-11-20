@@ -1,5 +1,5 @@
 /** 模块管理：名称与创建归模块页；规则编辑仍归主会话／子代理。 */
-import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import clsx from 'clsx'
 import { IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
@@ -23,6 +23,12 @@ import { StatusBadge } from '../../ui/StatusBadge.tsx'
 import sharedCss from '../../ui/controls.module.css'
 
 const styles = sharedCss
+export interface ModuleManagerBrowse {
+  getSnapshot(): string | undefined
+  subscribe(listener: () => void): () => void
+  select(id: string): void
+}
+const noSubscribe = () => () => {}
 
 function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions; t: PromptToolTranslate; onClose: () => void; onSaved: (publication?: { pending: boolean; error?: string }) => void }): ReactNode {
   const { module, t } = props
@@ -100,7 +106,7 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
   </span>
 }
 
-export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort; t: PromptToolTranslate }): ReactNode {
+export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort; t: PromptToolTranslate; browse?: ModuleManagerBrowse }): ReactNode {
   const { store, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   const modules = store.meta.modules ?? []
@@ -110,6 +116,10 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
   const [importOpen, setImportOpen] = useState(false)
   const [exportTarget, setExportTarget] = useState<{ id: string; name: string }>()
   const [nameTarget, setNameTarget] = useState<ModuleSummary | undefined>()
+  const [localSelectedModuleId, setLocalSelectedModuleId] = useState<string>()
+  const selectedModuleId = useSyncExternalStore(props.browse?.subscribe ?? noSubscribe, props.browse?.getSnapshot ?? (() => localSelectedModuleId))
+  const setSelectedModuleId = (id: string): void => { if (props.browse) props.browse.select(id); else setLocalSelectedModuleId(id) }
+  const selectedModule = modules.find(module => module.id === selectedModuleId) ?? modules[0]
   const [creating, setCreating] = useState(false)
   const [publicationRetry, setPublicationRetry] = useState<{ error?: string; run: () => Promise<ModuleActionResult<unknown>> }>()
   const creatingRef = useRef(false)
@@ -257,10 +267,16 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
         publication={flow.publication} onRetryPublication={() => { void flow.retryPublication() }}
         onUse={flow.resultLabel === undefined ? undefined : () => { void setModuleEnabled(flow.resultLabel!, true); flow.cancel(); setImportOpen(false) }} />}
       {exportTarget && <ModuleExportDialog t={t} module={exportTarget} onClose={() => setExportTarget(undefined)} />}
-      <div className={styles.moduleGrid}>
+      <div className={styles.moduleManager}>
+        <nav className={styles.moduleManagerList} aria-label={t('page.modules.label')}>
+          {modules.map(module => <Button key={module.id} variant="outline" aria-pressed={selectedModule?.id === module.id}
+            onClick={() => setSelectedModuleId(module.id)}>{module.name}</Button>)}
+        </nav>
+        <div className={styles.moduleManagerDetail}>
         {modules.length === 0 ? (
           <p className={styles.readOnly} role="status">{t('moduleSwitcher.empty')}</p>
-        ) : modules.map((module) => renderCard(module))}
+        ) : selectedModule && renderCard(selectedModule)}
+        </div>
       </div>
       {pickerOpen && (
         <DialogSurface title={t('moduleSwitcher.dialog.title')} closeLabel={t('moduleSwitcher.dialog.close')} anchorRef={pickerAnchorRef} onClose={() => setPickerOpen(false)}>

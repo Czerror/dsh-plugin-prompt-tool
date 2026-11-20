@@ -8,6 +8,7 @@ export interface ConfigPageBrowse {
   allModules?: boolean
   rulesScroll?: number
   ruleNodes?: Map<string, string>
+  ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>
   combination?: boolean
   diagnosticTarget?: RuleDiagnosticTarget
   publish(): void
@@ -20,7 +21,15 @@ export interface ConfigPageBrowse {
 export function createWorkspaceBrowseState() {
   let diagnosticsOpen = false
   const diagnosticsListeners = new Set<() => void>()
+  let moduleId: string | undefined
+  const moduleListeners = new Set<() => void>()
   return {
+    audience: 'features' as 'features' | 'subagent',
+    moduleManager: {
+      getSnapshot: () => moduleId,
+      subscribe(listener: () => void) { moduleListeners.add(listener); return () => { moduleListeners.delete(listener) } },
+      select(id: string) { if (id !== moduleId) { moduleId = id; for (const listener of moduleListeners) listener() } },
+    },
     diagnosticsResults: {
       getSnapshot: () => diagnosticsOpen,
       subscribe(listener: () => void) { diagnosticsListeners.add(listener); return () => { diagnosticsListeners.delete(listener) } },
@@ -32,7 +41,6 @@ export function createWorkspaceBrowseState() {
     configs: new Map<string, ConfigPageBrowse>(),
     diagnosticReturn: undefined as RuleDiagnosticTarget | undefined,
     scroll: new Map<string, number>(),
-    tools: { query: '', selectedId: '', expanded: {} as Record<string, boolean> },
   }
 }
 
@@ -43,6 +51,7 @@ export function configPageBrowse(state: ReturnType<typeof createWorkspaceBrowseS
     let revision = 0
     value = {
       filter: '', viewFilter: 'all', variablesExpanded: false,
+      ruleCanvas: new Map(),
       publish() { revision++; for (const listener of listeners) listener() },
       subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener) } },
       revision: () => revision,

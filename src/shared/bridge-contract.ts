@@ -55,7 +55,6 @@ export const BRIDGE_ENDPOINTS = {
   moduleName: '/module-name',
   moduleEnable: '/module-enable',
   moduleConfigOrder: '/module-config-order',
-  toolSurface: '/tool-surface',
   moduleCapability: '/module-capability',
   contextActivationDiagnostics: '/context-activation-diagnostics',
   ruleDiagnostics: '/rule-diagnostics',
@@ -121,7 +120,6 @@ export const BRIDGE_SUBJECT_POLICY = {
   moduleName: 'required',
   moduleEnable: 'none',
   moduleConfigOrder: 'none',
-  toolSurface: 'none',
   moduleCapability: 'required',
   contextActivationDiagnostics: 'none',
   ruleDiagnostics: 'none',
@@ -234,7 +232,6 @@ export interface BridgeRequestMap {
   moduleName: { name?: string; expectedRevision?: string; expectedModuleId?: string; refreshOnly?: boolean }
   moduleEnable: { id: string; enabled: boolean; refreshOnly?: false } | { refreshOnly: true; id?: never; enabled?: never }
   moduleConfigOrder: ({ moduleId: string } | { moduleId?: string; entries: ModuleConfigIdentity[]; expectedRevision: string }) & { refreshOnly?: boolean } | undefined
-  toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
   moduleCapability: (
     | { action: 'create' | 'remove'; capabilityId: string }
     | { action: 'create-recipe'; recipeId: string }
@@ -539,12 +536,6 @@ export interface BridgeValueMap {
   moduleName: { name: string; revision: string } & PublicationFields
   moduleEnable: { enabled: string[] } & PublicationFields
   moduleConfigOrder: ModuleConfigOrderSnapshot & PublicationFields
-  toolSurface: {
-    source: 'session' | 'preset'
-    sessionId?: string
-    presetId?: string
-    tools: Array<{ name: string; description: string }>
-  }
   moduleCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] } & PublicationFields
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录（读取不重新求值）。 */
   contextActivationDiagnostics: { records: ContextActivationDiagnosticRecord[]; truncated: boolean; step: number; evaluated: boolean }

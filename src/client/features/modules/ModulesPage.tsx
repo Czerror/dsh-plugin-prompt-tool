@@ -1,7 +1,7 @@
 /** 模块列表统一管理所有导入来源；编辑目标与模块启用集合独立。 */
 import { memo, useEffect, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
-import { ModuleSwitcher } from './ModuleSwitcher.tsx'
+import { ModuleSwitcher, type ModuleManagerBrowse } from './ModuleSwitcher.tsx'
 import sharedCss from '../../ui/controls.module.css'
 
 const ui = sharedCss
@@ -13,6 +13,7 @@ export const ModulesPage = memo(function ModulesPage(
   props: {
     store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort
     t: PromptToolTranslate; onReady?: () => void
+    moduleBrowse?: ModuleManagerBrowse
   },
 ): ReactNode {
   const { store, t } = props
@@ -22,7 +23,7 @@ export const ModulesPage = memo(function ModulesPage(
     <>
       {!fields.modulesEnabled && <p className={ui.configFieldHint}>{t('configs.readOnly.disabled')}</p>}
       {store.meta.moduleWarnings?.map(message => <p key={message} role="alert" className={ui.configFieldHint}>{message}</p>)}
-      <ModuleSwitcher store={store} t={t} />
+      <ModuleSwitcher store={store} t={t} browse={props.moduleBrowse} />
     </>
   )
 })

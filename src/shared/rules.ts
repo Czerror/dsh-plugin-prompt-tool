@@ -69,6 +69,8 @@ export interface RulesRequest {
 }
 
 export interface RuleEditorMeta {
+  /** 动态注入层的真实执行点；旧宿主未提供时画布只显示未知，不猜测次序。 */
+  injectionPoints?: Record<string, { channel: string; phase: string }>
   predicates: Array<{ kind: string; example: Record<string, unknown> }>
   composites: string[]
   actions: Array<{

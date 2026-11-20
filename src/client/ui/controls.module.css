@@ -819,3 +819,8 @@
 /* 模块运行总闸：按钮行占满整行，文字与开关一起贴最右（父级 flex: 0 0 auto 撑不到行右端）。 */
 .moduleGlobalSwitch { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 6px; }
 .moduleGlobalSwitch > span:first-child { color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; }
+.moduleManager { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr); gap: 16px; min-inline-size: 0; }
+.moduleManagerList { display: flex; flex-direction: column; gap: 6px; overflow: auto; max-block-size: 60dvh; min-inline-size: 0; }
+.moduleManagerList button { white-space: normal; overflow-wrap: anywhere; text-align: start; }
+.moduleManagerDetail { min-inline-size: 0; }
+@media (width < 480px) { .moduleManager { grid-template-columns: minmax(0, 1fr); } .moduleManagerList { max-block-size: 25dvh; } }
