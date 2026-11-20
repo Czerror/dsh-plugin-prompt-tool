@@ -17,32 +17,21 @@ import type { WorkspacePage } from '../workspace-pages.ts'
 type AudienceStore = ModuleFactsPort & DraftsPort & ParamsPort & VariablesPort & RuleEditingPort
   & InstructionFilesPort & ModuleActionsPort & NoticePort & ModelsPort & HostApiPort
 
-/**
- * 受众差异**只有这四样**，其余编排与子面完全同构；两个受众页因此合成一个参数化页。
- * `exclude`：仅主对话生效的能力不在子代理页创建、也不在子代理页显示卡片
- * （B7 T3 后暂无此类能力，清单保留给后续重构）。
- */
-const AUDIENCE_CONFIG = {
-  main: { scope: undefined, aria: 'main.aria', exclude: undefined },
-  subagent: { scope: 'subagent', aria: 'subagent.aria', exclude: ['main-model'] as readonly string[] },
-} as const
 const subscribeEmpty = () => () => {}
 const emptyRevision = () => 0
 
 /**
- * 受众页：按装配集合呈现各启用模块的规则与层内资产（主语由每张卡的归属模块给出）。
+ * 统一画布：按装配集合呈现各启用模块全部受众规则与层内资产。
  *
  * 纪律：过滤抽屉与搜索词只由用户手动改变；新建只做「展开新卡 + 滚动定位」两件事。
  * 九层归位、层内设置与资产编辑器统一由 `InjectionPointsPanel` 提供，本页只声明受众视图与页面编排。
  */
 export const AudiencePage = memo(function AudiencePage(props: {
   store: AudienceStore
-  audience: keyof typeof AUDIENCE_CONFIG
   t: PromptToolTranslate; browse?: ConfigPageBrowse; onNavigate?: (page: WorkspacePage) => void
   onRuleEdit?: () => void; onReturnToDiagnostics?: () => void
 }): ReactNode {
-  const { store, t, audience } = props
-  const config = AUDIENCE_CONFIG[audience]
+  const { store, t } = props
   useSyncExternalStore(props.browse?.subscribe ?? subscribeEmpty, props.browse?.revision ?? emptyRevision, props.browse?.revision ?? emptyRevision)
   const [localViewFilter, setViewFilter] = useState('all')
   const viewFilter = props.browse?.viewFilter ?? localViewFilter
@@ -67,20 +56,17 @@ export const AudiencePage = memo(function AudiencePage(props: {
     store,
     t,
     viewFilter,
-    audience,
     keyword,
     focusCapability,
     onCreated: revealCapability,
-    ...(config.exclude === undefined ? {} : { excludeCapabilities: config.exclude }),
   })
   // 页级创建入口的清单（编排与浮层都在 RulesWorkspace 里，主语由那次目标选择给出）。
   const createItems = INSERTION_LAYERS.map((layer) => ({ id: `tpl:${layer}`, label: t('main.addTemplate', { layer: translateLabel(t, LAYER_LABEL_KEYS, layer) }) }))
   return (
-    <section className={ui.section} aria-label={t(config.aria)}>
+    <section className={ui.section} aria-label={t('rules.ruleEditor')}>
       <RulesWorkspace
         store={store}
         t={t}
-        scope={config.scope}
         browse={props.browse}
         onRuleEdit={props.onRuleEdit}
         onReturnToDiagnostics={props.onReturnToDiagnostics}

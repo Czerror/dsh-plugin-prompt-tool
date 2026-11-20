@@ -12,7 +12,6 @@ export function createWorkspaceViewState() {
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
     select(next: WorkspacePage) {
       if (page === next) return
-      if (next === 'features' || next === 'subagent') browse.audience = next
       page = next
       for (const listener of listeners) listener()
     },

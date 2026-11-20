@@ -25,7 +25,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const { store, view } = props
   const page = useSyncExternalStore(view.subscribe, view.getSnapshot, view.getSnapshot)
   const browse = view.browse
-  const audience = browse.audience
   const auxiliaryPanel = useRef<HTMLDialogElement>(null)
   const auxiliaryTrigger = useRef<HTMLElement>()
   useLayoutEffect(() => {
@@ -38,8 +37,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     if (target === 'modules' && page !== 'modules') auxiliaryTrigger.current = document.activeElement as HTMLElement
     if (target !== page) {
       setReadyPage(undefined)
-      // 辅助浮层保留受众编辑面；仅真正切换受众时保存开关与指令文件。
-      if ((target === 'features' || target === 'subagent') && target !== audience) void store.persistBeforeLeave()
     }
     view.select(target)
   }
@@ -62,15 +59,24 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     changePage('modules')
   }
   const finishDiagnosticReturn = useCallback(() => { browse.diagnosticReturn = undefined }, [browse])
+  const openModule = (moduleId: string, ruleKey?: string): void => {
+    const current = configPageBrowse(browse, 'features')
+    current.allModules = true
+    current.filter = moduleId
+    current.viewFilter = 'all'
+    current.combination = false
+    current.expanded = ruleKey === undefined ? undefined : JSON.stringify([moduleId, ruleKey])
+    current.publish()
+    navigate('features')
+  }
 
-  const auxiliary = page === 'modules' ? <ModulesWorkspacePage store={store} moduleBrowse={browse.moduleManager} diagnostics={props.diagnostics} resultsDisclosure={browse.diagnosticsResults} t={t} onReady={markReady}
+  const auxiliary = page === 'modules' ? <ModulesWorkspacePage store={store} moduleBrowse={browse.moduleManager} onOpenModule={openModule} diagnostics={props.diagnostics} resultsDisclosure={browse.diagnosticsResults} t={t} onReady={markReady}
             onLocate={openDiagnosticTarget} returnTarget={browse.diagnosticReturn} onReturnFocus={finishDiagnosticReturn} /> : undefined
 
   return (
     <WorkspaceFrame
       store={store}
       page={page}
-      audience={audience}
       t={t}
       onPageChange={changePage}
       scrollKey={scrollKey}
@@ -78,10 +84,11 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
       focusPage={focusPage}
       contentReady={page !== 'modules' || readyPage === page}
     >
-      <AudiencePage key={audience} store={store} audience={audience === 'features' ? 'main' : 'subagent'} t={t} browse={configPageBrowse(browse, audience)} onNavigate={navigate} onRuleEdit={props.diagnostics.invalidate} onReturnToDiagnostics={returnToDiagnostics} />
-      {auxiliary && <dialog ref={auxiliaryPanel} className={css.surfaceDrawer} aria-label={t('page.modules.label')}
-        onClose={() => navigate(audience)}>
-        <Button shape="pill" variant="outline" onClick={() => navigate(audience)}>{t('rules.backToStructure')}</Button>
+      <AudiencePage store={store} t={t} browse={configPageBrowse(browse, 'features')} onNavigate={navigate} onRuleEdit={props.diagnostics.invalidate} onReturnToDiagnostics={returnToDiagnostics} />
+      {auxiliary && <dialog ref={auxiliaryPanel} className={css.surfaceDrawer} aria-label={t('rules.moduleCenter')}
+        onClose={() => navigate('features')}>
+        <h2>{t('rules.moduleCenter')}</h2>
+        <Button shape="pill" variant="outline" onClick={() => navigate('features')}>{t('rules.backToStructure')}</Button>
         {auxiliary}
       </dialog>}
     </WorkspaceFrame>

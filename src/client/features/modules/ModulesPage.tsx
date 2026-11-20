@@ -14,6 +14,7 @@ export const ModulesPage = memo(function ModulesPage(
     store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort
     t: PromptToolTranslate; onReady?: () => void
     moduleBrowse?: ModuleManagerBrowse
+    moduleDetail?: ReactNode
   },
 ): ReactNode {
   const { store, t } = props
@@ -23,7 +24,7 @@ export const ModulesPage = memo(function ModulesPage(
     <>
       {!fields.modulesEnabled && <p className={ui.configFieldHint}>{t('configs.readOnly.disabled')}</p>}
       {store.meta.moduleWarnings?.map(message => <p key={message} role="alert" className={ui.configFieldHint}>{message}</p>)}
-      <ModuleSwitcher store={store} t={t} browse={props.moduleBrowse} />
+      <ModuleSwitcher store={store} t={t} browse={props.moduleBrowse} detail={props.moduleDetail} />
     </>
   )
 })

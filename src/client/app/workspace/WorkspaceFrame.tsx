@@ -10,7 +10,6 @@ import css from './PromptWorkspace.module.css'
 export function WorkspaceFrame(props: {
   store: ModuleFactsPort & NoticePort & DraftsPort
   page: WorkspacePage
-  audience: 'features' | 'subagent'
   t: PromptToolTranslate
   onPageChange: (page: WorkspacePage) => void
   scrollKey?: string
@@ -63,7 +62,7 @@ export function WorkspaceFrame(props: {
     return () => observer.disconnect()
   }, [scrollKey, loadingInitial])
   return <div className={css.shell} data-d-surface>
-    <WorkspaceNavigation page={props.page} audience={props.audience} onChange={page => {
+    <WorkspaceNavigation page={props.page} onChange={page => {
       if (canvasRef.current) props.scrollPositions?.set(scrollKey, canvasRef.current.scrollTop)
       const scope = canvasRef.current as (HTMLElement & { startViewTransition?: (update: () => void) => { ready: Promise<unknown> } }) | null
       if ('startViewTransition' in Element.prototype && scope?.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) {

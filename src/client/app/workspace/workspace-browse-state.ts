@@ -24,7 +24,6 @@ export function createWorkspaceBrowseState() {
   let moduleId: string | undefined
   const moduleListeners = new Set<() => void>()
   return {
-    audience: 'features' as 'features' | 'subagent',
     moduleManager: {
       getSnapshot: () => moduleId,
       subscribe(listener: () => void) { moduleListeners.add(listener); return () => { moduleListeners.delete(listener) } },

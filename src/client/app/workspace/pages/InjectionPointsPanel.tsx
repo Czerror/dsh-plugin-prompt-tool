@@ -272,7 +272,7 @@ export interface InjectionPointSlotsInput {
   /** 统一搜索词：同时过滤配置实例、能力卡、共享设置区与单例卡（只影响展示）。 */
   keyword?: string
   /** 受众视图：主会话与子代理是同源视图，不改 audience，也不隐式启用 includeSubagents。 */
-  audience: 'main' | 'subagent'
+  audience?: 'main' | 'subagent'
   /** 新建能力后的定位信号（token 递增；layer 用于滚动到该层实例卡内的设置区）。 */
   focusCapability?: { id: string; token: number; layer?: string }
   onCreated?: (capabilityId: string) => void
@@ -309,15 +309,15 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
     renderModuleSettings: (moduleId, layers) => (
       <>
         {layers.map(layer => {
-          const key = `${moduleId}:module-settings:${audience}:${layer}`
+          const key = `${moduleId}:module-settings:${layer}`
           const module = store.meta.modules?.find(item => item.id === moduleId)
           const query = (input.keyword ?? '').trim().toLowerCase()
           const matchesModule = `${module?.name ?? ''} ${moduleId}`.toLowerCase().includes(query)
           return <EngineModuleCard key={key} name={module?.name ?? moduleId}
-            layer={translateLabel(t, LAYER_LABEL_KEYS, layer)} meta={`${t('rules.source', { module: moduleId })} · ${t(`audience.${audience}`)}`}
+            layer={translateLabel(t, LAYER_LABEL_KEYS, layer)} meta={t('rules.source', { module: moduleId })}
             defaultExpanded={store.editorDrafts.expanded.get(key) === true}
             onExpandedChange={next => { store.editorDrafts.expanded.set(key, next); store.publishDrafts() }}>
-            <LayerSettingsContent store={store} t={t} layer={layer} moduleId={moduleId} configId={`module-${audience}-${layer}`}
+            <LayerSettingsContent store={store} t={t} layer={layer} moduleId={moduleId} configId={`module-${layer}`}
               excludeCapabilities={excluded} keyword={matchesModule ? '' : input.keyword} audience={audience} kinds={['param', 'capability']} />
           </EngineModuleCard>
         })}
@@ -332,7 +332,7 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
     // 与启用模块数量无关——模块自己写了该参数时，模块值仍然优先（存在即覆盖，服务端判定）。
     renderInstructionSettings: (config: PromptConfigDraft) => (
       <div className={css.settings}>
-        <EngineParamField store={store} param="instructionHint" t={t} instanceId={`instruction-${audience}-${config.id}`} global />
+        <EngineParamField store={store} param="instructionHint" t={t} instanceId={`instruction-${config.id}`} global />
       </div>
     ),
     layerCards: (layer: string, moduleId: string) => cardsOfLayer(store.meta.modules, layer, moduleId, excluded)

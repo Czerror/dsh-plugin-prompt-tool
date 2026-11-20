@@ -15,6 +15,7 @@ import type { EngineMeta } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { Button } from '../../ui/Button.tsx'
 import { SearchInput } from '../../ui/SearchInput.tsx'
+import { IconChevronDownOutlineRegular, IconCopyOutlineRegular } from '../../ui/icons.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { StepCard, CloseButton, StepAdd, type StepCreation } from './RuleStepCard.tsx'
@@ -229,6 +230,7 @@ export function RuleStepsPanel(props: {
   const [propertyTarget, setPropertyTarget] = useState<HTMLDivElement | null>(null)
   const [localView, setLocalView] = useState<RuleCanvasView>({ x: 260, y: 110, scale: 0.8, positions: {} })
   const view = props.canvasBrowse?.get(props.browseKey) ?? localView
+  const needsInitialFit = useRef(!props.canvasBrowse?.has(props.browseKey))
   const changeView = (next: RuleCanvasView): void => {
     props.canvasBrowse?.set(props.browseKey, next)
     if (props.onBrowseChange) props.onBrowseChange()
@@ -423,13 +425,35 @@ export function RuleStepsPanel(props: {
     </>
   }
 
+  const fit = (): void => {
+    const element = structureRef.current?.querySelector<HTMLElement>('[data-rule-stage]')
+    if (!element?.clientWidth || !element.clientHeight) return
+    const width = element.clientWidth, height = element.clientHeight
+    const positions = graph.nodes.map(node => ({ ...node, ...view.positions[node.id] }))
+    const left = Math.min(0, ...positions.map(node => node.x)), top = Math.min(0, ...positions.map(node => node.y))
+    const right = Math.max(216, ...positions.map(node => node.x + (node.width ?? 216))), bottom = Math.max(112, ...positions.map(node => node.y + (node.height ?? 112)))
+    const wide = width >= 900, safeLeft = wide && libraryOpen ? 256 : 24, safeRight = wide && shownNode ? 344 : 24
+    const scale = Math.max(0.35, Math.min(1, (width - safeLeft - safeRight) / (right - left), (height - 180) / (bottom - top)))
+    needsInitialFit.current = false
+    changeView({ ...view, scale, x: safeLeft - left * scale, y: 100 - top * scale })
+  }
+  useLayoutEffect(() => {
+    if (!needsInitialFit.current) return
+    const element = structureRef.current?.querySelector<HTMLElement>('[data-rule-stage]')
+    if (!element) return
+    const observer = new ResizeObserver(() => { if (needsInitialFit.current) fit() })
+    observer.observe(element)
+    fit()
+    return () => observer.disconnect()
+  })
+
   return <div className={css.ruleCanvas} data-node-open={shownNode !== undefined || undefined} data-rule-steps>
     <div className={css.steps} ref={structureRef}>
     <h3 ref={structureHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{t('rules.structure')}</h3>
     {props.diagnosticActionId !== undefined && diagnosticNode === undefined && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
     {!libraryOpen && <div className={css.libraryToggle}><Button shape="pill" variant="outline" aria-expanded={false} onClick={() => setLibraryOpen(true)}>{t('rules.nodeLibrary')}</Button></div>}
     <div className={css.canvasLayout} data-library-open={libraryOpen || undefined}>
-    {libraryOpen && <section className={`${css.fields} ${css.canvasLibrary}`} aria-label={t('configList.create')}>
+    {libraryOpen && <section className={css.canvasLibrary} aria-label={t('configList.create')}>
       <header className={css.libraryHeading}><strong>{t('rules.nodeLibrary')}</strong><button type="button" aria-label={t('rules.nodeLibrary')} aria-expanded={true} onClick={() => setLibraryOpen(false)}>×</button></header>
       <SearchInput aria-label={t('rules.librarySearch')} placeholder={t('rules.librarySearch')} value={libraryQuery} onChange={event => setLibraryQuery(event.target.value)} />
       <div className={css.libraryCategories}>
@@ -439,6 +463,10 @@ export function RuleStepsPanel(props: {
           if (target) setTargetId(target.id)
         }}>{t(kind === 'condition' ? 'rules.libraryConditions' : 'rules.libraryActions')}</button>)}
       </div>
+      {libraryKind === 'action' && <Button variant="outline" disabled={disabled || !activeTarget || activeTarget.kind === 'condition'} onClick={() => {
+        if (!activeTarget || activeTarget.kind === 'condition') return
+        changeAt(activeTarget.path, [...nodeList(valueAt(rule, activeTarget.path)), { if: { scope: { audience: 'main' } }, then: [], else: [] }])
+      }}>{t('rules.steps.addBranch')}</Button>}
       <MenuSelect ariaLabel={t('rules.structure')} value={activeTarget?.id ?? ''} options={graph.targets.map(target => ({ value: target.id, label: target.label }))} onChange={setTargetId} />
       <div className={css.libraryItems}>
       {libraryEntries.filter(entry => `${entry.kind} ${triggerLabel(t, entry.kind)}`.toLowerCase().includes(libraryQuery.toLowerCase())).map(entry => {
@@ -447,7 +475,7 @@ export function RuleStepsPanel(props: {
         const detail = kind === 'condition' ? conditionSummary(t, entry.example as RuleCondition) : actionSummary(t, { ...entry.example, kind: entry.kind } as RuleAction)
         return <button key={entry.kind} type="button" className={css.libraryItem} draggable={!disabled}
             onDragStart={event => { setDragPayload(data); event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-prompt-tool-rule-node', data) }} onDragEnd={() => setDragPayload('')}
-          aria-pressed={libraryItem === entry.kind} onClick={() => setLibraryItem(entry.kind)}><span className={css.libraryIcon} aria-hidden="true">{kind === 'condition' ? '◇' : '↳'}</span><span><strong>{triggerLabel(t, entry.kind)}</strong><small>{detail === triggerLabel(t, entry.kind) ? entry.kind : detail}</small></span></button>
+          aria-pressed={libraryItem === entry.kind} onClick={() => setLibraryItem(entry.kind)}><span className={css.libraryIcon} aria-hidden="true">{kind === 'condition' ? <IconCopyOutlineRegular /> : <IconChevronDownOutlineRegular />}</span><span><strong>{triggerLabel(t, entry.kind)}</strong><small>{detail === triggerLabel(t, entry.kind) ? entry.kind : detail}</small></span></button>
       })}
       </div>
       {selectedLibraryEntry && <section className={css.libraryDetail} aria-label={triggerLabel(t, selectedLibraryEntry.kind)}>
@@ -464,15 +492,7 @@ export function RuleStepsPanel(props: {
           dropTarget: graph.targets.find(target => target.id === `${node.id}:target`)?.id }
     })} edges={graph.edges} view={view}
       onViewChange={changeView} onSelect={context.select} onMove={(id, x, y) => changeView({ ...view, positions: { ...view.positions, [id]: { x, y } } })}
-      canDropNode={(id, data) => canAdd(id, data || dragPayload)} onDropNode={dropNode} onFit={() => {
-        const element = structureRef.current?.querySelector<HTMLElement>('[data-rule-stage]'), width = element?.clientWidth ?? 600, height = element?.clientHeight ?? 500
-        const positions = graph.nodes.map(node => ({ ...node, ...view.positions[node.id] }))
-        const left = Math.min(0, ...positions.map(node => node.x)), top = Math.min(0, ...positions.map(node => node.y))
-        const right = Math.max(216, ...positions.map(node => node.x + (node.width ?? 216))), bottom = Math.max(112, ...positions.map(node => node.y + (node.height ?? 112)))
-        const wide = width >= 900, safeLeft = wide && libraryOpen ? 256 : 24, safeRight = wide && shownNode ? 344 : 24
-        const scale = Math.max(0.35, Math.min(1, (width - safeLeft - safeRight) / (right - left), (height - 180) / (bottom - top)))
-        changeView({ ...view, scale, x: safeLeft - left * scale, y: 100 - top * scale })
-      }} />
+      canDropNode={(id, data) => canAdd(id, data || dragPayload)} onDropNode={dropNode} onFit={fit} />
     </div>
     <div hidden>
     {/* IF 卡：规则级条件；下面的节点卡都属于这个条件作用域。 */}

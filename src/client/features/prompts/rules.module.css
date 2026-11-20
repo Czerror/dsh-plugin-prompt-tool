@@ -16,7 +16,7 @@
 .canvasSurface .ruleCanvas { display: flex; }
 .canvasSurface .steps { display: flex; padding: 0; }
 .canvasSurface .canvasLayout { display: flex; }
-.canvasTopbar { position: absolute; inset: 12px 126px auto 130px; z-index: 6; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px; pointer-events: none; }
+.canvasTopbar { position: absolute; inset: 12px 12px auto 130px; z-index: 6; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px; pointer-events: none; }
 .contextCluster, .commandCluster { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border: 1px solid #313844; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0003; pointer-events: auto; min-inline-size: 0; }
 .contextCluster { max-inline-size: min(460px, 100%); }
 .canvasIdentity { display: grid; flex: 1; min-inline-size: 8rem; overflow-wrap: anywhere; }
@@ -27,7 +27,7 @@
 .definitionDrawer { position: absolute; inset: 94px 12px 76px auto; inline-size: min(34rem, calc(100% - 24px)); z-index: 8; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; border: 1px solid #394452; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0005; }
 .definitionDrawer .headerFields { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
 .canvasSurface .libraryToggle { position: absolute; z-index: 4; inset: 96px auto auto 12px; }
-.canvasSurface .canvasLibrary { position: absolute; z-index: 4; inset: 140px auto 88px 12px; inline-size: 224px; max-block-size: none; display: flex; flex-direction: column; align-items: stretch; background: #181c23; border-color: #313844; box-shadow: 0 8px 24px #0003; }
+.canvasSurface .canvasLibrary { position: absolute; z-index: 4; inset: 140px auto 88px 12px; inline-size: 224px; max-block-size: none; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 10px; overflow: hidden; background: #181c23; border-color: #313844; box-shadow: 0 8px 24px #0003; }
 .canvasSurface .ruleProperties { position: absolute; z-index: 5; inset: 110px 12px 88px auto; inline-size: min(320px, calc(100% - 24px)); max-block-size: none; overflow: auto; padding: 14px; border: 1px solid #313844; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0003; }
 .canvasSurface .libraryToggle, .canvasSurface .ruleProperties, .canvasSurface .definitionDrawer { inset-block-start: var(--pt-canvas-top, 110px); }
 .canvasSurface .canvasLibrary { inset-block-start: var(--pt-canvas-top, 110px); }
@@ -184,7 +184,10 @@
 .libraryCategories { display: flex; gap: 4px; }
 .libraryCategories button { flex: 1; border: 1px solid #313844; border-radius: 6px; padding: 7px; background: transparent; color: inherit; }
 .libraryCategories button[aria-pressed=true] { background: #293b55; border-color: #72aaff; }
+.canvasLibrary > * { flex: 0 0 auto; min-inline-size: 0; max-inline-size: 100%; }
+.canvasLibrary > .libraryItems { flex: 1 1 auto; min-block-size: 80px; overflow: auto; }
 .libraryItems { display: flex; flex-direction: column; gap: 3px; align-self: stretch; }
+.libraryDetail { max-block-size: 35%; overflow: auto; }
 .libraryItem { display: flex; gap: 10px; align-items: flex-start; padding: 10px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: inherit; text-align: start; font: inherit; cursor: pointer; }
 .libraryItem:hover, .libraryItem[aria-pressed=true] { background: #253146; border-color: #435a79; }
 .libraryItem > span:last-child { min-inline-size: 0; flex: 1; }

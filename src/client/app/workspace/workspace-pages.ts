@@ -1,6 +1,6 @@
 import type { PromptToolLocaleKey } from '../../locales.ts'
 
-export type WorkspacePage = 'features' | 'subagent' | 'modules'
+export type WorkspacePage = 'features' | 'modules'
 
 /**
  * 工作区入口：只存字典键，文案在渲染时经翻译函数求值（语言切换跟随刷新）。
@@ -13,10 +13,6 @@ export const WORKSPACE_PAGES: ReadonlyArray<{
   {
     id: 'features',
     labelKey: 'page.features.label',
-  },
-  {
-    id: 'subagent',
-    labelKey: 'page.subagent.label',
   },
   {
     id: 'modules',

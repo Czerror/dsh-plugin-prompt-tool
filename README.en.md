@@ -20,15 +20,15 @@ In the Prompt Tool workspace, you can:
 After [installing the plugin](#install-the-plugin) below, open **Prompt Tool** from the sidebar:
 
 1. The workspace opens directly on a shared canvas. Open **Module center** at the top left, create or import a module, enable it, and turn on the module runtime switch.
-2. Choose **Main session** or **Subagent** in the top bar, then search for and select a rule in the canvas list. The list defaults to participating modules; switch to all modules to edit disabled ones. The combination view also opens over the canvas.
+2. Search for and select a rule in the unified canvas list. Express main-session and subagent actions through scope conditions and branches within the same rule. The list defaults to participating modules; switch to all modules to edit disabled ones. The combination view also opens over the canvas.
 3. Add nodes from the left library and edit selected conditions or actions in the right properties overlay. Separate overlays provide the full JSON definition and rule settings; zoom controls and a legend sit at the bottom. Returning to the list keeps you on the same canvas.
-4. Open **Module center** and click **Run diagnostics once**. Results with rule or action identities can take you back to that rule. Select modules on the left and manage details on the right; selection and editing do not enable modules.
+4. Open **Module center**, select a module on the left, then use the rule overview on the right to open its rules. Selection and editing do not enable modules. Expand diagnostics when needed; results with rule or action identities can take you back to that rule.
 
 You can import [YAML](https://yaml.org/)/[JSON](https://www.json.org/json-en.html) module files, folders/[ZIP archives](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), SillyTavern presets, [PNG images](https://www.w3.org/TR/png/)/JSON character cards, and world books. New and imported modules start disabled. See [SillyTavern import details](docs/SillyTavern.md) for conversion limits.
 
 Click a library item to inspect it; drag onto a target or explicitly add it to create a node. The inspector shows selected node parameters first, with deletion at the bottom and a collapsible rule overview. Tool preview has been removed; custom tool editing and actual tool permissions remain available.
 
-All three workspace entry points share the selected audience, browsing position, and rule drafts. Opening or closing the module center does not automatically save rules. Wait for save confirmation before refreshing. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
+All three workspace entry points share browsing position and rule drafts in one layout. Template insertion preserves its declared audience; existing separate rules are never merged automatically. Opening or closing the module center does not automatically save rules. Wait for save confirmation before refreshing. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
 
 ## Install the plugin
 

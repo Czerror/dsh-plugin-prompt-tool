@@ -46,6 +46,8 @@ test('rules bridge: moving commits the module once, rejects incomplete input and
   assert.equal(sent.expectedModuleId, 'module-a')
   assert.deepEqual(sent.expectedRevisions.rules, { alpha: 'baseline', beta: 'baseline' })
   assert.deepEqual(sent.edits[0].rule.then, [beta.then[0], branch])
+  assert.equal(sent.edits[0].rule.id, original.id, '主子分支仍属于同一条规则')
+  assert.deepEqual(sent.edits[0].rule.then[1].if, { scope: { audience: 'main' } }, '分支受众条件原样保存')
   assert.equal(sent.edits[1].rule.name, 'same module')
   assert.equal(h.draft.fields.has(path + ':0:then:0:alpha-text:n'), false)
   assert.equal(h.draft.fields.has(entry.key + ':else:0:alpha-text:n'), true)

@@ -106,7 +106,7 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
   </span>
 }
 
-export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort; t: PromptToolTranslate; browse?: ModuleManagerBrowse }): ReactNode {
+export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort; t: PromptToolTranslate; browse?: ModuleManagerBrowse; detail?: ReactNode }): ReactNode {
   const { store, t } = props
   const fields = usePromptToolFields(store, (value) => value)
   const modules = store.meta.modules ?? []
@@ -276,6 +276,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
         {modules.length === 0 ? (
           <p className={styles.readOnly} role="status">{t('moduleSwitcher.empty')}</p>
         ) : selectedModule && renderCard(selectedModule)}
+        {props.detail}
         </div>
       </div>
       {pickerOpen && (

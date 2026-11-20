@@ -12,7 +12,7 @@ import type { RuleDiagnosticTarget } from '../../data/rule-diagnostics-session.t
 import { configPositionKey, reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
-import { factsVisibleTo, ruleFacts, type RuleFacts } from '../../data/rule-facts.ts'
+import { ruleFacts, type RuleFacts } from '../../data/rule-facts.ts'
 import type { LayerCardView } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
@@ -47,7 +47,7 @@ function searchableRule(rule: RuleDefinition): string {
 
 export interface RulesWorkspaceProps {
   store: ModuleFactsPort & DraftsPort & RuleEditingPort & InstructionFilesPort & NoticePort & ModuleActionsPort
-  t: PromptToolTranslate; scope?: 'main' | 'subagent'
+  t: PromptToolTranslate
   browse?: { filter: string; expanded?: string; allModules?: boolean; rulesScroll?: number; ruleNodes?: Map<string, string>; ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>; combination?: boolean; diagnosticTarget?: RuleDiagnosticTarget; publish?: () => void }
   onRuleEdit?: () => void
   onReturnToDiagnostics?: () => void
@@ -73,7 +73,6 @@ export interface RulesWorkspaceProps {
  *  **没有「当前模块」**：每张规则卡的主语是它自己所属的模块（`owners` 的 moduleId）。 */
 export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const { store, t } = props, fields = usePromptToolFields(store, value => value)
-  const scope = props.scope ?? 'main'
 
   const [localExpanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [listOpen, setListOpen] = useState(false)
@@ -145,14 +144,14 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     key: configIdentityKey({ moduleId: owner.moduleId, configId: entry.key }),
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
     facts: factsFor(entry.value),
-  }))).filter(({ entry, key, facts }) => !entry.deleted && (expanded === key || diagnosticKey === key || factsVisibleTo(facts, scope)))
+  }))).filter(({ entry }) => !entry.deleted)
     .filter(({ entry, moduleId: id, key, facts }) => expanded === key || diagnosticKey === key || (view === 'all' || view === 'context-activation' && facts.contextActivation || entry.value.layer === view)
       && (!query || id.toLowerCase().includes(query) || searchableRule(entry.value).includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
     .sort((a, b) => (orderByIdentity.get(a.identity)?.sequence ?? Number.MAX_SAFE_INTEGER) - (orderByIdentity.get(b.identity)?.sequence ?? Number.MAX_SAFE_INTEGER))
   const moduleSettings = enabledModules.flatMap(module => {
     const owner = owners.find(item => item.moduleId === module.id)
     if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
-    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted && factsVisibleTo(factsFor(entry.value), scope))
+    const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted)
       .map(entry => entry.value.layer))
     const missing = MODULE_CAPABILITIES.filter(capability => isModuleCapabilityDeclared(capability.id, module.facts)
       && !layers.has(capability.displayLayer))
@@ -224,7 +223,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     store,
     t,
     items: props.createItems ?? [],
-    scope,
     targets: writableModuleTargets(store.meta.modules).sort((a, b) => a.id.localeCompare(b.id)),
     existingIds: (store.meta.modules ?? []).map(module => module.id),
     onCreated: (moduleId, configKey) => {
@@ -403,7 +401,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {entries.length === 0 && moduleSettings.length === 0 && (query !== '' || view !== 'all') && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}
     {!combination && <>{instructionCards}
     {props.beforeCards}
-    {moduleSettings.map(item => <div key={`module-settings-${scope}-${item.moduleId}`} className={css.workspace} data-module-settings={item.moduleId}>{props.renderModuleSettings!(item.moduleId, item.layers)}</div>)}</>}
+    {moduleSettings.map(item => <div key={`module-settings-${item.moduleId}`} className={css.workspace} data-module-settings={item.moduleId}>{props.renderModuleSettings!(item.moduleId, item.layers)}</div>)}</>}
     </div>
     {!selected && <div className={css.emptyCanvas}><h2>{t('rules.structure')}</h2><p>{t('rules.chooseNode')}</p></div>}
     {selected && <div className={css.ruleDetail}>

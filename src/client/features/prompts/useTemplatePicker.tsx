@@ -16,8 +16,6 @@ export type ToolTemplateEntry = { file: string; spec: Record<string, unknown> }
 
 type PendingTemplate = { intentId: number; entry: PromptConfigTemplateEntry }
 
-/** 列表作用域：决定新建配置的消息受众代入方向（过滤状态一律不动）。 */
-export type TemplatePickerScope = 'main' | 'subagent'
 
 /** 选完模板后的**唯一**追加步骤：目标模块（已存在模块 / 新建空白模块）。 */
 export interface TemplatePickerTarget {
@@ -31,18 +29,15 @@ export interface TemplatePickerTarget {
  *
  * 规则：
  * 1. id 与模板重复时追加 `-2`、`-3`… 后缀，且同名 identity 跟随新 id；
- * 2. 受众按列表作用域代入——子代理列表 → 仅子代理；主会话列表 → 清除模板自带的
- *    「仅子代理」限制（缺省 = 公用，两侧都可见），从而"新建即可见"。
+ * 2. 保留模板原有条件、分支与受众；统一画布不代入页面受众。
  *
  * @param entry - 模板条目（来自 `/templates`）。
  * @param configs - 当前列表已有配置，用于 id 去重。
- * @param scope - 列表作用域；不传则不改动模板自带受众。
  * @returns 可直接追加进列表的新配置草稿。
  */
 export function createConfigFromTemplate(
   entry: PromptConfigTemplateEntry,
   configs: readonly RuleDefinition[],
-  scope?: TemplatePickerScope,
 ): RuleDefinition {
   const clone = structuredClone(entry.spec)
   let suffix = 2
@@ -52,7 +47,7 @@ export function createConfigFromTemplate(
     if (action.kind !== 'inject-text') return action
     const config = action.config !== null && typeof action.config === 'object' && !Array.isArray(action.config) ? action.config as Record<string, unknown> : {}
     const { id: _sourceId, ...content } = config
-    return { ...action, config: { ...content, ...(scope === 'subagent' ? { audience: 'subagent' } : scope === 'main' && config.audience === 'subagent' ? { audience: null } : {}) } }
+    return { ...action, config: content }
   })
   return clone
 }
@@ -67,8 +62,6 @@ export function useTemplatePicker(
   onPickConfig: (config: RuleDefinition, target: TemplatePickerTarget, file: string) => void,
   onNotice: (kind: 'ok' | 'error', message: string) => void,
   t: PromptToolTranslate,
-  /** 传入列表作用域时，新建配置代入该受众，保证"新建即可见"；不传 = 不改动模板受众。 */
-  scope?: TemplatePickerScope,
 ): {
   anchorRef: RefObject<HTMLButtonElement>
   popoverAnchorRef: RefObject<HTMLButtonElement>
@@ -103,7 +96,7 @@ export function useTemplatePicker(
   const [targetOpen, setTargetOpen] = useState(false)
   const pendingEntry = useRef<PendingTemplate>()
   const targetIntentRef = useRef(0)
-  useEffect(() => () => { targetIntentRef.current++ }, [scope])
+  useEffect(() => () => { targetIntentRef.current++ }, [])
   const [layer, setLayer] = useState<string | undefined>(undefined)
   const [toolsOnly, setToolsOnly] = useState(false)
   const [createdConfigId, setCreatedConfigId] = useState<string>()
@@ -163,7 +156,7 @@ export function useTemplatePicker(
     pendingEntry.current = undefined
     setTargetOpen(false)
     // 去重集合＝目标模块自己的配置：其它模块有同名 id 不影响写进这个模块。
-    const clone = createConfigFromTemplate(entry, configsAtTarget ?? [], scope)
+    const clone = createConfigFromTemplate(entry, configsAtTarget ?? [])
     setCreatedConfigId(clone.id)
     // 只交回「写什么、写进谁」；成功与否（以及那时的提示）由调用方按实际写入结果决定。
     onPickConfig(clone, target, entry.file)
@@ -177,7 +170,7 @@ export function useTemplatePicker(
 /**
  * 页级创建编排：页级「添加」下拉 → 注入模板浮层 → **只加一步**选目标 → 写入所选模块。
  *
- * 两次受众页（主会话 / 子代理）共用这一份编排，视图差异只在调用方传进来的 `items`、`scope`
+ * 统一画布共用这一份编排，创建清单由调用方传入 `items`
  * 与 `targets`；「主语」始终来自目标选择那一步，不存在任何全局「当前模块」。
  *
  * 写入只以显式 moduleId 为主语，服务端在目标模块锁内按规则 id 分配后缀；规则卡 owner
@@ -188,7 +181,6 @@ export function useTemplateCreate(props: {
   t: PromptToolTranslate
   /** 菜单项：注入模板的层清单（id 形如 `tpl:<layer>`）。 */
   items: readonly ModuleCreateItem[]
-  scope: TemplatePickerScope
   /** 目标选择的候选：只列可写模块，包含未启用模块。 */
   targets: readonly TemplateTargetListEntry[]
   /** 已存在的模块目录 id 全集（含未启用）：只影响新建 id 预览（种子化的空白模板默认未启用）。 */
@@ -201,11 +193,11 @@ export function useTemplateCreate(props: {
   /** 卡内「添加工具模板…」入口：主语＝**该卡所属模块**（工具模板不进目标选择那一步）。 */
   openToolsForModule: (moduleId: string, anchor: HTMLButtonElement) => void
 } {
-  const { store, t, items, scope, targets, existingIds, onCreated } = props
+  const { store, t, items, targets, existingIds, onCreated } = props
   /** 卡内工具模板入口打开时记下主权模块：点选模板后要落进它的工具草稿。 */
   const toolModule = useRef<string>()
   const writeGeneration = useRef(0)
-  useEffect(() => () => { writeGeneration.current++ }, [scope])
+  useEffect(() => () => { writeGeneration.current++ }, [])
   const writeInto = useCallback(async (target: TemplatePickerTarget, config: RuleDefinition, file: string): Promise<void> => {
     const { moduleId } = target
     const generation = writeGeneration.current
@@ -231,7 +223,7 @@ export function useTemplateCreate(props: {
       store.showNotice('ok', t('templates.inserted', { file, id: createdRuleId }))
     }
   }, [onCreated, store, t])
-  const picker = useTemplatePicker((config, target, file) => { void writeInto(target, config, file) }, store.showNotice, t, scope)
+  const picker = useTemplatePicker((config, target, file) => { void writeInto(target, config, file) }, store.showNotice, t)
   const cancelTarget = useCallback(() => {
     writeGeneration.current++
     picker.cancelTarget()
