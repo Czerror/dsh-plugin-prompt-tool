@@ -1,5 +1,5 @@
 /** 本机知识库授权：只由用户命令确认，模块导出不包含官方持久域。 */
-import { constants, lstatSync, mkdirSync, readdirSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
+import { constants, lstatSync, mkdirSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Stats } from 'node:fs'
 import { lstat, open, readdir, realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
@@ -256,7 +256,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     }
     const current = table.get(revisionOf(id))
     const metadataRevision = revisionOf(JSON.stringify([id, stamp, root, read, write, snapshot, current?.revision ?? null]))
-    return { snapshot, selected, metadataRevision }
+    return { snapshot, byPath, selected, metadataRevision }
   }
   const digestSelection = async (root: string, selected: Awaited<ReturnType<typeof inspectTarget>>['selected'], check: () => void) => {
     const buffer = Buffer.allocUnsafe(64 * 1024), digests: string[] = []
@@ -264,6 +264,27 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     return digests
   }
   const stalePreview = () => new Error('知识库预览已失效，请重新预览确认')
+  const recheckGrants = (root: string, read: string[], write: string[], value: Awaited<ReturnType<typeof inspectTarget>>) => {
+    if (identity(dirname(root)) !== value.snapshot.parent) throw stalePreview()
+    if (!value.snapshot.identity && lstatSync(root, { throwIfNoEntry: false })) throw stalePreview()
+    if (value.snapshot.identity && identity(root) !== value.snapshot.identity) throw stalePreview()
+    const reviewed = new Set<string>()
+    for (const path of read) {
+      const parts = path.split('/')
+      let prefix = ''
+      for (const [index, part] of parts.entries()) {
+        prefix += prefix ? '/' + part : part
+        if (reviewed.has(prefix)) continue
+        const stat = lstatSync(join(root, prefix), { throwIfNoEntry: false })
+        if (!stat || !(index === parts.length - 1 ? stat.isFile() : stat.isDirectory()) || fileVersion(stat) !== value.byPath.get(prefix)?.version) throw stalePreview()
+        reviewed.add(prefix)
+      }
+    }
+    for (const path of write) {
+      const stat = lstatSync(join(root, path), { throwIfNoEntry: false }), entry = value.byPath.get(path)
+      if (entry ? !stat?.isDirectory() || fileVersion(stat) !== entry.version : stat !== undefined) throw stalePreview()
+    }
+  }
   const requireBinding = (directory: string) => {
     const value = status(directory)
     if (value.state !== 'bound' || !value.binding) throw new Error('知识库未接入或授权不可用：' + (value.reason ?? value.state))
@@ -886,9 +907,9 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
         if (value.selected.length && (await inspectTarget(id, directory, target, check)).metadataRevision !== value.metadataRevision) throw stalePreview()
         check()
         const { root, read, write, stamp } = target
-        if (identity(dirname(root)) !== value.snapshot.parent || value.snapshot.identity && identity(root) !== value.snapshot.identity) throw stalePreview()
+        recheckGrants(root, read, write, value)
         if (!value.snapshot.identity) mkdirSync(root)
-        for (const path of write) if (!value.snapshot.entries.some(item => item.path === path)) mkdirSync(join(root, path))
+        for (const path of write) if (!value.byPath.has(path)) mkdirSync(join(root, path))
         const next = { directory: canonicalDirectory(directory), moduleIdentity: identity(directory), root: realpathSync(root), identity: identity(root), read, write, revision: revisionOf(randomUUID()), generation: randomUUID() }
         signal.throwIfAborted(); assertActive()
         await saveBinding(revisionOf(key(directory)), next)
