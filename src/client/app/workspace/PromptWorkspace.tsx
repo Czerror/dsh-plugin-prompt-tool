@@ -1,14 +1,15 @@
-import { useCallback, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { WorkspaceViewState } from '../workbench/native-workspace-state.ts'
 import type { RuleDiagnosticsSession, RuleDiagnosticTarget } from '../../data/rule-diagnostics-session.ts'
 import { ModulesWorkspacePage } from './pages/ModulesWorkspacePage.tsx'
-import { ToolsPreviewPage } from '../../features/tools/ToolsPreviewPage.tsx'
 import { AudiencePage } from './pages/AudiencePage.tsx'
 import { WorkspaceFrame } from './WorkspaceFrame.tsx'
 import type { WorkspacePage } from './workspace-pages.ts'
 import { configPageBrowse } from './workspace-browse-state.ts'
+import { Button } from '../../ui/Button.tsx'
+import css from './PromptWorkspace.module.css'
 
 export interface PromptWorkspaceProps {
   store: PromptToolStore
@@ -24,14 +25,21 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const { store, view } = props
   const page = useSyncExternalStore(view.subscribe, view.getSnapshot, view.getSnapshot)
   const browse = view.browse
+  const audience = browse.audience
+  const auxiliaryPanel = useRef<HTMLDialogElement>(null)
+  const auxiliaryTrigger = useRef<HTMLElement>()
+  useLayoutEffect(() => {
+    if (page === 'modules') auxiliaryPanel.current?.showModal()
+    else if (auxiliaryTrigger.current?.isConnected) { auxiliaryTrigger.current.focus(); auxiliaryTrigger.current = undefined }
+  }, [page])
   const [focusPage, setFocusPage] = useState(0)
   const [readyPage, setReadyPage] = useState<WorkspacePage>()
   const changePage = (target: WorkspacePage): void => {
+    if (target === 'modules' && page !== 'modules') auxiliaryTrigger.current = document.activeElement as HTMLElement
     if (target !== page) {
       setReadyPage(undefined)
-      // 离开当前页前保存一次（只覆盖 store 能触及的域：全局开关与指令文件；规则草稿由各模块的
-      // rule editor 自己负责）。不 await、不阻断：失败由入口自己提示，草稿仍在内存里。
-      void store.persistBeforeLeave()
+      // 辅助浮层保留受众编辑面；仅真正切换受众时保存开关与指令文件。
+      if ((target === 'features' || target === 'subagent') && target !== audience) void store.persistBeforeLeave()
     }
     view.select(target)
   }
@@ -55,27 +63,27 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   }
   const finishDiagnosticReturn = useCallback(() => { browse.diagnosticReturn = undefined }, [browse])
 
-  const content = page === 'features'
-    ? <AudiencePage store={store} audience="main" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} onRuleEdit={props.diagnostics.invalidate} onReturnToDiagnostics={returnToDiagnostics} />
-    : page === 'subagent'
-      ? <AudiencePage store={store} audience="subagent" t={t} browse={configPageBrowse(browse, scrollKey)} onNavigate={navigate} onRuleEdit={props.diagnostics.invalidate} />
-      : page === 'tools'
-        ? <ToolsPreviewPage api={store.api} presetId={store.api.sessionPreset.snapshot()} t={t} browse={browse.tools} onNavigate={navigate} onReady={markReady} />
-        : <ModulesWorkspacePage store={store} diagnostics={props.diagnostics} resultsDisclosure={browse.diagnosticsResults} t={t} onReady={markReady}
-            onLocate={openDiagnosticTarget} returnTarget={browse.diagnosticReturn} onReturnFocus={finishDiagnosticReturn} />
+  const auxiliary = page === 'modules' ? <ModulesWorkspacePage store={store} moduleBrowse={browse.moduleManager} diagnostics={props.diagnostics} resultsDisclosure={browse.diagnosticsResults} t={t} onReady={markReady}
+            onLocate={openDiagnosticTarget} returnTarget={browse.diagnosticReturn} onReturnFocus={finishDiagnosticReturn} /> : undefined
 
   return (
     <WorkspaceFrame
       store={store}
       page={page}
+      audience={audience}
       t={t}
       onPageChange={changePage}
       scrollKey={scrollKey}
       scrollPositions={browse.scroll}
       focusPage={focusPage}
-      contentReady={page !== 'modules' && page !== 'tools' || readyPage === page}
+      contentReady={page !== 'modules' || readyPage === page}
     >
-      {content}
+      <AudiencePage key={audience} store={store} audience={audience === 'features' ? 'main' : 'subagent'} t={t} browse={configPageBrowse(browse, audience)} onNavigate={navigate} onRuleEdit={props.diagnostics.invalidate} onReturnToDiagnostics={returnToDiagnostics} />
+      {auxiliary && <dialog ref={auxiliaryPanel} className={css.surfaceDrawer} aria-label={t('page.modules.label')}
+        onClose={() => navigate(audience)}>
+        <Button shape="pill" variant="outline" onClick={() => navigate(audience)}>{t('rules.backToStructure')}</Button>
+        {auxiliary}
+      </dialog>}
     </WorkspaceFrame>
   )
 }

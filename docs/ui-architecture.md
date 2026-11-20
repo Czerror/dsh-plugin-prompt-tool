@@ -142,7 +142,7 @@ slot 使用 ctx.slots.inject() 等待声明，再调用 ctx.slots.register()。�
 - 左侧栏由宿主选择同 key 的主面板；会话分页使用槽位传入的真实 sessionId。
 - 右侧工作台使用官方 tab 注册，读取 `useTabInfo().tab.visible`，不能用 signal 未中止或组件仍挂载替代可见性。
 - NativeWorkspace 将宿主可见性与 document 可见性合并，隐藏时卸载编辑视图；草稿与保存应答保留在独立数据 owner 中。
-- 三个入口共享所选页、筛选、展开和滚动位置。会话分页与右侧槽位直接使用宿主传入的会话，主面板可沿用宿主最后选中的会话。指令文件编辑器按操作会话持有文件版本和草稿，策略沿用工作台共享的版本与队列。页面刷新会释放内存草稿。
+- 三个入口共享所选受众、辅助面板、筛选、选中节点、画布视角和滚动位置。受众由共享 `WorkspaceViewState.browse.audience` 持有，打开模块管理不改变受众；各 Slot 不另建受众 owner。会话分页与右侧槽位直接使用宿主传入的会话，主面板可沿用宿主最后选中的会话。指令文件编辑器按操作会话持有文件版本和草稿，策略沿用工作台共享的版本与队列。页面刷新会释放内存草稿。
 - 关闭入口或切页不自动诊断。模块页顶部的诊断工具条提供唯一“诊断一次”动作：规则诊断与当前会话上下文诊断各请求一次；无会话只读规则，并提示上下文不可用。在途不叠发、不补刷、不自动重试。
 
 ### 4.4 宿主能力采用面
@@ -158,25 +158,28 @@ slot 使用 ctx.slots.inject() 等待声明，再调用 ctx.slots.register()。�
 
     左侧主面板 / 右侧工作台 / 会话分页
       └─ 共享工作台内容与草稿
-          ├─ 主会话
-          ├─ 子代理
-          ├─ 工具预览
-          └─ 模块
+          └─ D 统一画布（顶栏选择主会话／子代理）
+              ├─ 规则列表、组合与节点库浮层
+              ├─ 节点属性、完整 JSON 与规则设置浮层
+              └─ 显式模块中心入口 → dialog（左列表／右管理详情）
 
 模块运行总闸与手动诊断位于模块页，不另设 settings tab。`app/workspace/pages/ModulesWorkspacePage` 在模块列表前放置紧凑的诊断工具条。首次显示一条“尚未诊断”，不挂载结果栏；运行后可展开规则与当前会话的上下文结果，宽容器双栏、窄容器单列。展开状态按会话保留，同会话的三个入口同步。收起结果仍提示失败或失效；展开和收起均不发请求。feature 之间不互相导入。数据 store 由 WorkspaceStoreOwner 独立持有，PromptWorkspace 消费其快照；WorkspaceFrame 负责公共 header、导航、canvas、loading 和 notice。工作台只决定**参与装配**的集合，不保留单一「当前模块」目标；模块内容按卡片归属编辑（见 §7.1.1）。
 
-模块的目录物化、复制、删除和参数由本插件维护；模块不进入官方 `agentPresets` 注册表，编辑目标不驱动官方会话预设切换。工具预览仍可只读官方 roster；默认值 `selectedDefault` / `defaultId` 不参与模块设置。
+模块的目录物化、复制、删除和参数由本插件维护；模块不进入官方 `agentPresets` 注册表，编辑目标不驱动官方会话预设切换。工具预览及其专用 roster、会话预设投影已移除；默认值 `selectedDefault` / `defaultId` 不参与模块设置。
 
 ### 5.2 页面 ID、顺序与组合
 
-workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，顺序不可变：
+`workspace-pages.ts` 是导航元数据的唯一来源。默认受众为 `features`，初次进入、未选规则和返回列表均留在同一 D 画布 surface。顶栏受众选择器提供主会话与子代理，左侧模块中心入口按需打开管理浮层，不再常驻四页 Tab。内部 ID：
 
 | id | 标题 | 主要组合 |
 |---|---|---|
 | features | 主会话 | `RulesWorkspace` 展示模块规则；原指令文件卡置于规则与诊断卡之前。页面负责模板创建和受众视图，`InjectionPointsPanel#injectionPointSlots` 提供卡内共享设置 |
 | subagent | 子代理 | 同一 `RulesWorkspace` 和 `injectionPointSlots(audience: 'subagent')`，共用模块规则草稿与模板入口；显示同源指令文件卡及指令路径提示设置 |
-| tools | 工具预览 | 顶置统一搜索；当前会话／所选预设两个可折叠分组，预设选择位于分组标题右侧；双列展开详情卡，680px 以下单列 |
 | modules | 模块 | 统一模块列表（启用、新建、复制、导出、删除、打开目录、导入）及运行总闸；角色卡是导入来源 |
+
+`PromptWorkspace` 始终保留当前受众的 `AudiencePage`，模块中心以原生 `dialog.showModal()` 覆盖其上，保留浏览器的焦点约束与 Escape 关闭；打开或关闭辅助面板不调用 `persistBeforeLeave`，真正切换受众时仍沿用该保存流程。模块中心左侧选择模块，右侧复用原管理动作，选择不改变启用集合。`RulesWorkspace` 将搜索列表和组合视图放入画布浮层；`RuleCard` 提供规则身份、保存状态及操作顶栏，完整 JSON 与规则设置分别在浮层编辑，`RuleSteps` 负责左侧节点库、中央结构和右侧选中属性，底部保留缩放与图例。库条目点击只展示详情，拖入有效目标或明确添加才新增节点；属性优先显示当前参数，概要可折叠，删除入口位于编辑区末尾。选中节点只在被左右浮层遮挡时平移避让，不自动改变缩放。画布位置和视角只归共享浏览状态，不改变规则定义或触发保存；完整定义版本、CAS 与冲突恢复继续使用原 owner。
+
+`WorkspaceNavigation` 始终提供显式模块中心入口与受众选择；规则身份与命令各自以独立浮簇呈现。节点库提供搜索、条件/动作分类和带短释义的条目，详情浏览与新增分离。模块中心选择归 `WorkspaceViewState.browse.moduleManager` 订阅，跨 Slot 保持，不影响模块启用集合。`WorkspaceFrame` 在支持元素级 View Transition 且未要求减少动画时增强导航，否则直接更新视图。采用这些 API 不代表真实桌面环境已验收；无 flags 支持、关闭增强与键盘路径仍须专项验证。
 
 模块页 id 为 modules，所有来源导入后都成为普通模块，统一读取模块列表。卡体只承载名称、描述、id 与状态徽章，动作放卡脚；模块被其他模块引用、仍有依赖时由同一删除守卫拦截。角色来源不维护第二份 charactersList 库存，不创建角色专属状态登记。
 
@@ -224,11 +227,9 @@ workspace-pages.ts 是页面元数据的唯一来源。默认页为 features，�
 
 主会话页中的卡片顺序是 UI 分组，不表示九个官方注入 seam 的运行顺序。九个插入点彼此独立，运行时顺序和参数语义见 [engine-reuse.md](engine-reuse.md)。
 
-工具预览与工具编辑分离。`useCustomToolsEditor` 由主/子页面常驻调用，负责同一预设的读取、草稿与显式保存；创建直接消费动作并写共享草稿池，设置区只渲染其内容。工具模板插入走 `tools-editor` 的读守卫：已读草稿直接插入，未读时按该模块读一次，失败写 `draft.error`；卡只负责提示，不再保留模板插入分支。连续创建不依赖卡片挂载，切页后已建立的草稿继续保留，不重放请求。加载或读取失败、预设不匹配和只读时拒绝创建并给出提示，不将空列表当读取成功。预览不隐藏自定义工具，不自动创建／恢复会话；当前会话读取冻结 generation，所选预设读取后续 generation，切换来源或刷新会丢弃旧请求响应。
+`useCustomToolsEditor` 由主/子页面常驻调用，负责同一预设的读取、草稿与显式保存；创建直接消费动作并写共享草稿池，设置区只渲染其内容。工具模板插入走 `tools-editor` 的读守卫：已读草稿直接插入，未读时按该模块读一次，失败写 `draft.error`；卡只负责提示，不再保留模板插入分支。连续创建不依赖卡片挂载，切页后已建立的草稿继续保留，不重放请求。加载或读取失败、预设不匹配和只读时拒绝创建并给出提示，不将空列表当读取成功。
 
-样式参照官方 `ui-settings-plugin-inventory/PluginInventorySettingsTab`，不是可配置插件表单。卡头使用自有 `StatusBadge` 与 Chevron 图标，标记真实的「模型可见」；展开显示完整名称、来源视角、可见状态与描述。工具摘要没有插件配置启停或运行阶段，不显示虚构的「已启用／运行中」。搜索只在客户端过滤，并自动展开分组，不增加 bridge 请求。
 
-工具预览的来源下拉展开时后台刷新目录，已有选项期间只更新 `aria-busy`，不插入挤动锚点的加载文案。分组标题和来源菜单保持挂载；来源变化只重置带来源身份的数据快照与详情列表，旧响应不覆盖新来源。加载期间保留已展开详情的高度，避免短暂收缩触发滚动；聚焦项被刷新移除时，菜单接续到可用项并使用 `preventScroll`，避免闪动、关闭或丢失键盘焦点。
 
 公共参数由 `EngineParamFields` 按 `ENGINE_PARAM_DEFINITIONS` 与 `SHARED_PARAM_KEYS` 生成，能力存在性来自实际模块事实。字段声明可限定受众；PTC 主会话与子代理分别编辑自己的模式，共享能力开关仍属于同一模块。Git Bash 路径、超时与输出上限、指令提示时机、子代理参与和模板正文也沿用此参数链。模型卡写 layerSettings，装配期生成受众限定的 request-params 规则。也可编辑显式请求动作。当前会话模型独立走官方 selectModel。枚举使用 MenuSelect，列表使用 TagInput。
 
@@ -465,7 +466,7 @@ feature 只拥有自己的视图、瞬时状态、领域纯 helper 和 CSS：
 | models | 当前预设的主/子代理模型路由卡；模型下拉展示完整目录并按服务商分组，选择模型时内部回写 provider + model，不提供独立服务商选择控件 |
 | modules | 模块页管理；引擎能力身份、存在性判定及「本层引擎设置」内容装配 |
 | subagents | 委派工具、子代理模型路由与采样；不重复嵌入工具面 |
-| tools | 自定义工具编辑/保存、参数模板；独立工具预览页与只读工具面 |
+| tools | 自定义工具编辑/保存、参数模板 |
 | modules | 模块页的模块列表：启停、编辑选择、新建/克隆、导入导出、复制/删除/打开（页面壳在 `features/modules/ModulesPage.tsx`） |
 
 业务 feature 直接使用 data/bridge-client.ts 的 endpoint key；共享控件从 ui/导入。跨 feature 组合由 app/workspace/pages/完成，不在 feature 内建立第二个工作台。
@@ -481,11 +482,11 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - ImportPreviewCard：导入预览卡，展示服务端同源转换报告与有损信息（warning/info/被排除条目各自滚动容器）；导入预览共用。
 - reveal-card.ts：创建后的滚动定位与重试，层设置区与配置卡共用。
 - MenuSelect：封装自有 Menu 的单选控件；触发器直接使用共享 `Button shape="pill" variant="outline"`，与“添加注入模板”“刷新”具有相同描边、字号、留白、悬停与禁用态，不另写一套胶囊外观。支持连续选项的 `group` 分组标题；标准设置使用36px，模块卡内与列表过滤行使用28px，浮层统一portal。
-- SearchInput：主会话、子代理、工具预览共用官方 plugin-inventory 搜索形态；自带图标、H36/R12、13px/20px、左右36/34px留位、主题描边与焦点环，查询不会改变宽度，不套用配置编辑框的内容估宽。`inline` 仅表达同行伸缩布局。
-- 列表过滤行：主会话与子代理的多组件区域共用 `.listFilterRow` 卡片（10px 14px内边距、0.5px描边、R12、`bg-layer-3`），搜索与筛选、胶囊操作在同一行，空间不足时换行。工具预览只有独立搜索框，不额外包卡；卡片属于页面组合而不是SearchInput。
+- SearchInput：主会话、子代理共用官方 plugin-inventory 搜索形态；自带图标、H36/R12、13px/20px、左右36/34px留位、主题描边与焦点环，查询不会改变宽度，不套用配置编辑框的内容估宽。`inline` 仅表达同行伸缩布局。
+- 列表过滤行：主会话与子代理的多组件区域共用 `.listFilterRow` 卡片（10px 14px内边距、0.5px描边、R12、`bg-layer-3`），搜索与筛选、胶囊操作在同一行，空间不足时换行；卡片属于页面组合而不是SearchInput。
 - CollapsibleCard、EngineModuleCard：具体可复用的折叠/模块卡形态，不是万能 Card。
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
-- StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色，工具预览与模块「已启用」共用。模块徽章由实际 `enabled` 且可用驱动，与卡脚开关同步；工作台不保留单一编辑目标，卡片归属由卡内文字表达，徽章不冒充启用状态。
+- StatusBadge：StatusDot 与自有胶囊；tone 同时驱动两者颜色。模块徽章由实际 `enabled` 且可用驱动，与卡脚开关同步；工作台不保留单一编辑目标，卡片归属由卡内文字表达，徽章不冒充启用状态。
 - 状态徽章与内部Tag均不参与flex收缩，短状态文字保持单行；模块/角色标题承担剩余宽度并允许换行，长名称不把「使用中」挤成竖排胶囊。
 - 卡体（`.moduleCardBody`，位于 `ui/controls.module.css`）只承载内容，没有点击语义；模块卡共用同一形态，动作一律放卡脚（`.moduleCardFooter`）。需要整块可点的控件不要复用卡体。
 - ImportFileButton：隐藏原生 file input 的导入入口。
@@ -503,13 +504,13 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 菜单失焦通过relatedTarget识别自己的触发器/portal条目，跨React portal的焦点归属在下一帧复核；不在focusout微任务中先卸载菜单，以免真实鼠标的click丢失。该回归使用原生pointer按下/抬起，不能仅用element.click代替。
 
-规则卡直接复用 `CollapsibleCard` 的原卡壳、标题与 SVG 折叠箭头，受控展开只扩展现有组件。卡头操作区与展开按钮互为兄弟；原 `dragHandle` 的 `⋮⋮`、上移、下移和总开关同排。拖拽按钮保持 28px、8px 圆角与原悬停色，支持上下方向键，搜索或保存期间禁用排序。粗指针目标为 44px。数字和 JSON 原文由草稿池跨折叠/切页保留；指令卡自身 portal 内的焦点移动不视为离卡写盘。卡内的条件卡与动作卡折叠状态同样归草稿池（`store.editorDrafts.expanded`，键 = 模块 + 规则草稿键 + 路径）。
+`RuleCard` 直接提供 D 画布 surface 和规则顶栏，不再套用 `CollapsibleCard`。规则列表与组合浮层承载规则选择及原排序能力，画布拖节点只改变浏览坐标；搜索或保存期间原排序保护不变。数字和 JSON 原文由草稿池跨浮层切换保留；指令卡自身 portal 内的焦点移动不视为离卡写盘。
 
 模块卡内的选择器、开关及小型文本/数字输入使用紧凑尺寸；大文本和 JSON 编辑器保留 `field-sizing: content`、手动纵向缩放与现有自动测高，不随紧凑控件一起压缩。
 
-规则卡与指令文件卡共用 `ui/PromptConfigNavigation.tsx` 和 `ui/config-navigation.module.css`。规则卡基础身份常驻，"规则 / JSON / 设置"同级（条件与动作合并到同一面板：分处两个页签时看不出条件与动作的对应关系）。宽屏左侧导航，容器宽度不超过 620px 时变为上方 tabs；组件自身 ResizeObserver 同时驱动视觉布局与 ARIA 方向，避免跨 CSS Modules 的命名容器失配。
+规则身份及保存状态常驻画布顶栏，完整 JSON 和规则设置按需打开浮层；节点属性由右侧浮层编辑，不复用旧规则页签壳。指令文件卡仍使用 `ui/PromptConfigNavigation.tsx` 和 `ui/config-navigation.module.css`，保留其自身的响应式导航与 ARIA 方向。
 
-「规则」面板按**条件作用域**组织，与引擎的展开语义同构（`engine/branch.mjs#expandActions`）：规则级 `if` 是一张可折叠的条件卡，它管住的 `then` 节点在一段竖线作用域内各自成卡——动作卡（卡头是类型 + 执行层 + 正文首行）与**分支卡**（节点 `{if, then, else}`，卡头是「当 ⟨条件⟩ → ⟨动作⟩」，卡内可继续嵌套）。分支节点因此是可视编辑的一等语法，不再落到"未知动作 + 裸 JSON"（旧行为会让动作类型下拉收到 `undefined` 并在渲染期抛错，整棵插件树卸载）。每张卡默认收起，卡头单行省略给出「条件 → 动作」一览，展开才编辑；`×` 删除整张卡，图标取官方 IconClose 复制件、与 TagInput 的 chip 删除同形态；↑↓ 只在同一作用域内换位。规则级 `else` 用同一段竖线作用域呈现，为空时只留「添加否则分支」。必要事实未知时两支都可能不执行，UI 不把 else 描述为必然执行。新增动作在**整条规则**范围内分配唯一 id（引擎拒绝重复 id）。
+结构画布按**条件作用域**投影规则，与引擎的展开语义同构（`engine/branch.mjs#expandActions`）：呈现嵌套条件组、`then`／`else` 与按执行点分区的动作，连线表达所属分支及同执行点内次序，不建立跨生命周期执行管线。点选节点后复用现有字段编辑器在右侧编辑；节点库创建沿原规则草稿与提交协议，不建立第二份行为源。节点坐标、缩放和平移归内存浏览状态，不写模块定义。必要事实未知时两支都可能不执行，UI 不把 else 描述为必然执行。新增动作在**整条规则**范围内分配唯一 id（引擎拒绝重复 id）。
 
 动作的生效条件是**路径合取**：根到该动作路径上所有 `if` 取「且」、`else` 侧取「¬if」，因此不存在「第 i 个条件配第 i 个动作」；卡头提示逐字给出完整生效条件。system-section / runtime-context 的普通文本贡献同样支持嵌套条件分支，在每次 assembly 使用该执行点事实求值；普通 inject-text 的 complete / suppressRuntimeContext 属固定注册效果，仍拒绝动态分支；persona 动作在原 assemble 前准备，支持动态条件。作用域带条件时可选动作按引擎目录的 supportsWhen 过滤，不按规则缺省层禁用整个规则的分支；注入动作的具体合法性由最终配置与执行点校验。JSON 面板的结构门槛同样按「动作要有 `id` + `kind`、分支要有 `then` 数组」递归判定，不把分支判成非法 JSON。普通面板保持挂载，非活动面板使用 hidden 排除键盘焦点，设置首次进入才挂载。面板 `aria-label` 是页签文字的唯一来源，不在面板内重复标题。说明使用 HintTooltip，错误保留就地提示。
 
@@ -536,7 +537,7 @@ fieldset 禁用时 MenuSelect 同时拒绝 portal 中的选择。Tooltip 的键�
 
 普通圆角使用 `--dsw-radius-sm/md`，兼容未定义 token 的宿主时回退 8/12px；明确的胶囊使用 `999px` 并配 `corner-shape: round`。下拉切换选项时宽度随当前文字改变，不使用最长选项或字符数量估宽；展开菜单独立容纳完整选项。输入不设置 `maxLength`，超长值仍可完整编辑。字段名称不参与控件宽度与点击范围。粗指针输入、按钮和选择器的实际边框至少 H44，开关命中区域至少 44×44 且可见轨道仍为 36×20；菜单原始 pointer 落点在边框外时不打开。
 
-工作台四页以顶部 Tab 标识当前页面，内容区不再重复页名、页面概述或附加摘要。跨页导航聚焦活动 tabpanel，Tab 键导航仍聚焦页签；页面命名由 `aria-labelledby` 关联页签提供。配置卡和能力卡展开后直接显示编辑内容，不额外重复卡名或 ID；基础信息控件保留完整名称与 ID 的编辑能力。
+工作台顶栏以受众选择器和显式模块中心导航；模块中心使用原生模态焦点约束，返回时恢复触发位置。规则列表、节点库与属性在同一画布呈现，完整 JSON 和规则设置按需打开浮层。配置卡和能力卡展开后直接显示编辑内容，不额外重复卡名或 ID；基础信息控件保留完整名称与 ID 的编辑能力。
 
 `request-params` 编辑调用字段，字符串清空删除 patch 键，数字清空删除键而 0 保留。未知动作或嵌套扩展可在 JSON 中编辑，服务端编译失败保留完整输入；改规则级 `layer` 会改「动作未声明 `config.layer` 时」的运行通道（动作自带 `config.layer` 时只改展示分组与筛选），不清除动作数据。
 
@@ -588,7 +589,7 @@ context-activation 视图只调整附加提示，不另设模块卡容器；能�
 
 tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引用同规则工具可见面动作，text 使用只读 RESIDENT_TOOLS / DISCOVERY_TOOL 自动列出**当前可见**的常驻工具与发现工具；观测不到工具面时回落声明名单，观测到工具面但一个常驻名都不在时跳过提示。名单仍由被引用动作拥有，不在提示卡维护第二份。
 
-`ToolSurfaceView` 的 `sessionId` 分支表示当前存活 Agent；`presetId` 分支表示官方预设后续 generation 的只读能力。工具预览保持独立只读页面，只有用户显式打开时请求，不因主会话模块列表的筛选或渲染遍历所有预设。
+工具预览页面、`ToolSurfaceView` 与专用 `/tool-surface` 请求已移除；实际工具授权、tool-gate/tool-visibility 动作、自定义工具编辑及官方会话预设切换不受影响。
 
 ### 9.2 Tabs
 
@@ -668,7 +669,7 @@ tool-catalog 填充来源沿现有普通注入表单编辑：params.action 引�
 - 规则排序视图每次渲染只匹配一次可见身份集合；各卡复用该结果，再沿 `sameConfigPosition` 选择可移动项，不逐卡重复遍历身份列表。
 - `system-section` / `runtime-context` 卡可跨官方档位排序：`sameConfigPosition` 只要求同层同位置；跨档位先后由 `configOrder` 覆盖，装配后回填（见 `docs/engine-reuse.md` 的「提示词配置插入点与顺序」）。「插入到官方位置…」仍只改初始槽位。
 - order 的官方刻度只出现在 `system-section` 与 `runtime-context` 两层。数字输入与「插入到官方位置…」共用同一 NumberField 草稿和接受值路径；选择快捷位置同时更新数字、清除该字段错误，不改其他草稿。区段之前使用 `from - 1`，全部之后使用 `max(to) + 1`，避免同值按名称排序导致位置不符。边界来自 bridge 的 `meta.officialOrders`；缺席或空表时只保留数字输入。其余层只显示层内顺序说明。
-- 规则卡最外层折叠保留；内部使用条件、动作、JSON、设置导航。隐藏面板不进入 Tab 顺序，错误状态在页签提示；窄容器使用上方 tabs 和自然换行的紧凑字段，宽屏侧栏贴合文案宽度。
+- 规则编辑直接使用画布 surface；列表、组合、节点库、属性及 JSON／规则设置按需浮层呈现，不以旧折叠卡包裹整面画布。未显示面板不进入 Tab 顺序；字段草稿、完整版本校验与错误恢复仍由原编辑 owner 持有。
 - 当前会话模型始终读取官方 sessions projection，切换始终走 official session.selectModel。
 - 未启用的可选模块保持 opt-in；生成结果、preset 优先级和 bridge 载荷不得因 UI 重构改变。
 

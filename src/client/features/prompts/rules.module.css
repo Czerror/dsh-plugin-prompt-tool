@@ -1,6 +1,47 @@
 /* 统一规则卡、条件树和条件卡/动作卡的私有样式。 */
 .workspace { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; font-feature-settings: "cv01", "ss03"; }
-.workspaceContainer { container: rule-workspace / inline-size; min-width: 0; }
+.workspaceContainer { container: rule-workspace / inline-size; min-width: 0; block-size: 100%; min-block-size: 0; }
+.ruleWorkspace[data-canvas-workspace] { position: relative; display: flex; block-size: 100%; min-block-size: 0; background: radial-gradient(#343b486b .8px, transparent .8px) 0 0 / 20px 20px #0e1116; color: #e7edf6; }
+.ruleWorkspace[data-canvas-workspace]:not([data-rule-open]) > .ruleListPane { position: absolute; z-index: 10; inset: 94px auto 80px 12px; inline-size: min(350px, calc(100% - 24px)); overflow: auto; padding: 14px; background: #181c23; border: 1px solid #313844; border-radius: 10px; }
+.ruleListPane :global([data-module-toolbar]) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.ruleListPane :global([data-module-toolbar]) > * { min-block-size: 0; block-size: auto; }
+.emptyCanvas { position: absolute; inset: 82px auto auto 20px; }
+.workspaceContainer:has(.canvasSurface) { display: flex; flex-direction: column; }
+.ruleWorkspace[data-rule-open], .ruleDetail, .canvasSurface, .canvasSurface > .body, .canvasSurface [data-config-panel=rule], .canvasSurface .ruleCanvas, .canvasSurface .steps, .canvasSurface .canvasLayout { flex: 1; min-block-size: 0; block-size: 100%; }
+.ruleWorkspace[data-rule-open] { position: relative; display: flex; }
+.ruleWorkspace[data-rule-open][data-list-open] > .ruleListPane { display: flex; position: absolute; z-index: 10; inset: 90px auto 80px 12px; inline-size: min(350px, calc(100% - 24px)); overflow: auto; padding: 14px; background: #181c23; color: #e7edf6; border: 1px solid #313844; border-radius: 10px; box-shadow: 0 8px 24px #0005; }
+.canvasSurface { position: relative; display: flex; flex-direction: column; color: #e7edf6; background: #0e1116; isolation: isolate; }
+.canvasSurface > .body { gap: 0; }
+.canvasSurface [data-config-panel=rule] { display: flex; padding: 0; }
+.canvasSurface .ruleCanvas { display: flex; }
+.canvasSurface .steps { display: flex; padding: 0; }
+.canvasSurface .canvasLayout { display: flex; }
+.canvasTopbar { position: absolute; inset: 12px 126px auto 130px; z-index: 6; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px; pointer-events: none; }
+.contextCluster, .commandCluster { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border: 1px solid #313844; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0003; pointer-events: auto; min-inline-size: 0; }
+.contextCluster { max-inline-size: min(460px, 100%); }
+.canvasIdentity { display: grid; flex: 1; min-inline-size: 8rem; overflow-wrap: anywhere; }
+.canvasIdentity small { color: #9ca7b7; }
+.canvasAccessibleHeading { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); }
+.canvasSurface .saveStatus:empty { display: none; }
+.canvasSurface .saveStatus:not(:empty), .canvasSurface .body > .status { position: absolute; z-index: 5; inset: 78px 16px auto auto; margin: 0; max-inline-size: min(28rem, 90%); padding: 6px 10px; background: #181c23; border-radius: 6px; }
+.definitionDrawer { position: absolute; inset: 94px 12px 76px auto; inline-size: min(34rem, calc(100% - 24px)); z-index: 8; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; border: 1px solid #394452; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0005; }
+.definitionDrawer .headerFields { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
+.canvasSurface .libraryToggle { position: absolute; z-index: 4; inset: 96px auto auto 12px; }
+.canvasSurface .canvasLibrary { position: absolute; z-index: 4; inset: 140px auto 88px 12px; inline-size: 224px; max-block-size: none; display: flex; flex-direction: column; align-items: stretch; background: #181c23; border-color: #313844; box-shadow: 0 8px 24px #0003; }
+.canvasSurface .ruleProperties { position: absolute; z-index: 5; inset: 110px 12px 88px auto; inline-size: min(320px, calc(100% - 24px)); max-block-size: none; overflow: auto; padding: 14px; border: 1px solid #313844; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0003; }
+.canvasSurface .libraryToggle, .canvasSurface .ruleProperties, .canvasSurface .definitionDrawer { inset-block-start: var(--pt-canvas-top, 110px); }
+.canvasSurface .canvasLibrary { inset-block-start: var(--pt-canvas-top, 110px); }
+@container rule-workspace (width < 56rem) {
+  .canvasTopbar { inset: 60px 8px auto; }
+  .contextCluster, .commandCluster { padding: 8px; }
+  .canvasIdentity { flex-basis: 100%; }
+  .canvasSurface .canvasLibrary { max-block-size: calc(100% - var(--pt-canvas-top, 148px) - 140px); }
+  .canvasSurface[data-rule-id] .ruleCanvas[data-node-open] > .steps { display: none; }
+  .canvasSurface .ruleProperties { inset-inline: 8px; inline-size: auto; }
+}
+@container rule-workspace (width >= 56rem) {
+  .canvasSurface .ruleCanvas[data-node-open] > .steps { display: flex; }
+}
 .ruleWorkspace { display: grid; gap: 12px; min-width: 0; }
 .ruleListPane, .ruleDetail { display: flex; flex-direction: column; align-items: stretch; min-width: 0; gap: 10px; }
 .ruleDetail > button { align-self: flex-start; }
@@ -13,20 +54,18 @@
 .ruleChoice small { color: var(--dsw-alias-label-secondary); }
 .ruleChoice[aria-current], .ruleChoice:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .ruleList button[aria-disabled=true] { opacity: .6; cursor: default; }
-.ruleCanvas { display: grid; gap: 12px; min-width: 0; }
+.ruleCanvas { display: grid; position: relative; gap: 12px; min-width: 0; }
 .ruleCanvas[data-node-open] > .steps, .ruleCanvas:not([data-node-open]) > .ruleProperties { display: none; }
 .ruleProperties { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
 .ruleProperties > div { align-self: stretch; min-width: 0; }
-@container rule-workspace (width >= 70rem) {
-  .ruleWorkspace[data-rule-open] { grid-template-columns: minmax(15rem, 1fr) minmax(0, 3fr); }
-  .ruleWorkspace[data-rule-open] > .ruleListPane { display: flex; }
-  .ruleCanvas { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .ruleCanvas[data-node-open] > .steps, .ruleCanvas:not([data-node-open]) > .ruleProperties { display: flex; }
-}
+.canvasLibrary { padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-2); max-block-size: 24rem; overflow: auto; }
+.canvasLayout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .cardPanel { container: rule-card / inline-size; min-width: 0; }
 .headerActions { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; max-width: 100%; }
 .headerActions .row { flex-wrap: nowrap; gap: 4px; }
+.cardPanel > details { margin-block: 8px; }
+.cardPanel > details > summary { cursor: pointer; color: var(--dsw-alias-label-secondary); }
 .body { container: rule-editor / inline-size; display: flex; flex-direction: column; gap: 16px; padding: 0; min-width: 0; border-top: 0; }
 .fields { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; min-width: 0; }
 .headerFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); justify-items: start; align-items: start; gap: 12px; min-width: 0; padding-bottom: 4px; text-align: start; }
@@ -139,3 +178,23 @@
 @media (pointer: coarse) {
   .switchLine, .conditionOrdinal, .stepToggle { height: 44px; min-height: 44px; }
 }
+.libraryDetail { display: grid; gap: 8px; min-inline-size: 0; }
+.libraryHeading { display: flex; justify-content: space-between; padding-block-end: 8px; border-block-end: 1px solid #313844; }
+.libraryHeading button { padding: 0 5px; border: 0; background: transparent; color: inherit; font-size: 17px; }
+.libraryCategories { display: flex; gap: 4px; }
+.libraryCategories button { flex: 1; border: 1px solid #313844; border-radius: 6px; padding: 7px; background: transparent; color: inherit; }
+.libraryCategories button[aria-pressed=true] { background: #293b55; border-color: #72aaff; }
+.libraryItems { display: flex; flex-direction: column; gap: 3px; align-self: stretch; }
+.libraryItem { display: flex; gap: 10px; align-items: flex-start; padding: 10px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: inherit; text-align: start; font: inherit; cursor: pointer; }
+.libraryItem:hover, .libraryItem[aria-pressed=true] { background: #253146; border-color: #435a79; }
+.libraryItem > span:last-child { min-inline-size: 0; flex: 1; }
+.libraryItem strong, .libraryItem small { display: block; }
+.libraryItem small { margin-block-start: 4px; color: #9ca7b7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.libraryIcon { color: #72aaff; font-size: 18px; }
+.inspectorHeading { display: flex; align-items: flex-start; justify-content: space-between; inline-size: 100%; gap: 8px; }
+.inspectorHeading h3 { margin: 0 0 5px; }
+.inspectorHeading small { color: #9ca7b7; }
+.inspectorHeading button { padding: 3px 8px; border: 1px solid #313844; border-radius: 6px; background: transparent; color: inherit; font-size: 18px; }
+.libraryDetail p { margin: 0; overflow-wrap: anywhere; }
+.propertySummary { align-self: stretch; color: #9ca7b7; }
+.propertyFooter { margin-block-start: auto; position: sticky; inset-block-end: -14px; padding-block: 12px; align-self: stretch; background: #181c23; border-block-start: 1px solid #313844; }

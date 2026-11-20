@@ -11,7 +11,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { PromptToolSettingsTransport } from './data/use-prompt-tool-store.ts'
 import { createSessionModelFace } from './data/session-model-face.ts'
-import { createSessionPresetFace } from './data/session-preset-face.ts'
 import { readCurrentSessionId } from './data/session-id-source.ts'
 import { bridgeCall, subscribeConfigurationChanges } from './data/bridge-client.ts'
 import { registerWorkbenchSlots } from './app/workbench/register-workbench.tsx'
@@ -82,16 +81,6 @@ export function apply(ctx: ClientContext): void {
       currentSessionId,
       isConnected: () => connection.generation.getSnapshot() !== undefined,
       subscribeSessionChange: subscribeCurrent,
-      listAgentPresets: async () => {
-        const result = await ctx.remote.agentPresets.list()
-        if (!result.ok) throw new Error(result.error.message)
-        return result.value.presets.map(({ id, name, description, broken }) => ({
-          id,
-          ...(name === undefined ? {} : { name }),
-          ...(description === undefined ? {} : { description }),
-          ...(broken === undefined ? {} : { broken }),
-        }))
-      },
       pickDirectory: () => ctx.uiWorkspace.pickDirectory(),
       openPath: async (path) => {
         const result = await ctx.remote.session.openWorkspacePath({ path })
@@ -109,12 +98,6 @@ export function apply(ctx: ClientContext): void {
         },
         (request) => ctx.remote.session.selectModel(request as Parameters<typeof ctx.remote.session.selectModel>[0]),
       ),
-      // 官方会话预设投影供宿主能力面使用；模块编辑目标由请求身份独立管理。
-      sessionPreset: createSessionPresetFace({
-        currentSessionId,
-        subscribeCurrent,
-        binding: (id) => ctx.sessions.binding(id as Parameters<typeof ctx.sessions.binding>[0]),
-      }),
     }
   }
   // main 面板卸载对话作用域后，仍使用进入面板前最后选中的官方会话。

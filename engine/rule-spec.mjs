@@ -3,7 +3,7 @@ import { ACTION_KINDS, actionExecutionPoint, prepareAction, validateActionOption
 // 字段清单与动作声明同住 `actions/catalog.mjs`（`actions/index.mjs` 不再导出新面）。
 import { ACTION_FIELDS } from './actions/catalog.mjs'
 import { compileWhen, PREDICATE_FACTORIES, COMPOSITE_OPERATORS, FACT_PREDICATE_SUBJECTS, channelFactSubjects, channelTextSubjects } from './conditions/index.mjs'
-import { createPromptConfigs, INJECT_CONFIG_FIELDS, KNOWN_LAYERS, SESSION_VARIABLES_DISABLED, assertLlmCallPatch } from './schema.mjs'
+import { createPromptConfigs, INJECT_CONFIG_FIELDS, INJECTION_CHANNELS, KNOWN_LAYERS, SESSION_VARIABLES_DISABLED, assertLlmCallPatch } from './schema.mjs'
 import { bindResolver } from './strategies.mjs'
 import { stripDeclaredRefs } from './interpolate.mjs'
 import { matchesAudience, validateConfig } from './shared.mjs'
@@ -495,5 +495,5 @@ export function getRuleEditorMeta() {
     const action = compileRules([{ id: kind, then: [{ ...example, id: 'example' }] }])[0].actions[0]
     return { kind, example, channel: action.execution.channel, phase: action.execution.phase, lifecycle: action.execution.lifecycle, supportsWhen: action.execution.lifecycle === 'event' }
   })
-  return { predicates, actions, composites: [...COMPOSITE_OPERATORS], waterfallPositions: [...WATERFALL_POSITIONS] }
+  return { predicates, actions, injectionPoints: structuredClone(INJECTION_CHANNELS), composites: [...COMPOSITE_OPERATORS], waterfallPositions: [...WATERFALL_POSITIONS] }
 }

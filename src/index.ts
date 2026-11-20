@@ -1,4 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
+// 宿主 loader 事件类型经预设注册包提供。
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { saveModuleParams } from './host/module-definition-edit.ts'
 import { scheduleWebSurfaceRepair } from './web-surface.ts'

@@ -23,11 +23,6 @@ test.after(() => {
 
 function makeHarness(otherServices = {}, logger = undefined) {
   const table = handlerTable()
-  const agentPresets = {
-    list: async () => [{ id: 'official', trust: 'system' }],
-    acquireScope: async (id) => ({ key: { id }, [Symbol.asyncDispose]: async () => {} }),
-    ...otherServices.agentPresets,
-  }
   const sctx = {
     on: () => () => {},
     settings: {
@@ -43,13 +38,9 @@ function makeHarness(otherServices = {}, logger = undefined) {
       schemas: () => [{ name: 'bash', description: '运行命令' }],
       ...otherServices.tools,
     },
-    get: (name) => name === 'agentPresets' ? agentPresets : otherServices[name],
+    get: (name) => otherServices[name],
     effect: (fn) => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
   }
-  // Cordis 语义：未 inject 的服务属性访问直接抛错，可选服务只能经 ctx.get 解析。
-  Object.defineProperty(sctx, 'agentPresets', {
-    get() { throw new Error('cannot get property "agentPresets" without inject') },
-  })
   const ctx = { inject: (_deps, cb) => cb(sctx), ...(logger === undefined ? {} : { logger }) }
   return { ctx, handlers: table.handlers }
 }

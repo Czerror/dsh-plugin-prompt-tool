@@ -48,7 +48,7 @@ function searchableRule(rule: RuleDefinition): string {
 export interface RulesWorkspaceProps {
   store: ModuleFactsPort & DraftsPort & RuleEditingPort & InstructionFilesPort & NoticePort & ModuleActionsPort
   t: PromptToolTranslate; scope?: 'main' | 'subagent'
-  browse?: { filter: string; expanded?: string; allModules?: boolean; rulesScroll?: number; ruleNodes?: Map<string, string>; combination?: boolean; diagnosticTarget?: RuleDiagnosticTarget; publish?: () => void }
+  browse?: { filter: string; expanded?: string; allModules?: boolean; rulesScroll?: number; ruleNodes?: Map<string, string>; ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>; combination?: boolean; diagnosticTarget?: RuleDiagnosticTarget; publish?: () => void }
   onRuleEdit?: () => void
   onReturnToDiagnostics?: () => void
   createdHidden?: boolean; onShowCreated?: () => void
@@ -76,6 +76,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const scope = props.scope ?? 'main'
 
   const [localExpanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
+  const [listOpen, setListOpen] = useState(false)
   const [localAllModules, setAllModules] = useState(props.browse?.allModules ?? false)
   const [localCombination, setCombination] = useState(props.browse?.combination ?? false)
   const expanded = props.browse?.publish ? props.browse.expanded : localExpanded
@@ -242,6 +243,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     onSaveInstructionFile={id => { void store.persistInstructionFiles([id]) }} onReloadInstructionFile={id => store.reloadInstructionFile(id).then(() => {})}
     onPatchInstructionPolicy={store.instructionPolicy.error === undefined ? (id, override) => { void store.updateInstructionPolicy(id, override) } : undefined} />)
   const selected = entries.find(row => row.key === expanded)
+  useEffect(() => {
+    if (expanded === undefined && !combination && entries[0]) select(entries[0].key)
+  })
   const list = useRef<HTMLUListElement>(null)
   const selectedButton = useRef<HTMLButtonElement>(null)
   const detailHeading = useRef<HTMLHeadingElement>(null)
@@ -277,7 +281,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const changeCombination = (next: boolean): void => {
     if (props.browse) { props.browse.combination = next; props.browse.publish?.() }
     if (!props.browse?.publish) setCombination(next)
-    if (next && selected) back()
+    if (next) setListOpen(true)
   }
   const setModuleEnabled = async (id: string, enabled: boolean): Promise<void> => {
     setModulePending(id)
@@ -304,10 +308,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       {diagnosticKey === undefined && (diagnosticOwner === undefined || diagnosticOwner.draft.loaded || diagnosticOwner.draft.error)
         && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
     </div>}
-    <div className={css.ruleWorkspace} data-rule-open={selected !== undefined || undefined}>
+    <div className={css.ruleWorkspace} data-rule-open={selected !== undefined || undefined} data-list-open={listOpen || combination || undefined} data-canvas-workspace>
     <div className={css.ruleListPane}>
     <div className={css.row}>
       <h2 ref={workspaceHeading} tabIndex={-1} className={css.workspaceHeading}>{t('rules.list')}</h2>
+      {selected && <Button shape="pill" variant="outline" onClick={() => { focus.current = 'detail'; changeCombination(false); setListOpen(false) }}>{t('rules.backToStructure')}</Button>}
       <Button shape="pill" variant="outline" aria-pressed={combination} onClick={() => changeCombination(!combination)}>{t('rules.combination')}</Button>
     </div>
     <div className={ui.listFilterRow} data-module-toolbar>
@@ -376,6 +381,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
               lastButton.current = event.currentTarget
               focus.current = 'detail'
               select(key)
+              setListOpen(false)
               if (key === expanded) { detailHeading.current?.focus(); focus.current = undefined }
             }}>
             <span>{entry.value.name || entry.value.id}</span>
@@ -399,11 +405,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {props.beforeCards}
     {moduleSettings.map(item => <div key={`module-settings-${scope}-${item.moduleId}`} className={css.workspace} data-module-settings={item.moduleId}>{props.renderModuleSettings!(item.moduleId, item.layers)}</div>)}</>}
     </div>
+    {!selected && <div className={css.emptyCanvas}><h2>{t('rules.structure')}</h2><p>{t('rules.chooseNode')}</p></div>}
     {selected && <div className={css.ruleDetail}>
-      <Button shape="pill" variant="outline" onClick={back}>{t('rules.backToList')}</Button>
-      <h2 ref={detailHeading} tabIndex={-1} className={css.workspaceHeading}>{selected.moduleId} / {selected.entry.value.id}</h2>
+      <h2 ref={detailHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{selected.moduleId} / {selected.entry.value.id}</h2>
       <RuleCard key={selected.key} t={t} entry={selected.entry} draft={selected.draft} editor={selected.editor} meta={store.meta} source={selected.moduleId} moduleId={selected.moduleId} disabled={readOnly(selected.moduleId)}
-        expanded onToggle={back} onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} onBrowseChange={props.browse?.publish}
+        expanded onToggle={() => { saveSelected.current?.(); const open = listOpen || combination; focus.current = open ? 'detail' : 'list'; if (open) changeCombination(false); setListOpen(!open) }} onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
         diagnosticActionId={diagnosticKey === selected.key ? diagnosticTarget?.actionId : undefined}
         onRuleEdit={props.onRuleEdit}
         onActivate={() => refreshExclusivePeers(selected.moduleId, selected.entry.value)}

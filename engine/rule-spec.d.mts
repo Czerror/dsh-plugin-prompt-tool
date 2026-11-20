@@ -70,6 +70,7 @@ export interface InjectionConfigSpec {
 
 /** 规则与动作的执行点目录（编辑器元数据）；结构等价于 `src/shared/rules.ts` 的 `RuleEditorMeta`。 */
 export interface RuleEditorMeta {
+  injectionPoints: Record<string, { channel: string; phase: string }>
   predicates: Array<{ kind: string; example: Record<string, unknown> }>
   actions: Array<{
     kind: string

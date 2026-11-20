@@ -1,4 +1,7 @@
 export const RULES_ZH = {
+  'rules.definition': '定义',
+  'rules.ruleSettings': '规则设置',
+  'rules.toolsMenu': '更多',
   'rules.participatingModules': '参与模块',
   'rules.allModules': '全部模块',
   'rules.moduleInactive': '模块未参与',
@@ -51,6 +54,8 @@ export const RULES_ZH = {
   'rules.worldBook': '上下文激活', 'rules.showCreated': '显示新建规则',
   'rules.sessionModel': '当前会话模型', 'rules.reasoningEffort': '思维程度',
   'rules.moduleModelHint': '此处切换当前会话模型。模块的模型覆盖与采样参数由「请求参数」动作编辑。',
+  'rules.nodeLibrary': '动作条件库', 'rules.libraryAddHint': '拖到画布中的目标区域，或点击添加；浏览条目不会新增节点。', 'rules.ruleOverview': '规则概要',
+  'rules.moduleCenter': '模块中心', 'rules.librarySearch': '搜索动作和条件', 'rules.libraryConditions': '条件', 'rules.libraryActions': '动作', 'rules.ruleEditor': '规则编辑',
   'rules.sessionModelSaved': '已更新当前会话模型', 'rules.removeActionShort': '删除动作',
   'rules.flow': '条件 → 动作', 'rules.addCondition': '添加条件', 'rules.removeCondition': '删除条件',
   'rules.addAction': '添加动作', 'rules.removeAction': '删除动作 {id}',
@@ -104,6 +109,9 @@ export const RULES_ZH = {
   'rules.create.none': '暂无已安装模块',
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
+  'rules.definition': 'Definition',
+  'rules.ruleSettings': 'Rule settings',
+  'rules.toolsMenu': 'More',
   'rules.participatingModules': 'Participating modules',
   'rules.allModules': 'All modules',
   'rules.moduleInactive': 'Module inactive',
@@ -156,6 +164,8 @@ export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.worldBook': 'Context activation', 'rules.showCreated': 'Show created rule',
   'rules.sessionModel': 'Current session model', 'rules.reasoningEffort': 'Reasoning effort',
   'rules.moduleModelHint': 'Change the current session model here. Module model overrides and sampling parameters belong to Request parameters actions.',
+  'rules.nodeLibrary': 'Actions and conditions', 'rules.libraryAddHint': 'Drag onto a canvas target or choose Add. Browsing an item does not create a node.', 'rules.ruleOverview': 'Rule overview',
+  'rules.moduleCenter': 'Module center', 'rules.librarySearch': 'Search actions and conditions', 'rules.libraryConditions': 'Conditions', 'rules.libraryActions': 'Actions', 'rules.ruleEditor': 'Rule editor',
   'rules.sessionModelSaved': 'Current session model updated', 'rules.removeActionShort': 'Remove action',
   'rules.flow': 'Conditions → Actions', 'rules.addCondition': 'Add condition', 'rules.removeCondition': 'Remove condition',
   'rules.addAction': 'Add action', 'rules.removeAction': 'Remove action {id}',

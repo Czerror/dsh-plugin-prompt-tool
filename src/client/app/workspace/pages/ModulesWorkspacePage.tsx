@@ -23,6 +23,7 @@ export function ModulesWorkspacePage(props: {
   store: PromptToolStore
   diagnostics: RuleDiagnosticsSession
   resultsDisclosure: ResultsDisclosure
+  moduleBrowse: ReturnType<typeof createWorkspaceBrowseState>['moduleManager']
   t: PromptToolTranslate
   onReady: () => void
   onLocate?: (target: RuleDiagnosticTarget) => void

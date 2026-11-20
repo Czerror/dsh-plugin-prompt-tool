@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useState, type MutableRefObject, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
 import { AutoSaveSelection } from '../../ui/AutoSaveSelection.ts'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import type { RuleDiagnosticRecord } from '../../../shared/bridge-contract.ts'
@@ -15,8 +15,6 @@ import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
-import { CollapsibleCard } from '../../ui/CollapsibleCard.tsx'
-import { PromptConfigNavigation } from '../../ui/PromptConfigNavigation.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
@@ -38,6 +36,7 @@ export function RuleCard(props: {
   diagnostics?: readonly RuleDiagnosticRecord[]
   leaveSave?: MutableRefObject<(() => void) | undefined>
   nodeBrowse?: Map<string, string>
+  canvasBrowse?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>
   onBrowseChange?: () => void
   diagnosticActionId?: string
   onRuleEdit?: () => void
@@ -48,6 +47,25 @@ export function RuleCard(props: {
   const panelId = useId()
   const [confirming, setConfirming] = useState(false)
   const [discarding, setDiscarding] = useState(false)
+  const [drawer, setDrawer] = useState<'properties' | 'definition' | undefined>()
+  const surface = useRef<HTMLElement>(null)
+  const drawerTrigger = useRef<HTMLElement>()
+  const openDrawer = (next: 'properties' | 'definition'): void => {
+    drawerTrigger.current = document.activeElement as HTMLElement
+    setDrawer(drawer === next ? undefined : next)
+  }
+  useLayoutEffect(() => {
+    const element = surface.current, header = element?.querySelector('header')
+    if (!element || !header) return
+    const measure = () => element.style.setProperty('--pt-canvas-top', `${(header as HTMLElement).offsetTop + header.getBoundingClientRect().height + 16}px`)
+    const observer = new ResizeObserver(measure)
+    observer.observe(header); measure()
+    return () => observer.disconnect()
+  }, [])
+  useLayoutEffect(() => {
+    if (drawer) surface.current?.querySelector<HTMLElement>('[data-rule-drawer] button')?.focus()
+    else drawerTrigger.current?.focus()
+  }, [drawer])
   const disabled = props.disabled === true
   const nodes = [...nodeList(rule.then), ...nodeList(rule.else)]
   // 路径上带条件的动作必须支持条件（event 生命周期）；引擎在编译期拒绝其余组合。
@@ -115,16 +133,27 @@ export function RuleCard(props: {
       : hasRuleFields(draft, entry.key) ? t('rules.fieldsPending')
         : draft.remote ? t('rules.conflict') : !publication && !activationPending ? draft.error : undefined
   const retry = editor.retryKind
-  return <AutoSaveSelection.Provider value={save}><CollapsibleCard id={panelId} title={rule.name || rule.id} meta={(props.source ? t('rules.source', { module: props.source }) + ' · ' : '') + (rule.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, rule.layer)) + ' · ' + summary}
-    expanded={props.expanded} onToggle={props.onToggle} bodyClassName={`${ui.configForm} ${css.cardPanel}`}
+  return <AutoSaveSelection.Provider value={save}><section ref={surface} id={panelId} className={css.canvasSurface} aria-label={rule.name || rule.id}
     data-rule-id={rule.id} data-rule-key={entry.key}
     onCompositionStart={() => { editor.setComposing(entry.key, true); autosave.onCompositionStart() }}
     onCompositionEnd={() => { editor.setComposing(entry.key, false); autosave.onCompositionEnd() }}
-    actions={<span className={css.headerActions} data-rule-header-actions>{props.headerActions}<span className={css.switchLine}>
+    >
+    <header className={css.canvasTopbar}>
+      <div className={css.contextCluster}>
+      <Button shape="pill" variant="outline" onClick={props.onToggle}>{t('rules.backToList')}</Button>
+      <div className={css.canvasIdentity}><strong>{rule.name || rule.id}</strong><small>{props.source} / {rule.id} · {summary}</small><small role="status">{saveStatus ?? t(rulesDirty(draft, entry.key) ? 'rules.dirty' : 'rules.clean')}{publication ? ' · ' + t('publication.pending') : ''}</small></div>
+      </div>
+      <div className={css.commandCluster}>
+      <span className={css.headerActions} data-rule-header-actions>{props.headerActions}<span className={css.switchLine}>
       <AutoSaveSelection.Provider value={undefined}><Switch label={t('rules.enable', { name: rule.name || rule.id })} checked={rule.enabled !== false} disabled={disabled || hasRuleFields(draft, entry.key)} onChange={enabled => {
         patch({ enabled }); void editor.submitRule(entry.key, enabled ? { activateRuleId: rule.id } : {}).then(() => { if (enabled) props.onActivate?.() })
       }} /></AutoSaveSelection.Provider>
-      </span></span>}>
+      </span></span>
+      <Button variant="outline" shape="pill" aria-expanded={drawer === 'properties'} onClick={() => openDrawer('properties')}>{t('rules.ruleSettings')}</Button>
+      <Button variant="outline" shape="pill" aria-expanded={drawer === 'definition'} onClick={() => openDrawer('definition')}>{t('rules.definition')}</Button>
+      <Button variant="outline" shape="pill" disabled={disabled || hasRuleFields(draft, entry.key) || unsupported} onClick={save}>{t('rules.save')}</Button>
+      </div>
+    </header>
     <div className={css.body} data-rule-editor>
       <p className={css.saveStatus} role="status" aria-atomic="true">{saveStatus}</p>
       {(draft.pending || activationPending || (draft.error && !publication)) && <div className={css.row}>
@@ -140,7 +169,10 @@ export function RuleCard(props: {
         disabled={draft.busy !== undefined} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         onRetry={() => { void editor.retryPublication() }} />
       {targets.size > 0 && (reason ? <HintTooltip label={reason}><p role="status" className={css.status} tabIndex={0} aria-label={status + ' · ' + reason}>{status}</p></HintTooltip> : <p role="status" className={css.status}>{status}</p>)}
-      <div className={css.headerFields}>
+      {drawer !== undefined && <aside data-rule-drawer className={`${css.definitionDrawer} ${ui.configForm}`} aria-label={t(drawer === 'properties' ? 'rules.ruleSettings' : 'rules.definition')}
+        onKeyDown={event => { if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.stopPropagation(); setDrawer(undefined) } }}>
+      <Button variant="outline" shape="pill" onClick={() => setDrawer(undefined)}>{t('rules.backToStructure')}</Button>
+      {drawer === 'properties' && <><div className={css.headerFields}>
         <FormField label={t('rules.rename')}><TextInput value={rule.id} spellCheck={false} readOnly={disabled} onChange={event => patch({ id: event.target.value })} /></FormField>
         <FormField label={t('rules.name')}><TextInput value={rule.name ?? ''} readOnly={disabled} onChange={event => patch({ name: event.target.value || undefined })} /></FormField>
         <FormField label={t('rules.executionScope')}><MenuSelect compact ariaLabel={t('rules.executionScope')} value={rule.executionScope ?? 'agent'} disabled={disabled}
@@ -155,15 +187,12 @@ export function RuleCard(props: {
           onChange={groupScope => patch({ groupScope: groupScope as RuleDefinition['groupScope'] })} /></FormField>
         <div className={css.toggle}><span>{t('rules.exclusive')}</span><span className={css.switchLine}><Switch label={t('rules.exclusive')} checked={rule.exclusive === true} disabled={disabled} onChange={exclusive => { patch({ exclusive }); save() }} /></span></div>
       </div>
-      {unsupported && <p role="alert" className={css.error}>{t('rules.unsupported')}</p>}
-      <PromptConfigNavigation t={t} layer={rule.layer ?? 'module'} renderLayerSettings={props.renderSettings ? () => <AutoSaveSelection.Provider value={undefined}><section className={css.section} aria-label={t('rules.settings')}>{props.renderSettings?.(rule, props.moduleId)}</section></AutoSaveSelection.Provider> : undefined}>
-        <section data-config-panel="rule" aria-label={t('rules.stepsTab')} className={css.section}>{draft.meta && <RuleStepsPanel
-          t={t} rule={rule} meta={draft.meta} engineMeta={props.meta} fields={draft.fields} expanded={props.expandedRows}
-          prefix={props.source ?? rule.id} fieldKey={entry.key} browseKey={JSON.stringify([props.moduleId, entry.key])} nodeBrowse={props.nodeBrowse} onBrowseChange={props.onBrowseChange} diagnosticActionId={props.diagnosticActionId} disabled={disabled} onDraft={onDraft}
-          onChange={next => patch(next)} onMove={(path, index, offset) => autosave.commit(() => {
-            if (!disabled && !unsupported) void editor.move(entry.key, path, index, offset)
-          })} />}</section>
-      <section data-config-panel="definition" aria-label={t('rules.jsonTab')} className={css.section}><TriggerJsonField {...fieldContext} fieldKey={entry.key + ':full'} label={t('triggers.advanced')} shape="object" value={rule} onChange={value => {
+      {props.renderSettings?.(rule, props.moduleId)}
+      <div className={css.row}>
+        <Button variant="outline" shape="pill" disabled={disabled || draft.busy !== undefined || hasRuleFields(draft, entry.key)} onClick={props.onDuplicate}>{t('rules.duplicate')}</Button>
+        <Button variant="outline" shape="pill" data-danger disabled={disabled || draft.busy !== undefined} onClick={() => setConfirming(true)}>{t('rules.delete')}</Button>
+      </div></>}
+      {drawer === 'definition' && <TriggerJsonField {...fieldContext} fieldKey={entry.key + ':full'} label={t('triggers.advanced')} shape="object" value={rule} onChange={value => {
         const candidate = asTriggerRecord(value)
         if (typeof candidate.id !== 'string' || !Array.isArray(candidate.then) || !candidate.then.every(isValidNode)
           || (candidate.else !== undefined && !nodeList(candidate.else).every(isValidNode))) {
@@ -172,17 +201,19 @@ export function RuleCard(props: {
         for (const key of draft.fields.keys()) if (key.startsWith(entry.key + ':') && key !== entry.key + ':full') draft.fields.delete(key)
         editor.patch(entry.key, candidate as unknown as RuleDefinition)
         props.onRuleEdit?.()
-      }} /></section>
-      </PromptConfigNavigation>
-      <div className={css.row}>
-        <Button variant="outline" shape="pill" disabled={disabled || hasRuleFields(draft, entry.key) || unsupported} onClick={save}>{t('rules.save')}</Button>
-        <Button variant="outline" shape="pill" disabled={disabled || draft.busy !== undefined || hasRuleFields(draft, entry.key)} onClick={props.onDuplicate}>{t('rules.duplicate')}</Button>
-        <Button variant="outline" shape="pill" data-danger disabled={disabled || draft.busy !== undefined} onClick={() => setConfirming(true)}>{t('rules.delete')}</Button>
-      </div>
+      }} />}
+      </aside>}
+      {unsupported && <p role="alert" className={css.error}>{t('rules.unsupported')}</p>}
+        <section data-config-panel="rule" aria-label={t('rules.stepsTab')} className={css.section}>{draft.meta && <RuleStepsPanel
+          t={t} rule={rule} meta={draft.meta} engineMeta={props.meta} fields={draft.fields} expanded={props.expandedRows}
+          prefix={props.source ?? rule.id} fieldKey={entry.key} browseKey={JSON.stringify([props.moduleId, entry.key])} nodeBrowse={props.nodeBrowse} canvasBrowse={props.canvasBrowse} onBrowseChange={props.onBrowseChange} diagnosticActionId={props.diagnosticActionId} disabled={disabled} onDraft={onDraft}
+          onChange={next => patch(next)} onMove={(path, index, offset) => autosave.commit(() => {
+            if (!disabled && !unsupported) void editor.move(entry.key, path, index, offset)
+          })} />}</section>
     </div>
     {confirming && <ConfirmDialog title={t('rules.delete')} description={t('rules.deleteHint', { id: rule.id })} confirmLabel={t('rules.delete')} cancelLabel={t('triggers.cancel')}
       onCancel={() => setConfirming(false)} onConfirm={() => { editor.remove(entry.key); props.onRuleEdit?.(); void editor.submitRule(entry.key) }} />}
     {discarding && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')}
       onCancel={() => setDiscarding(false)} onConfirm={() => { editor.discard(); setDiscarding(false) }} />}
-  </CollapsibleCard></AutoSaveSelection.Provider>
+  </section></AutoSaveSelection.Provider>
 }

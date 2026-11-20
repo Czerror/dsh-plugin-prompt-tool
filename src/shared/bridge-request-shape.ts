@@ -49,7 +49,6 @@ export const BRIDGE_REQUEST_FIELDS = {
   moduleName: { fields: ['name', 'expectedRevision', 'expectedModuleId', 'refreshOnly'] },
   moduleEnable: { fields: ['id', 'enabled', 'refreshOnly'] },
   moduleConfigOrder: { fields: ['moduleId', 'entries', 'expectedRevision', 'refreshOnly'] },
-  toolSurface: { fields: ['sessionId', 'presetId'] },
   moduleCapability: { fields: ['action', 'capabilityId', 'recipeId', 'expectedModuleId', 'refreshOnly'] },
   contextActivationDiagnostics: { fields: ['sessionId'] },
   ruleDiagnostics: { fields: [] },

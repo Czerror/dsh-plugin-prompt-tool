@@ -1,18 +1,16 @@
-import clsx from 'clsx'
-import { useId, useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 import type { DraftsPort, ModuleFactsPort, NoticePort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { WorkspaceNavigation } from './WorkspaceNavigation.tsx'
-import { WORKSPACE_PAGES, type WorkspacePage } from './workspace-pages.ts'
-import { StatusBadge } from '../../ui/StatusBadge.tsx'
-import { StatusDot } from '../../ui/StatusDot.tsx'
+import type { WorkspacePage } from './workspace-pages.ts'
 import { Button } from '../../ui/Button.tsx'
-import ui from '../../ui/controls.module.css'
 import css from './PromptWorkspace.module.css'
 
 export function WorkspaceFrame(props: {
   store: ModuleFactsPort & NoticePort & DraftsPort
   page: WorkspacePage
+  audience: 'features' | 'subagent'
   t: PromptToolTranslate
   onPageChange: (page: WorkspacePage) => void
   scrollKey?: string
@@ -22,16 +20,13 @@ export function WorkspaceFrame(props: {
   children: ReactNode
 }): ReactNode {
   const { store, t } = props
-  const id = useId()
   useSyncExternalStore(store.subscribeDrafts, store.getDraftRevision, store.getDraftRevision)
   const canvasRef = useRef<HTMLElement>(null)
   const restoredKey = useRef<string>()
   const lastFocusPage = useRef(props.focusPage)
   const scrollKey = props.scrollKey ?? props.page
-  const modules = store.meta.modules ?? []
-  const modulesEnabled = modules.filter(module => module.enabled === true).length
   // 角色库与工具面拥有独立请求，不能以全局配置数量判定它们的加载/空态。
-  const usesBootstrap = props.page !== 'modules' && props.page !== 'tools'
+  const usesBootstrap = props.page !== 'modules'
   const loadingInitial = usesBootstrap && store.loading && store.meta.layers.length === 0
   const loadFailed = usesBootstrap && !store.loading && store.meta.layers.length === 0 && store.noticeKind === 'error'
   useLayoutEffect(() => {
@@ -67,67 +62,22 @@ export function WorkspaceFrame(props: {
     measure()
     return () => observer.disconnect()
   }, [scrollKey, loadingInitial])
-  return (
-    <div className={css.shell}>
-      <header className={css.masthead}>
-        <div className={css.brand}>
-          <span className={css.brandLogo} aria-hidden="true">⌁</span>
-          <h1>{t('app.title')}</h1>
-        </div>
-        {/* 状态反馈住在标题行：内容区不再为它留行；长文本单行截断，title 给全文。
-            加载失败时这里与内容区的重试块并存——同一条消息，标题行先让人看见错误。 */}
-        {store.notice !== '' && (
-          <p className={clsx(css.mastheadNotice, store.noticeKind === 'error' && css.mastheadNoticeError)} role="status" data-workspace-notice="true" title={store.notice}>
-            {store.noticePill === undefined
-              ? store.notice
-              : <><StatusBadge tone="success" label={store.noticePill} /> {store.notice}</>}
-          </p>
-        )}
-        <div className={css.statusCluster}>
-          <StatusDot tone={store.loading ? 'neutral' : 'success'} />
-          <span>{loadingInitial
-            ? t('app.loading')
-            : t('app.statusModules', { enabled: modulesEnabled, total: modules.length })}</span>
-        </div>
-      </header>
-
-      <WorkspaceNavigation id={id} page={props.page} onChange={(page) => {
-        if (canvasRef.current !== null && restoredKey.current === scrollKey) props.scrollPositions?.set(scrollKey, canvasRef.current.scrollTop)
-        props.onPageChange(page)
-      }} t={t} />
-
-      <main ref={canvasRef} className={css.canvas} data-workspace-canvas onScroll={(event) => {
-        if (restoredKey.current === scrollKey) props.scrollPositions?.set(scrollKey, event.currentTarget.scrollTop)
-      }}>
-        {WORKSPACE_PAGES.map((item) => {
-          const active = item.id === props.page
-          return (
-            <div
-              key={item.id}
-              id={`${id}-panel-${item.id}`}
-              role="tabpanel"
-              aria-labelledby={`${id}-tab-${item.id}`}
-              tabIndex={active ? 0 : undefined}
-              hidden={!active}
-            >
-              {active && (
-                <>
-                  {loadFailed ? <div className={ui.actionFeedback}>
-                    <p className={ui.noticeError} role="status">{store.notice}</p>
-                    <Button shape="pill" variant="outline" size="md" onClick={() => void store.load()}>{t('workspace.retry')}</Button>
-                  </div> : loadingInitial ? (
-                    <div aria-busy="true" aria-label={t('app.loading')}>
-                      <div className={props.page === 'modules' ? ui.presetGrid : ui.skeletonStack} aria-hidden="true">
-                        {[0, 1, 2, 3].map((row) => <div key={row} className={ui.skeletonRow} />)}
-                      </div>
-                    </div>
-                  ) : props.children}
-                </>
-              )}
-            </div>
-          )
-        })}
-      </main>
-    </div>
-  )
+  return <div className={css.shell} data-d-surface>
+    <WorkspaceNavigation page={props.page} audience={props.audience} onChange={page => {
+      if (canvasRef.current) props.scrollPositions?.set(scrollKey, canvasRef.current.scrollTop)
+      const scope = canvasRef.current as (HTMLElement & { startViewTransition?: (update: () => void) => { ready: Promise<unknown> } }) | null
+      if ('startViewTransition' in Element.prototype && scope?.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        scope.startViewTransition(() => flushSync(() => props.onPageChange(page))).ready.catch(() => {})
+      } else props.onPageChange(page)
+    }} t={t} />
+    {store.notice !== '' && <p className={css.surfaceNotice} role="status" title={store.notice}>{store.notice}</p>}
+    <main ref={canvasRef} className={css.canvas} data-workspace-canvas onScroll={event => {
+      if (restoredKey.current === scrollKey) props.scrollPositions?.set(scrollKey, event.currentTarget.scrollTop)
+    }}>
+      <div className={css.surfaceContent} tabIndex={-1} data-workspace-page={props.page}>
+        {loadFailed ? <div className={css.surfaceFeedback}><p role="status">{store.notice}</p><Button shape="pill" variant="outline" onClick={() => void store.load()}>{t('workspace.retry')}</Button></div>
+          : loadingInitial ? <div className={css.surfaceFeedback} role="status" aria-busy="true">{t('app.loading')}</div> : props.children}
+      </div>
+    </main>
+  </div>
 }
