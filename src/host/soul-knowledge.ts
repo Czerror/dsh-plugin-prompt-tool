@@ -1,7 +1,8 @@
 /** 本机知识库授权：只由用户命令确认，模块导出不包含官方持久域。 */
-import { lstatSync, mkdirSync, readdirSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
+import type { Stats } from 'node:fs'
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
@@ -70,6 +71,27 @@ function identity(path: string): string {
   if (!stat.isDirectory()) throw new Error('知识库根不是目录')
   return revisionOf(JSON.stringify([realpathSync(absolute), stat.dev, stat.ino, stat.birthtimeMs]))
 }
+function fileVersion(stat: Stats) {
+  return revisionOf(JSON.stringify([stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs]))
+}
+function selectedFileDigest(path: string, version: string, buffer: Buffer) {
+  identity(dirname(path))
+  const fd = openSync(path, 'r')
+  try {
+    const stat = fstatSync(fd)
+    if (!stat.isFile() || fileVersion(stat) !== version) throw new Error('所选旧资料已变化，请重新预览')
+    const hash = createHash('sha256')
+    let remaining = stat.size
+    while (remaining > 0) {
+      const count = readSync(fd, buffer, 0, Math.min(remaining, buffer.length), null)
+      if (count === 0) throw new Error('所选旧资料已变化，请重新预览')
+      hash.update(buffer.subarray(0, count))
+      remaining -= count
+    }
+    if (fileVersion(fstatSync(fd)) !== version) throw new Error('所选旧资料已变化，请重新预览')
+    return hash.digest('hex')
+  } finally { closeSync(fd) }
+}
 function rootSnapshot(root: string) {
   let rootIdentity: string
   try { rootIdentity = identity(root) }
@@ -82,7 +104,7 @@ function rootSnapshot(root: string) {
     for (const name of readdirSync(directory).sort()) {
       if (entries.length >= 2000) throw new Error('知识库预览超过2000项，请选择更小的根')
       const path = prefix + name, stat = lstatSync(join(directory, name))
-      entries.push({ path, size: stat.size, kind: stat.isSymbolicLink() ? 'link' : stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'special', version: revisionOf(JSON.stringify([stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs])) })
+      entries.push({ path, size: stat.size, kind: stat.isSymbolicLink() ? 'link' : stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'special', version: fileVersion(stat) })
       if (stat.isDirectory() && !protectedPath(path)) {
         if (depth >= 8) throw new Error('知识库层级过深，请选择更小的根')
         visit(join(directory, name), path + '/', depth + 1)
@@ -180,9 +202,11 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
     for (const path of [...read, ...write]) safePath(path)
     if (write.some(path => !['general', 'projects'].includes(path))) throw new Error('写入范围只能明确选择general或projects')
     const snapshot = rootSnapshot(root)
-    for (const path of read) if (!snapshot.entries.some(item => item.path === path && item.kind === 'file')) throw new Error('所选旧资料不存在或不是普通文件')
+    const byPath = new Map(snapshot.entries.map(entry => [entry.path, entry]))
+    for (const path of read) if (byPath.get(path)?.kind !== 'file') throw new Error('所选旧资料不存在或不是普通文件')
     for (const path of write) if (snapshot.entries.some(item => item.path === path && item.kind !== 'directory')) throw new Error('拟创建范围已被文件或链接占用')
-    const readVersions = read.map(path => revisionOf(readFileSync(join(root, path))))
+    const buffer = Buffer.allocUnsafe(read.length ? 64 * 1024 : 0)
+    const readVersions = [...new Set(read)].map(path => selectedFileDigest(join(root, path), byPath.get(path)!.version, buffer))
     const current = table.get(revisionOf(key(directory)))
     const moduleStat = lstatSync(join(directory, 'module.yml'))
     const revision = revisionOf(JSON.stringify([key(directory), identity(directory), moduleStat.size, moduleStat.mtimeMs, moduleStat.ctimeMs, root, read, write, snapshot, readVersions, current?.revision ?? null]))

@@ -189,6 +189,8 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   assert.equal(owner.status(f.dir).state, 'unbound')
   writeFileSync(join(root, 'old.md'), 'CHANGED')
   assert.equal((await run({ ...request, action: 'confirm', expectedRevision: preview.revision })).kind, 'error')
+  assert.equal(owner.status(f.dir).state, 'unbound')
+  assert.deepEqual(readdirSync(root).sort(), ['02-soul.jsonl', 'SELF.src.md', 'old.md'])
   const fresh = JSON.parse((await run(request)).text)
   assert.equal((await run({ ...request, action: 'confirm', expectedRevision: fresh.revision })).kind, 'success')
   assert.equal(owner.status(f.dir).state, 'bound')
