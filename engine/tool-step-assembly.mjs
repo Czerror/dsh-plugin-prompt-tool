@@ -7,6 +7,7 @@ import { readLimitsDefinition } from './read-limits.mjs'
 import { delegationLimitsDefinition } from './delegation-limits.mjs'
 import { installSkillDescriptionProjection, settleSkillDescriptions } from './tool-metadata.mjs'
 import { normalizeMessageShapeAssembly } from './message-shape-guards.mjs'
+import { cordisRoot } from './shared.mjs'
 
 const installations = new WeakMap()
 const guardedRoots = new WeakSet()
@@ -20,7 +21,7 @@ const guardToolStep = exec => {
 
 /** 多个真实装配入口共用一个公开服务适配，集合只封存一次。 */
 export function installToolStepAssembly(ctx, options) {
-  const root = ctx.root
+  const root = cordisRoot(ctx)
   if (!guardedRoots.has(root)) {
     guardedRoots.add(root)
     // 已发行集合可被原服务保留；唯一拒绝闸随 root 释放，只读取弱关联步骤。
