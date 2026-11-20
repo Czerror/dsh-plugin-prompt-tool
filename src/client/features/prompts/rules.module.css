@@ -2,37 +2,15 @@
 .workspace { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; font-feature-settings: "cv01", "ss03"; }
 .workspaceContainer { container: rule-workspace / inline-size; min-width: 0; block-size: 100%; min-block-size: 0; }
 .ruleWorkspace[data-canvas-workspace] { position: relative; display: flex; block-size: 100%; min-block-size: 0; background: radial-gradient(#343b486b .8px, transparent .8px) 0 0 / 20px 20px #0e1116; color: #e7edf6; }
-.moduleScope { position: absolute; z-index: 11; inset: 12px auto auto 12px; display: flex; align-items: center; gap: 4px; max-inline-size: calc(100% - 9rem); padding: 4px; border: 1px solid #363f4d; border-radius: 11px; background: #171c24; box-shadow: 0 8px 24px #0003; }
-.moduleScope > button { min-block-size: 34px; }
-.moduleScope > button:not(.modulePicker) { flex: none; }
-.moduleScope > .libraryToggle { display: grid; place-items: center; inline-size: 34px; padding: 0; color: #adc6e8; }
-.moduleScope > .libraryToggle[aria-expanded=true] { border-color: #465e80; background: #28374b; }
-.modulePicker { display: flex; align-items: center; gap: 8px; inline-size: 12rem; min-inline-size: 0; padding: 5px 9px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #e7edf6; text-align: start; font: inherit; cursor: pointer; }
-.modulePicker:is(:hover, [aria-expanded=true]) { background: #242e3d; border-color: #39495d; }
-.modulePicker strong { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.modulePicker svg { flex: none; color: #a6c7f6; }
-.modulePickerPanel { position: fixed; z-index: 50; box-sizing: border-box; inline-size: min(24rem, calc(100vw - 24px)); max-block-size: min(28rem, 70dvh); padding: 10px; border: 1px solid #39495d; border-radius: 11px; background: #181f2a; color: #e7edf6; box-shadow: 0 12px 30px #0008; overflow: auto; overscroll-behavior: contain; }
-.modulePickerPanel[data-position-fallback] { inset: auto; margin: 0; }
-@supports (position-area: block-end span-inline-end) {
-  .modulePickerPanel[popover]:not([data-position-fallback]) { inset: auto; margin: 6px 0; position-area: block-end span-inline-end; position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline; }
-}
-.modulePickerItems, .modulePickerGroup { display: grid; min-inline-size: 0; gap: 2px; }
-.modulePickerGroup > h3 { margin: 10px 8px 4px; font-size: .75rem; color: #aab8ca; }
-.modulePickerGroup + .modulePickerGroup { margin-block-start: 6px; border-block-start: 1px solid #36404e; }
-.modulePickerRow { display: flex; align-items: center; gap: 8px; min-inline-size: 0; padding-inline-end: 6px; }
-.modulePickerChoice { flex: 1; display: flex; align-items: center; gap: 6px; min-inline-size: 0; min-block-size: 36px; padding: 7px 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit; text-align: start; overflow-wrap: anywhere; font: inherit; cursor: pointer; }
-.modulePickerChoice:is(:hover, [aria-current]) { background: #26344a; border-color: #445879; }
-.modulePickerChoice:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }
-.modulePickerChoice small { display: block; color: #b5c2d4; }
-.modulePickerChoice .modulePickerEditing { color: #adcbf5; }
-.modulePickerState { flex: none; color: #b5c2d4; }
-.modulePickerRow[data-enabled=true] .modulePickerState { color: #a3dfc2; }
-.modulePickerRow [role=switch] { min-block-size: 32px; }
-.modulePickerFeedback { margin-block-start: 6px; overflow-wrap: anywhere; }
-.ruleWorkspace:has(> .moduleScope > .modulePicker[aria-expanded=true]) > .ruleListPane .modulePickerFeedback { display: none; }
-.modulePickerIndicator { color: #f0c480; font-weight: 700; }
-.disclosureMarker { inline-size: 6px; block-size: 6px; flex: none; margin-inline: 2px 4px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; rotate: 45deg; }
-.moduleScope > button[aria-expanded=true] .disclosureMarker { rotate: 225deg; }
+.moduleScope { position: absolute; z-index: 11; inset: 12px auto auto 12px; display: flex; align-items: center; gap: 2px; max-inline-size: calc(100% - 24px); padding: 4px; border: 1px solid #363f4d; border-radius: 10px; background: #171c24; }
+.moduleScope > button, .browseScopes button { min-block-size: 34px; padding-inline: 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #c7d0dc; cursor: pointer; font: inherit; }
+.moduleScope > button[aria-pressed=true], .browseScopes button[aria-pressed=true] { color: #eaf1fd; border-color: #445879; background: #273547; }
+.moduleScope > button:hover:not(:disabled), .browseScopes button:hover { background: #263141; }
+.moduleScope > .libraryToggle { display: grid; place-items: center; inline-size: 34px; padding: 0; }
+.browseScopes { display: flex; gap: 4px; align-items: center; }
+.browseScopes button { min-block-size: 30px; }
+.modulePickerFeedback { overflow-wrap: anywhere; }
+.modulePickerIndicator { margin-inline-start: 4px; color: #f0c480; font-weight: 700; }
 .ruleListPane :global([data-module-toolbar]) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .ruleListPane :global([data-module-toolbar]) > * { min-block-size: 0; block-size: auto; }
 .emptyCanvas { display: grid; align-content: center; justify-items: center; flex: 1; min-inline-size: 0; padding: 60px 16px 16px; text-align: center; }
@@ -84,7 +62,7 @@
 .canvasSurface .canvasLibrary:not([hidden]) { inset-block-start: var(--pt-canvas-top, 110px); }
 @container rule-workspace (width < 56rem) {
   .canvasTopbar { inset-inline: 8px; }
-  .moduleScope { inset: 8px auto auto 8px; max-inline-size: calc(100% - 8rem); }
+  .moduleScope { inset: 8px auto auto 8px; }
   .ruleListPane:not([hidden]) { inset: 68px 40px 8px 8px; inline-size: auto; }
   .ruleListBackdrop { display: block; }
   .ruleWorkspace[data-list-open] > .ruleDetail { visibility: hidden; }
@@ -107,7 +85,7 @@
   .ruleListPane:not([hidden]) { inset-block-start: 68px; }
 }
 @container rule-workspace (width >= 64rem) {
-  .canvasTopbar { inset: 12px 148px auto 340px; }
+  .canvasTopbar { inset: 12px 12px auto 330px; }
   .ruleWorkspace[data-list-open] .canvasTopbar { inset-inline-start: 44px; }
 }
 @container rule-workspace (width < 43rem) {
@@ -116,11 +94,8 @@
   .commandCluster { justify-content: flex-start; margin-inline-start: 0; }
 }
 @container rule-workspace (width < 30rem) {
-  .moduleScope { max-inline-size: calc(100% - 68px); }
   .moduleScope > button { min-block-size: 40px; }
   .moduleScope > .libraryToggle { inline-size: 36px; }
-  .modulePicker { flex: 1; inline-size: auto; padding-inline: 5px; gap: 4px; }
-  .modulePicker strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; line-height: 14px; }
   .commandCluster { gap: 4px; }
   .headerActions { margin-inline-end: auto; }
   .compactCommand svg { display: block; }
@@ -138,7 +113,6 @@
 .listOptions[open] > :not(summary) { margin-block: 4px; }
 .ruleList { display: flex; flex: 0 0 auto; flex-direction: column; gap: 4px; margin: 0; padding: 2px; max-block-size: 60vh; overflow: auto; list-style: none; }
 .ruleList > li { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
-.moduleParticipation { display: flex; flex-wrap: wrap; gap: 8px 16px; min-width: 0; margin: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
 .ruleDisclosure[open] { flex-basis: 100%; }
 .ruleDisclosure summary { position: absolute; inset: 0 0 auto auto; display: grid; place-items: center; inline-size: 34px; min-block-size: 36px; border-radius: 6px; color: #b5c2d4; cursor: pointer; list-style: none; }
 .ruleDisclosure summary::-webkit-details-marker { display: none; }
@@ -308,8 +282,7 @@
 .inspectorGroup { min-inline-size: 0; margin: 0; border: 0; padding: 0; }
 .inspectorGroup + .inspectorGroup { margin-block-start: 4px; }
 .inspectorGroup legend { padding: 0; margin-block-end: 8px; color: #e7edf6; font-size: 13px; font-weight: 650; }
-.inspectorBody span:has(> span > button[aria-haspopup=menu]) { inline-size: 100%; max-inline-size: 100%; }
-.inspectorBody :is(button[aria-haspopup=menu], input[aria-labelledby]:not([type=checkbox], [type=radio]), textarea) {
+.inspectorBody :is(button[aria-haspopup=dialog], input[aria-labelledby]:not([type=checkbox], [type=radio]), textarea) {
   inline-size: 100%;
   max-inline-size: 100%;
   border: 1px solid #3c4859;
@@ -318,9 +291,9 @@
   color: #e7edf6;
   scroll-margin-block: 6px;
 }
-.inspectorBody :is(button[aria-haspopup=menu], input[aria-labelledby]:not([type=checkbox], [type=radio])) { min-block-size: 36px; }
-.inspectorBody button[aria-haspopup=menu] { justify-content: space-between; gap: 8px; padding-inline: 10px; font: 13px/19px system-ui, sans-serif; }
-.inspectorBody button[aria-haspopup=menu]:hover:not(:disabled) { background: #293649; }
+.inspectorBody :is(button[aria-haspopup=dialog], input[aria-labelledby]:not([type=checkbox], [type=radio])) { min-block-size: 36px; }
+.inspectorBody button[aria-haspopup=dialog] { justify-content: space-between; gap: 8px; padding-inline: 10px; font: 13px/19px system-ui, sans-serif; }
+.inspectorBody button[aria-haspopup=dialog]:hover:not(:disabled) { background: #293649; }
 .inspectorBody .fields textarea { min-block-size: 5rem; }
 .inspectorBody textarea.inspectorPrompt { min-block-size: 6.5rem; font: 13px/20px system-ui, sans-serif; }
 .inspectorHeading h3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 0 0 3px; overflow-wrap: anywhere; }
@@ -332,5 +305,5 @@
 .propertyFooter { flex: none; padding-block-start: 10px; align-self: stretch; border-block-start: 1px solid #313844; }
 @media (pointer: coarse) {
   .librarySection button { min-block-size: 44px; }
-  .inspectorBody :is(button[aria-haspopup=menu], input[aria-labelledby]:not([type=checkbox], [type=radio])) { min-block-size: 44px; }
+  .inspectorBody :is(button[aria-haspopup=dialog], input[aria-labelledby]:not([type=checkbox], [type=radio])) { min-block-size: 44px; }
 }

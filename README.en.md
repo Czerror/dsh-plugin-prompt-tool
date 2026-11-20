@@ -19,16 +19,16 @@ In the Prompt Tool workspace, you can:
 
 After [installing the plugin](#install-the-plugin) below, open **Prompt Tool** from the sidebar:
 
-1. The workspace opens on a shared canvas. Search for a module in the top-left picker. Select its name to browse its rules, or use the switch on the same row to enable or disable the module. Open **Module center** to create or import modules or change the global runtime switch.
+1. Select **Modules** in the top-left toolbar and search by name or ID. Select a card's name to browse its rules, or use the switch inside the card to change whether that module runs. Create, import, and the global runtime switch are in the same sidebar. Open the card's additional actions to rename, duplicate, or export it.
 2. The rule list defaults to participating modules and can also show all modules. Select a rule to see its owning module and rule name in the canvas header. **Enable rule** controls that rule alone. Use scope conditions and branches to express main-session and subagent actions within the same rule. The combination view also opens over the canvas.
 3. Select a rule by name to open the canvas. The disclosure on its row shows its source and details. Search across the condition and action groups in the left library. Select an item to inspect it, then add it explicitly or drag it onto a target. Select a canvas node to see its name and parameters on the right.
-4. Open **Module center**, search or filter the module cards, then open a module's rules directly from its card. Opening and editing do not enable modules. Rules load on demand; existing rule drafts provide counts and a short list. Expand diagnostics when needed; results with rule or action identities can take you back to that rule.
+4. Switch directly between **Modules**, **Diagnostics**, and **Rules**, or hide the sidebar. In Diagnostics, run a check to load records. A record with a rule or action identity opens its canvas node, and you can return to the same record.
 
 You can import [YAML](https://yaml.org/)/[JSON](https://www.json.org/json-en.html) module files, folders/[ZIP archives](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), SillyTavern presets, [PNG images](https://www.w3.org/TR/png/)/JSON character cards, and world books. New and imported modules start disabled. See [SillyTavern import details](docs/SillyTavern.md) for conversion limits.
 
-For text injection, the inspector shows the text first and groups the content and placement settings. Select another node to switch inspectors, click empty canvas to dismiss the current panel, or drag to pan while keeping the node selected. Click the backdrop or press Escape to close Module center. If a module's enabled state is saved but publication fails, retry publication from another workspace entry point or Module center.
+The inspector groups content and placement fields. Short option sets can be selected directly or with the arrow keys. Long or grouped sets open a searchable dialog. Click empty canvas to dismiss the current panel, or drag to pan with the node selected. If publication fails after saving module status, retry from the Modules sidebar in any workspace entry point.
 
-All three workspace entry points share browsing position and rule drafts in one layout. Template insertion preserves its declared audience; existing separate rules are never merged automatically. Opening or closing the module center does not automatically save rules. Wait for save confirmation before refreshing. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
+All three workspace entry points share browsing position and rule drafts in one layout. Template insertion preserves its declared audience; existing separate rules are never merged automatically. Wait for save confirmation before refreshing. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
 
 ## Install the plugin
 

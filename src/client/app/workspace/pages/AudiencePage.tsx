@@ -7,7 +7,6 @@ import { RulesWorkspace } from '../../../features/prompts/RulesWorkspace.tsx'
 import { injectionPointSlots } from './InjectionPointsPanel.tsx'
 import ui from '../../../ui/controls.module.css'
 import type { ConfigPageBrowse } from '../workspace-browse-state.ts'
-import type { WorkspacePage } from '../workspace-pages.ts'
 
 /**
  * 本页取用的 store 面：本页自己零读取，面＝两张子面需求的并集
@@ -28,7 +27,7 @@ const emptyRevision = () => 0
  */
 export const AudiencePage = memo(function AudiencePage(props: {
   store: AudienceStore
-  t: PromptToolTranslate; browse?: ConfigPageBrowse; onNavigate?: (page: WorkspacePage) => void
+  t: PromptToolTranslate; browse?: ConfigPageBrowse; renderDiagnostics?: () => ReactNode
   onRuleEdit?: () => void; onReturnToDiagnostics?: () => void
 }): ReactNode {
   const { store, t } = props
@@ -70,6 +69,7 @@ export const AudiencePage = memo(function AudiencePage(props: {
         browse={props.browse}
         onRuleEdit={props.onRuleEdit}
         onReturnToDiagnostics={props.onReturnToDiagnostics}
+        renderDiagnostics={props.renderDiagnostics}
         createdHidden={createdHidden}
         onShowCreated={() => { changeViewFilter('all'); setCreatedHidden(false) }}
         viewFilter={viewFilter}

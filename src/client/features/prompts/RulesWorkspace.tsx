@@ -16,16 +16,15 @@ import { ruleFacts, type RuleFacts } from '../../data/rule-facts.ts'
 import type { LayerCardView } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
-import { MenuSelect } from '../../ui/MenuSelect.tsx'
+import { CanvasChoiceContext, MenuSelect } from '../../ui/MenuSelect.tsx'
 import { SearchInput } from '../../ui/SearchInput.tsx'
 import { Button } from '../../ui/Button.tsx'
-import { Switch } from '../../ui/Switch.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
-import { useAnchoredPopoverStyle } from '../../ui/anchored-popover.ts'
-import { useDismissOnOutsidePointer } from '../../ui/outside-pointer.ts'
-import { IconChevronDownOutlineRegular, IconCloseFillRegular, IconFolderOpenOutlineRegular } from '../../ui/icons.tsx'
+import { ModulePickerCards } from '../modules/ModuleSwitcher.tsx'
+import type { WorkspaceSidebar } from '../../app/workspace/workspace-browse-state.ts'
+import { IconChevronDownOutlineRegular, IconCloseFillRegular } from '../../ui/icons.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
@@ -60,112 +59,35 @@ function selectedRuleIdentity(expanded: string | undefined): [string, string] | 
   }
 }
 
-type ModuleSummary = NonNullable<ModuleFactsPort['meta']['modules']>[number]
-
-function ModuleScopePicker({ value, modules, editingModule, onChange, onEnable, enableDisabled, feedback, t }: {
-  value: string; modules: readonly ModuleSummary[]; editingModule?: string
-  onChange: (value: string) => void; onEnable: (id: string, enabled: boolean) => void
-  enableDisabled: (module: ModuleSummary) => boolean; feedback: ReactNode; t: PromptToolTranslate
+function ModuleBrowser({ store, t, open, scope, editingModule, onBrowse, feedback }: {
+  store: RulesWorkspaceProps['store']; t: PromptToolTranslate; open: boolean; scope: string; editingModule?: string
+  onBrowse: (id: string, ruleKey?: string) => void; feedback: ReactNode
 }): ReactNode {
-  const id = useId()
-  const trigger = useRef<HTMLButtonElement>(null)
-  const panel = useRef<HTMLDivElement>(null)
-  const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const native = typeof HTMLElement !== 'undefined' && 'popover' in HTMLElement.prototype
-  const anchored = native && CSS.supports('position-area: block-end span-inline-end')
-  const position = useAnchoredPopoverStyle({ open: open && !anchored, anchorRef: trigger, panelRef: panel })
-  useDismissOnOutsidePointer(trigger, open && !native, setOpen, panel)
-  useLayoutEffect(() => {
-    const element = panel.current
-    if (!native || !element) return
-    const sync = () => setOpen(element.matches(':popover-open'))
-    element.addEventListener('toggle', sync)
-    return () => element.removeEventListener('toggle', sync)
-  }, [native, setOpen])
-  useLayoutEffect(() => {
-    if (open) panel.current?.querySelector('input')?.focus()
-    else setQuery('')
-  }, [open])
-  const close = (): void => {
-    if (native) panel.current?.hidePopover()
-    else setOpen(false)
-    trigger.current?.focus({ preventScroll: true })
-  }
-  const needle = query.trim().toLowerCase()
-  const scopes = [
-    { value: 'active', label: t('rules.participatingModules') },
-    { value: 'all', label: t('rules.allModules') },
-  ]
-  const matched = !open ? [] : needle ? modules.filter(module => `${module.name ?? ''} ${module.id}`.toLowerCase().includes(needle)) : modules
-  const currentModule = modules.find(module => `module:${module.id}` === value)
-  const current = (currentModule?.name || currentModule?.id) ?? scopes.find(scope => scope.value === value)?.label
-  const choose = (next: string): void => {
-    if (value !== next) onChange(next)
-    close()
-  }
+  const search = useRef<HTMLInputElement>(null)
+  useLayoutEffect(() => { if (open) search.current?.focus({ preventScroll: true }) }, [open])
   return <>
-    <button ref={trigger} className={css.modulePicker} type="button" aria-controls={id} aria-expanded={open}
-      aria-label={`${t('rules.browseScope')} · ${current ?? ''}${!open && feedback ? ` · ${t('rules.moduleFeedback')}` : ''}`}
-      {...(native ? { popovertarget: id } : { onClick: () => setOpen(!open) })}>
-      <IconFolderOpenOutlineRegular /><strong>{current}</strong>
-      {!open && feedback && <span className={css.modulePickerIndicator} aria-hidden="true">!</span>}
-      <IconChevronDownOutlineRegular />
-    </button>
-    <div ref={panel} id={id} className={css.modulePickerPanel} {...(native ? { popover: 'auto' } : { hidden: !open })}
-      data-position-fallback={!anchored || undefined} style={anchored ? undefined : position ?? undefined} onKeyDown={event => {
-        if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
-        event.stopPropagation()
-        event.preventDefault()
-        close()
-      }}>
-      <SearchInput aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query}
+    {open && <>
+      <h2 className={css.workspaceHeading}>{t('rules.sidebarModules')}</h2>
+      <SearchInput ref={search} aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query}
         onChange={event => setQuery(event.currentTarget.value)} onKeyDown={event => {
-          if (event.key !== 'Enter' || event.nativeEvent.isComposing || !needle) return
-          const exactId = matched.find(module => module.id.toLowerCase() === needle)
-          const target = exactId ?? (matched.length === 1 ? matched[0] : undefined)
-          if (!target) return
-          event.preventDefault()
-          choose(`module:${target.id}`)
+          if (event.key !== 'Enter' || event.nativeEvent.isComposing || !query.trim()) return
+          const results = event.currentTarget.closest('aside')?.querySelectorAll<HTMLButtonElement>('[data-module-browse]')
+          const exact = Array.from(results ?? []).find(button => button.dataset.moduleBrowse?.toLowerCase() === query.trim().toLowerCase())
+          const target = exact ?? (results?.length === 1 ? results[0] : undefined)
+          if (target && !target.disabled) { event.preventDefault(); target.click() }
         }} />
-      {open && feedback}
-      {open && <div className={css.modulePickerItems}>
-        {!needle && <div className={css.modulePickerGroup}>
-          <h3>{t('rules.browseScope')}</h3>
-          {scopes.map(scope => <button key={scope.value} className={css.modulePickerChoice} type="button"
-            aria-current={value === scope.value || undefined} onClick={() => choose(scope.value)}>
-            <span><strong>{scope.label}</strong></span>
-          </button>)}
-        </div>}
-        {matched.length > 0 && <div className={css.modulePickerGroup}>
-          <h3>{t('rules.installedModules')}</h3>
-          {matched.map(module => {
-            const name = module.name || module.id
-            const option = `module:${module.id}`
-            const enabled = module.enabled === true
-            return <div key={module.id} className={css.modulePickerRow} data-enabled={enabled}>
-              <button className={css.modulePickerChoice} type="button" aria-current={value === option || undefined}
-                onClick={() => choose(option)}>
-                <span><strong>{name}</strong>{module.id !== name && <small>{module.id}</small>}
-                  {editingModule === module.id && <small className={css.modulePickerEditing}>{t('rules.editingModule')}</small>}
-                </span>
-              </button>
-              <small className={css.modulePickerState}>{t(enabled ? 'moduleSwitcher.enabled' : 'rules.moduleDisabled')}</small>
-              <Switch checked={enabled} disabled={enableDisabled(module)} label={t('rules.moduleSwitchLabel', { name })}
-                onChange={next => onEnable(module.id, next)} />
-            </div>
-          })}
-        </div>}
-        {needle && matched.length === 0 && <p role="status">{t('rules.noMatch')}</p>}
-      </div>}
-    </div>
+      {feedback}
+    </>}
+    <ModulePickerCards store={store} t={t} open={open} query={query} scope={scope} editingModule={editingModule} onBrowse={onBrowse} />
   </>
 }
 
 export interface RulesWorkspaceProps {
   store: ModuleFactsPort & DraftsPort & RuleEditingPort & InstructionFilesPort & NoticePort & ModuleActionsPort
   t: PromptToolTranslate
-  browse?: { filter: string; expanded?: string; allModules?: boolean; moduleFilter?: string; rulesScroll?: number; ruleNodes?: Map<string, string>; ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>; combination?: boolean; diagnosticTarget?: RuleDiagnosticTarget; publish?: () => void }
+  renderDiagnostics?: () => ReactNode
+  browse?: { sidebar?: WorkspaceSidebar; filter: string; expanded?: string; allModules?: boolean; moduleFilter?: string; rulesScroll?: number; ruleNodes?: Map<string, string>; ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>; combination?: boolean; diagnosticTarget?: RuleDiagnosticTarget; publish?: () => void }
   onRuleEdit?: () => void
   onReturnToDiagnostics?: () => void
   createdHidden?: boolean; onShowCreated?: () => void
@@ -192,12 +114,17 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const { store, t } = props, fields = usePromptToolFields(store, value => value)
 
   const [localExpanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
-  const [listOpen, setListOpen] = useState(false)
+  const [localSidebar, setLocalSidebar] = useState<WorkspaceSidebar>('library')
+  const sidebar = props.browse?.publish ? props.browse.sidebar ?? 'library' : localSidebar
+  const showList = sidebar === 'rules'
+  const libraryOpen = sidebar === 'library'
+  const panelOpen = showList || sidebar === 'modules' || sidebar === 'diagnostics'
+  const nav = useRef<HTMLDivElement>(null)
   const listPaneId = useId()
-  const listToggle = useRef<HTMLButtonElement>(null)
   const dismissDrawer = useRef<() => void>()
   const backdropPress = useRef<{ x: number; y: number }>()
-  const [libraryOpen, setLibraryOpen] = useState(true)
+  const modulePaneId = useId()
+  const diagnosticPaneId = useId()
   const libraryId = useId()
   const libraryToggle = useRef<HTMLButtonElement>(null)
   const [localAllModules, setAllModules] = useState(props.browse?.allModules ?? false)
@@ -417,44 +344,60 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (props.browse) { props.browse.combination = next; if (next) props.browse.moduleFilter = undefined; props.browse.publish?.() }
     if (!props.browse?.publish) setCombination(next)
     if (next) setModuleFilter(undefined)
-    if (next) setListOpen(true)
+    if (next && !showList) setSidebar('rules')
   }
-  const changeModuleScope = (value: string): void => {
+  const changeModuleScope = (value: string, ruleKey?: string): void => {
     const nextModule = value.startsWith('module:') ? value.slice('module:'.length) : undefined
     const nextAll = value !== 'active'
     const leavesRule = selected !== undefined && (nextModule !== undefined ? selected.moduleId !== nextModule : !nextAll && !enabledIds.has(selected.moduleId))
-    if (leavesRule) saveSelected.current?.()
+    if (leavesRule || (ruleKey !== undefined && selected?.entry.key !== ruleKey)) saveSelected.current?.()
+    if (!showList || ruleKey !== undefined) {
+      focus.current = ruleKey === undefined ? 'list' : 'detail'
+      lastButton.current = null
+    }
     if (props.browse) {
       props.browse.moduleFilter = nextModule
       props.browse.allModules = nextAll
       props.browse.combination = false
+      props.browse.sidebar = ruleKey === undefined ? 'rules' : 'hidden'
     }
     if (!props.browse?.publish) {
       setModuleFilter(nextModule)
       setAllModules(nextAll)
       setCombination(false)
+      setLocalSidebar(ruleKey === undefined ? 'rules' : 'hidden')
     }
-    if (leavesRule) select(undefined)
+    if (nextModule !== undefined && ruleKey !== undefined) {
+      select(configIdentityKey({ moduleId: nextModule, configId: ruleKey }))
+    } else if (leavesRule) select(undefined)
     else props.browse?.publish?.()
   }
-  const showList = listOpen || combination
+  const setSidebar = (next: WorkspaceSidebar): void => {
+    if (next === sidebar) return
+    if (props.browse) {
+      props.browse.sidebar = next
+      if (next !== 'rules') props.browse.combination = false
+      props.browse.publish?.()
+    }
+    if (!props.browse?.publish) {
+      setLocalSidebar(next)
+      if (next !== 'rules') setCombination(false)
+    }
+  }
   const openList = (): void => {
     saveSelected.current?.()
     lastButton.current = selectedButton.current
     focus.current = 'list'
-    setListOpen(true)
+    setSidebar('rules')
   }
   const closeList = (restoreFocus: boolean): void => {
-    if (combination) changeCombination(false)
-    setListOpen(false)
-    if (restoreFocus) listToggle.current?.focus({ preventScroll: true })
+    setSidebar('hidden')
+    if (restoreFocus) nav.current?.querySelector<HTMLButtonElement>('[aria-pressed=true]')?.focus({ preventScroll: true })
   }
-  const enableDisabled = (module: ModuleSummary): boolean =>
-    modulePending || order.busy || enableRefreshFailed || module.broken !== undefined || module.renderable === false
   const withEnableFocus = async (run: () => Promise<unknown>): Promise<void> => {
     if (getEnableState().busy || order.busy) return
     const action = document.activeElement
-    const actionPanel = action?.closest(`.${css.modulePickerPanel}`)
+    const actionPanel = document.getElementById(modulePaneId)
     try { await run() } finally {
       requestAnimationFrame(() => {
         if (document.activeElement !== document.body || !(action instanceof HTMLElement)) return
@@ -465,11 +408,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         }
       })
     }
-  }
-  const setModuleEnabled = (id: string, enabled: boolean): void => {
-    const module = modules.find(item => item.id === id)
-    if (!module || enableDisabled(module) || getEnableState().refreshFailed || (module.enabled === true) === enabled) return
-    void withEnableFocus(() => store.moduleActions.enable(id, enabled))
   }
   const enableFeedback = (modulePending || enableError !== undefined || enableRefreshFailed || enablePublication?.pending === true) && <div className={css.modulePickerFeedback}>
     {modulePending && <p role="status">{t('rules.moduleChanging')}</p>}
@@ -491,37 +429,35 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       }
     }
   }
-  return <section className={css.workspaceContainer} aria-label={t('rules.list')}>
+  return <CanvasChoiceContext.Provider value={t}><section className={css.workspaceContainer} aria-label={t('rules.list')}>
     {diagnosticTarget && props.onReturnToDiagnostics && <div className={css.row}>
       <Button shape="pill" variant="outline" onClick={() => { saveSelected.current?.(); props.onReturnToDiagnostics?.() }}>{t('diagnostics.return')}</Button>
       {diagnosticKey === undefined && (diagnosticOwner === undefined || diagnosticOwner.draft.loaded || diagnosticOwner.draft.error)
         && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
     </div>}
-    <div className={css.ruleWorkspace} data-rule-open={selected !== undefined || undefined} data-list-open={showList || undefined} data-canvas-workspace
+    <div className={css.ruleWorkspace} data-rule-open={selected !== undefined || undefined} data-list-open={panelOpen || undefined} data-canvas-workspace
       onClick={event => {
-        if ((!showList && !dismissDrawer.current) || event.defaultPrevented || !(event.target instanceof Element)) return
+        if ((!panelOpen && !dismissDrawer.current) || event.defaultPrevented || !(event.target instanceof Element)) return
         const target = event.target
         if (!event.currentTarget.contains(target) || target.closest('dialog, [role="dialog"], [role="menu"], [popover], [data-rule-node]')
           || !target.closest('button, input, select, textarea, summary, a[href]')) return
-        if (showList && !target.closest(`.${css.ruleListPane}`) && !listToggle.current?.contains(target)) closeList(false)
+        if (panelOpen && !target.closest(`.${css.ruleListPane}`) && !nav.current?.contains(target)) closeList(false)
         if (!target.closest('[data-rule-drawer], [data-rule-drawer-trigger]')) dismissDrawer.current?.()
       }}>
-    <div className={css.moduleScope}>
-      <ModuleScopePicker t={t} value={moduleFilter ? `module:${moduleFilter}` : allModules ? 'all' : 'active'} onChange={changeModuleScope}
-        modules={modules} editingModule={selected?.moduleId} onEnable={setModuleEnabled} enableDisabled={enableDisabled}
-        feedback={enableFeedback} />
-      <Button ref={listToggle} shape="pill" variant="outline" aria-controls={listPaneId} aria-expanded={showList} onClick={() => { if (showList) closeList(true); else openList() }}>
-        <span className={css.disclosureMarker} aria-hidden="true" />{t('rules.list')}
+    <div ref={nav} className={css.moduleScope} role="group" aria-label={t('rules.sidebar')}>
+      <Button aria-pressed={sidebar === 'modules'} aria-controls={modulePaneId} onClick={() => setSidebar(sidebar === 'modules' ? 'hidden' : 'modules')}>
+        {t('rules.sidebarModules')}{enableFeedback && <span className={css.modulePickerIndicator} aria-label={t('rules.moduleFeedback')}>!</span>}
       </Button>
-      <Button ref={libraryToggle} className={css.libraryToggle} variant="outline" disabled={!selected?.draft.meta}
-        aria-label={t(libraryOpen ? 'rules.hideLibrary' : 'rules.showLibrary')}
-        title={t(libraryOpen ? 'rules.hideLibrary' : 'rules.showLibrary')}
-        aria-controls={selected?.draft.meta ? libraryId : undefined} aria-expanded={Boolean(selected?.draft.meta && libraryOpen)}
-        onClick={() => setLibraryOpen(!libraryOpen)}>
+      <Button aria-pressed={sidebar === 'diagnostics'} aria-controls={diagnosticPaneId} onClick={() => setSidebar(sidebar === 'diagnostics' ? 'hidden' : 'diagnostics')}>{t('rules.sidebarDiagnostics')}</Button>
+      <Button aria-pressed={showList} aria-controls={listPaneId} onClick={() => { if (showList) closeList(false); else openList() }}>{t('rules.sidebarRules')}</Button>
+      <Button ref={libraryToggle} className={css.libraryToggle} disabled={!selected?.draft.meta} aria-pressed={libraryOpen && Boolean(selected?.draft.meta)}
+        aria-label={t(libraryOpen ? 'rules.hideLibrary' : 'rules.showLibrary')} title={t('rules.nodeLibrary')}
+        aria-controls={selected?.draft.meta ? libraryId : undefined} onClick={() => setSidebar(libraryOpen ? 'hidden' : 'library')}>
         <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" /><path d="M6 3v10m2.5-7h3.5m-3.5 3h3.5" /></svg>
       </Button>
+      <Button aria-pressed={sidebar === 'hidden'} onClick={() => setSidebar('hidden')}>{t('rules.sidebarHide')}</Button>
     </div>
-    {showList && <div className={css.ruleListBackdrop} aria-hidden="true"
+    {panelOpen && <div className={css.ruleListBackdrop} aria-hidden="true"
       onPointerDown={event => {
         backdropPress.current = event.button === 0 && !document.activeElement?.closest('[role="menu"], [popover]')
           ? { x: event.clientX, y: event.clientY } : undefined
@@ -534,6 +470,21 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         closeList(false)
         dismissDrawer.current?.()
       }} />}
+    <aside id={modulePaneId} className={css.ruleListPane} hidden={sidebar !== 'modules'} aria-label={t('rules.sidebarModules')}
+      onKeyDown={event => {
+        if (event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing && event.currentTarget.contains(event.target as Node)) {
+          event.stopPropagation(); closeList(true)
+        }
+      }}>
+      <ModuleBrowser store={store} t={t} open={sidebar === 'modules'} scope={moduleFilter ? `module:${moduleFilter}` : allModules ? 'all' : 'active'}
+        editingModule={selected?.moduleId} onBrowse={(id, key) => changeModuleScope(`module:${id}`, key)} feedback={enableFeedback} />
+    </aside>
+    <aside id={diagnosticPaneId} className={css.ruleListPane} hidden={sidebar !== 'diagnostics'} aria-label={t('rules.sidebarDiagnostics')}
+      onKeyDown={event => {
+        if (event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing) { event.stopPropagation(); closeList(true) }
+      }}>
+      {sidebar === 'diagnostics' && <><h2 className={css.workspaceHeading}>{t('rules.sidebarDiagnostics')}</h2>{props.renderDiagnostics?.()}</>}
+    </aside>
     <div id={listPaneId} className={css.ruleListPane} hidden={!showList} onKeyDown={event => {
       if (event.key !== 'Escape' || event.nativeEvent.isComposing || event.defaultPrevented) return
       event.stopPropagation()
@@ -553,6 +504,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         newModuleTemplate={BLANK_MODULE_TEMPLATE} onPick={() => {}} onClose={() => {}} />}
       <details className={css.listOptions}>
         <summary>{t('rules.listOptions')}{view !== 'all' && ' · ' + (view === 'context-activation' ? t('rules.worldBook') : translateLabel(t, LAYER_LABEL_KEYS, view))}</summary>
+        <div className={css.browseScopes} role="group" aria-label={t('rules.browseScope')}>
+          <button type="button" aria-pressed={!moduleFilter && !allModules} onClick={() => changeModuleScope('active')}>{t('rules.participatingModules')}</button>
+          <button type="button" aria-pressed={!moduleFilter && allModules} onClick={() => changeModuleScope('all')}>{t('rules.allModules')}</button>
+        </div>
         <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
         <span className={ui.batchControls}>
           <Button shape="pill" variant="outline" data-batch="enable" disabled={batchDisabled} onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</Button>
@@ -577,14 +532,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       <div role="status">{orderFeedback}</div>
       <PublicationNotice publication={order.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         onRetry={() => { void order.retryPublication() }} />
-      {enableFeedback}
-      <fieldset className={css.moduleParticipation}><legend>{t('rules.participatingModules')}</legend>
-        {modules.map(module => <div key={module.id} className={css.row}>
-          <span>{module.name || module.id}</span>
-          <Switch label={t('rules.moduleSwitchLabel', { name: module.name || module.id })} checked={module.enabled === true}
-            disabled={enableDisabled(module)} onChange={enabled => setModuleEnabled(module.id, enabled)} />
-        </div>)}
-      </fieldset>
     </>}
     {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
     <ul className={css.ruleList} ref={list} onScroll={event => { if (props.browse) props.browse.rulesScroll = event.currentTarget.scrollTop }}>
@@ -602,7 +549,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
               lastButton.current = event.currentTarget
               focus.current = 'detail'
               select(key)
-              setListOpen(false)
+              setSidebar('hidden')
             }}>
             <strong>{name}</strong>
             {!moduleFilter && <small>{id}</small>}
@@ -629,7 +576,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {props.beforeCards}
     {moduleSettings.map(item => <div key={`module-settings-${item.moduleId}`} className={css.workspace} data-module-settings={item.moduleId}>{props.renderModuleSettings!(item.moduleId, item.layers)}</div>)}</>}
     </div>
-    {!selected && !showList && <div className={css.emptyCanvas}>
+    {!selected && !panelOpen && <div className={css.emptyCanvas}>
       <h2>{t('rules.noOpenRule')}</h2>
       <Button variant="outline" aria-controls={listPaneId} onClick={openList}>{t('rules.list')}</Button>
     </div>}
@@ -640,10 +587,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         moduleName={modules.find(module => module.id === selected.moduleId)?.name || selected.moduleId} moduleEnabled={enabledIds.has(selected.moduleId)} modulesEnabled={fields.modulesEnabled}
         expanded onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
         libraryOpen={libraryOpen} libraryId={libraryId} onCloseLibrary={restoreFocus => {
-          setLibraryOpen(false)
+          setSidebar('hidden')
           if (restoreFocus) libraryToggle.current?.focus({ preventScroll: true })
         }}
-        onCanvasInteract={() => { if (showList) closeList(false) }}
+        onCanvasInteract={() => { if (panelOpen) closeList(false) }}
         diagnosticActionId={diagnosticKey === selected.key ? diagnosticTarget?.actionId : undefined}
         onRuleEdit={props.onRuleEdit}
         onActivate={() => refreshExclusivePeers(selected.moduleId, selected.entry.value)}
@@ -652,5 +599,5 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     </div>}
     </div>
     {discard && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')} onCancel={() => setDiscard(undefined)} onConfirm={() => { owners.find(owner => owner.moduleId === discard)?.editor.discard(); setDiscard(undefined) }} />}
-  </section>
+  </section></CanvasChoiceContext.Provider>
 }

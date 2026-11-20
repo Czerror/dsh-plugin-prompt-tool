@@ -1,5 +1,7 @@
 import type { RuleDiagnosticTarget } from '../../data/rule-diagnostics-session.ts'
 
+export type WorkspaceSidebar = 'modules' | 'diagnostics' | 'rules' | 'library' | 'hidden'
+
 /** 仅保留可恢复的浏览上下文；确认、导入、拖拽与业务草稿仍由各自 owner 管理。 */
 export interface ConfigPageBrowse {
   filter: string
@@ -12,6 +14,7 @@ export interface ConfigPageBrowse {
   ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>
   combination?: boolean
   diagnosticTarget?: RuleDiagnosticTarget
+  sidebar?: WorkspaceSidebar
   publish(): void
   subscribe(listener: () => void): () => void
   revision(): number
@@ -20,20 +23,9 @@ export interface ConfigPageBrowse {
 }
 
 export function createWorkspaceBrowseState() {
-  let diagnosticsOpen = false
-  const diagnosticsListeners = new Set<() => void>()
   return {
-    diagnosticsResults: {
-      getSnapshot: () => diagnosticsOpen,
-      subscribe(listener: () => void) { diagnosticsListeners.add(listener); return () => { diagnosticsListeners.delete(listener) } },
-      toggle() {
-        diagnosticsOpen = !diagnosticsOpen
-        for (const listener of diagnosticsListeners) listener()
-      },
-    },
     configs: new Map<string, ConfigPageBrowse>(),
     diagnosticReturn: undefined as RuleDiagnosticTarget | undefined,
-    scroll: new Map<string, number>(),
   }
 }
 

@@ -1,21 +1,8 @@
 import { createWorkspaceBrowseState } from '../workspace/workspace-browse-state.ts'
-import type { WorkspacePage } from '../workspace/workspace-pages.ts'
 
 /** 三个入口共享导航；正文草稿归数据 owner。 */
 export function createWorkspaceViewState() {
-  let page: WorkspacePage = 'features'
-  const listeners = new Set<() => void>()
-  const browse = createWorkspaceBrowseState()
-  return {
-    browse,
-    getSnapshot: () => page,
-    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } },
-    select(next: WorkspacePage) {
-      if (page === next) return
-      page = next
-      for (const listener of listeners) listener()
-    },
-  }
+  return { browse: createWorkspaceBrowseState() }
 }
 
 export type WorkspaceViewState = ReturnType<typeof createWorkspaceViewState>
