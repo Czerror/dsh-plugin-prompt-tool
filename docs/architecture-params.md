@@ -317,7 +317,7 @@ mark 的唯一所有者是通用会话键 `soul.mark`，`soul_state` 兼容接�
 
 | 用户操作 | 请求与版本 | 行为与失败边界 |
 |---|---|---|
-| 接入预览、确认 | `preview`；保持请求改为 `confirm`，携预览返回的 `expectedRevision` | 默认目标模块的数据根，可用绝对 `root` 选其他目录或已存在父目录下的新根。`read` 显式列旧文件，`write` 只选 general/projects。预览与确认对已选文件分块核对内容，未选项只读元数据，最多枚举 2000 项、8 层。已选内容、模块或根身份变化后须重新预览。仅补缺失目录，保留原有文件。 |
+| 接入预览、确认 | `preview`；保持请求改为 `confirm`，携预览返回的 `expectedRevision` | 默认目标模块的数据根，可用绝对 `root` 选其他目录或已存在父目录下的新根。`read` 显式列旧文件，`write` 只选 general/projects。预览与确认异步分块核对已选文件内容，未选项只读元数据，最多枚举 2000 项、8 层。已知失效的确认在读取正文前拒绝，校验期间取消不创建目录或绑定。已选内容、模块或根身份变化后须重新预览。仅补缺失目录，保留原有文件。 |
 | 查询、选择项目 | `status` / `sources`；`project` 携绝对 `projectDirectory` 与当前绑定 `expectedRevision` | status 区分未接入、已绑定、不可用；sources 返回来源、待归类资料和版本。项目绑定实际会话：Git 按真实 common-dir，同仓 worktree 共享，独立克隆不共享；非 Git 按所选目录。后续 cwd 变化不改归属，已绑定会话不静默换项目 |
 | 登记旧资料或历史 | `source-preview` 携 read 内 `path`，或 `sessionId` + 明确 `seqs`；指定 `scope: general/project`。保持请求改为 `source-confirm`，携预览的 `expectedRevision` | 旧材料须手选，不自动纳入；版本或来源变化须重预览 |
 | 撤销来源授权 | `revoke` 携 `sourceId`、当前绑定版本 | 立即撤权，保留原文；受影响的摘要和学习停止注入 |
