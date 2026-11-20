@@ -8,7 +8,7 @@ import { layerCards } from '../../data/layer-cards.ts'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import css from './module-picker-cards.module.css'
 
-/** 合并进页级「添加」清单的创建项（注入模板按层分组）。 */
+/** 页级创建项。 */
 export interface ModuleCreateItem {
   id: string
   label: string
@@ -40,25 +40,6 @@ function CreateCommands({ label, trigger, items, onSelect }: {
       </li>)}
     </ul>}
   </div>
-}
-
-/** 添加清单只选择模板层，目标模块由后续 TemplateTargetPicker 选择。 */
-export function EngineModuleActions(props: {
-  t: PromptToolTranslate
-  /** 添加按钮 ref：模板浮层锚定到该按钮。 */
-  anchorRef?: RefObject<HTMLButtonElement>
-  /** 注入模板的层清单。 */
-  extraItems?: readonly ModuleCreateItem[]
-  onExtraSelect?: (id: string) => void
-  /** 添加按钮文案（默认＝添加注入模板）。 */
-  label?: string
-}): ReactNode {
-  const { t, anchorRef, extraItems = [], onExtraSelect } = props
-  const fallbackAnchor = useRef<HTMLButtonElement>(null)
-  const trigger = anchorRef ?? fallbackAnchor
-  if (extraItems.length === 0) return null
-  return <div data-engine-add-menu><CreateCommands label={props.label ?? t('modules.addTemplates')} trigger={trigger}
-    items={() => extraItems} onSelect={id => { if (extraItems.some(item => item.id === id)) onExtraSelect?.(id) }} /></div>
 }
 
 const noExcludedCapabilities: readonly string[] = []

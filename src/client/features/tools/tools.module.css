@@ -1,7 +1,31 @@
-/* 参考官方管理列表的几何；只共享语义主题 token。 */
-.toolHeading { min-width: 0; }
-.toolHeadingDot { display: none; }
-.customToolList { margin-top: 10px; }
-.customToolsFields { min-width: 0; margin: 0; padding: 0; border: 0; }
-/* 只读边界：卡头操作区可被 fieldset 禁用，而卡片折叠按钮留在边界之外保持可点。 */
-.cardScopeActions { display: flex; align-items: center; gap: 8px; min-width: 0; border: 0; margin: 0; padding: 0; }
+.customToolsFields,
+.customToolForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.customToolsFields { margin-top: 8px; }
+.customToolList { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.customToolList .customToolChoice {
+  justify-content: space-between;
+  width: 100%;
+  height: auto;
+  padding: 6px 10px;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.customToolChoice[aria-pressed=true] {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.customToolForm {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding-top: 12px;
+}
+.customToolActions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.customToolToggle { display: flex; align-items: center; gap: 8px; }

@@ -18,7 +18,7 @@ export interface ToolsEditorDraft {
   refresh?: () => void
   tools: Record<string, unknown>[]
   saved: Record<string, unknown>[]
-  expanded: Set<number>
+  selected?: number
   fields: Map<string, FieldDraft>
   loaded: boolean
   error: string

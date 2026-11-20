@@ -5,7 +5,7 @@
  * 「最新优先」用 `resource-track.ts` 的原语。比 rules 少的部分是刻意的：工具没有 CAS 版本、
  * 没有冲突分类、没有增量 patch，草稿就是整组工具。
  *
- * 留在卡片里的是渲染：`useState` 镜像、展开态、提示文案与 disabled 判定。
+ * 留在视图里的是渲染：`useState` 镜像、工具选择、提示文案与 disabled 判定。
  */
 import type { ToolsEditorDraft, ToolDraft, WorkspaceDrafts } from './workspace-drafts.ts'
 import type { BridgeRequestMap, BridgeValueMap } from '../../shared/bridge-contract.ts'
@@ -15,7 +15,7 @@ import { readPublication } from '../../shared/publication.ts'
 
 /** 工具草稿的唯一构造点；视图与模板入口共用。 */
 export const createToolsEditorDraft = (): ToolsEditorDraft => ({
-  tools: [], saved: [], expanded: new Set(), fields: new Map(), loaded: false, error: '', saving: false, latest: 0,
+  tools: [], saved: [], fields: new Map(), loaded: false, error: '', saving: false, latest: 0,
   publicationPending: false,
 })
 

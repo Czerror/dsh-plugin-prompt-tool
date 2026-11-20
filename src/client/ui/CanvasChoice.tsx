@@ -8,12 +8,73 @@ import type { MenuSelectOption, MenuSelectProps } from './MenuSelect.tsx'
 import { SearchInput } from './SearchInput.tsx'
 import css from './CanvasChoice.module.css'
 
-function ChoiceDialog({ props, t, id, choose, close }: {
-  props: MenuSelectProps; t: PromptToolTranslate; id: string; choose: (value: string) => void; close: () => void
+export function CanvasChoiceDialog({ t, id, title, query, onQueryChange, onAccept, onClose, children }: {
+  t: PromptToolTranslate
+  id?: string
+  title: string
+  query: string
+  onQueryChange: (query: string) => void
+  onAccept?: () => void
+  onClose: () => void
+  children: ReactNode
 }): ReactNode {
+  const titleId = useId()
   const dialog = useRef<HTMLDialogElement>(null)
   const search = useRef<HTMLInputElement>(null)
   const pressedOutside = useRef(false)
+
+  useLayoutEffect(() => {
+    const node = dialog.current
+    node?.showModal()
+    search.current?.focus({ preventScroll: true })
+    return () => { node?.close() }
+  }, [])
+
+  const outside = (node: HTMLDialogElement, x: number, y: number): boolean => {
+    const rect = node.getBoundingClientRect()
+    return x < rect.left || x > rect.right || y < rect.top || y > rect.bottom
+  }
+  return <dialog ref={dialog} id={id} className={css.dialog} aria-labelledby={titleId} {...{ closedby: 'any' }}
+    onClose={event => { event.stopPropagation(); if (!event.currentTarget.open) onClose() }}
+    onCancel={event => {
+      event.preventDefault()
+      event.stopPropagation()
+      onClose()
+    }}
+    onKeyDown={event => {
+      if (event.key !== 'Escape' || event.nativeEvent.isComposing) return
+      event.stopPropagation()
+      // Chromium 的搜索框会先清空查询，阻止对话框收到默认的关闭请求。
+      if (event.target === search.current && search.current.value) {
+        event.preventDefault()
+        onClose()
+      }
+    }}
+    onPointerDown={event => {
+      if (!('closedBy' in HTMLDialogElement.prototype)) {
+        pressedOutside.current = event.button === 0 && outside(event.currentTarget, event.clientX, event.clientY)
+      }
+    }} onPointerCancel={() => { pressedOutside.current = false }} onPointerUp={event => {
+      if (pressedOutside.current && outside(event.currentTarget, event.clientX, event.clientY)) onClose()
+      pressedOutside.current = false
+    }}>
+    <header className={css.heading}>
+      <h2 id={titleId}>{title}</h2>
+      <Button icon aria-label={t('choice.close')} onClick={onClose}><IconCloseFillRegular /></Button>
+    </header>
+    <SearchInput ref={search} aria-label={t('choice.search')} placeholder={t('choice.search')} value={query}
+      onChange={event => onQueryChange(event.currentTarget.value)} onKeyDown={event => {
+        if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+        event.preventDefault()
+        onAccept?.()
+      }} />
+    <div className={css.list}>{children}</div>
+  </dialog>
+}
+
+function ChoiceDialog({ props, t, id, choose, close }: {
+  props: MenuSelectProps; t: PromptToolTranslate; id: string; choose: (value: string) => void; close: () => void
+}): ReactNode {
   const [query, setQuery] = useState('')
   const index = useMemo(() => props.options.map(option => ({
     option,
@@ -27,53 +88,16 @@ function ChoiceDialog({ props, t, id, choose, close }: {
     if (last && last.name === option.group) last.options.push(option)
     else groups.push({ name: option.group, options: [option] })
   }
+  useEffect(() => { if (props.disabled) close() }, [close, props.disabled])
 
-  useLayoutEffect(() => {
-    dialog.current?.showModal()
-    search.current?.focus({ preventScroll: true })
-  }, [])
-  useEffect(() => { if (props.disabled) dialog.current?.close() }, [props.disabled])
-
-  const outside = (node: HTMLDialogElement, x: number, y: number): boolean => {
-    const rect = node.getBoundingClientRect()
-    return x < rect.left || x > rect.right || y < rect.top || y > rect.bottom
-  }
   const select = (option: MenuSelectOption): void => {
     if (props.disabled || option.disabled) return
-    dialog.current?.close()
+    close()
     choose(option.value)
   }
 
-  return <dialog ref={dialog} id={id} className={css.dialog} aria-labelledby={`${id}-title`} {...{ closedby: 'any' }}
-    onClose={event => { event.stopPropagation(); close() }}
-    onKeyDown={event => {
-      if (event.key !== 'Escape' || event.nativeEvent.isComposing) return
-      event.stopPropagation()
-      // Chromium 的搜索框会先清空查询，阻止对话框收到默认的关闭请求。
-      if (event.target === search.current && search.current.value) {
-        event.preventDefault()
-        dialog.current?.close()
-      }
-    }}
-    onPointerDown={event => {
-      if (!('closedBy' in HTMLDialogElement.prototype)) {
-        pressedOutside.current = event.button === 0 && outside(event.currentTarget, event.clientX, event.clientY)
-      }
-    }} onPointerCancel={() => { pressedOutside.current = false }} onPointerUp={event => {
-      if (pressedOutside.current && outside(event.currentTarget, event.clientX, event.clientY)) event.currentTarget.close()
-      pressedOutside.current = false
-    }}>
-    <header className={css.heading}>
-      <h2 id={`${id}-title`}>{props.ariaLabel}</h2>
-      <Button icon aria-label={t('choice.close')} onClick={() => dialog.current?.close()}><IconCloseFillRegular /></Button>
-    </header>
-    <SearchInput ref={search} aria-label={t('choice.search')} placeholder={t('choice.search')} value={query}
-      onChange={event => setQuery(event.currentTarget.value)} onKeyDown={event => {
-        if (event.key !== 'Enter' || event.nativeEvent.isComposing || matched.length !== 1 || matched[0]?.option.disabled) return
-        event.preventDefault()
-        select(matched[0]!.option)
-      }} />
-    <div className={css.list}>
+  return <CanvasChoiceDialog t={t} id={id} title={props.ariaLabel} query={query} onQueryChange={setQuery} onClose={close}
+    onAccept={() => { if (matched.length === 1) select(matched[0]!.option) }}>
       {groups.length === 0 && <p role="status">{t('choice.noMatch')}</p>}
       {groups.map(({ name, options }, position) => <section key={position} className={css.group}
         aria-labelledby={name ? `${id}-group-${position}` : undefined}>
@@ -81,8 +105,7 @@ function ChoiceDialog({ props, t, id, choose, close }: {
         {options.map(option => <Button key={option.value} className={css.option} aria-pressed={props.value === option.value}
           disabled={props.disabled || option.disabled} onClick={() => select(option)}>{option.label}</Button>)}
       </section>)}
-    </div>
-  </dialog>
+  </CanvasChoiceDialog>
 }
 
 export function CanvasChoice({ t, ...props }: MenuSelectProps & { t: PromptToolTranslate }): ReactNode {

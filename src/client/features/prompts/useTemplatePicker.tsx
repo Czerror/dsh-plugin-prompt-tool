@@ -1,5 +1,4 @@
-/** 模板库加载与插入：两页共用，顶部注入模板与层内工具按钮分别提供真实锚点。 */
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { bridgeCall, errorMessage } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
@@ -7,8 +6,9 @@ import type { RuleDefinition } from '../../../shared/rules.ts'
 import { readPublication } from '../../../shared/publication.ts'
 import type { DraftsPort, ModuleActionsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
 import { BLANK_MODULE_TEMPLATE } from '../../data/module-subject.ts'
-import { EngineModuleActions, type ModuleCreateItem } from '../modules/EngineModuleList.tsx'
+import type { ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import { insertToolTemplateIntoDraft } from '../../data/tools-editor.ts'
+import { Button } from '../../ui/Button.tsx'
 import { TemplatePicker, TemplateTargetPicker, type TemplateTargetListEntry } from '../../ui/TemplatePicker.tsx'
 
 /** 自定义工具模板条目：与提示词模板同一次 /templates 返回。 */
@@ -63,8 +63,6 @@ export function useTemplatePicker(
   onNotice: (kind: 'ok' | 'error', message: string) => void,
   t: PromptToolTranslate,
 ): {
-  anchorRef: RefObject<HTMLButtonElement>
-  popoverAnchorRef: RefObject<HTMLButtonElement>
   templates: PromptConfigTemplateEntry[]
   toolTemplates: ToolTemplateEntry[]
   open: boolean
@@ -72,15 +70,9 @@ export function useTemplatePicker(
   targetOpen: boolean
   /** 当前目标选择意图；异步新建模块完成后只允许仍属当前意图的回调提交。 */
   targetIntentId: number
-  /** 当前浮层的插入点层级过滤；undefined 表示按层分组展示全部模板。 */
-  layer: string | undefined
   /** 只展示工具模板（菜单「添加工具模板」入口）。 */
   toolsOnly: boolean
-  createdConfigId: string | undefined
-  /** 打开模板浮层；传入插入点层级时只列该层模板（无分组标题）。 */
-  openPicker: (layer?: string, anchor?: HTMLButtonElement) => void
-  /** 打开只含工具模板的浮层。 */
-  openTools: (anchor: HTMLButtonElement) => void
+  openPicker: (anchor: HTMLButtonElement, toolsOnly?: boolean) => void
   closePicker: () => void
   pickTemplate: (entry: PromptConfigTemplateEntry) => void
   /** 确认目标模块：按目标模块自己的配置去重派生草稿，连同显式主语交回调用方。 */
@@ -88,8 +80,6 @@ export function useTemplatePicker(
   /** 放弃这次创建：关闭目标选择并丢掉待写入的模板。 */
   cancelTarget: () => void
 } {
-  const anchorRef = useRef<HTMLButtonElement>(null)
-  const popoverAnchorRef = useRef<HTMLButtonElement | null>(null)
   const [templates, setTemplates] = useState<PromptConfigTemplateEntry[]>([])
   const [toolTemplates, setToolTemplates] = useState<ToolTemplateEntry[]>([])
   const [open, setOpen] = useState(false)
@@ -97,9 +87,7 @@ export function useTemplatePicker(
   const pendingEntry = useRef<PendingTemplate>()
   const targetIntentRef = useRef(0)
   useEffect(() => () => { targetIntentRef.current++ }, [])
-  const [layer, setLayer] = useState<string | undefined>(undefined)
   const [toolsOnly, setToolsOnly] = useState(false)
-  const [createdConfigId, setCreatedConfigId] = useState<string>()
 
   const loadTemplates = async (): Promise<void> => {
     if (templates.length > 0) return
@@ -120,20 +108,9 @@ export function useTemplatePicker(
     }
   }
 
-  const openPicker = (target?: string, anchor?: HTMLButtonElement): void => {
-    // 锚点优先级：菜单按钮（页级下拉）> 常驻按钮 ref。
-    popoverAnchorRef.current = anchor ?? anchorRef.current
-    setLayer(target)
-    setToolsOnly(false)
-    setOpen(true)
-    void loadTemplates()
-  }
-
-  const openTools = (anchor: HTMLButtonElement): void => {
-    popoverAnchorRef.current = anchor
-    anchor.focus()
-    setLayer(undefined)
-    setToolsOnly(true)
+  const openPicker = (trigger: HTMLButtonElement, toolsOnly = false): void => {
+    trigger.focus({ preventScroll: true })
+    setToolsOnly(toolsOnly)
     setOpen(true)
     void loadTemplates()
   }
@@ -157,18 +134,17 @@ export function useTemplatePicker(
     setTargetOpen(false)
     // 去重集合＝目标模块自己的配置：其它模块有同名 id 不影响写进这个模块。
     const clone = createConfigFromTemplate(entry, configsAtTarget ?? [])
-    setCreatedConfigId(clone.id)
     // 只交回「写什么、写进谁」；成功与否（以及那时的提示）由调用方按实际写入结果决定。
     onPickConfig(clone, target, entry.file)
   }
 
   const cancelTarget = (): void => { pendingEntry.current = undefined; targetIntentRef.current++; setTargetOpen(false) }
 
-  return { anchorRef, popoverAnchorRef, templates, toolTemplates, open, targetOpen, targetIntentId: targetIntentRef.current, layer, toolsOnly, createdConfigId, openPicker, openTools, closePicker, pickTemplate, confirmTarget, cancelTarget }
+  return { templates, toolTemplates, open, targetOpen, targetIntentId: targetIntentRef.current, toolsOnly, openPicker, closePicker, pickTemplate, confirmTarget, cancelTarget }
 }
 
 /**
- * 页级创建编排：页级「添加」下拉 → 注入模板浮层 → **只加一步**选目标 → 写入所选模块。
+ * 页级创建编排：选择注入模板，确认目标模块后写入。
  *
  * 统一画布共用这一份编排，创建清单由调用方传入 `items`
  * 与 `targets`；「主语」始终来自目标选择那一步，不存在任何全局「当前模块」。
@@ -179,7 +155,7 @@ export function useTemplatePicker(
 export function useTemplateCreate(props: {
   store: RuleEditingPort & NoticePort & DraftsPort & ModuleActionsPort
   t: PromptToolTranslate
-  /** 菜单项：注入模板的层清单（id 形如 `tpl:<layer>`）。 */
+  /** 可用的注入模板层（id 形如 `tpl:<layer>`）。 */
   items: readonly ModuleCreateItem[]
   /** 目标选择的候选：只列可写模块，包含未启用模块。 */
   targets: readonly TemplateTargetListEntry[]
@@ -204,7 +180,9 @@ export function useTemplateCreate(props: {
     const result = await store.createTemplateRule(moduleId, config, target.newlyCreated)
     if (!result.ok) {
       if (writeGeneration.current !== generation) return
-      store.showNotice('error', result.unconfirmed ? t('rules.savePending') : `${t('rules.create.failed')}（moduleId=${moduleId}）`)
+      const reason = result.message ?? result.code
+      store.showNotice('error', result.unconfirmed ? t('rules.savePending')
+        : [t('rules.create.writeFailed', { id: moduleId }), reason].filter(Boolean).join(' · '))
       return
     }
     const createdRuleId = result.value.createdRuleId ?? config.id
@@ -230,7 +208,7 @@ export function useTemplateCreate(props: {
   }, [picker])
   const openToolsForModule = useCallback((moduleId: string, anchor: HTMLButtonElement): void => {
     toolModule.current = moduleId
-    picker.openTools(anchor)
+    picker.openPicker(anchor, true)
   }, [picker])
   const pickToolTemplate = useCallback((spec: Record<string, unknown>): void => {
     const moduleId = toolModule.current
@@ -243,13 +221,15 @@ export function useTemplateCreate(props: {
       else store.showNotice('ok', t('customTools.templateInserted', { id: String(spec.id ?? '') }))
     })
   }, [picker, store, t])
-  const toolbar = <EngineModuleActions t={t} anchorRef={picker.anchorRef} extraItems={items}
-    onExtraSelect={(id) => { if (id.startsWith('tpl:')) picker.openPicker(id.slice(4)) }} />
+  const toolbar = items.length > 0 && <Button shape="pill" variant="outline" aria-haspopup="dialog"
+    aria-expanded={!picker.toolsOnly && (picker.open || picker.targetOpen)}
+    onClick={event => picker.openPicker(event.currentTarget)}>{t('modules.addTemplates')}</Button>
   const dialogs = <>
-    {picker.open && <TemplatePicker t={t} anchorRef={picker.popoverAnchorRef} templates={picker.toolsOnly ? [] : picker.templates}
-      layer={picker.layer} toolTemplates={picker.layer === undefined ? picker.toolTemplates : undefined}
+    {picker.open && <TemplatePicker t={t} templates={picker.toolsOnly ? [] : picker.templates.filter(template =>
+      items.some(item => item.id === `tpl:${template.spec.layer ?? 'pre-step'}`))}
+      toolTemplates={picker.toolsOnly ? picker.toolTemplates : undefined}
       onPick={picker.pickTemplate} onPickTool={pickToolTemplate} onClose={picker.closePicker} />}
-    {picker.targetOpen && <TemplateTargetPicker t={t} anchorRef={picker.popoverAnchorRef} modules={targets}
+    {picker.targetOpen && <TemplateTargetPicker t={t} modules={targets}
       existingIds={existingIds}
       newModuleTemplate={BLANK_MODULE_TEMPLATE}
       onPick={(moduleId, newlyCreated) => picker.confirmTarget({ moduleId, newlyCreated }, undefined, picker.targetIntentId)}

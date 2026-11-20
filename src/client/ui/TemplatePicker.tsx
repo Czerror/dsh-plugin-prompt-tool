@@ -1,12 +1,8 @@
-/** 内置模板选择浮层：body 顶层 portal，并持续跟随触发按钮。 */
-import { useState, type ReactNode, type RefObject } from 'react'
-import { createPortal } from 'react-dom'
+import { useId, useRef, useState, type ReactNode } from 'react'
 import { Button } from './Button.tsx'
-import { DialogSurface } from './DialogSurface.tsx'
-import { useDismissOnOutsidePointer } from './outside-pointer.ts'
+import { CanvasChoiceDialog } from './CanvasChoice.tsx'
 import type { PromptToolLocaleKey, PromptToolTranslate } from '../locales.ts'
-import { useAnchoredPopoverStyle } from './anchored-popover.ts'
-import { useDialogFocus } from './dialog-focus.ts'
+import css from './CanvasChoice.module.css'
 import styles from './controls.module.css'
 import type { PromptConfigTemplateEntry } from '../prompt-tool-types.ts'
 
@@ -25,37 +21,28 @@ const TEMPLATE_LAYER_LABEL_KEYS: Record<string, PromptToolLocaleKey> = {
 
 export function TemplatePicker(props: {
   t: PromptToolTranslate
-  anchorRef: RefObject<HTMLElement | null>
   templates: PromptConfigTemplateEntry[]
-  /** 传入 layer 时只显示该层模板（无分组标题）；不传按层分组展示全部。 */
-  layer?: string
   onPick: (entry: PromptConfigTemplateEntry) => void
   /** 可选：自定义工具模板（「工具」分组；点击经 onPickTool 回调工具定义）。 */
   toolTemplates?: Array<{ file: string; spec: Record<string, unknown> }>
   onPickTool?: (spec: Record<string, unknown>) => void
-  /** 可选：「模板变量（Variables）」固定入口——点击不插入配置，由宿主展开模板变量卡片。 */
-  onPickVariables?: () => void
   onClose: () => void
 }): ReactNode {
-  const { t, anchorRef, templates, layer, onPick, toolTemplates, onPickTool, onPickVariables, onClose } = props
+  const { t, templates, onPick, toolTemplates = [], onPickTool, onClose } = props
+  const id = useId()
+  const [query, setQuery] = useState('')
+  const needle = query.trim().toLowerCase()
   const layerTitle = (value: string): string => {
     const key = TEMPLATE_LAYER_LABEL_KEYS[value]
     return key === undefined ? value : t(key)
   }
-  const { dialogRef, onDialogKeyDown } = useDialogFocus<HTMLDivElement>(true, onClose)
-  const portalRef = dialogRef as RefObject<HTMLElement | null>
-  const position = useAnchoredPopoverStyle({
-    open: true,
-    anchorRef,
-    panelRef: portalRef,
-    gap: 8,
-    margin: 12,
+  const visible = templates.filter(({ file, spec }) => {
+    const layer = spec.layer ?? 'pre-step'
+    return `${file} ${spec.name ?? ''} ${spec.id} ${layer} ${layerTitle(layer)}`.toLowerCase().includes(needle)
   })
-  useDismissOnOutsidePointer(anchorRef, true, (open) => { if (!open) onClose() }, portalRef)
-
-  const visible = layer === undefined
-    ? templates
-    : templates.filter((template) => (template.spec.layer ?? 'pre-step') === layer)
+  const toolsTitle = t('templates.group.tools')
+  const visibleTools = toolTemplates.filter(({ file, spec }) =>
+    `${file} ${spec.name ?? ''} ${spec.id ?? ''} ${toolsTitle}`.toLowerCase().includes(needle))
   const groups = new Map<string, PromptConfigTemplateEntry[]>()
   for (const template of visible) {
     const key = template.spec.layer ?? 'pre-step'
@@ -64,59 +51,39 @@ export function TemplatePicker(props: {
     else items.push(template)
   }
 
-  const surface = (
-    <div
-      ref={dialogRef}
-      className={styles.templatePopover}
-      style={position ?? { visibility: 'hidden' }}
-      role="dialog"
-      aria-label={t('templates.aria')}
-      onClick={(event) => event.stopPropagation()}
-      onKeyDown={onDialogKeyDown}
-    >
-      <div className={styles.templateModalHead}>
-        <strong>{layer !== undefined ? t('templates.title', { layer: layerTitle(layer) }) : t('templates.aria')}</strong>
-        <Button variant="ghost" size="sm" className={styles.dialogClose} aria-label={t('templates.closeAria')} onClick={onClose}>×</Button>
-      </div>
-      <div className={styles.templateModalList}>
-        {onPickVariables !== undefined && (
-          <div className={styles.templateGroup}>
-            <strong className={styles.templateGroupTitle}>{t('templates.group.variables')}</strong>
-            <button type="button" className={styles.templateModalItem} onClick={onPickVariables}>
-              <strong>Variables</strong>
-              <small>{t('templates.variables.hint')}</small>
-            </button>
-          </div>
-        )}
-        {visible.length === 0 && (toolTemplates?.length ?? 0) === 0
-          && <p className={styles.configFieldHint}>{t('templates.empty')}</p>}
+  return (
+    <CanvasChoiceDialog t={t} title={t('templates.aria')} query={query} onQueryChange={setQuery} onClose={onClose}
+      onAccept={() => {
+        if (visible.length + visibleTools.length !== 1) return
+        if (visible[0]) onPick(visible[0])
+        else if (visibleTools[0]) onPickTool?.(visibleTools[0].spec)
+      }}>
+        {visible.length === 0 && visibleTools.length === 0 && <p role="status">{t('choice.noMatch')}</p>}
         {[...groups.entries()].map(([groupLayer, items]) => (
-          <div key={groupLayer} className={styles.templateGroup}>
-            {layer === undefined && <strong className={styles.templateGroupTitle}>{layerTitle(groupLayer)}</strong>}
+          <section key={groupLayer} className={css.group} aria-labelledby={`${id}-${groupLayer}`}>
+            <h3 id={`${id}-${groupLayer}`}>{layerTitle(groupLayer)}</h3>
             {items.map((template) => (
               <button key={template.file} type="button" className={styles.templateModalItem} onClick={() => onPick(template)}>
                 <strong>{template.file}</strong>
                 <small>{template.spec.name ?? template.spec.id}</small>
               </button>
             ))}
-          </div>
+          </section>
         ))}
-        {toolTemplates !== undefined && toolTemplates.length > 0 && (
-          <div className={styles.templateGroup}>
-            <strong className={styles.templateGroupTitle}>{t('templates.group.tools')}</strong>
-            {toolTemplates.map((template) => (
+        {visibleTools.length > 0 && (
+          <section className={css.group} aria-labelledby={`${id}-tools`}>
+            <h3 id={`${id}-tools`}>{toolsTitle}</h3>
+            {visibleTools.map((template) => (
               <button key={template.file} type="button" className={styles.templateModalItem}
                 onClick={() => onPickTool?.(template.spec)}>
                 <strong>{template.file}</strong>
                 <small>{String(template.spec.name ?? template.spec.id ?? '')}</small>
               </button>
             ))}
-          </div>
+          </section>
         )}
-      </div>
-    </div>
+    </CanvasChoiceDialog>
   )
-  return typeof document === 'undefined' || document.body === null ? surface : createPortal(surface, document.body)
 }
 
 /** 目标选择的候选行：候选**只列可写模块**，由调用方按共享判据过滤后传入。 */
@@ -145,8 +112,6 @@ export const newModuleIdPreview = (templateId: string, existingIds: readonly str
  */
 export function TemplateTargetPicker(props: {
   t: PromptToolTranslate
-  /** 浮层锚点＝页级「添加」按钮；缺省时居中模态。 */
-  anchorRef?: RefObject<HTMLElement | null>
   /** 候选：**只列可写模块**（调用方按共享判据过滤后传入）。 */
   modules: readonly TemplateTargetListEntry[]
   /** 已存在的模块目录 id 全集（含未启用）：只影响新建 id 预览，不影响可选性。 */
@@ -160,27 +125,43 @@ export function TemplateTargetPicker(props: {
   onClose: () => void
 }): ReactNode {
   const { t, modules, onPick, onCreate, onClose } = props
+  const id = useId()
+  const [query, setQuery] = useState('')
+  const needle = query.trim().toLowerCase()
+  const visible = modules.filter(module => `${module.name ?? ''} ${module.id}`.toLowerCase().includes(needle))
+  const submitting = useRef(false)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const submitNew = async (): Promise<void> => {
-    if (onCreate === undefined || busy) return
+    if (onCreate === undefined || submitting.current) return
+    submitting.current = true
     setBusy(true); setFailed(false)
-    const created = await onCreate()
-    setBusy(false)
-    if (created === undefined) { setFailed(true); return }
-    // 建好即写进它：这就是「新建空白模块」的收口（创建 + 写入，仍是一步语义）。
-    onPick(created, true)
+    try {
+      const created = await onCreate()
+      if (created === undefined) { setFailed(true); return }
+      onPick(created, true)
+    } catch {
+      setFailed(true)
+    } finally {
+      submitting.current = false
+      setBusy(false)
+    }
   }
-  return <DialogSurface title={t('rules.create.title')} ariaLabel={t('rules.create.title')}
-    closeLabel={t('rules.create.cancel')} anchorRef={props.anchorRef} onClose={onClose}>
-    {modules.length === 0 && <p className={styles.configFieldHint}>{t('rules.create.none')}</p>}
-    {modules.map(module => <button key={module.id} type="button" className={styles.templateModalItem} data-template-target={module.id}
-      onClick={() => onPick(module.id)}>
-      <strong>{module.name ?? module.id}</strong>
-      <small>{module.id}</small>
-    </button>)}
-    <div className={styles.templateGroup} data-template-new-module>
-      <strong className={styles.templateGroupTitle}>{t('rules.create.new')}</strong>
+  const select = (moduleId: string): void => {
+    if (!submitting.current) onPick(moduleId)
+  }
+  return <CanvasChoiceDialog t={t} title={t('rules.create.title')} query={query} onQueryChange={setQuery} onClose={onClose}
+    onAccept={() => { if (visible.length === 1) select(visible[0]!.id) }}>
+    <div className={css.group}>
+      {visible.length === 0 && <p role="status">{t(modules.length === 0 ? 'rules.create.none' : 'choice.noMatch')}</p>}
+      {visible.map(module => <button key={module.id} type="button" className={styles.templateModalItem} data-template-target={module.id}
+        disabled={busy} onClick={() => select(module.id)}>
+        <strong>{module.name ?? module.id}</strong>
+        <small>{module.id}</small>
+      </button>)}
+    </div>
+    <section className={css.group} aria-labelledby={id} data-template-new-module>
+      <h3 id={id}>{t('rules.create.new')}</h3>
       <p className={styles.configFieldHint}>{t('rules.create.newHint', { id: newModuleIdPreview(props.newModuleTemplate, props.existingIds ?? modules.map((module) => module.id)) })}</p>
       {failed && <p role="alert" className={styles.confirmError}>{t('rules.create.failed')}</p>}
       <div className={styles.dialogFooter}>
@@ -188,6 +169,6 @@ export function TemplateTargetPicker(props: {
         <Button shape="pill" variant="primary" data-template-new-submit disabled={onCreate === undefined || busy}
           onClick={() => { void submitNew() }}>{t('rules.create.submit')}</Button>
       </div>
-    </div>
-  </DialogSurface>
+    </section>
+  </CanvasChoiceDialog>
 }

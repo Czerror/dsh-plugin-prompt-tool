@@ -1,8 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import clsx from 'clsx'
 import { Button } from '../../ui/Button.tsx'
-import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
-import { Menu } from '../../ui/Menu.tsx'
 import { Switch } from '../../ui/Switch.tsx'
 import { TextInput } from '../../ui/TextInput.tsx'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
@@ -47,8 +44,8 @@ export function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /** parameters 行式编辑：key + type 下拉 + required 开关 + description，可增删。 */
-function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft | undefined; onChange: (value: ToolDraft | undefined) => void }): ReactNode {
-  const { t } = props
+function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft | undefined; disabled: boolean; onChange: (value: ToolDraft | undefined) => void }): ReactNode {
+  const { t, disabled } = props
   const params = asRecord(props.value)
   const rows = Object.entries(params)
   const commit = (next: Array<[string, unknown]>): void => {
@@ -68,7 +65,7 @@ function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft |
         return <span key={index} className={styles.variableRow}>
           <TextInput aria-label={t('toolEditor.params.nameAria')} value={key} spellCheck={false} placeholder={t('toolEditor.params.namePlaceholder')}
             onChange={(e) => setRow(index, { key: e.target.value })} />
-          <MenuSelect compact ariaLabel={t('toolEditor.params.typeAria')} value={type}
+          <MenuSelect compact disabled={disabled} ariaLabel={t('toolEditor.params.typeAria')} value={type}
             options={SCHEMA_TYPES.map((type) => ({ value: type, label: type }))}
             onChange={(type) => setRow(index, { type })} />
           <HintTooltip label={t('toolEditor.params.requiredHint')}>
@@ -124,18 +121,14 @@ function ToolJsonField(props: { t: PromptToolTranslate; label: string; value: To
   </FormField>
 }
 
-/** 单张工具卡片（对齐模块列表卡片形态）：header（enabled 开关 + chips + 上移/下移/复制/两段式删除）+ Field 表单。 */
-export function CustomToolCard(props: {
+/** 所选自定义工具的字段和管理命令。 */
+export function CustomToolEditor(props: {
   t: PromptToolTranslate
   tool: ToolDraft
   fieldDrafts?: Map<string, FieldDraft>
   index: number
-  expanded: boolean
-  /** 只读（system 模块或关闭 modulesEnabled）：禁掉写操作，但保留卡片展开/折叠。 */
-  disabled?: boolean
-  onToggleExpanded: () => void
+  disabled: boolean
   onPatch: (patch: Partial<ToolDraft>) => void
-  onToggleEnabled: (enabled: boolean) => void
   onMoveUp: () => void
   onMoveDown: () => void
   onDuplicate: () => void
@@ -143,196 +136,161 @@ export function CustomToolCard(props: {
   canMoveUp: boolean
   canMoveDown: boolean
 }): ReactNode {
-  const { tool, index, t } = props
+  const { tool, index, t, disabled } = props
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const actionRef = useRef<HTMLSpanElement>(null)
-  const focusAction = (): void => { actionRef.current?.querySelector('button')?.focus() }
-  const bodyId = useId()
+  const removeButton = useRef<HTMLButtonElement>(null)
   const timeoutKey = `${String(tool.id ?? index)}:timeout`
   const timeoutRetained = props.fieldDrafts?.get(timeoutKey)
   const [timeoutDraft, setTimeoutDraft] = useState<string | undefined>(timeoutRetained?.text)
   const [timeoutError, setTimeoutError] = useState(timeoutRetained?.error ?? '')
   const timeoutErrorId = useId()
-  useEffect(() => { if (props.disabled) { setMenuOpen(false); setConfirmingDelete(false) } }, [props.disabled])
+  useEffect(() => { if (disabled) setConfirmingDelete(false) }, [disabled])
   const execute = asRecord(tool.execute)
   const kind = typeof execute.kind === 'string' ? execute.kind : 'shell'
   const name = typeof tool.name === 'string' ? tool.name : ''
   const id = typeof tool.id === 'string' ? tool.id : `tool-${index + 1}`
   const description = typeof tool.description === 'string' ? tool.description : ''
   const enabled = tool.enabled !== false
-  const paramCount = Object.keys(asRecord(tool.parameters)).length
-  const chips = [kind]
-  if (paramCount > 0) chips.push(t('toolEditor.chip.params', { count: paramCount }))
-  if (Number.isSafeInteger(tool.timeoutMs) && (tool.timeoutMs as number) > 0) chips.push(`timeout=${tool.timeoutMs}`)
   const patchExecute = (patch: Record<string, unknown>): void => {
     props.onPatch({ execute: { ...execute, ...patch } })
   }
   return (
-    <article className={clsx(styles.configCard, styles.toolCard, props.expanded && styles.configCardOpen)} data-tool-card="true">
-      <header className={styles.configHeader}>
-        <button type="button" className={styles.configToggle} aria-expanded={props.expanded} aria-controls={bodyId} onClick={props.onToggleExpanded}>
-          <span className={styles.configTitle}>
-            <span className={styles.configTitleRow}>
-              <span className={styles.configName}>{name.length > 0 ? `${id} · ${name}` : id}</span>
-              <span className={styles.configChip}>{kind}</span>
-            </span>
-            <span className={styles.configMeta}>{description || t('tools.surface.detail.noDescription')}{chips.length > 1 && ` · ${chips.slice(1).join(' · ')}`}</span>
-          </span>
-          <IconChevronDownOutlineRegular className={clsx(styles.chevron, props.expanded && styles.chevronOpen)} />
-        </button>
-        <div className={styles.configHeaderActions}>
-          <fieldset className={styles.cardScopeActions} disabled={props.disabled === true}>
-            <HintTooltip label={enabled ? t('toolEditor.enable.hint.on') : t('toolEditor.enable.hint.off')}>
-              <Switch label={t('toolEditor.enable.aria', { id })} checked={enabled} disabled={props.disabled}
-                onChange={props.onToggleEnabled} />
-            </HintTooltip>
-            <span ref={actionRef} tabIndex={-1}><Menu open={menuOpen && !props.disabled} compact
-              anchor={<Button size="sm" variant="ghost" aria-label={t('card.actionsAria', { name: name || id })}
-                aria-haspopup="menu" aria-expanded={menuOpen} disabled={props.disabled} onClick={() => setMenuOpen((open) => !open)}>⋯</Button>}
-              onClose={() => setMenuOpen(false)}
-              items={[
-                { id: 'up', label: t('toolEditor.moveUp'), disabled: !props.canMoveUp },
-                { id: 'down', label: t('toolEditor.moveDown'), disabled: !props.canMoveDown },
-                { id: 'copy', label: t('toolEditor.duplicate') },
-                { id: 'delete', label: t('toolEditor.remove'), danger: true },
-              ]}
-              onSelect={(action) => {
-                setMenuOpen(false)
-                focusAction()
-                if (action === 'up') props.onMoveUp()
-                else if (action === 'down') props.onMoveDown()
-                else if (action === 'copy') props.onDuplicate()
-                else setConfirmingDelete(true)
-              }} /></span>
-          </fieldset>
+    <fieldset className={styles.customToolForm} disabled={disabled} aria-label={name || id}>
+      <div className={styles.customToolActions}>
+        <div className={styles.customToolToggle}>
+          <span className={styles.configFieldLabel}>{t('toolEditor.enable.label')}</span>
+          <HintTooltip label={enabled ? t('toolEditor.enable.hint.on') : t('toolEditor.enable.hint.off')}>
+            <Switch label={t('toolEditor.enable.aria', { id })} checked={enabled} disabled={disabled}
+              onChange={(next) => props.onPatch({ enabled: next })} />
+          </HintTooltip>
         </div>
-      </header>
-      {confirmingDelete && <ConfirmDialog title={t('card.deleteTitle', { name: name || id })}
+        <div className={styles.configActions}>
+          <Button shape="pill" variant="outline" disabled={!props.canMoveUp} onClick={props.onMoveUp}>{t('toolEditor.moveUp')}</Button>
+          <Button shape="pill" variant="outline" disabled={!props.canMoveDown} onClick={props.onMoveDown}>{t('toolEditor.moveDown')}</Button>
+          <Button shape="pill" variant="outline" onClick={props.onDuplicate}>{t('toolEditor.duplicate')}</Button>
+          <Button ref={removeButton} shape="pill" variant="outline" data-danger onClick={() => setConfirmingDelete(true)}>{t('toolEditor.remove')}</Button>
+        </div>
+      </div>
+      {confirmingDelete && !disabled && <ConfirmDialog title={t('card.deleteTitle', { name: name || id })}
         description={t('card.deleteDescription', { name: name || id })}
         confirmLabel={t('toolEditor.confirmRemove')} cancelLabel={t('toolEditor.cancel')}
-        returnFocusRef={actionRef}
+        returnFocusRef={removeButton}
         onConfirm={props.onRemove} onCancel={() => setConfirmingDelete(false)} />}
-      <div id={bodyId} hidden={!props.expanded}>
-      {props.expanded && (
-        <fieldset className={styles.configForm} disabled={props.disabled === true}>
-          <span className={styles.variableRow}>
-            <FormField label={t('toolEditor.field.id')}>
-              <TextInput aria-label={t('toolEditor.field.idAria')} value={id} spellCheck={false}
-                onChange={(e) => props.onPatch({ id: e.target.value })} />
-            </FormField>
-            <FormField label={t('toolEditor.field.name')}>
-              <TextInput aria-label={t('toolEditor.field.nameAria')} value={name} spellCheck={false} placeholder="my_tool"
-                onChange={(e) => props.onPatch({ name: e.target.value })} />
-            </FormField>
-          </span>
-          <FormField label={t('toolEditor.field.description')}>
-            <textarea className={styles.configTextarea} rows={2} aria-label={t('toolEditor.field.descriptionAria')} value={description} spellCheck={false}
-              placeholder={t('toolEditor.field.descriptionPlaceholder')}
-              onChange={(e) => props.onPatch({ description: e.target.value })} />
+      <span className={styles.variableRow}>
+        <FormField label={t('toolEditor.field.id')}>
+          <TextInput aria-label={t('toolEditor.field.idAria')} value={id} spellCheck={false}
+            onChange={(e) => props.onPatch({ id: e.target.value })} />
+        </FormField>
+        <FormField label={t('toolEditor.field.name')}>
+          <TextInput aria-label={t('toolEditor.field.nameAria')} value={name} spellCheck={false} placeholder="my_tool"
+            onChange={(e) => props.onPatch({ name: e.target.value })} />
+        </FormField>
+      </span>
+      <FormField label={t('toolEditor.field.description')}>
+        <textarea className={styles.configTextarea} rows={2} aria-label={t('toolEditor.field.descriptionAria')} value={description} spellCheck={false}
+          placeholder={t('toolEditor.field.descriptionPlaceholder')}
+          onChange={(e) => props.onPatch({ description: e.target.value })} />
+      </FormField>
+      <FormField label={t('toolEditor.field.kind')} hint={t('toolEditor.field.kind.hint')}>
+        <MenuSelect compact disabled={disabled} ariaLabel={t('toolEditor.field.kindAria')} value={kind}
+          options={KIND_OPTIONS.map((option) => ({ value: option, label: option }))}
+          onChange={(value) => patchExecute({ kind: value, ...(value === 'fs' && execute.action === undefined ? { action: 'read' } : {}) })} />
+      </FormField>
+      {kind === 'shell' && (
+        <>
+          <FormField label="command" hint={t('toolEditor.field.command.hint')}>
+            <textarea className={styles.configTextarea} rows={3} aria-label={t('toolEditor.field.commandAria')} spellCheck={false}
+              value={typeof execute.command === 'string' ? execute.command : ''} placeholder="Write-Output {{args.x}}"
+              onChange={(e) => patchExecute({ command: e.target.value })} />
           </FormField>
-          <FormField label={t('toolEditor.field.kind')} hint={t('toolEditor.field.kind.hint')}>
-            <MenuSelect compact ariaLabel={t('toolEditor.field.kindAria')} value={kind}
-              options={KIND_OPTIONS.map((option) => ({ value: option, label: option }))}
-              onChange={(value) => patchExecute({ kind: value, ...(value === 'fs' && execute.action === undefined ? { action: 'read' } : {}) })} />
+          <FormField label="shell" hint={t('toolEditor.field.shell.hint')}>
+            <MenuSelect compact disabled={disabled} ariaLabel="shell"
+              value={typeof execute.shell === 'string' ? execute.shell : 'pwsh'}
+              options={SHELLS.map((shell) => ({ value: shell, label: shell }))}
+              onChange={(value) => patchExecute({ shell: value })} />
           </FormField>
-          {kind === 'shell' && (
-            <>
-              <FormField label="command" hint={t('toolEditor.field.command.hint')}>
-                <textarea className={styles.configTextarea} rows={3} aria-label={t('toolEditor.field.commandAria')} spellCheck={false}
-                  value={typeof execute.command === 'string' ? execute.command : ''} placeholder="Write-Output {{args.x}}"
-                  onChange={(e) => patchExecute({ command: e.target.value })} />
-              </FormField>
-              <FormField label="shell" hint={t('toolEditor.field.shell.hint')}>
-                <MenuSelect compact ariaLabel="shell"
-                  value={typeof execute.shell === 'string' ? execute.shell : 'pwsh'}
-                  options={SHELLS.map((shell) => ({ value: shell, label: shell }))}
-                  onChange={(value) => patchExecute({ shell: value })} />
-              </FormField>
-            </>
-          )}
-          {kind === 'http' && (
-            <>
-              <FormField label="url" hint={t('toolEditor.field.url.hint')}>
-                <TextInput aria-label={t('toolEditor.field.urlAria')} spellCheck={false}
-                  value={typeof execute.url === 'string' ? execute.url : ''} placeholder="https://…/{{args.q}}"
-                  onChange={(e) => patchExecute({ url: e.target.value })} />
-              </FormField>
-              <FormField label="method">
-                <MenuSelect compact ariaLabel={t('toolEditor.field.methodAria')}
-                  value={typeof execute.method === 'string' ? execute.method : 'GET'}
-                  options={HTTP_METHODS.map((method) => ({ value: method, label: method }))}
-                  onChange={(value) => patchExecute({ method: value })} />
-              </FormField>
-            </>
-          )}
-          {kind === 'delegate' && (
-            <FormField label={t('toolEditor.field.delegate')} hint={t('toolEditor.field.delegate.hint', { names: BUILTIN_TOOL_NAMES.join(' / ') })}>
-              <TextInput aria-label={t('toolEditor.field.delegateAria')} spellCheck={false}
-                value={typeof execute.tool === 'string' ? execute.tool : ''} placeholder={MODULE_TOOL_NAMES.rulesEdit}
-                onChange={(e) => patchExecute({ tool: e.target.value })} />
-            </FormField>
-          )}
-          {kind === 'fs' && (
-            <>
-              <FormField label="action">
-                <MenuSelect compact ariaLabel={t('toolEditor.field.fsActionAria')}
-                  value={typeof execute.action === 'string' && (FS_ACTIONS as readonly string[]).includes(execute.action) ? execute.action : 'read'}
-                  options={FS_ACTIONS.map((action) => ({ value: action, label: action }))}
-                  onChange={(value) => patchExecute({ action: value })} />
-              </FormField>
-              <FormField label="path" hint={t('toolEditor.field.path.hint')}>
-                <TextInput variant="directory" compact aria-label={t('toolEditor.field.pathAria')} spellCheck={false}
-                  value={typeof execute.path === 'string' ? execute.path : ''} placeholder="data/{{args.name}}.json"
-                  onChange={(e) => patchExecute({ path: e.target.value })} />
-              </FormField>
-              {(execute.action === 'write' || execute.action === 'append' || String(execute.action).includes('{{args.')) && (
-                <FormField label="content" hint={t('toolEditor.field.content.hint')}>
-                  <textarea className={styles.configTextarea} rows={4} aria-label={t('toolEditor.field.contentAria')} spellCheck={false}
-                    value={typeof execute.content === 'string' ? execute.content : ''}
-                    onChange={(event) => patchExecute({ content: event.target.value })} />
-                </FormField>
-              )}
-            </>
-          )}
-          {kind === 'ask-user' && (
-            <FormField label={t('toolEditor.field.question')}>
-              <TextInput aria-label={t('toolEditor.field.questionAria')} spellCheck={false}
-                value={typeof execute.question === 'string' ? execute.question : ''} placeholder={t('toolEditor.field.questionPlaceholder')}
-                onChange={(e) => patchExecute({ question: e.target.value })} />
-            </FormField>
-          )}
-          <ParameterRowsEditor
-            t={t}
-            value={asRecord(tool.parameters)}
-            onChange={(next) => props.onPatch({ parameters: next })}
-          />
-          <ToolJsonField t={t} drafts={props.fieldDrafts} draftKey={`${id}:parameters`} label={t('toolEditor.json.advanced')} value={asRecord(tool.parameters)} onChange={(parameters) => props.onPatch({ parameters })} />
-          <ToolJsonField t={t} drafts={props.fieldDrafts} draftKey={`${id}:output`} label={t('toolEditor.json.output')} value={asRecord(tool.output)} onChange={(output) => props.onPatch({
-            output: Object.keys(output).length > 0 ? output : { schema: { type: 'object', additionalProperties: true } },
-          })} />
-          <FormField label="timeoutMs" hint={t('toolEditor.timeout.hint')}>
-            <TextInput type="text" inputMode="decimal" aria-label={t('toolEditor.timeoutAria')}
-              aria-invalid={timeoutError.length > 0} aria-describedby={timeoutError ? timeoutErrorId : undefined} value={timeoutDraft ?? String(tool.timeoutMs ?? '')}
-              onChange={(event) => { setTimeoutDraft(event.target.value); setTimeoutError(''); props.fieldDrafts?.set(timeoutKey, { source: String(tool.timeoutMs ?? ''), text: event.target.value, error: '' }) }}
-              onBlur={() => {
-                if (timeoutDraft === undefined) return
-                const timeoutMs = timeoutDraft.trim() === '' ? undefined : Number(timeoutDraft)
-                if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647)) {
-                  const error = t('toolEditor.timeout.invalid')
-                  setTimeoutError(error)
-                  props.fieldDrafts?.set(timeoutKey, { source: String(tool.timeoutMs ?? ''), text: timeoutDraft, error })
-                  return
-                }
-                props.onPatch({ timeoutMs })
-                props.fieldDrafts?.delete(timeoutKey)
-                setTimeoutDraft(undefined)
-              }} />
-            {timeoutError && <small id={timeoutErrorId} role="alert">{timeoutError}</small>}
-          </FormField>
-        </fieldset>
+        </>
       )}
-      </div>
-    </article>
+      {kind === 'http' && (
+        <>
+          <FormField label="url" hint={t('toolEditor.field.url.hint')}>
+            <TextInput aria-label={t('toolEditor.field.urlAria')} spellCheck={false}
+              value={typeof execute.url === 'string' ? execute.url : ''} placeholder="https://…/{{args.q}}"
+              onChange={(e) => patchExecute({ url: e.target.value })} />
+          </FormField>
+          <FormField label="method">
+            <MenuSelect compact disabled={disabled} ariaLabel={t('toolEditor.field.methodAria')}
+              value={typeof execute.method === 'string' ? execute.method : 'GET'}
+              options={HTTP_METHODS.map((method) => ({ value: method, label: method }))}
+              onChange={(value) => patchExecute({ method: value })} />
+          </FormField>
+        </>
+      )}
+      {kind === 'delegate' && (
+        <FormField label={t('toolEditor.field.delegate')} hint={t('toolEditor.field.delegate.hint', { names: BUILTIN_TOOL_NAMES.join(' / ') })}>
+          <TextInput aria-label={t('toolEditor.field.delegateAria')} spellCheck={false}
+            value={typeof execute.tool === 'string' ? execute.tool : ''} placeholder={MODULE_TOOL_NAMES.rulesEdit}
+            onChange={(e) => patchExecute({ tool: e.target.value })} />
+        </FormField>
+      )}
+      {kind === 'fs' && (
+        <>
+          <FormField label="action">
+            <MenuSelect compact disabled={disabled} ariaLabel={t('toolEditor.field.fsActionAria')}
+              value={typeof execute.action === 'string' && (FS_ACTIONS as readonly string[]).includes(execute.action) ? execute.action : 'read'}
+              options={FS_ACTIONS.map((action) => ({ value: action, label: action }))}
+              onChange={(value) => patchExecute({ action: value })} />
+          </FormField>
+          <FormField label="path" hint={t('toolEditor.field.path.hint')}>
+            <TextInput variant="directory" compact aria-label={t('toolEditor.field.pathAria')} spellCheck={false}
+              value={typeof execute.path === 'string' ? execute.path : ''} placeholder="data/{{args.name}}.json"
+              onChange={(e) => patchExecute({ path: e.target.value })} />
+          </FormField>
+          {(execute.action === 'write' || execute.action === 'append' || String(execute.action).includes('{{args.')) && (
+            <FormField label="content" hint={t('toolEditor.field.content.hint')}>
+              <textarea className={styles.configTextarea} rows={4} aria-label={t('toolEditor.field.contentAria')} spellCheck={false}
+                value={typeof execute.content === 'string' ? execute.content : ''}
+                onChange={(event) => patchExecute({ content: event.target.value })} />
+            </FormField>
+          )}
+        </>
+      )}
+      {kind === 'ask-user' && (
+        <FormField label={t('toolEditor.field.question')}>
+          <TextInput aria-label={t('toolEditor.field.questionAria')} spellCheck={false}
+            value={typeof execute.question === 'string' ? execute.question : ''} placeholder={t('toolEditor.field.questionPlaceholder')}
+            onChange={(e) => patchExecute({ question: e.target.value })} />
+        </FormField>
+      )}
+      <ParameterRowsEditor
+        t={t}
+        disabled={disabled}
+        value={asRecord(tool.parameters)}
+        onChange={(next) => props.onPatch({ parameters: next })}
+      />
+      <ToolJsonField t={t} drafts={props.fieldDrafts} draftKey={`${id}:parameters`} label={t('toolEditor.json.advanced')} value={asRecord(tool.parameters)} onChange={(parameters) => props.onPatch({ parameters })} />
+      <ToolJsonField t={t} drafts={props.fieldDrafts} draftKey={`${id}:output`} label={t('toolEditor.json.output')} value={asRecord(tool.output)} onChange={(output) => props.onPatch({
+        output: Object.keys(output).length > 0 ? output : { schema: { type: 'object', additionalProperties: true } },
+      })} />
+      <FormField label="timeoutMs" hint={t('toolEditor.timeout.hint')}>
+        <TextInput type="text" inputMode="decimal" aria-label={t('toolEditor.timeoutAria')}
+          aria-invalid={timeoutError.length > 0} aria-describedby={timeoutError ? timeoutErrorId : undefined} value={timeoutDraft ?? String(tool.timeoutMs ?? '')}
+          onChange={(event) => { setTimeoutDraft(event.target.value); setTimeoutError(''); props.fieldDrafts?.set(timeoutKey, { source: String(tool.timeoutMs ?? ''), text: event.target.value, error: '' }) }}
+          onBlur={() => {
+            if (timeoutDraft === undefined) return
+            const timeoutMs = timeoutDraft.trim() === '' ? undefined : Number(timeoutDraft)
+            if (timeoutMs !== undefined && (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647)) {
+              const error = t('toolEditor.timeout.invalid')
+              setTimeoutError(error)
+              props.fieldDrafts?.set(timeoutKey, { source: String(tool.timeoutMs ?? ''), text: timeoutDraft, error })
+              return
+            }
+            props.onPatch({ timeoutMs })
+            props.fieldDrafts?.delete(timeoutKey)
+            setTimeoutDraft(undefined)
+          }} />
+        {timeoutError && <small id={timeoutErrorId} role="alert">{timeoutError}</small>}
+      </FormField>
+    </fieldset>
   )
 }

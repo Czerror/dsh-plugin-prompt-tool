@@ -1,18 +1,18 @@
 /** 工具管理（tool-pipeline 层）：自定义工具定义。 */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { AutoSaveSelection } from '../../ui/AutoSaveSelection.ts'
 import { Button } from '../../ui/Button.tsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { ToolsEditorDraft, WorkspaceDrafts } from '../../data/workspace-drafts.ts'
 import { createToolsEditor, createToolsEditorDraft, readCustomTools } from '../../data/tools-editor.ts'
-import { CustomToolCard, type ToolDraft } from './CustomToolEditor.tsx'
+import { asRecord, CustomToolEditor, type ToolDraft } from './CustomToolEditor.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import sharedCss from '../../ui/controls.module.css'
 import featureCss from './tools.module.css'
 
 const styles = { ...sharedCss, ...featureCss }
 
-/** 所属层按钮直接提交的创建请求；草稿由常驻页面立即建立。 */
 /** 工具草稿与保存由常驻页面持有；设置区只渲染同一份编辑内容。 */
 export function useCustomToolsEditor(props: {
   t: PromptToolTranslate
@@ -41,8 +41,11 @@ export function useCustomToolsEditor(props: {
     return next
   }, [props.drafts, moduleId])
   const [tools, renderTools] = useState<ToolDraft[]>(editor.tools)
-  const [expandedCards, renderExpanded] = useState(editor.expanded)
-  const setExpandedCards = (next: Set<number>): void => { editor.expanded = next; renderExpanded(next) }
+  const [selectedIndex, renderSelected] = useState(editor.selected)
+  const [deletedCount, recordDeletion] = useState(0)
+  const select = (index: number | undefined): void => { editor.selected = index; renderSelected(index) }
+  const toolList = useRef<HTMLUListElement>(null)
+  const createButton = useRef<HTMLButtonElement>(null)
   const [hasPersistedTools, setHasPersistedTools] = useState(editor.saved.length > 0)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(!editor.loaded)
@@ -64,7 +67,7 @@ export function useCustomToolsEditor(props: {
   }), [editor, moduleId, undeclared, props.onDeclared])
   const refresh = useCallback((): void => {
     renderTools(editor.tools)
-    renderExpanded(editor.expanded)
+    renderSelected(editor.selected)
     setHasPersistedTools(editor.saved.length > 0)
     setSaving(editor.saving)
     setLoading(!editor.loaded)
@@ -103,15 +106,15 @@ export function useCustomToolsEditor(props: {
       props.onNotice(editor.publicationPending ? 'error' : 'ok', editor.publicationError ?? (editor.publicationPending ? t('publication.pending') : t('customTools.saved', { count: editor.saved.length })))
     }).catch(() => { if (active.current) props.onNotice('error', t('customTools.saveFailed')) })
   }
-  const patchTool = (index: number, patch: Partial<ToolDraft>): void => owner.applyPatch(index, patch)
-  const toggleCard = (index: number): void => {
-    const next = new Set(expandedCards)
-    if (next.has(index)) next.delete(index)
-    else next.add(index)
-    setExpandedCards(next)
+  const focusSelection = (): void => {
+    requestAnimationFrame(() => {
+      const target = toolList.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]') ?? createButton.current
+      target?.focus()
+    })
   }
   /** 创建使用草稿当前值，连续点击即使尚未重渲染也不会相互覆盖。 */
   const createTool = (): void => {
+    if (saving) return
     if (disabled || !editor.loaded) {
       props.onNotice('error', t(props.disabled ? 'customTools.readonly' : editor.error ? 'customTools.loadFailed' : 'customTools.loading'))
       return
@@ -126,10 +129,21 @@ export function useCustomToolsEditor(props: {
       output: { schema: { type: 'object', additionalProperties: true } },
       execute: { kind: 'shell', command: '' },
     }])
-    setExpandedCards(new Set([...editor.expanded, tools.length]))
+    select(tools.length)
+    focusSelection()
+  }
+  const tool = selectedIndex === undefined ? undefined : tools[selectedIndex]
+  const moveTool = (index: number, destination: number): void => {
+    updateTools(tools.map((item, at) => {
+      if (at === index) return tools[destination]!
+      if (at === destination) return tools[index]!
+      return item
+    }))
+    select(destination)
+    focusSelection()
   }
   return { content: (
-    <section aria-label={t('customTools.aria')}>
+    <AutoSaveSelection.Provider value={undefined}><section aria-label={t('customTools.aria')}>
       <p className={styles.configFieldHint}>{t('customTools.hint')}</p>
       {undeclared && <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>}
       {props.disabled && <p className={styles.configFieldHint} role="status">{t('customTools.readonly')}</p>}
@@ -145,9 +159,9 @@ export function useCustomToolsEditor(props: {
         }).catch(() => { if (active.current) props.onNotice('error', t('customTools.saveFailed')) }) }} />
       <fieldset className={styles.customToolsFields} aria-label={t('customTools.fieldsAria')}>
         <div className={styles.configActions}>
-          <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled} onClick={() => createTool()}>{t('main.newBlankTool')}</Button>
-          {props.onChooseTemplate !== undefined && <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled}
-            onClick={(event) => { if (!disabled) props.onChooseTemplate?.(event.currentTarget) }}>{t('main.addToolTemplate')}</Button>}
+          <Button ref={createButton} shape="pill" size="sm" variant="outline" type="button" disabled={disabled || saving} onClick={createTool}>{t('main.newBlankTool')}</Button>
+          {props.onChooseTemplate !== undefined && <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled || saving}
+            onClick={(event) => props.onChooseTemplate?.(event.currentTarget)}>{t('main.addToolTemplate')}</Button>}
           {(tools.length > 0 || hasPersistedTools) && (
             <Button type="button" variant="primary" size="sm" disabled={disabled || saving} onClick={save}>
               {saving ? t('customTools.saving') : t('customTools.save')}
@@ -155,46 +169,48 @@ export function useCustomToolsEditor(props: {
           )}
         </div>
         {tools.length > 0 && (
-          <div className={`${styles.configList} ${styles.customToolList}`}>
-            {tools.map((tool, index) => (
-              <CustomToolCard
-                t={t}
-                key={`${String(tool.id ?? '')}-${index}`}
-                tool={tool}
-                fieldDrafts={editor.fields}
-                index={index}
-                disabled={disabled}
-                expanded={expandedCards.has(index)}
-                onToggleExpanded={() => toggleCard(index)}
-                onPatch={(patch) => patchTool(index, patch)}
-                onToggleEnabled={(enabled) => patchTool(index, { enabled })}
-                onMoveUp={() => updateTools(tools.map((item, at) => {
-                  if (at === index) return tools[index - 1]!
-                  if (at === index - 1) return tools[index]!
-                  return item
-                }))}
-                onMoveDown={() => updateTools(tools.map((item, at) => {
-                  if (at === index) return tools[index + 1]!
-                  if (at === index + 1) return tools[index]!
-                  return item
-                }))}
-                onDuplicate={() => updateTools([...tools.slice(0, index + 1), {
-                  ...JSON.parse(JSON.stringify(tool)) as ToolDraft,
-                  id: `${String(tool.id ?? 'tool')}-copy`,
-                }, ...tools.slice(index + 1)])}
-                onRemove={() => {
-                  const prefix = `${String(tool.id ?? index)}:`
-                  for (const key of editor.fields.keys()) if (key.startsWith(prefix)) editor.fields.delete(key)
-                  updateTools(tools.filter((_, at) => at !== index))
-                }}
-                canMoveUp={index > 0}
-                canMoveDown={index < tools.length - 1}
-              />
-            ))}
-          </div>
+          <ul ref={toolList} className={styles.customToolList}>
+            {tools.map((item, index) => {
+              const id = typeof item.id === 'string' ? item.id : `tool-${index + 1}`
+              const name = typeof item.name === 'string' ? item.name : ''
+              const kind = asRecord(item.execute).kind
+              return <li key={index}>
+                <Button shape="pill" variant="outline" size="sm" className={styles.customToolChoice}
+                  aria-pressed={index === selectedIndex} onClick={() => select(index)}>
+                  <span>{name && name !== id ? `${name} · ${id}` : id}</span>
+                  <small className={styles.configFieldHint}>{typeof kind === 'string' ? kind : 'shell'}{item.enabled === false && ` · ${t('customTools.disabled')}`}</small>
+                </Button>
+              </li>
+            })}
+          </ul>
         )}
+        {selectedIndex !== undefined && tool !== undefined && <CustomToolEditor
+          key={`${selectedIndex}:${deletedCount}`}
+          t={t}
+          tool={tool}
+          fieldDrafts={editor.fields}
+          index={selectedIndex}
+          disabled={disabled || saving}
+          onPatch={(patch) => { if (!disabled) owner.applyPatch(selectedIndex, patch) }}
+          onMoveUp={() => moveTool(selectedIndex, selectedIndex - 1)}
+          onMoveDown={() => moveTool(selectedIndex, selectedIndex + 1)}
+          onDuplicate={() => updateTools([...tools.slice(0, selectedIndex + 1), {
+            ...JSON.parse(JSON.stringify(tool)) as ToolDraft,
+            id: `${String(tool.id ?? 'tool')}-copy`,
+          }, ...tools.slice(selectedIndex + 1)])}
+          onRemove={() => {
+            const prefix = `${String(tool.id ?? selectedIndex)}:`
+            for (const key of editor.fields.keys()) if (key.startsWith(prefix)) editor.fields.delete(key)
+            updateTools(tools.filter((_, at) => at !== selectedIndex))
+            select(tools.length === 1 ? undefined : Math.min(selectedIndex, tools.length - 2))
+            recordDeletion((count) => count + 1)
+            focusSelection()
+          }}
+          canMoveUp={selectedIndex > 0}
+          canMoveDown={selectedIndex < tools.length - 1}
+        />}
       </fieldset>
-    </section>
+    </section></AutoSaveSelection.Provider>
   ) }
 }
 
