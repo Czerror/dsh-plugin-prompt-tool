@@ -1,10 +1,10 @@
 /** 经验证规则切片的局部事务；正文和状态各有独立 CAS。 */
 import { basename, dirname, join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { isMap, isSeq, isScalar, isAlias, isNode, parseDocument, stringify, visit } from 'yaml'
+import { isMap, isSeq, isScalar, parseDocument } from 'yaml'
 import type { Node, Scalar, YAMLMap, YAMLSeq } from 'yaml'
 import type { RuleDefinition, RuleEdit, RuleRevisions } from '../shared/rules.ts'
-import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, loadModuleDefinition, nextModuleConfigSequence, validateModuleDefinitionText } from './module-slices.ts'
+import { assertRuleFileId, commitModuleDefinition, ensureModuleSlices, loadModuleDefinition, nextModuleConfigSequence, validateModuleDefinitionText, validateModuleRuleText } from './module-slices.ts'
 import type { ModuleDefinitionSnapshot } from './module-slices.ts'
 import { ModuleWriteError, serializeWithoutSharedAlias } from './module-write.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
@@ -98,7 +98,8 @@ export function createModuleRule(directory: string, request: ModuleRuleCreateReq
 }
 
 export function editModuleRules(directory: string, request: ModuleRuleEditRequest, onCommitted?: (revision: string) => void): ModuleRulesSnapshot {
-  const snapshot = ensureModuleSlices(directory, { writable: request?.expectedRulesAbsent !== true && request?.validateOnly !== true })
+  // 独占快照仅在此事务内持有；最终只返回公共数据副本，提交时交回私有缓存。
+  const snapshot = ensureModuleSlices(directory, { writable: request?.expectedRulesAbsent !== true && request?.validateOnly !== true, takeOwnership: true })
   const hash = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value)
   if (!record(request) || !record(request.expectedRevisions)
     || Object.keys(request).some(key => !['expectedRevisions', 'expectedRulesAbsent', 'edits', 'activateRuleId', 'validateOnly'].includes(key))
@@ -125,9 +126,9 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
   const previous = (snapshot.source.rules ?? []) as RuleDefinition[]
   const rules = request.activateRuleId === undefined ? [...previous] : structuredClone(previous)
   const originalRules = snapshot.doc.get('rules', true)
-  const ruleNodes = (isSeq(originalRules) ? originalRules.clone() : snapshot.doc.createNode([])) as YAMLSeq
+  const ruleNodes = (isSeq(originalRules) ? originalRules : snapshot.doc.createNode([])) as YAMLSeq
   const originalOrder = snapshot.doc.get('configOrder', true)
-  const orderNodes = (isMap(originalOrder) ? originalOrder.clone() : snapshot.doc.createNode({})) as YAMLMap
+  const orderNodes = (isMap(originalOrder) ? originalOrder : snapshot.doc.createNode({})) as YAMLMap
   const order = record(snapshot.source.configOrder) ? { ...snapshot.source.configOrder } : {}
   if (snapshot.source.configOrder !== undefined && !record(snapshot.source.configOrder)) throw new ModuleWriteError('configOrder 必须是对象')
   const touched = new Set<string>()
@@ -186,12 +187,16 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     order[rule.id] = tail
     tail += 10
   }
-  if (request.activateRuleId === undefined && JSON.stringify(previous) === JSON.stringify(rules) && JSON.stringify(snapshot.source.configOrder ?? {}) === JSON.stringify(order)) {
+  if (request.activateRuleId === undefined && previous.length === rules.length
+    && previous.every((rule, index) => rule === rules[index] || JSON.stringify(rule) === JSON.stringify(rules[index]))
+    && JSON.stringify(snapshot.source.configOrder ?? {}) === JSON.stringify(order)) {
     onCommitted?.(snapshot.revision)
     return publicSnapshot(snapshot)
   }
   snapshot.doc.set('rules', request.activateRuleId === undefined ? ruleNodes : replaceNode(snapshot.doc, ruleNodes, rules))
-  if (Object.keys(order).length > 0) snapshot.doc.set('configOrder', replaceNode(snapshot.doc, orderNodes, order))
+  if (Object.keys(order).length > 0) {
+    if (!isDeepStrictEqual(snapshot.source.configOrder, order)) snapshot.doc.set('configOrder', replaceNode(snapshot.doc, orderNodes, order))
+  }
   else snapshot.doc.delete('configOrder')
   let expected = { ...snapshot.source, rules, configOrder: order } as Record<string, unknown>
   if (Object.keys(order).length === 0) delete expected.configOrder
@@ -239,16 +244,23 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     overrides.set(basename(candidate.snapshot.dir), candidate.rules)
   }
   assertCrossModuleGroups(dirname(snapshot.dir), [...participants], overrides)
-  const text = singleRuleText(snapshot, request, rules, expected)
-    ?? serializeWithoutSharedAlias(snapshot.doc, expected, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
+  let text: string | undefined
+  let prepared: ModuleDefinitionSnapshot | undefined
+  const edit = request.edits?.length === 1 ? request.edits[0] : undefined
+  if (request.activateRuleId === undefined && edit?.previousId && edit.rule?.id === edit.previousId && edit.settingsChanged !== true
+    && isDeepStrictEqual(snapshot.source.configOrder ?? {}, expected.configOrder ?? {})) {
+    prepared = validateModuleRuleText(snapshot, expected, edit.previousId)
+    text = prepared?.text
+  }
+  text ??= serializeWithoutSharedAlias(snapshot.doc, expected, 'YAML 共享引用会改变其他定义；请先解除相关引用后再编辑')
   // 与保存共用完整候选校验，但验证请求不写切片或完整定义。
   if (request.validateOnly) {
-    validateModuleDefinitionText(snapshot.dir, text)
+    if (prepared === undefined) validateModuleDefinitionText(snapshot.dir, text)
     return publicSnapshot(snapshot, rules)
   }
   let saved: ModuleDefinitionSnapshot | undefined
   try {
-    saved = commitModuleDefinition(snapshot, text)
+    saved = commitModuleDefinition(snapshot, text, prepared, true)
     onCommitted?.(saved.revision)
     invalidateModuleSpec(snapshot.dir)
     for (const candidate of crossCandidates) {
@@ -264,34 +276,4 @@ export function editModuleRules(directory: string, request: ModuleRuleEditReques
     throw pending
   }
   return publicSnapshot(saved)
-}
-
-/** 只对无注释/别名歧义的单条同身份正文编辑复用未改 YAML 原文。 */
-function singleRuleText(snapshot: ModuleDefinitionSnapshot, request: ModuleRuleEditRequest, rules: RuleDefinition[], expected: Record<string, unknown>): string | undefined {
-  if (request.activateRuleId !== undefined || request.edits?.length !== 1 || !isDeepStrictEqual(snapshot.source.configOrder ?? {}, expected.configOrder ?? {})) return undefined
-  const edit = request.edits[0]
-  if (!edit || edit.previousId === null || edit.rule === null || edit.previousId !== edit.rule.id || edit.settingsChanged === true) return undefined
-  let unsafeYaml = false
-  visit(snapshot.doc, (_key, node) => {
-    if (isAlias(node) || isNode(node) && (node.anchor || node.comment || node.commentBefore)) unsafeYaml = true
-  })
-  if (unsafeYaml) return undefined
-  const original = snapshot.doc.get('rules', true)
-  if (!isSeq(original)) return undefined
-  const index = snapshot.source.rules instanceof Array ? snapshot.source.rules.findIndex(rule => record(rule) && rule.id === edit.previousId) : -1
-  const node = original.items[index]
-  if (!isMap(node) || !Array.isArray(node.range) || typeof node.range[0] !== 'number' || typeof node.range[1] !== 'number') return undefined
-  const content = edit.rule
-  const serialized = stringify(content, { indent: 2, lineWidth: 0 }).trimEnd()
-  const prefix = snapshot.text.slice(0, node.range[0])
-  const listIndent = /^(\s*)-\s*$/.exec(prefix.slice(prefix.lastIndexOf('\n') + 1))
-  if (!listIndent) return undefined
-  const indent = listIndent[1] + '  '
-  const replacement = serialized.split('\n').map((line, lineIndex) => lineIndex === 0 ? line : indent + line).join('\n')
-  const text = snapshot.text.slice(0, node.range[0]) + replacement + '\n' + snapshot.text.slice(node.range[1])
-  // Fast path excludes aliases; retain the same complete-definition semantic comparison before validation/commit.
-  const parsed = snapshot.doc.clone()
-  parsed.setIn(['rules', String(index)], content)
-  if (!isDeepStrictEqual(parsed.toJS(), expected)) return undefined
-  return text
 }

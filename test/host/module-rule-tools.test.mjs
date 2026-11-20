@@ -81,6 +81,14 @@ test('规则工具完整往返：嵌套/else/来源参数和注释保留，开�
   assert.deepEqual(deleted.rules, [])
   assert.equal(parse(readFileSync(f.file, 'utf8')).configOrder, undefined)
   assert.deepEqual(rebuilt, ['roundtrip', 'roundtrip', 'roundtrip', 'roundtrip'])
+  // 1.1 的 yes 是布尔字面量；局部保存必须保留字符串含义。
+  const legacy = new Document({ id: 'roundtrip', modules: [], rules: [original], configOrder: { mixed: 40 } }, { version: '1.1' })
+  legacy.directives.yaml.explicit = true
+  writeFileSync(f.file, legacy.toString())
+  const versioned = await f.success('module_rules_read', { moduleId: 'roundtrip' })
+  const renamed = { ...versioned.rules[0], name: 'yes' }
+  await f.success('module_rules_edit', { moduleId: 'roundtrip', expectedRevisions: versioned.revisions, edits: [{ previousId: 'mixed', rule: renamed }] })
+  assert.deepEqual(parse(readFileSync(f.file, 'utf8')).rules[0], renamed)
 })
 
 test('规则工具主语来自参数：不声明拒绝且候选只作提示，声明谁就读写谁、不动别的模块', async t => {
