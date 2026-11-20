@@ -2,63 +2,96 @@
 .workspace { display: flex; flex-direction: column; gap: 12px; min-width: 0; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; font-feature-settings: "cv01", "ss03"; }
 .workspaceContainer { container: rule-workspace / inline-size; min-width: 0; block-size: 100%; min-block-size: 0; }
 .ruleWorkspace[data-canvas-workspace] { position: relative; display: flex; block-size: 100%; min-block-size: 0; background: radial-gradient(#343b486b .8px, transparent .8px) 0 0 / 20px 20px #0e1116; color: #e7edf6; }
-.ruleWorkspace[data-canvas-workspace]:not([data-rule-open]) > .ruleListPane { position: absolute; z-index: 10; inset: 94px auto 80px 12px; inline-size: min(350px, calc(100% - 24px)); overflow: auto; padding: 14px; background: #181c23; border: 1px solid #313844; border-radius: 10px; }
+.moduleScope { position: absolute; z-index: 11; inset: 12px auto auto 12px; display: flex; align-items: center; gap: 4px; max-inline-size: calc(100% - 9rem); padding: 4px; border: 1px solid #363f4d; border-radius: 11px; background: #171c24; box-shadow: 0 8px 24px #0003; }
+.moduleScope > button { min-block-size: 34px; }
+.moduleScope > button:not(.modulePicker) { flex: none; }
+.moduleScope > .libraryToggle { display: grid; place-items: center; inline-size: 34px; padding: 0; color: #adc6e8; }
+.moduleScope > .libraryToggle[aria-expanded=true] { border-color: #465e80; background: #28374b; }
+.modulePicker { display: flex; align-items: center; gap: 8px; inline-size: 12rem; min-inline-size: 0; padding: 5px 9px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #e7edf6; text-align: start; font: inherit; cursor: pointer; }
+.modulePicker:is(:hover, [aria-expanded=true]) { background: #242e3d; border-color: #39495d; }
+.modulePicker strong { flex: 1; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modulePicker svg { flex: none; color: #a6c7f6; }
+.modulePickerPanel { position: fixed; z-index: 50; inline-size: min(20rem, calc(100vw - 24px)); max-block-size: min(24rem, 70vh); padding: 8px; border: 1px solid #39495d; border-radius: 11px; background: #181f2a; color: #e7edf6; box-shadow: 0 12px 30px #0008; overflow: auto; overscroll-behavior: contain; }
+.modulePickerPanel[data-position-fallback] { inset: auto; margin: 0; }
+@supports (position-area: block-end span-inline-end) {
+  .modulePickerPanel[popover]:not([data-position-fallback]) { inset: auto; margin: 6px 0; position-area: block-end span-inline-end; position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline; }
+}
+.modulePickerItems { display: grid; gap: 3px; margin-block-start: 6px; }
+.modulePickerItems button { display: flex; align-items: center; justify-content: space-between; gap: 6px 12px; min-block-size: 36px; padding: 6px 9px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: inherit; text-align: start; font: inherit; cursor: pointer; }
+.modulePickerItems button:is(:hover, [aria-current]) { background: #26344a; border-color: #445879; }
+.modulePickerItems button[aria-current] > span::before { content: "✓"; margin-inline-end: 6px; color: #a6c7f6; }
+.modulePickerItems small { color: #b5c2d4; }
+.modulePickerItems span > small { display: block; }
+.disclosureMarker { inline-size: 6px; block-size: 6px; flex: none; margin-inline: 2px 4px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; rotate: 45deg; }
+.moduleScope > button[aria-expanded=true] .disclosureMarker { rotate: 225deg; }
 .ruleListPane :global([data-module-toolbar]) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .ruleListPane :global([data-module-toolbar]) > * { min-block-size: 0; block-size: auto; }
-.emptyCanvas { position: absolute; inset: 82px auto auto 20px; }
+.emptyCanvas { display: grid; align-content: center; justify-items: center; flex: 1; min-inline-size: 0; padding: 60px 16px 16px; text-align: center; }
 .workspaceContainer:has(.canvasSurface) { display: flex; flex-direction: column; }
 .ruleWorkspace[data-rule-open], .ruleDetail, .canvasSurface, .canvasSurface > .body, .canvasSurface [data-config-panel=rule], .canvasSurface .ruleCanvas, .canvasSurface .steps, .canvasSurface .canvasLayout { flex: 1; min-block-size: 0; block-size: 100%; }
 .ruleWorkspace[data-rule-open] { position: relative; display: flex; }
-.ruleWorkspace[data-rule-open][data-list-open] > .ruleListPane { display: flex; position: absolute; z-index: 10; inset: 90px auto 80px 12px; inline-size: min(350px, calc(100% - 24px)); overflow: auto; padding: 14px; background: #181c23; color: #e7edf6; border: 1px solid #313844; border-radius: 10px; box-shadow: 0 8px 24px #0005; }
+.ruleListPane:not([hidden]) { display: flex; position: absolute; z-index: 10; inset: 64px auto 72px 12px; inline-size: min(17rem, calc(100% - 24px)); overflow: auto; overscroll-behavior: contain; padding: 12px; background: #181c23; color: #e7edf6; border: 1px solid #313844; border-radius: 10px; box-shadow: 0 8px 24px #0005; }
 .canvasSurface { position: relative; display: flex; flex-direction: column; color: #e7edf6; background: #0e1116; isolation: isolate; }
 .canvasSurface > .body { gap: 0; }
 .canvasSurface [data-config-panel=rule] { display: flex; padding: 0; }
 .canvasSurface .ruleCanvas { display: flex; }
 .canvasSurface .steps { display: flex; padding: 0; }
 .canvasSurface .canvasLayout { display: flex; }
-.canvasTopbar { position: absolute; inset: 12px 12px auto 130px; z-index: 6; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px; pointer-events: none; }
+.canvasTopbar { position: absolute; inset: 64px 12px auto; z-index: 6; display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 8px; pointer-events: none; }
 .contextCluster, .commandCluster { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border: 1px solid #313844; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0003; pointer-events: auto; min-inline-size: 0; }
 .contextCluster { max-inline-size: min(460px, 100%); }
 .canvasIdentity { display: grid; flex: 1; min-inline-size: 8rem; overflow-wrap: anywhere; }
 .canvasIdentity small { color: #9ca7b7; }
+.canvasIdentity small[role=status]::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-inline-end: 6px; border-radius: 50%; background: #efbd70; }
+.canvasIdentity small[data-clean]::before { background: #6bd59d; }
 .canvasAccessibleHeading { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); }
 .canvasSurface .saveStatus:empty { display: none; }
-.canvasSurface .saveStatus:not(:empty), .canvasSurface .body > .status { position: absolute; z-index: 5; inset: 78px 16px auto auto; margin: 0; max-inline-size: min(28rem, 90%); padding: 6px 10px; background: #181c23; border-radius: 6px; }
+.canvasSurface .saveStatus:not(:empty), .canvasSurface .body > .status { position: absolute; z-index: 5; inset: calc(var(--pt-canvas-top, 110px) - 8px) 16px auto auto; margin: 0; max-inline-size: min(28rem, 90%); padding: 6px 10px; background: #181c23; border-radius: 6px; }
 .definitionDrawer { position: absolute; inset: 94px 12px 76px auto; inline-size: min(34rem, calc(100% - 24px)); z-index: 8; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; border: 1px solid #394452; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0005; }
 .definitionDrawer .headerFields { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
-.canvasSurface .libraryToggle { position: absolute; z-index: 4; inset: 96px auto auto 12px; }
-.canvasSurface .canvasLibrary { position: absolute; z-index: 4; inset: 140px auto 88px 12px; inline-size: 224px; max-block-size: none; display: flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 10px; overflow: hidden; background: #181c23; border-color: #313844; box-shadow: 0 8px 24px #0003; }
-.canvasSurface .ruleProperties { position: absolute; z-index: 5; inset: 110px 12px 88px auto; inline-size: min(320px, calc(100% - 24px)); max-block-size: none; overflow: auto; padding: 14px; border: 1px solid #313844; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0003; }
-.canvasSurface .libraryToggle, .canvasSurface .ruleProperties, .canvasSurface .definitionDrawer { inset-block-start: var(--pt-canvas-top, 110px); }
-.canvasSurface .canvasLibrary { inset-block-start: var(--pt-canvas-top, 110px); }
+.canvasSurface .canvasLibrary:not([hidden]) { position: absolute; z-index: 4; inset: 140px auto 88px 12px; inline-size: 224px; max-block-size: none; display: flex; flex-direction: column; align-items: stretch; gap: 8px; overflow: hidden; background: #181f2a; border-color: #39495d; box-shadow: 0 8px 24px #0005; }
+.canvasSurface .ruleProperties { position: absolute; z-index: 5; inset: 110px 12px 88px auto; inline-size: min(320px, calc(100% - 24px)); max-block-size: none; overflow: hidden; padding: 12px; border: 1px solid #39495d; border-radius: 10px; background: #181f2a; box-shadow: 0 8px 24px #0005; }
+.canvasSurface .ruleProperties, .canvasSurface .definitionDrawer { inset-block-start: var(--pt-canvas-top, 110px); }
+.canvasSurface .canvasLibrary:not([hidden]) { inset-block-start: var(--pt-canvas-top, 110px); }
 @container rule-workspace (width < 56rem) {
   .canvasTopbar { inset: 60px 8px auto; }
+  .moduleScope { inset: 8px auto auto 8px; max-inline-size: calc(100% - 8rem); }
+  .ruleListPane:not([hidden]) { inset: 60px 8px 8px; inline-size: auto; }
+  .ruleWorkspace[data-list-open] > .ruleDetail { visibility: hidden; }
   .contextCluster, .commandCluster { padding: 8px; }
   .canvasIdentity { flex-basis: 100%; }
-  .canvasSurface .canvasLibrary { max-block-size: calc(100% - var(--pt-canvas-top, 148px) - 140px); }
+  .canvasSurface .canvasLibrary:not([hidden]) { max-block-size: calc(100% - var(--pt-canvas-top, 148px) - 96px); }
   .canvasSurface[data-rule-id] .ruleCanvas[data-node-open] > .steps { display: none; }
   .canvasSurface .ruleProperties { inset-inline: 8px; inline-size: auto; }
 }
 @container rule-workspace (width >= 56rem) {
   .canvasSurface .ruleCanvas[data-node-open] > .steps { display: flex; }
+  .ruleWorkspace[data-list-open] > .ruleDetail { margin-inline-start: calc(17rem + 24px); }
+  .canvasSurface .canvasLibrary:not([hidden]) { inset-block-start: 68px; }
+  .canvasTopbar { inset: 12px 100px auto 325px; align-items: stretch; }
+  .canvasIdentity { display: flex; align-items: center; gap: 10px; min-inline-size: 0; }
+  .contextCluster, .commandCluster { padding: 6px 10px; }
 }
 .ruleWorkspace { display: grid; gap: 12px; min-width: 0; }
-.ruleListPane, .ruleDetail { display: flex; flex-direction: column; align-items: stretch; min-width: 0; gap: 10px; }
+.ruleListPane, .ruleDetail { flex-direction: column; align-items: stretch; min-width: 0; gap: 10px; }
+.ruleDetail { display: flex; }
 .ruleDetail > button { align-self: flex-start; }
-.ruleWorkspace[data-rule-open] > .ruleListPane { display: none; }
 .workspaceHeading { margin: 0; font: 600 14px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
-.ruleList { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 2px; max-block-size: 60vh; overflow: auto; list-style: none; }
+.ruleList { display: flex; flex: 0 0 auto; flex-direction: column; gap: 4px; margin: 0; padding: 2px; max-block-size: 60vh; overflow: auto; list-style: none; }
 .ruleList > li { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .moduleParticipation { display: flex; flex-wrap: wrap; gap: 8px 16px; min-width: 0; margin: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
-.ruleChoice { display: grid; gap: 2px; flex: 1; min-width: 0; min-height: 44px; padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; color: inherit; background: var(--dsw-alias-bg-layer-2); font: inherit; text-align: start; overflow-wrap: anywhere; cursor: pointer; }
-.ruleChoice small { color: var(--dsw-alias-label-secondary); }
+.ruleDisclosure { flex: 1; min-inline-size: 0; }
+.ruleDisclosure summary { padding: 10px 4px; cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.ruleDisclosure small { display: block; padding: 0 6px 10px 14px; color: #aeb8c9; overflow-wrap: anywhere; }
+.ruleList > li { border-block-end: 1px solid #303742; }
+.ruleChoice { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border: 1px solid transparent; border-radius: 6px; color: #c9d5e8; background: #242e3b; font-size: 17px; cursor: pointer; }
 .ruleChoice[aria-current], .ruleChoice:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .ruleList button[aria-disabled=true] { opacity: .6; cursor: default; }
 .ruleCanvas { display: grid; position: relative; gap: 12px; min-width: 0; }
 .ruleCanvas[data-node-open] > .steps, .ruleCanvas:not([data-node-open]) > .ruleProperties { display: none; }
 .ruleProperties { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
 .ruleProperties > div { align-self: stretch; min-width: 0; }
-.canvasLibrary { padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-2); max-block-size: 24rem; overflow: auto; }
+.canvasLibrary { padding: 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-2); max-block-size: 24rem; overflow: auto; }
 .canvasLayout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .cardPanel { container: rule-card / inline-size; min-width: 0; }
@@ -179,13 +212,16 @@
   .switchLine, .conditionOrdinal, .stepToggle { height: 44px; min-height: 44px; }
 }
 .libraryDetail { display: grid; gap: 8px; min-inline-size: 0; }
-.libraryHeading { display: flex; justify-content: space-between; padding-block-end: 8px; border-block-end: 1px solid #313844; }
-.libraryHeading button { padding: 0 5px; border: 0; background: transparent; color: inherit; font-size: 17px; }
+.libraryHeading { display: flex; padding: 6px 4px 8px; border-block-end: 1px solid #313b4b; }
+.libraryBody { display: flex; flex: 1 1 auto; min-block-size: 0; flex-direction: column; gap: 8px; overflow: auto; overscroll-behavior: contain; }
 .libraryCategories { display: flex; gap: 4px; }
-.libraryCategories button { flex: 1; border: 1px solid #313844; border-radius: 6px; padding: 7px; background: transparent; color: inherit; }
+.libraryCategories button { display: flex; justify-content: center; align-items: center; gap: 6px; flex: 1; border: 1px solid #313844; border-radius: 6px; padding: 7px; background: transparent; color: inherit; }
+.categoryIcon { inline-size: 8px; block-size: 8px; flex: none; border: 1.5px solid #e9c777; rotate: 45deg; }
+.categoryIcon[data-category=action] { border-radius: 2px; border-color: #79d7ae; rotate: none; }
 .libraryCategories button[aria-pressed=true] { background: #293b55; border-color: #72aaff; }
 .canvasLibrary > * { flex: 0 0 auto; min-inline-size: 0; max-inline-size: 100%; }
-.canvasLibrary > .libraryItems { flex: 1 1 auto; min-block-size: 80px; overflow: auto; }
+.libraryBody > * { flex: 0 0 auto; }
+.libraryBody > .libraryItems { flex: 1 1 auto; min-block-size: 76px; overflow: auto; }
 .libraryItems { display: flex; flex-direction: column; gap: 3px; align-self: stretch; }
 .libraryDetail { max-block-size: 35%; overflow: auto; }
 .libraryItem { display: flex; gap: 10px; align-items: flex-start; padding: 10px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: inherit; text-align: start; font: inherit; cursor: pointer; }
@@ -193,11 +229,15 @@
 .libraryItem > span:last-child { min-inline-size: 0; flex: 1; }
 .libraryItem strong, .libraryItem small { display: block; }
 .libraryItem small { margin-block-start: 4px; color: #9ca7b7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.libraryIcon { color: #72aaff; font-size: 18px; }
+.libraryIcon { display: grid; place-items: center; flex: none; inline-size: 30px; block-size: 30px; border-radius: 7px; color: #95bcff; background: #25364e; }
+.libraryItem[data-library-kind=action] .libraryIcon { background: #19382f; color: #8ae2b7; }
+.canvasLibrary .libraryItem strong { font-size: 14px; line-height: 20px; }
+.ruleProperties .inspectorHeading h3 { font-size: 17px; line-height: 23px; }
 .inspectorHeading { display: flex; align-items: flex-start; justify-content: space-between; inline-size: 100%; gap: 8px; }
+.inspectorBody { display: flex; flex: 1; flex-direction: column; align-items: stretch; gap: 10px; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 2px 4px; }
 .inspectorHeading h3 { margin: 0 0 5px; }
 .inspectorHeading small { color: #9ca7b7; }
 .inspectorHeading button { padding: 3px 8px; border: 1px solid #313844; border-radius: 6px; background: transparent; color: inherit; font-size: 18px; }
 .libraryDetail p { margin: 0; overflow-wrap: anywhere; }
 .propertySummary { align-self: stretch; color: #9ca7b7; }
-.propertyFooter { margin-block-start: auto; position: sticky; inset-block-end: -14px; padding-block: 12px; align-self: stretch; background: #181c23; border-block-start: 1px solid #313844; }
+.propertyFooter { flex: none; padding-block-start: 10px; align-self: stretch; border-block-start: 1px solid #313844; }

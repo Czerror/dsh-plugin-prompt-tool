@@ -209,6 +209,9 @@ export function RuleStepsPanel(props: {
   nodeBrowse?: Map<string, string>
   canvasBrowse?: Map<string, RuleCanvasView>
   browseKey: string
+  libraryOpen: boolean
+  libraryId: string
+  onCloseLibrary: () => void
   onBrowseChange?: () => void
   diagnosticActionId?: string
   disabled?: boolean
@@ -216,7 +219,7 @@ export function RuleStepsPanel(props: {
   onChange: (rule: RuleDefinition) => void
   onMove: (path: string, index: number, offset: -1 | 1) => void
 }): ReactNode {
-  const { t, rule, meta } = props
+  const { t, rule, meta, libraryOpen, libraryId } = props
   const disabled = props.disabled === true
   const then = nodeList(rule.then), otherwise = nodeList(rule.else)
   const usedIds = collectActionIds([...then, ...otherwise])
@@ -263,7 +266,6 @@ export function RuleStepsPanel(props: {
     return id
   } } })
   identityState.paths = nextPaths
-  const [libraryOpen, setLibraryOpen] = useState(true)
   const [targetId, setTargetId] = useState('')
   const [libraryItem, setLibraryItem] = useState('')
   const [libraryQuery, setLibraryQuery] = useState('')
@@ -433,9 +435,12 @@ export function RuleStepsPanel(props: {
     const left = Math.min(0, ...positions.map(node => node.x)), top = Math.min(0, ...positions.map(node => node.y))
     const right = Math.max(216, ...positions.map(node => node.x + (node.width ?? 216))), bottom = Math.max(112, ...positions.map(node => node.y + (node.height ?? 112)))
     const wide = width >= 900, safeLeft = wide && libraryOpen ? 256 : 24, safeRight = wide && shownNode ? 344 : 24
-    const scale = Math.max(0.35, Math.min(1, (width - safeLeft - safeRight) / (right - left), (height - 180) / (bottom - top)))
+    const scale = Math.min(1, Math.max(1, width - safeLeft - safeRight) / (right - left), Math.max(1, height - 180) / (bottom - top))
     needsInitialFit.current = false
-    changeView({ ...view, scale, x: safeLeft - left * scale, y: 100 - top * scale })
+    const remainingWidth = width - safeLeft - safeRight - (right - left) * scale
+    const remainingHeight = height - 180 - (bottom - top) * scale
+    changeView({ ...view, scale, x: safeLeft + Math.max(0, remainingWidth / 2) - left * scale,
+      y: 100 + Math.max(0, remainingHeight / 2) - top * scale })
   }
   useLayoutEffect(() => {
     if (!needsInitialFit.current) return
@@ -451,17 +456,21 @@ export function RuleStepsPanel(props: {
     <div className={css.steps} ref={structureRef}>
     <h3 ref={structureHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{t('rules.structure')}</h3>
     {props.diagnosticActionId !== undefined && diagnosticNode === undefined && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
-    {!libraryOpen && <div className={css.libraryToggle}><Button shape="pill" variant="outline" aria-expanded={false} onClick={() => setLibraryOpen(true)}>{t('rules.nodeLibrary')}</Button></div>}
     <div className={css.canvasLayout} data-library-open={libraryOpen || undefined}>
-    {libraryOpen && <section className={css.canvasLibrary} aria-label={t('configList.create')}>
-      <header className={css.libraryHeading}><strong>{t('rules.nodeLibrary')}</strong><button type="button" aria-label={t('rules.nodeLibrary')} aria-expanded={true} onClick={() => setLibraryOpen(false)}>×</button></header>
+    <section id={libraryId} className={css.canvasLibrary} hidden={!libraryOpen} aria-label={t('rules.nodeLibrary')} onKeyDown={event => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
+      event.stopPropagation()
+      props.onCloseLibrary()
+    }}>
+      <header className={css.libraryHeading}><strong>{t('rules.nodeLibrary')}</strong></header>
+      <div className={css.libraryBody}>
       <SearchInput aria-label={t('rules.librarySearch')} placeholder={t('rules.librarySearch')} value={libraryQuery} onChange={event => setLibraryQuery(event.target.value)} />
       <div className={css.libraryCategories}>
         {(['condition', 'action'] as const).map(kind => <button key={kind} type="button" aria-pressed={libraryCategory === kind} onClick={() => {
           setLibraryCategory(kind); setLibraryItem('')
           const target = graph.targets.find(item => kind === 'condition' ? item.kind === 'condition' : item.kind !== 'condition')
           if (target) setTargetId(target.id)
-        }}>{t(kind === 'condition' ? 'rules.libraryConditions' : 'rules.libraryActions')}</button>)}
+        }}><span className={css.categoryIcon} data-category={kind} aria-hidden="true" />{t(kind === 'condition' ? 'rules.libraryConditions' : 'rules.libraryActions')}</button>)}
       </div>
       {libraryKind === 'action' && <Button variant="outline" disabled={disabled || !activeTarget || activeTarget.kind === 'condition'} onClick={() => {
         if (!activeTarget || activeTarget.kind === 'condition') return
@@ -473,7 +482,7 @@ export function RuleStepsPanel(props: {
         const kind = libraryKind
         const data = payload(kind, entry.kind)
         const detail = kind === 'condition' ? conditionSummary(t, entry.example as RuleCondition) : actionSummary(t, { ...entry.example, kind: entry.kind } as RuleAction)
-        return <button key={entry.kind} type="button" className={css.libraryItem} draggable={!disabled}
+        return <button key={entry.kind} type="button" className={css.libraryItem} data-library-kind={kind} draggable={!disabled}
             onDragStart={event => { setDragPayload(data); event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-prompt-tool-rule-node', data) }} onDragEnd={() => setDragPayload('')}
           aria-pressed={libraryItem === entry.kind} onClick={() => setLibraryItem(entry.kind)}><span className={css.libraryIcon} aria-hidden="true">{kind === 'condition' ? <IconCopyOutlineRegular /> : <IconChevronDownOutlineRegular />}</span><span><strong>{triggerLabel(t, entry.kind)}</strong><small>{detail === triggerLabel(t, entry.kind) ? entry.kind : detail}</small></span></button>
       })}
@@ -486,8 +495,9 @@ export function RuleStepsPanel(props: {
         <Button shape="pill" variant="primary" disabled={!activeTarget || !canAdd(activeTarget.id, payload(libraryKind, selectedLibraryEntry.kind))}
           onClick={() => { if (activeTarget) add(activeTarget.id, payload(libraryKind, selectedLibraryEntry.kind)) }}>{t('configList.create')}</Button>
       </section>}
-    </section>}
-    <RuleCanvas nodes={graph.nodes.map(node => {
+      </div>
+    </section>
+    <RuleCanvas t={t} nodes={graph.nodes.map(node => {
       return { ...node, selected: node.id === shownNode,
           dropTarget: graph.targets.find(target => target.id === `${node.id}:target`)?.id }
     })} edges={graph.edges} view={view}
@@ -521,10 +531,10 @@ export function RuleStepsPanel(props: {
         <div><h3 ref={propertyHeading} tabIndex={-1}>{t('rules.ruleEditor')}</h3><small>{graph.nodes.find(node => node.id === shownNode)?.title}{selectedDescriptor?.kind === 'action' ? ` · ${selectedDescriptor.actionId}` : ''}</small></div>
         <button type="button" aria-label={t('rules.backToStructure')} onClick={() => { focusPane.current = 'structure'; select(undefined) }}>×</button>
       </header>
+      <div className={css.inspectorBody}>
       {shownNode === undefined && <p>{t('rules.chooseNode')}</p>}
       <div id={propertyId} ref={setPropertyTarget} />
       {selectedDescriptor?.kind === 'group' && (selectedDescriptor.path === 'then' || selectedDescriptor.path === 'else' || selectedDescriptor.path.endsWith(':then') || selectedDescriptor.path.endsWith(':else')) && <>
-        {selectedDescriptor.path === 'else' && <Button shape="pill" variant="outline" disabled={disabled} onClick={() => patch({ else: undefined })}>{t('rules.steps.removeElse')}</Button>}
         {renderList(nodeList(valueAt(rule, selectedDescriptor.path)), `${props.fieldKey}:${selectedDescriptor.path}`, rule.if === undefined ? [] : [rule.if], conditional, nodes => changeAt(selectedDescriptor.path, nodes))}
       </>}
       {selectedDescriptor && (selectedDescriptor.kind === 'condition' || selectedDescriptor.kind === 'group') && selectedDescriptor.path.includes('if') &&
@@ -535,6 +545,10 @@ export function RuleStepsPanel(props: {
       {selectedDescriptor?.kind === 'unknown' && <><p role="note">{t('rules.unknown')}</p><TriggerJsonField {...context} value={selectedDescriptor.value} shape="object"
         fieldKey={`${props.fieldKey}:${selectedDescriptor.path}`} label={t('rules.rawAction')} onChange={value => changeAt(selectedDescriptor.path, value)} /></>}
       <details className={css.propertySummary}><summary>{t('rules.ruleOverview')}</summary><p>{rule.name || rule.id}</p><p>{conditionSummary(t, rule.if)}</p></details>
+      </div>
+      {selectedDescriptor?.kind === 'group' && selectedDescriptor.path === 'else' && <footer className={css.propertyFooter}>
+        <Button shape="pill" variant="outline" data-danger disabled={disabled} onClick={() => patch({ else: undefined })}>{t('rules.steps.removeElse')}</Button>
+      </footer>}
       {selectedDescriptor && (selectedDescriptor.kind !== 'group' || selectedDescriptor.path.includes('if')) && <footer className={css.propertyFooter}>
         <Button shape="pill" variant="outline" data-danger disabled={disabled} onClick={() => {
           const path = selectedDescriptor.path

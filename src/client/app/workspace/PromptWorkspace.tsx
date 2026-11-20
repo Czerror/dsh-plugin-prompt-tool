@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { PromptToolTranslate } from '../../locales.ts'
 import type { PromptToolStore } from '../../data/use-prompt-tool-store.ts'
 import type { WorkspaceViewState } from '../workbench/native-workspace-state.ts'
@@ -23,7 +23,8 @@ export interface PromptWorkspaceProps {
 export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const { t } = props
   const { store, view } = props
-  const page = useSyncExternalStore(view.subscribe, view.getSnapshot, view.getSnapshot)
+  // 辅助模态归触发入口；规则草稿和浏览状态仍由共享 view.browse 持有。
+  const [page, setPage] = useState<WorkspacePage>('features')
   const browse = view.browse
   const auxiliaryPanel = useRef<HTMLDialogElement>(null)
   const auxiliaryTrigger = useRef<HTMLElement>()
@@ -38,7 +39,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     if (target !== page) {
       setReadyPage(undefined)
     }
-    view.select(target)
+    setPage(target)
   }
   const markReady = useCallback(() => setReadyPage(page), [page])
   const navigate = (target: WorkspacePage): void => {
@@ -64,7 +65,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     const current = configPageBrowse(browse, 'features')
     current.allModules = true
     current.moduleFilter = moduleId
-    current.filter = moduleId
+    current.filter = ''
     current.viewFilter = 'all'
     current.combination = false
     current.expanded = ruleKey === undefined ? undefined : JSON.stringify([moduleId, ruleKey])

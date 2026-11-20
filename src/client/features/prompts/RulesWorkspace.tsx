@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import { MODULE_CAPABILITIES, isModuleCapabilityDeclared } from '../../../shared/engine-capabilities.ts'
 import type { ModuleConfigOrderEntry } from '../../../shared/module-config-order.ts'
@@ -23,6 +23,9 @@ import { Switch } from '../../ui/Switch.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
+import { useAnchoredPopoverStyle } from '../../ui/anchored-popover.ts'
+import { useDismissOnOutsidePointer } from '../../ui/outside-pointer.ts'
+import { IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular } from '../../ui/icons.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
@@ -43,6 +46,66 @@ function searchableRule(rule: RuleDefinition): string {
     ruleSearchText.set(rule, text)
   }
   return text
+}
+
+function ModuleScopePicker({ value, options, onChange, t }: {
+  value: string; options: readonly { value: string; label: string; id?: string; enabled?: boolean }[]
+  onChange: (value: string) => void; t: PromptToolTranslate
+}): ReactNode {
+  const id = useId()
+  const trigger = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const native = typeof HTMLElement !== 'undefined' && 'popover' in HTMLElement.prototype
+  const anchored = native && CSS.supports('position-area: block-end span-inline-end')
+  const position = useAnchoredPopoverStyle({ open: open && !anchored, anchorRef: trigger, panelRef: panel })
+  useDismissOnOutsidePointer(trigger, open && !native, setOpen, panel)
+  useLayoutEffect(() => {
+    const element = panel.current
+    if (!native || !element) return
+    const sync = () => setOpen(element.matches(':popover-open'))
+    element.addEventListener('toggle', sync)
+    return () => element.removeEventListener('toggle', sync)
+  }, [native])
+  useLayoutEffect(() => {
+    if (open) panel.current?.querySelector('input')?.focus()
+    else setQuery('')
+  }, [open])
+  const close = (): void => {
+    if (native) panel.current?.hidePopover()
+    else setOpen(false)
+    trigger.current?.focus({ preventScroll: true })
+  }
+  const needle = query.trim().toLowerCase()
+  const matched = options.filter(option => !needle || `${option.label} ${option.id ?? ''}`.toLowerCase().includes(needle))
+  const current = options.find(option => option.value === value)?.label
+  return <>
+    <button ref={trigger} className={css.modulePicker} type="button" aria-controls={id} aria-expanded={open}
+      aria-label={`${t('rules.module')} · ${current ?? ''}`}
+      {...(native ? { popovertarget: id } : { onClick: () => setOpen(!open) })}>
+      <IconFolderOpenOutlineRegular /><strong>{current}</strong><IconChevronDownOutlineRegular />
+    </button>
+    <div ref={panel} id={id} className={css.modulePickerPanel} {...(native ? { popover: 'auto' } : { hidden: !open })}
+      data-position-fallback={!anchored || undefined} style={anchored ? undefined : position ?? undefined} onKeyDown={event => {
+        if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
+        event.stopPropagation()
+        event.preventDefault()
+        close()
+      }}>
+      <SearchInput aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query} onChange={event => setQuery(event.currentTarget.value)} />
+      <div className={css.modulePickerItems}>
+        {matched.map(option => <button key={option.value} type="button" aria-current={value === option.value || undefined} onClick={() => {
+          if (value !== option.value) onChange(option.value)
+          close()
+        }}>
+          <span><strong>{option.label}</strong>{option.id && option.id !== option.label && <small>{option.id}</small>}</span>
+          {option.id && option.enabled === false && <small>{t('rules.moduleInactive')}</small>}
+        </button>)}
+        {matched.length === 0 && <p role="status">{t('rules.noMatch')}</p>}
+      </div>
+    </div>
+  </>
 }
 
 export interface RulesWorkspaceProps {
@@ -76,7 +139,13 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
 
   const [localExpanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [listOpen, setListOpen] = useState(false)
+  const listPaneId = useId()
+  const listToggle = useRef<HTMLButtonElement>(null)
+  const [libraryOpen, setLibraryOpen] = useState(true)
+  const libraryId = useId()
+  const libraryToggle = useRef<HTMLButtonElement>(null)
   const [localAllModules, setAllModules] = useState(props.browse?.allModules ?? false)
+  const [localModuleFilter, setModuleFilter] = useState(props.browse?.moduleFilter)
   const [localCombination, setCombination] = useState(props.browse?.combination ?? false)
   const expanded = props.browse?.publish ? props.browse.expanded : localExpanded
   const allModules = props.browse?.publish ? props.browse.allModules === true : localAllModules
@@ -87,10 +156,12 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   const nodeBrowse = props.browse && (props.browse.ruleNodes ??= new Map())
   const modules = store.meta.modules ?? []
+  const requestedModule = props.browse?.publish ? props.browse.moduleFilter : localModuleFilter
+  const moduleFilter = modules.find(module => module.id === requestedModule)?.id
   const diagnosticTarget = props.browse?.diagnosticTarget
   const enabledModules = modules.filter(module => module.enabled === true)
   const enabledIds = new Set(enabledModules.map(module => module.id))
-  const ownerIds = (props.browse?.moduleFilter ? modules.filter(module => module.id === props.browse?.moduleFilter)
+  const ownerIds = (moduleFilter ? modules.filter(module => module.id === moduleFilter)
     : allModules ? modules : modules.filter(module => enabledIds.has(module.id) || module.id === diagnosticTarget?.moduleId))
     .filter(module => moduleDeclares(modules, module.id, 'rules') !== false).map(module => module.id)
   // 排序请求生命周期归 useModuleConfigOrder（全仓唯一一份实现）；页面只提供「保存成功后要刷新哪些编辑器」。
@@ -111,7 +182,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const sortDisabled = order.busy || orderBlocked.size > 0
   const query = (props.keyword ?? filter).trim().toLowerCase(), view = props.viewFilter ?? 'all'
   const changeFilter = (value: string): void => {
-    if (props.browse) props.browse.moduleFilter = undefined
     if (props.browse?.publish) { props.browse.filter = value; props.browse.publish() }
     else { setFilter(value); props.onKeywordChange?.(value); if (props.browse) props.browse.filter = value }
   }
@@ -151,6 +221,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       && (!query || id.toLowerCase().includes(query) || searchableRule(entry.value).includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
     .sort((a, b) => (orderByIdentity.get(a.identity)?.sequence ?? Number.MAX_SAFE_INTEGER) - (orderByIdentity.get(b.identity)?.sequence ?? Number.MAX_SAFE_INTEGER))
   const moduleSettings = enabledModules.flatMap(module => {
+    if (moduleFilter && module.id !== moduleFilter) return []
     const owner = owners.find(item => item.moduleId === module.id)
     if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
     const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted)
@@ -228,6 +299,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     targets: writableModuleTargets(store.meta.modules).sort((a, b) => a.id.localeCompare(b.id)),
     existingIds: (store.meta.modules ?? []).map(module => module.id),
     onCreated: (moduleId, configKey) => {
+      if (moduleFilter && moduleFilter !== moduleId) {
+        if (props.browse) props.browse.moduleFilter = moduleId
+        setModuleFilter(moduleId)
+      }
       if (!enabledIds.has(moduleId)) {
         setAllModules(true)
         if (props.browse) props.browse.allModules = true
@@ -268,20 +343,45 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       detailHeading.current.focus({ preventScroll: true })
       focus.current = undefined
     } else if (focus.current === 'list') {
-      (lastButton.current?.isConnected ? lastButton.current : workspaceHeading.current)?.focus({ preventScroll: true })
+      (lastButton.current?.isConnected && lastButton.current.getClientRects().length ? lastButton.current : workspaceHeading.current)?.focus({ preventScroll: true })
       focus.current = undefined
     }
   })
-  const back = (): void => {
-    saveSelected.current?.()
-    lastButton.current = selectedButton.current
-    focus.current = 'list'
-    select(undefined)
-  }
   const changeCombination = (next: boolean): void => {
     if (props.browse) { props.browse.combination = next; if (next) props.browse.moduleFilter = undefined; props.browse.publish?.() }
     if (!props.browse?.publish) setCombination(next)
+    if (next) setModuleFilter(undefined)
     if (next) setListOpen(true)
+  }
+  const changeModuleScope = (value: string): void => {
+    const nextModule = value.startsWith('module:') ? value.slice('module:'.length) : undefined
+    const nextAll = value !== 'active'
+    const leavesRule = selected !== undefined && (nextModule !== undefined ? selected.moduleId !== nextModule : !nextAll && !enabledIds.has(selected.moduleId))
+    if (leavesRule) saveSelected.current?.()
+    if (props.browse) {
+      props.browse.moduleFilter = nextModule
+      props.browse.allModules = nextAll
+      props.browse.combination = false
+    }
+    if (!props.browse?.publish) {
+      setModuleFilter(nextModule)
+      setAllModules(nextAll)
+      setCombination(false)
+    }
+    if (leavesRule) select(undefined)
+    else props.browse?.publish?.()
+  }
+  const showList = listOpen || combination
+  const openList = (): void => {
+    saveSelected.current?.()
+    lastButton.current = selectedButton.current
+    focus.current = 'list'
+    setListOpen(true)
+  }
+  const closeList = (): void => {
+    if (combination) changeCombination(false)
+    setListOpen(false)
+    listToggle.current?.focus({ preventScroll: true })
   }
   const setModuleEnabled = async (id: string, enabled: boolean): Promise<void> => {
     setModulePending(id)
@@ -308,23 +408,35 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       {diagnosticKey === undefined && (diagnosticOwner === undefined || diagnosticOwner.draft.loaded || diagnosticOwner.draft.error)
         && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
     </div>}
-    <div className={css.ruleWorkspace} data-rule-open={selected !== undefined || undefined} data-list-open={listOpen || combination || undefined} data-canvas-workspace>
-    <div className={css.ruleListPane}>
+    <div className={css.ruleWorkspace} data-rule-open={selected !== undefined || undefined} data-list-open={showList || undefined} data-canvas-workspace>
+    <div className={css.moduleScope}>
+      <ModuleScopePicker t={t} value={moduleFilter ? `module:${moduleFilter}` : allModules ? 'all' : 'active'} onChange={changeModuleScope} options={[
+        { value: 'active', label: t('rules.participatingModules') },
+        { value: 'all', label: t('rules.allModules') },
+        ...modules.map(module => ({ value: `module:${module.id}`, label: module.name || module.id, id: module.id, enabled: module.enabled === true })),
+      ]} />
+      <Button ref={listToggle} shape="pill" variant="outline" aria-controls={listPaneId} aria-expanded={showList} onClick={showList ? closeList : openList}>
+        <span className={css.disclosureMarker} aria-hidden="true" />{t('rules.list')}
+      </Button>
+      <Button ref={libraryToggle} className={css.libraryToggle} variant="outline" disabled={!selected?.draft.meta}
+        aria-label={t(libraryOpen ? 'rules.hideLibrary' : 'rules.showLibrary')}
+        title={t(libraryOpen ? 'rules.hideLibrary' : 'rules.showLibrary')}
+        aria-controls={selected?.draft.meta ? libraryId : undefined} aria-expanded={Boolean(selected?.draft.meta && libraryOpen)}
+        onClick={() => setLibraryOpen(!libraryOpen)}>
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" /><path d="M6 3v10m2.5-7h3.5m-3.5 3h3.5" /></svg>
+      </Button>
+    </div>
+    <div id={listPaneId} className={css.ruleListPane} hidden={!showList} onKeyDown={event => {
+      if (event.key !== 'Escape' || event.nativeEvent.isComposing || event.defaultPrevented) return
+      event.stopPropagation()
+      closeList()
+    }}>
     <div className={css.row}>
       <h2 ref={workspaceHeading} tabIndex={-1} className={css.workspaceHeading}>{t('rules.list')}</h2>
-      {selected && <Button shape="pill" variant="outline" onClick={() => { focus.current = 'detail'; changeCombination(false); setListOpen(false) }}>{t('rules.backToStructure')}</Button>}
       <Button shape="pill" variant="outline" aria-pressed={combination} onClick={() => changeCombination(!combination)}>{t('rules.combination')}</Button>
     </div>
     <div className={ui.listFilterRow} data-module-toolbar>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
-      <MenuSelect compact ariaLabel={t('rules.participatingModules')} value={allModules ? 'all' : 'active'} options={[
-        { value: 'active', label: t('rules.participatingModules') }, { value: 'all', label: t('rules.allModules') },
-      ]} onChange={value => {
-        const next = value === 'all'
-        if (props.browse) { props.browse.allModules = next; props.browse.moduleFilter = undefined; props.browse.publish?.() }
-        if (!props.browse?.publish) setAllModules(next)
-        if (!next && selected && !enabledIds.has(selected.moduleId)) back()
-      }} />
       <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
       {!combination && create.toolbar}
       {props.addingTarget && <TemplateTargetPicker t={t} modules={writableModuleTargets(store.meta.modules)}
@@ -374,7 +486,13 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         const pendingWinner = draft.activationPending === entry.value.id
         const selectableWinner = enabledIds.has(id) && entry.value.groupScope === 'cross-module' && entry.value.exclusive === true && Boolean(entry.value.group)
         return <li key={key} data-module-id={id}>
-          <button type="button" className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
+          <details className={css.ruleDisclosure}>
+            <summary><span>{entry.value.name || entry.value.id}</span></summary>
+            <small>{id} · {entry.value.id} · {entry.value.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, entry.value.layer)}
+              {!enabledIds.has(id) ? ' · ' + t('rules.moduleInactive') : entry.value.enabled === false ? ' · ' + t('rules.identity.disabled') : ''}
+              {combination && orderEntry && ' · ' + t('rules.combinationSequence', { sequence: orderEntry.sequence })}</small>
+          </details>
+          <button type="button" title={entry.value.name || entry.value.id} aria-label={t('rules.editNamed', { name: entry.value.name || entry.value.id })} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
             onClick={event => {
               if (key !== expanded) saveSelected.current?.()
               if (combination) changeCombination(false)
@@ -382,12 +500,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
               focus.current = 'detail'
               select(key)
               setListOpen(false)
-              if (key === expanded) { detailHeading.current?.focus(); focus.current = undefined }
             }}>
-            <span>{entry.value.name || entry.value.id}</span>
-            <small>{id} · {entry.value.id} · {entry.value.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, entry.value.layer)}
-              {!enabledIds.has(id) ? ' · ' + t('rules.moduleInactive') : entry.value.enabled === false ? ' · ' + t('rules.identity.disabled') : ''}
-              {combination && orderEntry && ' · ' + t('rules.combinationSequence', { sequence: orderEntry.sequence })}</small>
+            <span aria-hidden="true">↗</span>
           </button>
           {combination && orderEntry && moveButtons(orderEntry)}
           {combination && selectableWinner && <Button shape="pill" variant="outline" disabled={readOnly(id) || modulePending !== undefined || order.busy || orderBlocked.has(id)}
@@ -400,7 +514,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         </li>
       })}
     </ul>
-    {entries.length === 0 && moduleSettings.length === 0 && (query !== '' || view !== 'all') && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}
+    {entries.length === 0 && moduleSettings.length === 0 && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}
     {!combination && <>{instructionCards}
     {props.beforeCards}
     {moduleSettings.map(item => <div key={`module-settings-${item.moduleId}`} className={css.workspace} data-module-settings={item.moduleId}>{props.renderModuleSettings!(item.moduleId, item.layers)}</div>)}</>}
@@ -409,7 +523,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {selected && <div className={css.ruleDetail}>
       <h2 ref={detailHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{selected.moduleId} / {selected.entry.value.id}</h2>
       <RuleCard key={selected.key} t={t} entry={selected.entry} draft={selected.draft} editor={selected.editor} meta={store.meta} source={selected.moduleId} moduleId={selected.moduleId} disabled={readOnly(selected.moduleId)}
-        expanded onToggle={() => { saveSelected.current?.(); const open = listOpen || combination; focus.current = open ? 'detail' : 'list'; if (open) changeCombination(false); setListOpen(!open) }} onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
+        expanded onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
+        libraryOpen={libraryOpen} libraryId={libraryId} onCloseLibrary={() => {
+          setLibraryOpen(false)
+          libraryToggle.current?.focus({ preventScroll: true })
+        }}
         diagnosticActionId={diagnosticKey === selected.key ? diagnosticTarget?.actionId : undefined}
         onRuleEdit={props.onRuleEdit}
         onActivate={() => refreshExclusivePeers(selected.moduleId, selected.entry.value)}

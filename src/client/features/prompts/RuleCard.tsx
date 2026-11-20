@@ -26,7 +26,7 @@ import css from './rules.module.css'
 
 export function RuleCard(props: {
   t: PromptToolTranslate; entry: RuleEntry; draft: RulesDraft; editor: RuleEditor; meta: EngineMeta
-  expanded: boolean; onToggle: () => void; disabled?: boolean; onDuplicate: () => void
+  expanded: boolean; disabled?: boolean; onDuplicate: () => void
   /** 折叠卡状态池（工作台草稿池，跨折叠与切页保留）。 */
   expandedRows: Map<string, boolean>
   headerActions?: ReactNode
@@ -38,6 +38,9 @@ export function RuleCard(props: {
   nodeBrowse?: Map<string, string>
   canvasBrowse?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>
   onBrowseChange?: () => void
+  libraryOpen: boolean
+  libraryId: string
+  onCloseLibrary: () => void
   diagnosticActionId?: string
   onRuleEdit?: () => void
   onActivate?: () => void
@@ -140,8 +143,7 @@ export function RuleCard(props: {
     >
     <header className={css.canvasTopbar}>
       <div className={css.contextCluster}>
-      <Button shape="pill" variant="outline" onClick={props.onToggle}>{t('rules.backToList')}</Button>
-      <div className={css.canvasIdentity}><strong>{rule.name || rule.id}</strong><small>{props.source} / {rule.id} · {summary}</small><small role="status">{saveStatus ?? t(rulesDirty(draft, entry.key) ? 'rules.dirty' : 'rules.clean')}{publication ? ' · ' + t('publication.pending') : ''}</small></div>
+      <div className={css.canvasIdentity} title={`${props.source} / ${rule.id} · ${summary}`}><strong>{rule.name || rule.id}</strong><small role="status" data-clean={!saveStatus && !publication && !rulesDirty(draft, entry.key) || undefined}>{saveStatus ?? t(rulesDirty(draft, entry.key) ? 'rules.dirty' : 'rules.clean')}{publication ? ' · ' + t('publication.pending') : ''}</small></div>
       </div>
       <div className={css.commandCluster}>
       <span className={css.headerActions} data-rule-header-actions>{props.headerActions}<span className={css.switchLine}>
@@ -206,6 +208,7 @@ export function RuleCard(props: {
       {unsupported && <p role="alert" className={css.error}>{t('rules.unsupported')}</p>}
         <section data-config-panel="rule" aria-label={t('rules.stepsTab')} className={css.section}>{draft.meta && <RuleStepsPanel
           t={t} rule={rule} meta={draft.meta} engineMeta={props.meta} fields={draft.fields} expanded={props.expandedRows}
+          libraryOpen={props.libraryOpen} libraryId={props.libraryId} onCloseLibrary={props.onCloseLibrary}
           prefix={props.source ?? rule.id} fieldKey={entry.key} browseKey={JSON.stringify([props.moduleId, entry.key])} nodeBrowse={props.nodeBrowse} canvasBrowse={props.canvasBrowse} onBrowseChange={props.onBrowseChange} diagnosticActionId={props.diagnosticActionId} disabled={disabled} onDraft={onDraft}
           onChange={next => patch(next)} onMove={(path, index, offset) => autosave.commit(() => {
             if (!disabled && !unsupported) void editor.move(entry.key, path, index, offset)

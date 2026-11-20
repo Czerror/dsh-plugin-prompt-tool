@@ -1,4 +1,8 @@
 export const RULES_ZH = {
+  'rules.editNamed': '编辑规则「{name}」',
+  'canvas.controls': '画布视图', 'canvas.zoomOut': '缩小', 'canvas.zoomIn': '放大', 'canvas.fit': '适应画布',
+  'canvas.keys': '画布快捷键', 'canvas.pan': '聚焦画布后平移', 'canvas.panFast': '配合方向键加速平移', 'canvas.reset': '复位节点与视角',
+  'canvas.legend': '图例', 'canvas.condition': '条件', 'canvas.order': '同点次序', 'canvas.orderHint': '同一执行点内的动作次序', 'canvas.in': '入口', 'canvas.out': '出口',
   'rules.definition': '定义',
   'rules.ruleSettings': '规则设置',
   'rules.toolsMenu': '更多',
@@ -55,6 +59,7 @@ export const RULES_ZH = {
   'rules.sessionModel': '当前会话模型', 'rules.reasoningEffort': '思维程度',
   'rules.moduleModelHint': '此处切换当前会话模型。模块的模型覆盖与采样参数由「请求参数」动作编辑。',
   'rules.nodeLibrary': '动作条件库', 'rules.libraryAddHint': '拖到画布中的目标区域，或点击添加；浏览条目不会新增节点。', 'rules.ruleOverview': '规则概要',
+  'rules.showLibrary': '显示动作条件库', 'rules.hideLibrary': '隐藏动作条件库',
   'rules.moduleCenter': '模块中心', 'rules.librarySearch': '搜索动作和条件', 'rules.libraryConditions': '条件', 'rules.libraryActions': '动作', 'rules.ruleEditor': '规则编辑',
   'rules.openModule': '打开模块规则',
   'rules.moduleSearch': '搜索模块', 'rules.moduleFilter': '模块状态筛选', 'rules.moduleAll': '全部模块', 'rules.moduleDisabled': '已停用',
@@ -112,6 +117,10 @@ export const RULES_ZH = {
   'rules.create.none': '暂无已安装模块',
 } as const
 export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
+  'rules.editNamed': 'Edit rule “{name}”',
+  'canvas.controls': 'Canvas view', 'canvas.zoomOut': 'Zoom out', 'canvas.zoomIn': 'Zoom in', 'canvas.fit': 'Fit to view',
+  'canvas.keys': 'Canvas shortcuts', 'canvas.pan': 'Pan the focused canvas', 'canvas.panFast': 'Hold with arrow keys to pan faster', 'canvas.reset': 'Reset positions and view',
+  'canvas.legend': 'Legend', 'canvas.condition': 'Condition', 'canvas.order': 'Step order', 'canvas.orderHint': 'Action order within the same execution point', 'canvas.in': 'Input', 'canvas.out': 'Output',
   'rules.definition': 'Definition',
   'rules.ruleSettings': 'Rule settings',
   'rules.toolsMenu': 'More',
@@ -168,6 +177,7 @@ export const RULES_EN: Record<keyof typeof RULES_ZH, string> = {
   'rules.sessionModel': 'Current session model', 'rules.reasoningEffort': 'Reasoning effort',
   'rules.moduleModelHint': 'Change the current session model here. Module model overrides and sampling parameters belong to Request parameters actions.',
   'rules.nodeLibrary': 'Actions and conditions', 'rules.libraryAddHint': 'Drag onto a canvas target or choose Add. Browsing an item does not create a node.', 'rules.ruleOverview': 'Rule overview',
+  'rules.showLibrary': 'Show actions and conditions', 'rules.hideLibrary': 'Hide actions and conditions',
   'rules.moduleCenter': 'Module center', 'rules.librarySearch': 'Search actions and conditions', 'rules.libraryConditions': 'Conditions', 'rules.libraryActions': 'Actions', 'rules.ruleEditor': 'Rule editor',
   'rules.openModule': 'Open module rules',
   'rules.moduleSearch': 'Search modules', 'rules.moduleFilter': 'Filter module status', 'rules.moduleAll': 'All modules', 'rules.moduleDisabled': 'Disabled',
