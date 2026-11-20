@@ -516,21 +516,24 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       event.stopPropagation()
       closeList()
     }}>
-    <div className={css.row}>
+    <div className={css.ruleListHeader}>
       <h2 ref={workspaceHeading} tabIndex={-1} className={css.workspaceHeading}>{t('rules.list')}</h2>
       <Button shape="pill" variant="outline" aria-pressed={combination} onClick={() => changeCombination(!combination)}>{t('rules.combination')}</Button>
     </div>
     <div className={ui.listFilterRow} data-module-toolbar>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
-      <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
       {!combination && create.toolbar}
       {props.addingTarget && <TemplateTargetPicker t={t} modules={writableModuleTargets(store.meta.modules)}
         existingIds={(store.meta.modules ?? []).map(module => module.id)}
         newModuleTemplate={BLANK_MODULE_TEMPLATE} onPick={() => {}} onClose={() => {}} />}
-      <span className={ui.batchControls}>
-        <Button shape="pill" variant="outline" data-batch="enable" disabled={batchDisabled} onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</Button>
-        <Button shape="pill" variant="outline" data-danger data-batch="disable" disabled={batchDisabled} onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible')}</Button>
-      </span>
+      <details className={css.listOptions}>
+        <summary>{t('rules.listOptions')}{view !== 'all' && ' · ' + (view === 'context-activation' ? t('rules.worldBook') : translateLabel(t, LAYER_LABEL_KEYS, view))}</summary>
+        <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
+        <span className={ui.batchControls}>
+          <Button shape="pill" variant="outline" data-batch="enable" disabled={batchDisabled} onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</Button>
+          <Button shape="pill" variant="outline" data-danger data-batch="disable" disabled={batchDisabled} onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible')}</Button>
+        </span>
+      </details>
     </div>
     {create.dialogs}
     {owners.map(({ moduleId: id, draft, editor }) => {
@@ -565,14 +568,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         const orderEntry = orderByIdentity.get(row.identity)
         const pendingWinner = draft.activationPending === entry.value.id
         const selectableWinner = enabledIds.has(id) && entry.value.groupScope === 'cross-module' && entry.value.exclusive === true && Boolean(entry.value.group)
+        const name = entry.value.name || entry.value.id
         return <li key={key} data-module-id={id}>
-          <details className={css.ruleDisclosure}>
-            <summary><span>{entry.value.name || entry.value.id}</span></summary>
-            <small>{id} · {entry.value.id} · {entry.value.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, entry.value.layer)}
-              {!enabledIds.has(id) ? ' · ' + t('rules.moduleInactive') : entry.value.enabled === false ? ' · ' + t('rules.identity.disabled') : ''}
-              {combination && orderEntry && ' · ' + t('rules.combinationSequence', { sequence: orderEntry.sequence })}</small>
-          </details>
-          <button type="button" title={entry.value.name || entry.value.id} aria-label={t('rules.editNamed', { name: entry.value.name || entry.value.id })} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
+          <button type="button" title={name} aria-label={t('rules.editNamed', { name })} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
             onClick={event => {
               if (key !== expanded) saveSelected.current?.()
               if (combination) changeCombination(false)
@@ -581,8 +579,15 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
               select(key)
               setListOpen(false)
             }}>
-            <span aria-hidden="true">↗</span>
+            <strong>{name}</strong>
+            {!moduleFilter && <small>{id}</small>}
           </button>
+          <details className={css.ruleDisclosure}>
+            <summary aria-label={t('rules.ruleDetails', { name })} title={t('rules.ruleDetails', { name })}><IconChevronDownOutlineRegular /></summary>
+            <small>{id} · {entry.value.id} · {entry.value.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, entry.value.layer)}
+              {!enabledIds.has(id) ? ' · ' + t('rules.moduleInactive') : entry.value.enabled === false ? ' · ' + t('rules.identity.disabled') : ''}
+              {combination && orderEntry && ' · ' + t('rules.combinationSequence', { sequence: orderEntry.sequence })}</small>
+          </details>
           {combination && id !== pinnedModule && orderEntry && moveButtons(orderEntry)}
           {combination && selectableWinner && <Button shape="pill" variant="outline" disabled={readOnly(id) || modulePending || order.busy || orderBlocked.has(id)}
             onClick={() => {
@@ -599,7 +604,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {props.beforeCards}
     {moduleSettings.map(item => <div key={`module-settings-${item.moduleId}`} className={css.workspace} data-module-settings={item.moduleId}>{props.renderModuleSettings!(item.moduleId, item.layers)}</div>)}</>}
     </div>
-    {!selected && <div className={css.emptyCanvas}><h2>{t('rules.structure')}</h2><p>{t('rules.chooseNode')}</p></div>}
+    {!selected && !showList && <div className={css.emptyCanvas}>
+      <h2>{t('rules.noOpenRule')}</h2>
+      <Button variant="outline" aria-controls={listPaneId} onClick={openList}>{t('rules.list')}</Button>
+    </div>}
     {selected && <div className={css.ruleDetail}>
       <h2 ref={detailHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{selected.moduleId} / {selected.entry.value.id}</h2>
       <RuleCard key={selected.key} t={t} entry={selected.entry} draft={selected.draft} editor={selected.editor} meta={store.meta} source={selected.moduleId} moduleId={selected.moduleId} disabled={readOnly(selected.moduleId)}

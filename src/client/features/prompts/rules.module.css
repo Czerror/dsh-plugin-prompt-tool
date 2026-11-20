@@ -48,9 +48,16 @@
 .canvasSurface .canvasLayout { display: flex; }
 .canvasTopbar { position: absolute; inset: 68px 12px auto; z-index: 6; display: flex; align-items: flex-start; gap: 8px; pointer-events: none; }
 .contextCluster, .commandCluster { border: 1px solid #313844; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0003; pointer-events: auto; min-inline-size: 0; }
-.contextCluster { display: grid; gap: 4px; flex: 1 1 auto; padding: 6px 10px; }
-.canvasIdentity { display: grid; grid-template-columns: fit-content(45%) auto minmax(0, 1fr); align-items: baseline; justify-content: start; column-gap: 6px; color: #b5c2d4; font-size: 13px; overflow-wrap: anywhere; }
+.contextCluster { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; max-inline-size: 28rem; padding: 4px 8px; }
+.canvasIdentity { display: grid; grid-template-columns: fit-content(44%) auto minmax(0, 1fr) auto; align-items: center; column-gap: 5px; min-block-size: 26px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #b5c2d4; font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
+.canvasIdentity:is(:hover, [aria-expanded=true]) { background: #242e3d; }
+.canvasIdentity:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 2px; }
+.canvasIdentity > :is(span:first-child, strong), .canvasSaveState { min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .canvasIdentity strong { color: #f0f5fc; font-size: 14px; }
+.canvasIdentity[aria-expanded=true] svg { rotate: 180deg; }
+.identityDetails { display: grid; gap: 6px; margin: 0; overflow-wrap: anywhere; }
+.identityDetails dt { font-weight: 600; }
+.identityDetails dd { margin: 0 0 8px; }
 .canvasStates { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; color: #b5c2d4; overflow-wrap: anywhere; }
 .canvasStates small { font-size: 11px; }
 .moduleState, .pausedState { padding-inline: 6px; border: 1px solid #3c4859; border-radius: 5px; }
@@ -58,7 +65,7 @@
 .pausedState { color: #f0c480; border-color: #695431; }
 .canvasSaveState::before { content: ""; display: inline-block; inline-size: 6px; block-size: 6px; margin-inline-end: 5px; border-radius: 50%; background: #efbd70; }
 .canvasSaveState[data-clean]::before { background: #6bd59d; }
-.commandCluster { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; padding: 4px 6px; }
+.commandCluster { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; max-inline-size: 100%; margin-inline-start: auto; padding: 4px 6px; }
 .ruleEnable { display: inline-flex; align-items: center; gap: 4px; min-block-size: 28px; white-space: nowrap; cursor: pointer; }
 .ruleEnable:has(button:disabled) { cursor: default; }
 .compactCommand { display: inline-flex; }
@@ -95,13 +102,14 @@
   .ruleWorkspace[data-list-open] > .ruleDetail { margin-inline-start: calc(17rem + 24px); }
   .ruleListPane:not([hidden]) { inset-block-start: 68px; }
 }
-@container rule-workspace (width >= 73rem) {
+@container rule-workspace (width >= 64rem) {
   .canvasTopbar { inset: 12px 148px auto 340px; }
   .ruleWorkspace[data-list-open] .canvasTopbar { inset-inline-start: 44px; }
 }
 @container rule-workspace (width < 43rem) {
   .canvasTopbar { flex-direction: column; align-items: stretch; gap: 4px; }
-  .commandCluster { justify-content: flex-start; }
+  .contextCluster { max-inline-size: none; }
+  .commandCluster { justify-content: flex-start; margin-inline-start: 0; }
 }
 @container rule-workspace (width < 30rem) {
   .moduleScope { max-inline-size: calc(100% - 68px); }
@@ -120,15 +128,24 @@
 .ruleDetail { display: flex; }
 .ruleDetail > button { align-self: flex-start; }
 .workspaceHeading { margin: 0; font: 600 14px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
+.ruleListHeader { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.listOptions { min-inline-size: 0; }
+.listOptions summary { padding: 5px 0; color: #b5c2d4; cursor: pointer; }
+.listOptions[open] > :not(summary) { margin-block: 4px; }
 .ruleList { display: flex; flex: 0 0 auto; flex-direction: column; gap: 4px; margin: 0; padding: 2px; max-block-size: 60vh; overflow: auto; list-style: none; }
-.ruleList > li { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.ruleList > li { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .moduleParticipation { display: flex; flex-wrap: wrap; gap: 8px 16px; min-width: 0; margin: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
-.ruleDisclosure { flex: 1; min-inline-size: 0; }
-.ruleDisclosure summary { padding: 10px 4px; cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
-.ruleDisclosure small { display: block; padding: 0 6px 10px 14px; color: #aeb8c9; overflow-wrap: anywhere; }
-.ruleList > li { border-block-end: 1px solid #303742; }
-.ruleChoice { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border: 1px solid transparent; border-radius: 6px; color: #c9d5e8; background: #242e3b; font-size: 17px; cursor: pointer; }
-.ruleChoice[aria-current], .ruleChoice:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.ruleDisclosure[open] { flex-basis: 100%; }
+.ruleDisclosure summary { position: absolute; inset: 0 0 auto auto; display: grid; place-items: center; inline-size: 34px; min-block-size: 36px; border-radius: 6px; color: #b5c2d4; cursor: pointer; list-style: none; }
+.ruleDisclosure summary::-webkit-details-marker { display: none; }
+.ruleDisclosure[open] summary svg { rotate: 180deg; }
+.ruleDisclosure small { display: block; padding: 0 8px 8px; color: #b5c2d4; overflow-wrap: anywhere; }
+.ruleChoice { display: grid; align-content: center; inline-size: calc(100% - 38px); min-block-size: 36px; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; text-align: start; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.ruleChoice strong, .ruleChoice small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ruleChoice small { color: #b5c2d4; }
+.ruleChoice:hover, .ruleDisclosure summary:hover { background: #222c38; }
+.ruleChoice[aria-current] { background: #26344a; border-color: #445879; }
+.ruleChoice:focus-visible, .ruleDisclosure summary:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }
 .ruleList button[aria-disabled=true] { opacity: .6; cursor: default; }
 .ruleCanvas { display: grid; position: relative; gap: 12px; min-width: 0; }
 .ruleCanvas[data-node-open] > .steps, .ruleCanvas:not([data-node-open]) > .ruleProperties { display: none; }
@@ -251,36 +268,44 @@
 }
 @media (pointer: coarse) {
   .switchLine, .conditionOrdinal, .stepToggle { height: 44px; min-height: 44px; }
+  .canvasIdentity { min-block-size: 44px; }
   .moduleScope > button { min-block-size: 44px; }
   .moduleScope > .libraryToggle, .compactCommand button { min-inline-size: 44px; }
 }
-.libraryDetail { display: grid; gap: 8px; min-inline-size: 0; }
-.libraryHeading { display: flex; padding: 6px 4px 8px; border-block-end: 1px solid #313b4b; }
-.libraryBody { display: flex; flex: 1 1 auto; min-block-size: 0; flex-direction: column; gap: 8px; overflow: auto; overscroll-behavior: contain; }
-.libraryCategories { display: flex; gap: 4px; }
-.libraryCategories button { display: flex; justify-content: center; align-items: center; gap: 6px; flex: 1; border: 1px solid #313844; border-radius: 6px; padding: 7px; background: transparent; color: inherit; }
-.categoryIcon { inline-size: 8px; block-size: 8px; flex: none; border: 1.5px solid #e9c777; rotate: 45deg; }
-.categoryIcon[data-category=action] { border-radius: 2px; border-color: #79d7ae; rotate: none; }
-.libraryCategories button[aria-pressed=true] { background: #293b55; border-color: #72aaff; }
+.libraryDetail { display: grid; gap: 8px; min-inline-size: 0; margin: 2px 4px 8px; padding: 8px; border-inline-start: 2px solid #40536d; }
+.libraryHeading { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 2px 5px; border-block-end: 1px solid #313b4b; }
+.libraryHeading strong { font-size: 14px; }
+.libraryBody { flex: 1 1 auto; min-block-size: 0; padding: 2px; overflow: auto; overscroll-behavior: contain; }
+.libraryGroup + .libraryGroup { margin-block-start: 6px; }
+.librarySection { margin: 0; }
+.librarySection button { display: flex; align-items: center; gap: 7px; inline-size: 100%; min-block-size: 30px; padding: 3px 4px; border: 0; border-radius: 5px; background: transparent; color: #b5c2d4; text-align: start; font: inherit; font-weight: 600; cursor: pointer; }
+.librarySection button:hover:not([aria-disabled]) { background: #233044; }
+.librarySection button[aria-disabled] { cursor: default; }
+.librarySection button[aria-expanded=false] svg { rotate: -90deg; }
+.libraryCount { min-inline-size: 18px; padding-inline: 4px; border-radius: 5px; background: #2b3442; color: #c3cfdf; text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; }
 .canvasLibrary > * { flex: 0 0 auto; min-inline-size: 0; max-inline-size: 100%; }
-.libraryBody > * { flex: 0 0 auto; }
-.libraryBody > .libraryItems { flex: 1 1 auto; min-block-size: 76px; overflow: auto; }
-.libraryItems { display: flex; flex-direction: column; gap: 3px; align-self: stretch; }
-.libraryDetail { max-block-size: 35%; overflow: auto; }
-.libraryItem { display: flex; gap: 10px; align-items: flex-start; padding: 10px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: inherit; text-align: start; font: inherit; cursor: pointer; }
-.libraryItem:hover, .libraryItem[aria-pressed=true] { background: #253146; border-color: #435a79; }
+.canvasLibrary > .libraryBody { flex: 1 1 auto; }
+.libraryItem { display: flex; gap: 8px; align-items: center; inline-size: 100%; padding: 6px 5px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: inherit; text-align: start; font: inherit; cursor: pointer; }
+.libraryItem:hover, .libraryItem[aria-expanded=true] { background: #253146; border-color: #435a79; }
+.librarySection button:focus-visible, .libraryItem:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }
 .libraryItem > span:last-child { min-inline-size: 0; flex: 1; }
 .libraryItem strong, .libraryItem small { display: block; }
-.libraryItem small { margin-block-start: 4px; color: #9ca7b7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.libraryItem small { color: #aab7ca; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .libraryIcon { display: grid; place-items: center; flex: none; inline-size: 30px; block-size: 30px; border-radius: 7px; color: #95bcff; background: #25364e; }
-.libraryItem[data-library-kind=action] .libraryIcon { background: #19382f; color: #8ae2b7; }
-.canvasLibrary .libraryItem strong { font-size: 14px; line-height: 20px; }
+.libraryIcon[data-library-kind=action] { background: #19382f; color: #8ae2b7; }
+.conditionMark { inline-size: 9px; block-size: 9px; border: 1px solid currentColor; rotate: 45deg; }
+.canvasLibrary .libraryItem strong { font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 .ruleProperties .inspectorHeading h3 { font-size: 17px; line-height: 23px; }
-.inspectorHeading { display: flex; align-items: flex-start; justify-content: space-between; inline-size: 100%; gap: 8px; }
+.inspectorHeading { display: flex; align-items: flex-start; justify-content: space-between; inline-size: 100%; gap: 8px; padding-block-end: 8px; border-block-end: 1px solid #313b4b; }
+.inspectorHeading > div { min-inline-size: 0; }
 .inspectorBody { display: flex; flex: 1; flex-direction: column; align-items: stretch; gap: 10px; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 2px 4px; }
-.inspectorHeading h3 { margin: 0 0 5px; }
-.inspectorHeading small { color: #9ca7b7; }
-.inspectorHeading button { padding: 3px 8px; border: 1px solid #313844; border-radius: 6px; background: transparent; color: inherit; font-size: 18px; }
+.inspectorHeading h3 { margin: 0 0 3px; overflow-wrap: anywhere; }
+.inspectorHeading small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aab7ca; }
+.inspectorHeading button { flex: none; }
+.inspectorBody > div:empty { display: none; }
 .libraryDetail p { margin: 0; overflow-wrap: anywhere; }
-.propertySummary { align-self: stretch; color: #9ca7b7; }
+.propertySummary { align-self: stretch; color: #aab7ca; overflow-wrap: anywhere; }
 .propertyFooter { flex: none; padding-block-start: 10px; align-self: stretch; border-block-start: 1px solid #313844; }
+@media (pointer: coarse) {
+  .librarySection button { min-block-size: 44px; }
+}

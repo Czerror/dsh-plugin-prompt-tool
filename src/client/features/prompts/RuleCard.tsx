@@ -13,6 +13,7 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { TextInput } from '../../ui/TextInput.tsx'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
+import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
@@ -54,11 +55,11 @@ export function RuleCard(props: {
   const panelId = useId()
   const [confirming, setConfirming] = useState(false)
   const [discarding, setDiscarding] = useState(false)
-  const [drawer, setDrawer] = useState<'properties' | 'definition' | undefined>()
+  const [drawer, setDrawer] = useState<'properties' | 'definition' | 'identity' | undefined>()
   const surface = useRef<HTMLElement>(null)
   const drawerTrigger = useRef<HTMLElement>()
-  const openDrawer = (next: 'properties' | 'definition'): void => {
-    drawerTrigger.current = document.activeElement as HTMLElement
+  const openDrawer = (next: NonNullable<typeof drawer>, trigger: HTMLButtonElement): void => {
+    drawerTrigger.current = trigger
     setDrawer(drawer === next ? undefined : next)
   }
   useLayoutEffect(() => {
@@ -141,6 +142,8 @@ export function RuleCard(props: {
     : draft.busy === 'save' ? t('rules.saving')
       : hasRuleFields(draft, entry.key) ? t('rules.fieldsPending')
         : draft.remote ? t('rules.conflict') : !publication && !activationPending ? draft.error : undefined
+  const saveText = (saveStatus ?? t(dirty ? 'rules.dirty' : 'rules.clean')) + (publication ? ' · ' + t('publication.pending') : '')
+  const drawerLabel = t(drawer === 'identity' ? 'rules.identityDetails' : drawer === 'properties' ? 'rules.ruleSettings' : 'rules.definition')
   const retry = editor.retryKind
   return <AutoSaveSelection.Provider value={save}><section ref={surface} id={panelId} className={css.canvasSurface} aria-label={ruleName}
     data-rule-id={rule.id} data-rule-key={entry.key}
@@ -149,16 +152,18 @@ export function RuleCard(props: {
     >
     <header className={css.canvasTopbar}>
       <div className={css.contextCluster}>
-        <div className={css.canvasIdentity} title={`${props.moduleId} / ${rule.id} · ${summary}`}>
+        <button type="button" className={css.canvasIdentity} title={`${props.moduleId} / ${rule.id} · ${summary}`}
+          aria-expanded={drawer === 'identity'} onClick={event => openDrawer('identity', event.currentTarget)}>
           <span>{moduleName}</span>
           <span aria-hidden="true">›</span>
           <strong>{ruleName}</strong>
-        </div>
+          <IconChevronDownOutlineRegular />
+        </button>
         <div className={css.canvasStates}>
           <small className={css.moduleState} data-enabled={moduleEnabled}>{t(moduleEnabled ? 'rules.moduleIsEnabled' : 'rules.moduleIsDisabled')}</small>
           {!modulesEnabled && <small className={css.pausedState}>{t('rules.modulePaused')}</small>}
           <small className={css.canvasSaveState} role="status" data-clean={!saveStatus && !publication && !dirty || undefined}>
-            {saveStatus ?? t(dirty ? 'rules.dirty' : 'rules.clean')}{publication ? ' · ' + t('publication.pending') : ''}
+            {saveText}
           </small>
         </div>
       </div>
@@ -173,13 +178,13 @@ export function RuleCard(props: {
           </label>
         </span>
         <HintTooltip label={t('rules.ruleSettings')}><span className={css.compactCommand}>
-          <Button variant="outline" shape="pill" aria-label={t('rules.ruleSettings')} aria-expanded={drawer === 'properties'} onClick={() => openDrawer('properties')}>
+          <Button variant="outline" shape="pill" aria-label={t('rules.ruleSettings')} aria-expanded={drawer === 'properties'} onClick={event => openDrawer('properties', event.currentTarget)}>
             <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M2 4h3m3 0h6M2 8h7m3 0h2M2 12h2m3 0h7M5 2.5v3M9 6.5v3M4 10.5v3" /></svg>
             <span>{t('rules.ruleSettings')}</span>
           </Button>
         </span></HintTooltip>
         <HintTooltip label={t('rules.definition')}><span className={css.compactCommand}>
-          <Button variant="outline" shape="pill" aria-label={t('rules.definition')} aria-expanded={drawer === 'definition'} onClick={() => openDrawer('definition')}>
+          <Button variant="outline" shape="pill" aria-label={t('rules.definition')} aria-expanded={drawer === 'definition'} onClick={event => openDrawer('definition', event.currentTarget)}>
             <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><path d="m5.5 4.5-3.5 3.5 3.5 3.5m5-7 3.5 3.5-3.5 3.5m-1-8-3 9" /></svg>
             <span>{t('rules.definition')}</span>
           </Button>
@@ -201,9 +206,14 @@ export function RuleCard(props: {
         disabled={draft.busy !== undefined} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         onRetry={() => { void editor.retryPublication() }} />
       {targets.size > 0 && (reason ? <HintTooltip label={reason}><p role="status" className={css.status} tabIndex={0} aria-label={status + ' · ' + reason}>{status}</p></HintTooltip> : <p role="status" className={css.status}>{status}</p>)}
-      {drawer !== undefined && <aside data-rule-drawer className={`${css.definitionDrawer} ${ui.configForm}`} aria-label={t(drawer === 'properties' ? 'rules.ruleSettings' : 'rules.definition')}
+      {drawer !== undefined && <aside data-rule-drawer className={`${css.definitionDrawer} ${ui.configForm}`} aria-label={drawerLabel}
         onKeyDown={event => { if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.stopPropagation(); setDrawer(undefined) } }}>
       <Button variant="outline" shape="pill" onClick={() => setDrawer(undefined)}>{t('rules.backToStructure')}</Button>
+      {drawer === 'identity' && <dl className={css.identityDetails}>
+        <dt>{t('rules.module')}</dt><dd>{moduleName}</dd>
+        <dt>{t('rules.name')}</dt><dd>{ruleName}</dd>
+        {(saveStatus || publication) && <><dt>{t('rules.saveStateLabel')}</dt><dd>{saveText}</dd></>}
+      </dl>}
       {drawer === 'properties' && <><div className={css.headerFields}>
         <FormField label={t('rules.rename')}><TextInput value={rule.id} spellCheck={false} readOnly={disabled} onChange={event => patch({ id: event.target.value })} /></FormField>
         <FormField label={t('rules.name')}><TextInput value={rule.name ?? ''} readOnly={disabled} onChange={event => patch({ name: event.target.value || undefined })} /></FormField>

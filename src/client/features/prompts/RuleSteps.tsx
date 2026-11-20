@@ -8,14 +8,15 @@
  *   否则卡       = 规则级 `else`。
  * 每张卡都是 TagInput 式的小卡：卡头单行摘要，展开才编辑，右侧 ↑↓ 与 × 。
  */
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { RuleAction, RuleCondition, RuleDefinition, RuleEditorMeta } from '../../../shared/rules.ts'
 import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { EngineMeta } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { Button } from '../../ui/Button.tsx'
+import { AutoSaveSelection } from '../../ui/AutoSaveSelection.ts'
 import { SearchInput } from '../../ui/SearchInput.tsx'
-import { IconChevronDownOutlineRegular, IconCopyOutlineRegular } from '../../ui/icons.tsx'
+import { IconChevronDownOutlineRegular, IconCloseFillRegular, IconCopyOutlineRegular } from '../../ui/icons.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { StepCard, CloseButton, StepAdd, type StepCreation } from './RuleStepCard.tsx'
@@ -26,12 +27,117 @@ import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { triggerLabel } from './rule-labels.ts'
 import { ruleExecutionPoint } from '../../data/rule-execution-point.ts'
 import { RuleCanvas, type RuleCanvasView } from './RuleCanvas.tsx'
-import { projectRuleCanvas } from './rule-canvas-projection.ts'
+import { projectRuleCanvas, type RuleCanvasTarget } from './rule-canvas-projection.ts'
 import {
   actionSummary, branchSummary, collectActionIds, conditionChain, conditionSummary, nodeSummary,
   isActionNode, isBranchNode, nodeList, type RuleBranch, type RuleNode,
 } from './rule-steps.ts'
 import css from './rules.module.css'
+
+type LibraryKind = 'condition' | 'action'
+
+function RuleLibrary({ t, meta, libraryOpen, libraryId, onCloseLibrary, disabled, targets, payload, canAdd, add, addBranch, setDragPayload }: {
+  t: PromptToolTranslate
+  meta: RuleEditorMeta
+  libraryOpen: boolean
+  libraryId: string
+  onCloseLibrary: (restoreFocus: boolean) => void
+  disabled: boolean
+  targets: readonly RuleCanvasTarget[]
+  payload: (kind: LibraryKind, name: string) => string
+  canAdd: (id: string, text: string) => boolean
+  add: (id: string, text: string) => void
+  addBranch: (target: RuleCanvasTarget) => void
+  setDragPayload: (data: string) => void
+}): ReactNode {
+  const [query, setQuery] = useState('')
+  const [expanded, setExpanded] = useState({ condition: true, action: false })
+  const [selected, select] = useState<{ kind: LibraryKind; name: string }>()
+  const [targetId, setTargetId] = useState('')
+  const groups = useMemo(() => (['condition', 'action'] as const).map(kind => ({
+    kind,
+    // 只用名称建立搜索索引，示例摘要在显示条目时才生成。
+    items: (kind === 'condition' ? meta.predicates : meta.actions).map(entry => {
+      const label = triggerLabel(t, entry.kind)
+      let detail: string | undefined
+      return { entry, label, search: `${entry.kind} ${label}`.toLowerCase(), summary: () => detail ??= kind === 'condition'
+        ? conditionSummary(t, entry.example as RuleCondition) : actionSummary(t, { ...entry.example, kind: entry.kind } as RuleAction) }
+    }),
+  })), [meta, t])
+  if (!libraryOpen) return <section id={libraryId} className={css.canvasLibrary} hidden />
+  const filter = query.trim().toLowerCase()
+  const visible = groups.map(group => ({
+    ...group,
+    items: filter ? group.items.filter(item => item.search.includes(filter)) : group.items,
+  }))
+  return <section id={libraryId} className={css.canvasLibrary} aria-label={t('rules.nodeLibrary')} onKeyDown={event => {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
+    event.stopPropagation()
+    onCloseLibrary(true)
+  }}>
+    <header className={css.libraryHeading}>
+      <strong>{t('rules.nodeLibrary')}</strong>
+      <Button icon aria-label={t('rules.hideLibrary')} onClick={() => onCloseLibrary(true)}><IconCloseFillRegular /></Button>
+    </header>
+    <SearchInput aria-label={t('rules.librarySearch')} placeholder={t('rules.librarySearch')} value={query} onChange={event => setQuery(event.target.value)} />
+    <div className={css.libraryBody}>
+      {filter && visible.every(group => group.items.length === 0) && <p role="status">{t('rules.libraryNoMatch')}</p>}
+      {visible.map(({ kind, items }) => {
+        const open = filter ? items.length > 0 : expanded[kind]
+        const label = t(kind === 'condition' ? 'rules.libraryConditions' : 'rules.libraryActions')
+        const activeEntry = selected?.kind === kind && items.some(item => item.entry.kind === selected.name)
+        const showBranch = kind === 'action' && !filter
+        const available = open && (activeEntry || showBranch) ? targets.filter(target => (target.kind === 'condition') === (kind === 'condition')) : []
+        const target = available.find(item => item.id === targetId) ?? available[0]
+        const targetInput = <AutoSaveSelection.Provider value={undefined}>
+          <MenuSelect ariaLabel={t('rules.libraryTarget')} value={target?.id ?? ''}
+            options={available.map(item => ({ value: item.id, label: item.label }))} onChange={setTargetId} />
+        </AutoSaveSelection.Provider>
+        const branchButton = <Button variant="outline" disabled={disabled || !target}
+          onClick={() => { if (target) addBranch(target) }}>{t('rules.steps.addBranch')}</Button>
+        return <section key={kind} className={css.libraryGroup}>
+          <h4 className={css.librarySection}>
+            <button type="button" aria-expanded={open} aria-controls={`${libraryId}-${kind}`} aria-disabled={filter ? true : undefined}
+              onClick={() => { if (!filter) setExpanded({ ...expanded, [kind]: !expanded[kind] }) }}>
+              <IconChevronDownOutlineRegular /><span>{label}</span><span className={css.libraryCount}>{items.length}</span>
+            </button>
+          </h4>
+          <div id={`${libraryId}-${kind}`} hidden={!open}>
+            {open && items.map(({ entry, label: name, summary }) => {
+              const active = selected?.kind === kind && selected.name === entry.kind
+              const detail = summary()
+              return <div key={entry.kind}>
+                <button type="button" className={css.libraryItem} data-library-kind={kind} draggable={!disabled}
+                  onDragStart={event => {
+                    const data = payload(kind, entry.kind)
+                    setDragPayload(data)
+                    event.dataTransfer.effectAllowed = 'copy'
+                    event.dataTransfer.setData('application/x-prompt-tool-rule-node', data)
+                  }} onDragEnd={() => setDragPayload('')}
+                  aria-expanded={active} onClick={() => select(active ? undefined : { kind, name: entry.kind })}>
+                  <span className={css.libraryIcon} data-library-kind={kind} aria-hidden="true">{kind === 'condition' ? <span className={css.conditionMark} /> : <IconCopyOutlineRegular />}</span>
+                  <span><strong>{name}</strong><small>{detail === name ? entry.kind : detail}</small></span>
+                </button>
+                {active && <div className={css.libraryDetail}>
+                  <p>{detail}</p>
+                  <p>{t('rules.libraryAddHint')}</p>
+                  {targetInput}
+                  <Button shape="pill" variant="primary" disabled={!target || !canAdd(target.id, payload(kind, entry.kind))}
+                    onClick={() => { if (target) add(target.id, payload(kind, entry.kind)) }}>{t('rules.libraryAdd')}</Button>
+                  {showBranch && branchButton}
+                </div>}
+              </div>
+            })}
+            {open && showBranch && !activeEntry && <div className={css.libraryDetail}>
+              {targetInput}
+              {branchButton}
+            </div>}
+          </div>
+        </section>
+      })}
+    </div>
+  </section>
+}
 
 // 条件 not 的编辑路径沿用字段 owner 的 :not:0，定义中的 not 本身并非数组。
 function definitionPath(path: string): Array<string | number> {
@@ -219,7 +325,7 @@ export function RuleStepsPanel(props: {
   onChange: (rule: RuleDefinition) => void
   onMove: (path: string, index: number, offset: -1 | 1) => void
 }): ReactNode {
-  const { t, rule, meta, libraryOpen, libraryId } = props
+  const { t, rule, meta, libraryOpen } = props
   const disabled = props.disabled === true
   const then = nodeList(rule.then), otherwise = nodeList(rule.else)
   const usedIds = collectActionIds([...then, ...otherwise])
@@ -265,10 +371,6 @@ export function RuleStepsPanel(props: {
     return id
   } } })
   identityState.paths = nextPaths
-  const [targetId, setTargetId] = useState('')
-  const [libraryItem, setLibraryItem] = useState('')
-  const [libraryQuery, setLibraryQuery] = useState('')
-  const [libraryCategory, setLibraryCategory] = useState<'condition' | 'action'>('condition')
   const [dragPayload, setDragPayload] = useState('')
   const propertyId = useId()
   const structureHeading = useRef<HTMLHeadingElement>(null)
@@ -352,11 +454,12 @@ export function RuleStepsPanel(props: {
   const actionSelectable = (scopeConditional: boolean) =>
     scopeConditional ? meta.actions.filter(action => action.supportsWhen) : meta.actions
 
-  const activeTarget = graph.targets.find(target => target.id === targetId) ?? graph.targets[0]
   const selectedDescriptor = shownNode === undefined ? undefined : graph.descriptors.get(shownNode)
-  const libraryKind = libraryCategory
-  const libraryEntries = libraryKind === 'condition' ? meta.predicates : meta.actions
-  const selectedLibraryEntry = libraryEntries.find(entry => entry.kind === libraryItem)
+  const nodeTitle = graph.nodes.find(node => node.id === shownNode)?.title
+  const nodeIdentity = selectedDescriptor?.kind === 'action' ? selectedDescriptor.actionId
+    : selectedDescriptor?.kind === 'branch' ? t('rules.steps.branchLabel')
+      : selectedDescriptor?.kind === 'condition' ? t('rules.libraryConditions')
+        : selectedDescriptor?.kind === 'unknown' ? t('rules.steps.unknown') : selectedDescriptor?.path
   const payload = (kind: 'condition' | 'action', name: string): string => JSON.stringify({ rule: props.browseKey, kind, name })
   const parsePayload = (text: string): { kind: 'condition' | 'action'; name: string } | undefined => {
     try {
@@ -473,46 +576,12 @@ export function RuleStepsPanel(props: {
     <h3 ref={structureHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{t('rules.structure')}</h3>
     {props.diagnosticActionId !== undefined && diagnosticNode === undefined && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
     <div className={css.canvasLayout} data-library-open={libraryOpen || undefined}>
-    <section id={libraryId} className={css.canvasLibrary} hidden={!libraryOpen} aria-label={t('rules.nodeLibrary')} onKeyDown={event => {
-      if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
-      event.stopPropagation()
-      props.onCloseLibrary(true)
-    }}>
-      <header className={css.libraryHeading}><strong>{t('rules.nodeLibrary')}</strong></header>
-      <div className={css.libraryBody}>
-      <SearchInput aria-label={t('rules.librarySearch')} placeholder={t('rules.librarySearch')} value={libraryQuery} onChange={event => setLibraryQuery(event.target.value)} />
-      <div className={css.libraryCategories}>
-        {(['condition', 'action'] as const).map(kind => <button key={kind} type="button" aria-pressed={libraryCategory === kind} onClick={() => {
-          setLibraryCategory(kind); setLibraryItem('')
-          const target = graph.targets.find(item => kind === 'condition' ? item.kind === 'condition' : item.kind !== 'condition')
-          if (target) setTargetId(target.id)
-        }}><span className={css.categoryIcon} data-category={kind} aria-hidden="true" />{t(kind === 'condition' ? 'rules.libraryConditions' : 'rules.libraryActions')}</button>)}
-      </div>
-      {libraryKind === 'action' && <Button variant="outline" disabled={disabled || !activeTarget || activeTarget.kind === 'condition'} onClick={() => {
-        if (!activeTarget || activeTarget.kind === 'condition') return
-        changeAt(activeTarget.path, [...nodeList(valueAt(rule, activeTarget.path)), { if: { scope: { audience: 'main' } }, then: [], else: [] }])
-      }}>{t('rules.steps.addBranch')}</Button>}
-      <MenuSelect ariaLabel={t('rules.structure')} value={activeTarget?.id ?? ''} options={graph.targets.map(target => ({ value: target.id, label: target.label }))} onChange={setTargetId} />
-      <div className={css.libraryItems}>
-      {libraryEntries.filter(entry => `${entry.kind} ${triggerLabel(t, entry.kind)}`.toLowerCase().includes(libraryQuery.toLowerCase())).map(entry => {
-        const kind = libraryKind
-        const data = payload(kind, entry.kind)
-        const detail = kind === 'condition' ? conditionSummary(t, entry.example as RuleCondition) : actionSummary(t, { ...entry.example, kind: entry.kind } as RuleAction)
-        return <button key={entry.kind} type="button" className={css.libraryItem} data-library-kind={kind} draggable={!disabled}
-            onDragStart={event => { setDragPayload(data); event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-prompt-tool-rule-node', data) }} onDragEnd={() => setDragPayload('')}
-          aria-pressed={libraryItem === entry.kind} onClick={() => setLibraryItem(entry.kind)}><span className={css.libraryIcon} aria-hidden="true">{kind === 'condition' ? <IconCopyOutlineRegular /> : <IconChevronDownOutlineRegular />}</span><span><strong>{triggerLabel(t, entry.kind)}</strong><small>{detail === triggerLabel(t, entry.kind) ? entry.kind : detail}</small></span></button>
-      })}
-      </div>
-      {selectedLibraryEntry && <section className={css.libraryDetail} aria-label={triggerLabel(t, selectedLibraryEntry.kind)}>
-        <strong>{triggerLabel(t, selectedLibraryEntry.kind)}</strong>
-        <p>{libraryKind === 'condition' ? conditionSummary(t, selectedLibraryEntry.example as RuleCondition)
-          : actionSummary(t, { ...selectedLibraryEntry.example, kind: selectedLibraryEntry.kind } as RuleAction)}</p>
-        <p>{t('rules.libraryAddHint')}</p>
-        <Button shape="pill" variant="primary" disabled={!activeTarget || !canAdd(activeTarget.id, payload(libraryKind, selectedLibraryEntry.kind))}
-          onClick={() => { if (activeTarget) add(activeTarget.id, payload(libraryKind, selectedLibraryEntry.kind)) }}>{t('configList.create')}</Button>
-      </section>}
-      </div>
-    </section>
+    <RuleLibrary t={t} meta={meta} libraryOpen={libraryOpen} libraryId={props.libraryId} onCloseLibrary={props.onCloseLibrary}
+      disabled={disabled} targets={graph.targets} payload={payload} canAdd={canAdd} add={add} setDragPayload={setDragPayload}
+      addBranch={target => {
+        if (disabled || target.kind === 'condition') return
+        changeAt(target.path, [...nodeList(valueAt(rule, target.path)), { if: { scope: { audience: 'main' } }, then: [], else: [] }])
+      }} />
     <RuleCanvas t={t} nodes={graph.nodes.map(node => {
       return { ...node, selected: node.id === shownNode,
           dropTarget: graph.targets.find(target => target.id === `${node.id}:target`)?.id }
@@ -542,10 +611,16 @@ export function RuleStepsPanel(props: {
       </div>}
     </div>
     </div>
-    <section className={css.ruleProperties}>
+    <section className={css.ruleProperties} aria-labelledby={`${propertyId}-heading`} onKeyDown={event => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
+      event.stopPropagation()
+      focusPane.current = 'structure'
+      select(undefined)
+    }}>
       <header className={css.inspectorHeading}>
-        <div><h3 ref={propertyHeading} tabIndex={-1}>{t('rules.ruleEditor')}</h3><small>{graph.nodes.find(node => node.id === shownNode)?.title}{selectedDescriptor?.kind === 'action' ? ` · ${selectedDescriptor.actionId}` : ''}</small></div>
-        <button type="button" aria-label={t('rules.backToStructure')} onClick={() => { focusPane.current = 'structure'; select(undefined) }}>×</button>
+        <div><h3 id={`${propertyId}-heading`} ref={propertyHeading} tabIndex={-1}>{nodeTitle ?? t('rules.ruleEditor')}</h3>
+          {nodeIdentity && <small>{selectedDescriptor?.kind === 'action' && 'ID '}{nodeIdentity}</small>}</div>
+        <Button icon aria-label={t('rules.backToStructure')} onClick={() => { focusPane.current = 'structure'; select(undefined) }}><IconCloseFillRegular /></Button>
       </header>
       <div className={css.inspectorBody}>
       {shownNode === undefined && <p>{t('rules.chooseNode')}</p>}
