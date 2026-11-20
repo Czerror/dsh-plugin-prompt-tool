@@ -168,6 +168,16 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         tx.write(400, { ok: false, code: 'rules-invalid', message: '规则请求字段、模块身份或版本格式不合法' })
         return
       }
+      const compactEdit = Array.isArray(record.edits) ? record.edits[0] : undefined
+      if (record.compactEdit !== undefined && (record.compactEdit !== true || !Array.isArray(record.edits)
+        || record.edits.length !== 1 || record.createRule !== undefined || record.activateRuleId !== undefined
+        || record.validateOnly !== undefined || record.refreshOnly !== undefined
+        || !isRecord(compactEdit) || typeof compactEdit.previousId !== 'string'
+        || !isRecord(compactEdit.rule) || typeof compactEdit.rule.id !== 'string'
+        || compactEdit.previousId !== compactEdit.rule.id || compactEdit.settingsChanged === true)) {
+        tx.write(400, { ok: false, code: 'rules-invalid', message: '紧凑保存只接受单条已存在规则正文编辑' })
+        return
+      }
       if (record.refreshOnly === true) {
         if (runtime.gate(tx, 'rules').authorize() === undefined) return
         try { await runtime.deps.overridesChanged?.(basename(dir)) }
@@ -187,12 +197,6 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
       const editing = record.edits !== undefined || record.activateRuleId !== undefined
       if (editing && !isRecord(record.expectedRevisions)) {
         tx.write(400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevisions' })
-        return
-      }
-      if (record.compactEdit !== undefined && (record.compactEdit !== true || !Array.isArray(record.edits)
-        || record.edits.length !== 1 || record.createRule !== undefined || record.activateRuleId !== undefined
-        || record.validateOnly !== undefined || record.refreshOnly !== undefined)) {
-        tx.write(400, { ok: false, code: 'rules-invalid', message: '紧凑保存只接受单条已存在规则正文编辑' })
         return
       }
       let createdRuleId: string | undefined
@@ -219,10 +223,6 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         }
         if (record.compactEdit === true) {
           const edit = (record.edits as RuleEdit[])[0]!
-          if (edit.previousId === null || edit.rule === null || edit.previousId !== edit.rule.id || edit.settingsChanged === true) {
-            tx.write(400, { ok: false, code: 'rules-invalid', message: '紧凑保存只接受单条已存在规则正文编辑' })
-            return
-          }
           if (candidateRevision === undefined) throw new Error('紧凑保存事务没有返回已验证版本')
           const saved = candidate.rules.find(rule => rule.id === edit.rule!.id)
           if (!saved) {
