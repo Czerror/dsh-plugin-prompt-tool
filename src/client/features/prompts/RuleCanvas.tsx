@@ -25,6 +25,7 @@ export interface RuleCanvasProps {
   view: RuleCanvasView
   onViewChange: (view: RuleCanvasView) => void
   onSelect: (id: string) => void
+  onPaneClick: () => void
   onMove?: (id: string, x: number, y: number) => void
   onFit?: () => void
   canDropNode?: (targetId: string, data: string) => boolean
@@ -50,8 +51,9 @@ const roundedRoute = (points: Array<[number, number]>): string => {
 
 export function RuleCanvas(props: RuleCanvasProps) {
   const stage = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ id?: string; pointerId: number; startX: number; startY: number; baseX: number; baseY: number; moved: boolean }>()
+  const drag = useRef<{ id?: string; pointerId: number; startX: number; startY: number; baseX: number; baseY: number; moved: boolean; dismissOnClick: boolean }>()
   const suppressClick = useRef(false)
+  const paneClick = useRef(false)
   const hasSelection = props.nodes.some(node => node.selected)
   const [dropTarget, setDropTarget] = useState<string>()
   const [legendOpen, setLegendOpen] = useState(false)
@@ -106,8 +108,10 @@ export function RuleCanvas(props: RuleCanvasProps) {
   const byId = new Map(props.nodes.map(node => [node.id, node]))
   const begin = (event: ReactPointerEvent<HTMLElement>, node?: RuleCanvasNode) => {
     if (event.button !== 0) return
+    paneClick.current = false
     const point = node ? props.view.positions[node.id] ?? node : undefined
-    drag.current = { id: node?.id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, baseX: point?.x ?? props.view.x, baseY: point?.y ?? props.view.y, moved: false }
+    const dismissOnClick = !node && !document.activeElement?.closest('[role="menu"], [popover]')
+    drag.current = { id: node?.id, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, baseX: point?.x ?? props.view.x, baseY: point?.y ?? props.view.y, moved: false, dismissOnClick }
     event.currentTarget.setPointerCapture(event.pointerId)
   }
   const move = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -121,8 +125,11 @@ export function RuleCanvas(props: RuleCanvasProps) {
     else props.onViewChange({ ...props.view, x: current.baseX + event.clientX - current.startX, y: current.baseY + event.clientY - current.startY })
   }
   const end = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (drag.current?.pointerId !== event.pointerId) return
-    suppressClick.current = drag.current.moved
+    const current = drag.current
+    if (current?.pointerId !== event.pointerId) return
+    suppressClick.current = current.moved
+    paneClick.current = current.dismissOnClick && !current.moved
+      && Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < 4
     drag.current = undefined
   }
   const cancel = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -140,6 +147,14 @@ export function RuleCanvas(props: RuleCanvasProps) {
     else props.onViewChange({ ...props.view, x: current.baseX, y: current.baseY })
     drag.current = undefined
   }} onPointerDown={event => begin(event)} onPointerMove={move} onPointerUp={end} onPointerCancel={cancel} onLostPointerCapture={cancel}
+    onClick={event => {
+      if (!paneClick.current) return
+      paneClick.current = false
+      if (event.detail === 0) return
+      // 捕获指针会把点击重定向到画布，检查松手处是否仍是背景。
+      const hit = document.elementFromPoint(event.clientX, event.clientY)
+      if (hit && stage.current?.contains(hit) && !hit.closest('[data-rule-node]')) props.onPaneClick()
+    }}
     onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(undefined) }}
     onDragOver={event => { const id = (event.target as HTMLElement).closest<HTMLElement>('[data-canvas-target]')?.dataset.canvasTarget; const valid = id && event.dataTransfer.types.includes('application/x-prompt-tool-rule-node') && props.canDropNode?.(id, ''); setDropTarget(valid ? id : undefined); if (valid) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }}
     onDrop={event => { setDropTarget(undefined); const target = (event.target as HTMLElement).closest<HTMLElement>('[data-canvas-target]')?.dataset.canvasTarget; const data = event.dataTransfer.getData('application/x-prompt-tool-rule-node'); if (target && props.canDropNode?.(target, data)) { event.preventDefault(); props.onDropNode?.(target, data) } }}>

@@ -22,6 +22,7 @@ export interface FieldContext { t: PromptToolTranslate; fields: Map<string, Fiel
 const FIELD_LABELS: Record<string, PromptToolLocaleKey> = { layer: 'form.layer.label', strategy: 'form.strategy.label', position: 'form.position.label', audience: 'form.audience.label', modelScope: 'form.modelScope.label', subject: 'form.subject.label', mergeMode: 'form.merge.label', dedupe: 'form.dedupe.label', promotion: 'form.promotion.label', configKind: 'form.kind.label', role: 'form.role.label', fill: 'form.fill.label', order: 'form.order.label',
   // 动作字段：tool-gate 的 `decision` 与 tool-result 的 `action` 是动作类型名之外的两份含义，不能借 triggerLabel。
   action: 'rules.actionField.action', decision: 'rules.actionField.decision' }
+const INJECTION_PLACEMENT = new Set(['layer', 'position', 'mergeMode', 'role', 'order', 'subject', 'audience', 'dedupe'])
 export { cleared } from '../../data/workspace-drafts.ts'
 function moveConditionDrafts<T>(fields: Map<string, T>, from: string, to: string): void {
   const values = [...fields].filter(([key]) => key === from || key.startsWith(from + ':'))
@@ -42,15 +43,15 @@ export function removeConditionDraft<T>(fields: Map<string, T>, prefix: string, 
   }
 }
 /** 标量就地编辑，对象平铺；未知字段随对象保留，深结构用 JSON。 */
-export function RuleParameterFields(props: FieldContext & { value: Record<string, unknown>; example?: Record<string, unknown>; omit?: string[]; configOmit?: string[]; depth?: number; requestPatch?: boolean; readLimits?: boolean; delegationLimits?: boolean; onChange: (value: Record<string, unknown>) => void }): ReactNode {
+export function RuleParameterFields(props: FieldContext & { value: Record<string, unknown>; example?: Record<string, unknown>; omit?: string[]; configOmit?: string[]; depth?: number; injectionConfig?: boolean; requestPatch?: boolean; readLimits?: boolean; delegationLimits?: boolean; onChange: (value: Record<string, unknown>) => void }): ReactNode {
   const { t } = props
-  return Object.entries({ ...props.example, ...props.value }).map(([key, mergedValue]) => {
-    if (props.omit?.includes(key)) return null
+  const values = Object.entries({ ...props.example, ...props.value }).filter(([key]) => !props.omit?.includes(key))
+  const renderField = ([key, mergedValue]: [string, unknown]): ReactNode => {
     if (props.value.kind === 'tool-result' && props.value.action === 'edit-text' && key === 'text') return null
     const readLimitField = props.readLimits === true && ['maxLineLength', 'maxBytes', 'limit'].includes(key)
     const delegationLimitField = props.delegationLimits === true && ['maxDepth', 'askTimeout'].includes(key)
     const value = readLimitField || delegationLimitField ? props.value[key] : mergedValue
-    const fieldKey = props.fieldKey + ':' + key, label = readLimitField ? t(key === 'maxLineLength' ? 'triggers.label.readMaxLineLength' : key === 'maxBytes' ? 'triggers.label.readMaxBytes' : 'triggers.label.readLimit') : props.value.kind === 'host-control' && key === 'value' ? t('triggers.label.readLimitsValue') : props.value.kind === 'request-params' && key === 'maxTokens' ? t('triggers.label.requestBudget') : props.value.kind === 'subagent-params' && key === 'tool' ? t('triggers.label.delegationTool') : props.value.kind === 'subagent-params' && key === 'provider' ? t('triggers.label.delegationProvider') : key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
+    const fieldKey = props.fieldKey + ':' + key, label = props.injectionConfig && key === 'text' ? t('form.text.label') : readLimitField ? t(key === 'maxLineLength' ? 'triggers.label.readMaxLineLength' : key === 'maxBytes' ? 'triggers.label.readMaxBytes' : 'triggers.label.readLimit') : props.value.kind === 'host-control' && key === 'value' ? t('triggers.label.readLimitsValue') : props.value.kind === 'request-params' && key === 'maxTokens' ? t('triggers.label.requestBudget') : props.value.kind === 'subagent-params' && key === 'tool' ? t('triggers.label.delegationTool') : props.value.kind === 'subagent-params' && key === 'provider' ? t('triggers.label.delegationProvider') : key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
     const patch = (next: unknown): void => {
       if (key === 'capability' && props.value.kind === 'host-control') {
         props.onChange(changeHostCapability(props.value, next, props))
@@ -91,7 +92,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     if (enums !== undefined && typeof value === 'string') return <FormField key={key} label={label}><MenuSelect compact ariaLabel={label} className={css.control} value={value} disabled={props.disabled}
       options={[...new Set([...enums, value])].map(item => ({ value: item, label: translateLabel(t, labels, item) }))} onChange={next => patch(key === 'audience' && next === '' ? undefined : next)} /></FormField>
     if (value !== null && typeof value === 'object' && !Array.isArray(value)) return (props.depth ?? 0) < 2
-      ? <div key={key} className={css.parameterGroup}>{key !== 'config' && <h5>{props.value.kind === 'host-control' && props.value.capability === 'delegation-limits' && key === 'value' ? t('triggers.option.delegation-limits') : label}</h5>}<div className={css.fields}><RuleParameterFields {...props} readLimits={props.value.kind === 'host-control' && props.value.capability === 'file-read-limits' && key === 'value'} delegationLimits={props.value.kind === 'host-control' && props.value.capability === 'delegation-limits' && key === 'value'} depth={(props.depth ?? 0) + 1} omit={key === 'config' ? props.configOmit : undefined} fieldKey={fieldKey} value={asTriggerRecord(value)} example={props.value.kind === 'host-control' && props.value.capability === 'delegation-limits' && key === 'value' ? { maxDepth: 10, askTimeout: 300 } : asTriggerRecord(props.example?.[key])} onChange={patch} /></div></div>
+      ? <div key={key} className={css.parameterGroup}>{key !== 'config' && <h5>{props.value.kind === 'host-control' && props.value.capability === 'delegation-limits' && key === 'value' ? t('triggers.option.delegation-limits') : label}</h5>}<div className={css.fields}><RuleParameterFields {...props} injectionConfig={props.value.kind === 'inject-text' && key === 'config'} readLimits={props.value.kind === 'host-control' && props.value.capability === 'file-read-limits' && key === 'value'} delegationLimits={props.value.kind === 'host-control' && props.value.capability === 'delegation-limits' && key === 'value'} depth={(props.depth ?? 0) + 1} omit={key === 'config' ? props.configOmit : undefined} fieldKey={fieldKey} value={asTriggerRecord(value)} example={props.value.kind === 'host-control' && props.value.capability === 'delegation-limits' && key === 'value' ? { maxDepth: 10, askTimeout: 300 } : asTriggerRecord(props.example?.[key])} onChange={patch} /></div></div>
       : <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="object" fieldKey={fieldKey} label={label} onChange={patch} /></div>
     if (Array.isArray(value) && (key === 'match' || key === 'edits' && props.value.kind === 'tool-result' || !value.every(item => typeof item === 'string'))) return <div key={key} className={css.full}><TriggerJsonField {...props} value={value} shape="array" fieldKey={fieldKey} label={label} onChange={patch} /></div>
     if (Array.isArray(value)) return <div key={key} className={css.full}><TagInput label={label} value={value} disabled={props.disabled}
@@ -112,10 +113,19 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     const text = String(value ?? '')
     const edit = (next: string): void => patch(requestField && ['provider', 'model', 'reasoningEffort'].includes(key) && next === '' ? undefined : next)
     return <FormField key={key} className={multiline ? css.full : undefined} label={label}>
-      {multiline ? <textarea className={ui.configTextarea} aria-label={label} rows={3} readOnly={props.disabled} value={text} onChange={event => edit(event.target.value)} />
+      {multiline ? <textarea className={props.injectionConfig && key === 'text' ? `${ui.configTextarea} ${css.inspectorPrompt}` : ui.configTextarea} aria-label={label} rows={3} readOnly={props.disabled} value={text} onChange={event => edit(event.target.value)} />
         : <TextInput aria-label={label} readOnly={props.disabled} value={text} onChange={event => edit(event.target.value)} />}
     </FormField>
-  })
+  }
+  if (!props.injectionConfig) return values.map(renderField)
+  const placement = values.filter(([key]) => INJECTION_PLACEMENT.has(key))
+  const content = values.filter(([key]) => !INJECTION_PLACEMENT.has(key))
+  const textIndex = content.findIndex(([key]) => key === 'text')
+  if (textIndex > 0) content.unshift(...content.splice(textIndex, 1))
+  return <>
+    {content.length > 0 && <fieldset className={css.inspectorGroup}><legend>{t('form.section.content')}</legend><div className={css.fields}>{content.map(renderField)}</div></fieldset>}
+    {placement.length > 0 && <fieldset className={css.inspectorGroup}><legend>{t('rules.injectionPlacement')}</legend><div className={css.fields}>{placement.map(renderField)}</div></fieldset>}
+  </>
 }
 export function RuleConditionFields(props: FieldContext & { expanded: Map<string, boolean>; prefix: string; creation: StepCreation; value: RuleCondition | undefined; meta: RuleEditorMeta; nested?: boolean; heading?: string; onRemove?: () => void; onChange: (value: RuleCondition | undefined) => void }): ReactNode {
   const { t, value, meta } = props

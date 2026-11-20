@@ -14,6 +14,7 @@ import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { EngineMeta } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { Button } from '../../ui/Button.tsx'
+import { FormField } from '../../ui/FormField.tsx'
 import { AutoSaveSelection } from '../../ui/AutoSaveSelection.ts'
 import { SearchInput } from '../../ui/SearchInput.tsx'
 import { IconChevronDownOutlineRegular, IconCloseFillRegular, IconCopyOutlineRegular } from '../../ui/icons.tsx'
@@ -245,14 +246,14 @@ function ActionCard(props: {
         onChange={next => props.onChange(asTriggerRecord(next) as unknown as RuleAction)} /></>
       : <>
         {/* 类型切换留在卡内：换类型等于换一份参数骨架，动作 id 不变。 */}
-        <div className={css.row}><MenuSelect compact ariaLabel={t('triggers.actionType')} value={action.kind} disabled={context.disabled}
+        <FormField label={t('triggers.actionType')}><MenuSelect ariaLabel={t('triggers.actionType')} value={action.kind} disabled={context.disabled}
           options={(props.scopeConditional ? context.meta.actions.filter(item => item.supportsWhen) : context.meta.actions).map(item => ({ value: item.kind, label: triggerLabel(t, item.kind) }))}
           onChange={kind => {
             const next = context.meta.actions.find(item => item.kind === kind)
             if (next === undefined) return
             cleared(context.fields, fieldKey)
             props.onChange({ ...structuredClone(next.example), id: action.id, kind } as unknown as RuleAction)
-          }} /></div>
+          }} /></FormField>
         {action.kind === 'persona' ? <ModulePersonaCard t={t} action={action} disabled={context.disabled} context={{ ...context, fieldKey }} onChange={props.onChange} />
           : action.kind === 'assembly' ? <AssemblyFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : action.kind === 'tool-visibility' ? <VisibilityFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
@@ -319,6 +320,7 @@ export function RuleStepsPanel(props: {
   libraryId: string
   onCloseLibrary: (restoreFocus: boolean) => void
   onBrowseChange?: () => void
+  onCanvasInteract: () => void
   diagnosticActionId?: string
   disabled?: boolean
   onDraft: () => void
@@ -574,8 +576,10 @@ export function RuleStepsPanel(props: {
   return <div className={css.ruleCanvas} data-node-open={shownNode !== undefined || undefined} data-rule-steps onKeyDown={event => {
     if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
     // 动作输入框通过 React portal 渲染到属性栏，按实际 DOM 归属处理返回。
-    if (!(event.target instanceof Element) || !event.target.closest('[data-node-inspector]')) return
+    if (shownNode === undefined || !(event.target instanceof Element) ||
+      !event.target.closest('[data-node-inspector], [data-rule-stage]')) return
     event.stopPropagation()
+    event.preventDefault()
     focusPane.current = 'structure'
     select(undefined)
   }}>
@@ -593,7 +597,12 @@ export function RuleStepsPanel(props: {
       return { ...node, selected: node.id === shownNode,
           dropTarget: graph.targets.find(target => target.id === `${node.id}:target`)?.id }
     })} edges={graph.edges} view={view}
-      onViewChange={changeView} onSelect={context.select} onMove={(id, x, y) => changeView({ ...view, positions: { ...view.positions, [id]: { x, y } } })}
+      onViewChange={changeView} onSelect={id => { props.onCanvasInteract(); context.select(id) }}
+      onPaneClick={() => {
+        props.onCanvasInteract()
+        if (shownNode !== undefined) select(undefined)
+      }}
+      onMove={(id, x, y) => changeView({ ...view, positions: { ...view.positions, [id]: { x, y } } })}
       canDropNode={(id, data) => canAdd(id, data || dragPayload)} onDropNode={dropNode} onFit={fit} />
     </div>
     <div hidden>
@@ -622,7 +631,7 @@ export function RuleStepsPanel(props: {
       <header className={css.inspectorHeading}>
         <div><h3 id={`${propertyId}-heading`} ref={propertyHeading} tabIndex={-1} title={nodeTitle}>{nodeTitle ?? t('rules.ruleEditor')}</h3>
           {nodeIdentity && <small>{selectedDescriptor?.kind === 'action' && 'ID '}{nodeIdentity}</small>}</div>
-        <Button icon aria-label={t('rules.backToStructure')} onClick={() => { focusPane.current = 'structure'; select(undefined) }}><IconCloseFillRegular /></Button>
+        <Button icon aria-label={t('rules.closePanel', { name: t('rules.properties') })} onClick={() => { focusPane.current = 'structure'; select(undefined) }}><IconCloseFillRegular /></Button>
       </header>
       <div className={css.inspectorBody}>
       {shownNode === undefined && <p>{t('rules.chooseNode')}</p>}

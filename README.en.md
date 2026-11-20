@@ -26,7 +26,7 @@ After [installing the plugin](#install-the-plugin) below, open **Prompt Tool** f
 
 You can import [YAML](https://yaml.org/)/[JSON](https://www.json.org/json-en.html) module files, folders/[ZIP archives](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), SillyTavern presets, [PNG images](https://www.w3.org/TR/png/)/JSON character cards, and world books. New and imported modules start disabled. See [SillyTavern import details](docs/SillyTavern.md) for conversion limits.
 
-Separate overlays provide the full JSON definition and rule settings. Zoom controls and a legend sit at the bottom. If a module's enabled state is saved but publication fails, retry publication from another workspace entry point or Module center.
+For text injection, the inspector shows the text first and groups the content and placement settings. Select another node to switch inspectors, click empty canvas to dismiss the current panel, or drag to pan while keeping the node selected. Click the backdrop or press Escape to close Module center. If a module's enabled state is saved but publication fails, retry publication from another workspace entry point or Module center.
 
 All three workspace entry points share browsing position and rule drafts in one layout. Template insertion preserves its declared audience; existing separate rules are never merged automatically. Opening or closing the module center does not automatically save rules. Wait for save confirmation before refreshing. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
 

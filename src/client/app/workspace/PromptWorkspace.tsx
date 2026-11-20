@@ -9,6 +9,7 @@ import { WorkspaceFrame } from './WorkspaceFrame.tsx'
 import type { WorkspacePage } from './workspace-pages.ts'
 import { configPageBrowse } from './workspace-browse-state.ts'
 import { Button } from '../../ui/Button.tsx'
+import { IconCloseFillRegular } from '../../ui/icons.tsx'
 import css from './PromptWorkspace.module.css'
 
 export interface PromptWorkspaceProps {
@@ -27,6 +28,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const [page, setPage] = useState<WorkspacePage>('features')
   const browse = view.browse
   const auxiliaryPanel = useRef<HTMLDialogElement>(null)
+  const backdropStart = useRef(false)
   const auxiliaryTrigger = useRef<HTMLElement>()
   useLayoutEffect(() => {
     if (page === 'modules') auxiliaryPanel.current?.showModal()
@@ -93,11 +95,26 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     >
       <AudiencePage store={store} t={t} browse={configPageBrowse(browse, 'features')} onNavigate={navigate} onRuleEdit={props.diagnostics.invalidate} onReturnToDiagnostics={returnToDiagnostics} />
       {auxiliary && <dialog ref={auxiliaryPanel} className={css.surfaceDrawer} aria-label={t('rules.moduleCenter')}
-        onClose={() => navigate('features')}>
-        <h2>{t('rules.moduleCenter')}</h2>
-        <Button shape="pill" variant="outline" onClick={() => navigate('features')}>{t('rules.backToStructure')}</Button>
+        {...{ closedby: 'any' }} onClose={() => navigate('features')}
+        onPointerDown={event => {
+          if (!('closedBy' in HTMLDialogElement.prototype)) backdropStart.current = event.button === 0 && outsideDialog(event)
+        }}
+        onPointerCancel={() => { backdropStart.current = false }}
+        onClick={event => {
+          if (backdropStart.current && outsideDialog(event)) event.currentTarget.close()
+          backdropStart.current = false
+        }}>
+        <header className={css.moduleCenterHeader}><h2>{t('rules.moduleCenter')}</h2>
+          <Button icon aria-label={t('rules.closePanel', { name: t('rules.moduleCenter') })} onClick={() => auxiliaryPanel.current?.close()}><IconCloseFillRegular /></Button>
+        </header>
         {auxiliary}
       </dialog>}
     </WorkspaceFrame>
   )
+}
+
+function outsideDialog(event: { currentTarget: HTMLDialogElement; target: EventTarget; clientX: number; clientY: number }): boolean {
+  if (event.target !== event.currentTarget) return false
+  const rect = event.currentTarget.getBoundingClientRect()
+  return event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom
 }

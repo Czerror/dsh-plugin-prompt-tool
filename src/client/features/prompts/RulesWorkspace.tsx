@@ -25,7 +25,7 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { useAnchoredPopoverStyle } from '../../ui/anchored-popover.ts'
 import { useDismissOnOutsidePointer } from '../../ui/outside-pointer.ts'
-import { IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular } from '../../ui/icons.tsx'
+import { IconChevronDownOutlineRegular, IconCloseFillRegular, IconFolderOpenOutlineRegular } from '../../ui/icons.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
@@ -195,6 +195,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const [listOpen, setListOpen] = useState(false)
   const listPaneId = useId()
   const listToggle = useRef<HTMLButtonElement>(null)
+  const dismissDrawer = useRef<() => void>()
+  const backdropPress = useRef<{ x: number; y: number }>()
   const [libraryOpen, setLibraryOpen] = useState(true)
   const libraryId = useId()
   const libraryToggle = useRef<HTMLButtonElement>(null)
@@ -442,10 +444,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     focus.current = 'list'
     setListOpen(true)
   }
-  const closeList = (): void => {
+  const closeList = (restoreFocus: boolean): void => {
     if (combination) changeCombination(false)
     setListOpen(false)
-    listToggle.current?.focus({ preventScroll: true })
+    if (restoreFocus) listToggle.current?.focus({ preventScroll: true })
   }
   const enableDisabled = (module: ModuleSummary): boolean =>
     modulePending || order.busy || enableRefreshFailed || module.broken !== undefined || module.renderable === false
@@ -495,12 +497,20 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       {diagnosticKey === undefined && (diagnosticOwner === undefined || diagnosticOwner.draft.loaded || diagnosticOwner.draft.error)
         && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
     </div>}
-    <div className={css.ruleWorkspace} data-rule-open={selected !== undefined || undefined} data-list-open={showList || undefined} data-canvas-workspace>
+    <div className={css.ruleWorkspace} data-rule-open={selected !== undefined || undefined} data-list-open={showList || undefined} data-canvas-workspace
+      onClick={event => {
+        if ((!showList && !dismissDrawer.current) || event.defaultPrevented || !(event.target instanceof Element)) return
+        const target = event.target
+        if (!event.currentTarget.contains(target) || target.closest('dialog, [role="dialog"], [role="menu"], [popover], [data-rule-node]')
+          || !target.closest('button, input, select, textarea, summary, a[href]')) return
+        if (showList && !target.closest(`.${css.ruleListPane}`) && !listToggle.current?.contains(target)) closeList(false)
+        if (!target.closest('[data-rule-drawer], [data-rule-drawer-trigger]')) dismissDrawer.current?.()
+      }}>
     <div className={css.moduleScope}>
       <ModuleScopePicker t={t} value={moduleFilter ? `module:${moduleFilter}` : allModules ? 'all' : 'active'} onChange={changeModuleScope}
         modules={modules} editingModule={selected?.moduleId} onEnable={setModuleEnabled} enableDisabled={enableDisabled}
         feedback={enableFeedback} />
-      <Button ref={listToggle} shape="pill" variant="outline" aria-controls={listPaneId} aria-expanded={showList} onClick={showList ? closeList : openList}>
+      <Button ref={listToggle} shape="pill" variant="outline" aria-controls={listPaneId} aria-expanded={showList} onClick={() => { if (showList) closeList(true); else openList() }}>
         <span className={css.disclosureMarker} aria-hidden="true" />{t('rules.list')}
       </Button>
       <Button ref={libraryToggle} className={css.libraryToggle} variant="outline" disabled={!selected?.draft.meta}
@@ -511,14 +521,29 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="2" /><path d="M6 3v10m2.5-7h3.5m-3.5 3h3.5" /></svg>
       </Button>
     </div>
+    {showList && <div className={css.ruleListBackdrop} aria-hidden="true"
+      onPointerDown={event => {
+        backdropPress.current = event.button === 0 && !document.activeElement?.closest('[role="menu"], [popover]')
+          ? { x: event.clientX, y: event.clientY } : undefined
+      }}
+      onPointerCancel={() => { backdropPress.current = undefined }}
+      onClick={event => {
+        const point = backdropPress.current
+        backdropPress.current = undefined
+        if (!point || Math.hypot(event.clientX - point.x, event.clientY - point.y) >= 4) return
+        closeList(false)
+        dismissDrawer.current?.()
+      }} />}
     <div id={listPaneId} className={css.ruleListPane} hidden={!showList} onKeyDown={event => {
       if (event.key !== 'Escape' || event.nativeEvent.isComposing || event.defaultPrevented) return
       event.stopPropagation()
-      closeList()
+      event.preventDefault()
+      closeList(true)
     }}>
     <div className={css.ruleListHeader}>
       <h2 ref={workspaceHeading} tabIndex={-1} className={css.workspaceHeading}>{t('rules.list')}</h2>
       <Button shape="pill" variant="outline" aria-pressed={combination} onClick={() => changeCombination(!combination)}>{t('rules.combination')}</Button>
+      <Button icon aria-label={t('rules.closePanel', { name: t('rules.list') })} onClick={() => closeList(true)}><IconCloseFillRegular /></Button>
     </div>
     <div className={ui.listFilterRow} data-module-toolbar>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
@@ -611,12 +636,14 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {selected && <div className={css.ruleDetail}>
       <h2 ref={detailHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{selected.moduleId} / {selected.entry.value.id}</h2>
       <RuleCard key={selected.key} t={t} entry={selected.entry} draft={selected.draft} editor={selected.editor} meta={store.meta} source={selected.moduleId} moduleId={selected.moduleId} disabled={readOnly(selected.moduleId)}
+        dismissDrawer={dismissDrawer}
         moduleName={modules.find(module => module.id === selected.moduleId)?.name || selected.moduleId} moduleEnabled={enabledIds.has(selected.moduleId)} modulesEnabled={fields.modulesEnabled}
         expanded onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
         libraryOpen={libraryOpen} libraryId={libraryId} onCloseLibrary={restoreFocus => {
           setLibraryOpen(false)
           if (restoreFocus) libraryToggle.current?.focus({ preventScroll: true })
         }}
+        onCanvasInteract={() => { if (showList) closeList(false) }}
         diagnosticActionId={diagnosticKey === selected.key ? diagnosticTarget?.actionId : undefined}
         onRuleEdit={props.onRuleEdit}
         onActivate={() => refreshExclusivePeers(selected.moduleId, selected.entry.value)}

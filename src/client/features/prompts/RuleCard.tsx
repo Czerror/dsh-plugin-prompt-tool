@@ -13,7 +13,7 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { TextInput } from '../../ui/TextInput.tsx'
 import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
-import { IconChevronDownOutlineRegular } from '../../ui/icons.tsx'
+import { IconChevronDownOutlineRegular, IconCloseFillRegular } from '../../ui/icons.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
@@ -45,6 +45,8 @@ export function RuleCard(props: {
   libraryOpen: boolean
   libraryId: string
   onCloseLibrary: (restoreFocus: boolean) => void
+  onCanvasInteract: () => void
+  dismissDrawer: MutableRefObject<(() => void) | undefined>
   diagnosticActionId?: string
   onRuleEdit?: () => void
   onActivate?: () => void
@@ -62,6 +64,11 @@ export function RuleCard(props: {
     drawerTrigger.current = trigger
     setDrawer(drawer === next ? undefined : next)
   }
+  const closeDrawer = (restoreFocus: boolean): void => {
+    if (drawer === undefined) return
+    setDrawer(undefined)
+    if (restoreFocus) drawerTrigger.current?.focus({ preventScroll: true })
+  }
   useLayoutEffect(() => {
     const element = surface.current, header = element?.querySelector('header')
     if (!element || !header) return
@@ -72,8 +79,13 @@ export function RuleCard(props: {
   }, [])
   useLayoutEffect(() => {
     if (drawer) surface.current?.querySelector<HTMLElement>('[data-rule-drawer] button')?.focus()
-    else drawerTrigger.current?.focus()
   }, [drawer])
+  useLayoutEffect(() => {
+    if (!drawer) return
+    const ref = props.dismissDrawer
+    ref.current = () => setDrawer(undefined)
+    return () => { ref.current = undefined }
+  }, [drawer, props.dismissDrawer])
   const disabled = props.disabled === true
   const nodes = [...nodeList(rule.then), ...nodeList(rule.else)]
   // 路径上带条件的动作必须支持条件（event 生命周期）；引擎在编译期拒绝其余组合。
@@ -153,7 +165,7 @@ export function RuleCard(props: {
     <header className={css.canvasTopbar}>
       <div className={css.contextCluster}>
         <button type="button" className={css.canvasIdentity} title={`${props.moduleId} / ${rule.id} · ${summary}`}
-          aria-expanded={drawer === 'identity'} onClick={event => openDrawer('identity', event.currentTarget)}>
+          aria-expanded={drawer === 'identity'} data-rule-drawer-trigger onClick={event => openDrawer('identity', event.currentTarget)}>
           <span>{moduleName}</span>
           <span aria-hidden="true">›</span>
           <strong>{ruleName}</strong>
@@ -178,13 +190,13 @@ export function RuleCard(props: {
           </label>
         </span>
         <HintTooltip label={t('rules.ruleSettings')}><span className={css.compactCommand}>
-          <Button variant="outline" shape="pill" aria-label={t('rules.ruleSettings')} aria-expanded={drawer === 'properties'} onClick={event => openDrawer('properties', event.currentTarget)}>
+          <Button variant="outline" shape="pill" aria-label={t('rules.ruleSettings')} aria-expanded={drawer === 'properties'} data-rule-drawer-trigger onClick={event => openDrawer('properties', event.currentTarget)}>
             <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><path d="M2 4h3m3 0h6M2 8h7m3 0h2M2 12h2m3 0h7M5 2.5v3M9 6.5v3M4 10.5v3" /></svg>
             <span>{t('rules.ruleSettings')}</span>
           </Button>
         </span></HintTooltip>
         <HintTooltip label={t('rules.definition')}><span className={css.compactCommand}>
-          <Button variant="outline" shape="pill" aria-label={t('rules.definition')} aria-expanded={drawer === 'definition'} onClick={event => openDrawer('definition', event.currentTarget)}>
+          <Button variant="outline" shape="pill" aria-label={t('rules.definition')} aria-expanded={drawer === 'definition'} data-rule-drawer-trigger onClick={event => openDrawer('definition', event.currentTarget)}>
             <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" aria-hidden="true"><path d="m5.5 4.5-3.5 3.5 3.5 3.5m5-7 3.5 3.5-3.5 3.5m-1-8-3 9" /></svg>
             <span>{t('rules.definition')}</span>
           </Button>
@@ -207,8 +219,16 @@ export function RuleCard(props: {
         onRetry={() => { void editor.retryPublication() }} />
       {targets.size > 0 && (reason ? <HintTooltip label={reason}><p role="status" className={css.status} tabIndex={0} aria-label={status + ' · ' + reason}>{status}</p></HintTooltip> : <p role="status" className={css.status}>{status}</p>)}
       {drawer !== undefined && <aside data-rule-drawer className={`${css.definitionDrawer} ${ui.configForm}`} aria-label={drawerLabel}
-        onKeyDown={event => { if (event.key === 'Escape' && !event.nativeEvent.isComposing) { event.stopPropagation(); setDrawer(undefined) } }}>
-      <Button variant="outline" shape="pill" onClick={() => setDrawer(undefined)}>{t('rules.backToStructure')}</Button>
+        onKeyDown={event => {
+          if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
+          event.stopPropagation()
+          event.preventDefault()
+          closeDrawer(true)
+        }}>
+      <div className={css.drawerHeading}>
+        <h3>{drawerLabel}</h3>
+        <Button icon aria-label={t('rules.closePanel', { name: drawerLabel })} onClick={() => closeDrawer(true)}><IconCloseFillRegular /></Button>
+      </div>
       {drawer === 'identity' && <dl className={css.identityDetails}>
         <dt>{t('rules.module')}</dt><dd>{moduleName}</dd>
         <dt>{t('rules.name')}</dt><dd>{ruleName}</dd>
@@ -249,6 +269,7 @@ export function RuleCard(props: {
         <section data-config-panel="rule" aria-label={t('rules.stepsTab')} className={css.section}>{draft.meta && <RuleStepsPanel
           t={t} rule={rule} meta={draft.meta} engineMeta={props.meta} fields={draft.fields} expanded={props.expandedRows}
           libraryOpen={props.libraryOpen} libraryId={props.libraryId} onCloseLibrary={props.onCloseLibrary}
+          onCanvasInteract={() => { closeDrawer(false); props.onCanvasInteract() }}
           prefix={props.source ?? rule.id} fieldKey={entry.key} browseKey={JSON.stringify([props.moduleId, entry.key])} nodeBrowse={props.nodeBrowse} canvasBrowse={props.canvasBrowse} onBrowseChange={props.onBrowseChange} diagnosticActionId={props.diagnosticActionId} disabled={disabled} onDraft={onDraft}
           onChange={next => patch(next)} onMove={(path, index, offset) => autosave.commit(() => {
             if (!disabled && !unsupported) void editor.move(entry.key, path, index, offset)

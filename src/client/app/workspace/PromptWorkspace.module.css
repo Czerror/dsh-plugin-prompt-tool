@@ -115,3 +115,5 @@
 }
 .surfaceDrawer:modal { position: fixed; margin: auto; inset: 0; inline-size: min(960px, calc(100vw - 24px)); block-size: min(760px, calc(100dvh - 24px)); max-inline-size: none; max-block-size: none; color: inherit; overscroll-behavior: contain; }
 .surfaceDrawer::backdrop { background: #050a14a8; overflow: hidden; overscroll-behavior: contain; }
+.moduleCenterHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-block-end: 12px; }
+.moduleCenterHeader h2 { margin: 0; }

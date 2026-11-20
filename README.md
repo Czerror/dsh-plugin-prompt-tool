@@ -26,7 +26,7 @@
 
 导入支持 [YAML](https://yaml.org/)／[JSON](https://www.json.org/json-en.html) 模块文件、目录／[ZIP 压缩包](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT)，以及 SillyTavern 预设、[PNG 图像](https://www.w3.org/TR/png/)／JSON 角色卡和世界书。新建和导入的模块默认不启用；SillyTavern 功能的转换范围见 [导入说明](docs/SillyTavern.md)。
 
-完整规则 JSON 和设置各有独立浮层，底栏提供缩放与图例。模块启停已保存但发布失败时，可从其他工作台入口或模块中心继续重试发布。
+注入文本的右栏先显示正文，再按组配置内容和注入位置。点击另一个节点直接切换属性，轻点画布空白收起当前浮层，拖动画布可保留选中节点。模块中心可点击遮罩或按 Escape 关闭。模块启停已保存但发布失败时，可从其他工作台入口或模块中心继续重试发布。
 
 三个工作台入口共享浏览位置和规则草稿，不再分成主会话与子代理布局。模板插入保留模板自身受众，已有独立规则不会自动合并。打开或关闭模块中心不会自动保存规则；收到保存确认后再刷新浏览器。终端界面可通过 `/prompt-tool` 操作模块，`/settings` 中的 **提示词工具** 提供模块运行总开关。
 
