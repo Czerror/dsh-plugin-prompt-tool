@@ -62,14 +62,15 @@ function selectedRuleIdentity(expanded: string | undefined): [string, string] | 
 
 type ModuleSummary = NonNullable<ModuleFactsPort['meta']['modules']>[number]
 
-function ModuleScopePicker({ value, modules, editingModule, open, setOpen, onChange, onEnable, enableDisabled, feedback, t }: {
-  value: string; modules: readonly ModuleSummary[]; editingModule?: string; open: boolean; setOpen: (open: boolean) => void
+function ModuleScopePicker({ value, modules, editingModule, onChange, onEnable, enableDisabled, feedback, t }: {
+  value: string; modules: readonly ModuleSummary[]; editingModule?: string
   onChange: (value: string) => void; onEnable: (id: string, enabled: boolean) => void
   enableDisabled: (module: ModuleSummary) => boolean; feedback: ReactNode; t: PromptToolTranslate
 }): ReactNode {
   const id = useId()
   const trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const native = typeof HTMLElement !== 'undefined' && 'popover' in HTMLElement.prototype
   const anchored = native && CSS.supports('position-area: block-end span-inline-end')
@@ -198,7 +199,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const libraryId = useId()
   const libraryToggle = useRef<HTMLButtonElement>(null)
   const [localAllModules, setAllModules] = useState(props.browse?.allModules ?? false)
-  const [modulePickerOpen, setModulePickerOpen] = useState(false)
   const [localModuleFilter, setModuleFilter] = useState(props.browse?.moduleFilter)
   const [localCombination, setCombination] = useState(props.browse?.combination ?? false)
   const expanded = props.browse?.publish ? props.browse.expanded : localExpanded
@@ -499,7 +499,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     <div className={css.moduleScope}>
       <ModuleScopePicker t={t} value={moduleFilter ? `module:${moduleFilter}` : allModules ? 'all' : 'active'} onChange={changeModuleScope}
         modules={modules} editingModule={selected?.moduleId} onEnable={setModuleEnabled} enableDisabled={enableDisabled}
-        open={modulePickerOpen} setOpen={setModulePickerOpen} feedback={enableFeedback} />
+        feedback={enableFeedback} />
       <Button ref={listToggle} shape="pill" variant="outline" aria-controls={listPaneId} aria-expanded={showList} onClick={showList ? closeList : openList}>
         <span className={css.disclosureMarker} aria-hidden="true" />{t('rules.list')}
       </Button>
@@ -552,7 +552,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       <div role="status">{orderFeedback}</div>
       <PublicationNotice publication={order.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         onRetry={() => { void order.retryPublication() }} />
-      {!modulePickerOpen && enableFeedback}
+      {enableFeedback}
       <fieldset className={css.moduleParticipation}><legend>{t('rules.participatingModules')}</legend>
         {modules.map(module => <div key={module.id} className={css.row}>
           <span>{module.name || module.id}</span>

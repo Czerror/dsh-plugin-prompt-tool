@@ -122,6 +122,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
   const [publicationRetry, setPublicationRetry] = useState<{ error?: string; run: () => Promise<ModuleActionResult<unknown>> }>()
   const creatingRef = useRef(false)
   const pickerAnchorRef = useRef<HTMLButtonElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const report = (result: ModuleActionResult<unknown>, success: string, failure: string, retry?: () => Promise<ModuleActionResult<unknown>>): void => {
     if (!result.ok) { store.showNotice('error', failure); return }
     if (result.publication?.pending) {
@@ -240,17 +241,28 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
     })
   }
 
+  const retryModuleEnable = async (): Promise<void> => {
+    const trigger = document.activeElement
+    await retryEnable()
+    requestAnimationFrame(() => {
+      const search = searchRef.current
+      if (!search || !trigger || !search.getClientRects().length) return
+      if (document.activeElement !== document.body && document.activeElement !== search.closest('dialog')) return
+      if (trigger instanceof HTMLElement && trigger.getClientRects().length) trigger.focus({ preventScroll: true })
+      else search.focus({ preventScroll: true })
+    })
+  }
   return (
     <div className={styles.rowGroup}>
       {enableState.busy && <p role="status">{t('rules.moduleChanging')}</p>}
       {enableState.error && <p role="alert">{t('moduleSwitcher.notice.enableFailed', { reason: enableState.error })}</p>}
       {enableState.refreshFailed && <p role="alert">{t('rules.moduleListRefreshFailed')}</p>}
       {enableState.refreshFailed && !enableState.publication?.pending &&
-        <Button variant="outline" shape="pill" size="sm" disabled={enableState.busy} onClick={() => { void retryEnable() }}>
+        <Button variant="outline" shape="pill" size="sm" disabled={enableState.busy} onClick={() => { void retryModuleEnable() }}>
           {t('rules.refreshModules')}
         </Button>}
       <PublicationNotice publication={enableState.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
-        disabled={enableState.busy} onRetry={() => { void retryEnable() }} />
+        disabled={enableState.busy} onRetry={() => { void retryModuleEnable() }} />
       {publicationRetry && <PublicationNotice publication={{ pending: true, error: publicationRetry.error }}
         pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         onRetry={() => { void publicationRetry.run().then((result) => {
@@ -288,7 +300,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
         }} />}
       {exportTarget && <ModuleExportDialog t={t} module={exportTarget} onClose={() => setExportTarget(undefined)} />}
       <div className={styles.inlineControls}>
-        <SearchInput aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query} onChange={event => setQuery(event.target.value)} />
+        <SearchInput ref={searchRef} aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query} onChange={event => setQuery(event.target.value)} />
         <MenuSelect ariaLabel={t('rules.moduleFilter')} value={status} onChange={setStatus} options={[
           { value: 'all', label: t('rules.moduleAll') }, { value: 'on', label: t('moduleSwitcher.enabled') }, { value: 'off', label: t('rules.moduleDisabled') },
         ]} />

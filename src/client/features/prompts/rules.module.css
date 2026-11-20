@@ -29,7 +29,7 @@
 .modulePickerRow[data-enabled=true] .modulePickerState { color: #a3dfc2; }
 .modulePickerRow [role=switch] { min-block-size: 32px; }
 .modulePickerFeedback { margin-block-start: 6px; overflow-wrap: anywhere; }
-.modulePickerFeedback:empty { display: none; }
+.ruleWorkspace:has(> .moduleScope > .modulePicker[aria-expanded=true]) > .ruleListPane .modulePickerFeedback { display: none; }
 .modulePickerIndicator { color: #f0c480; font-weight: 700; }
 .disclosureMarker { inline-size: 6px; block-size: 6px; flex: none; margin-inline: 2px 4px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; rotate: 45deg; }
 .moduleScope > button[aria-expanded=true] .disclosureMarker { rotate: 225deg; }
@@ -299,7 +299,7 @@
 .inspectorHeading { display: flex; align-items: flex-start; justify-content: space-between; inline-size: 100%; gap: 8px; padding-block-end: 8px; border-block-end: 1px solid #313b4b; }
 .inspectorHeading > div { min-inline-size: 0; }
 .inspectorBody { display: flex; flex: 1; flex-direction: column; align-items: stretch; gap: 10px; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 2px 4px; }
-.inspectorHeading h3 { margin: 0 0 3px; overflow-wrap: anywhere; }
+.inspectorHeading h3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 0 0 3px; overflow-wrap: anywhere; }
 .inspectorHeading small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aab7ca; }
 .inspectorHeading button { flex: none; }
 .inspectorBody > div:empty { display: none; }

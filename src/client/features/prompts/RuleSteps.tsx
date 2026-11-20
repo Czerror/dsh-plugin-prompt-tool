@@ -571,7 +571,14 @@ export function RuleStepsPanel(props: {
     return () => observer.disconnect()
   })
 
-  return <div className={css.ruleCanvas} data-node-open={shownNode !== undefined || undefined} data-rule-steps>
+  return <div className={css.ruleCanvas} data-node-open={shownNode !== undefined || undefined} data-rule-steps onKeyDown={event => {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
+    // 动作输入框通过 React portal 渲染到属性栏，按实际 DOM 归属处理返回。
+    if (!(event.target instanceof Element) || !event.target.closest('[data-node-inspector]')) return
+    event.stopPropagation()
+    focusPane.current = 'structure'
+    select(undefined)
+  }}>
     <div className={css.steps} ref={structureRef}>
     <h3 ref={structureHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{t('rules.structure')}</h3>
     {props.diagnosticActionId !== undefined && diagnosticNode === undefined && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
@@ -611,14 +618,9 @@ export function RuleStepsPanel(props: {
       </div>}
     </div>
     </div>
-    <section className={css.ruleProperties} aria-labelledby={`${propertyId}-heading`} onKeyDown={event => {
-      if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
-      event.stopPropagation()
-      focusPane.current = 'structure'
-      select(undefined)
-    }}>
+    <section className={css.ruleProperties} data-node-inspector aria-labelledby={`${propertyId}-heading`}>
       <header className={css.inspectorHeading}>
-        <div><h3 id={`${propertyId}-heading`} ref={propertyHeading} tabIndex={-1}>{nodeTitle ?? t('rules.ruleEditor')}</h3>
+        <div><h3 id={`${propertyId}-heading`} ref={propertyHeading} tabIndex={-1} title={nodeTitle}>{nodeTitle ?? t('rules.ruleEditor')}</h3>
           {nodeIdentity && <small>{selectedDescriptor?.kind === 'action' && 'ID '}{nodeIdentity}</small>}</div>
         <Button icon aria-label={t('rules.backToStructure')} onClick={() => { focusPane.current = 'structure'; select(undefined) }}><IconCloseFillRegular /></Button>
       </header>
