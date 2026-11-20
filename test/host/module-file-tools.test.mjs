@@ -54,7 +54,7 @@ test('用户升级：完整预览确认、目标变化拒绝、私有资产保�
   mkdirSync(project); mkdirSync(root)
   writeFileSync(join(root, 'old.md'), 'AUTHORIZED SOURCE')
   const binding = { moduleId: id, action: 'preview', root, read: ['old.md'], write: ['general', 'projects'] }
-  await owner.confirm(dir, { ...binding, action: 'confirm', expectedRevision: owner.preview(dir, binding).revision }, signal)
+  await owner.confirm(dir, { ...binding, action: 'confirm', expectedRevision: (await owner.preview(dir, binding, signal)).revision }, signal)
   const manage = request => owner.manage(dir, { moduleId: id, ...request, expectedRevision: owner.status(dir).binding.revision }, agent.session.id, signal)
   await manage({ action: 'project', projectDirectory: project }); await manage({ action: 'enable' })
   const selected = { moduleId: id, action: 'source-preview', path: 'old.md', scope: 'project' }
@@ -104,7 +104,7 @@ test('用户升级：完整预览确认、目标变化拒绝、私有资产保�
   assert.equal(readFileSync(join(dir, 'unknown.bin'), 'utf8'), 'CHANGED')
   writeFileSync(join(dir, 'data', 'old.md'), 'INTERNAL SOURCE')
   const internal = { moduleId: id, action: 'preview', read: ['old.md'], write: ['general', 'projects'] }
-  await owner.confirm(dir, { ...internal, action: 'confirm', expectedRevision: owner.preview(dir, internal).revision }, signal)
+  await owner.confirm(dir, { ...internal, action: 'confirm', expectedRevision: (await owner.preview(dir, internal, signal)).revision }, signal)
   await manage({ action: 'project', projectDirectory: project }); await manage({ action: 'enable' })
   await owner.manage(dir, { ...selected, action: 'source-confirm', expectedRevision: (await owner.manage(dir, selected, agent.session.id, signal)).expectedRevision }, agent.session.id, signal)
   events.push({ seq: 1, type: 'user/message', time: Date.now() + 1, data: { id: 'human-2', source: { kind: 'user' }, content: [{ type: 'text', text: '今后长期先给结论' }] } })
@@ -189,6 +189,8 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   assert.equal(owner.status(f.dir).state, 'unbound')
   writeFileSync(join(root, 'old.md'), 'CHANGED')
   assert.equal((await run({ ...request, action: 'confirm', expectedRevision: preview.revision })).kind, 'error')
+  assert.equal(owner.status(f.dir).state, 'unbound')
+  assert.deepEqual(readdirSync(root).sort(), ['02-soul.jsonl', 'SELF.src.md', 'old.md'])
   const fresh = JSON.parse((await run(request)).text)
   assert.equal((await run({ ...request, action: 'confirm', expectedRevision: fresh.revision })).kind, 'success')
   assert.equal(owner.status(f.dir).state, 'bound')

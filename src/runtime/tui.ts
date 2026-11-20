@@ -169,7 +169,7 @@ export function registerTuiCommand(
             const directory = getModuleDirectory?.(request.moduleId), owner = knowledge?.()
             if (!directory || !owner) throw new Error('模块或知识库持久状态不可用')
             invocation.signal.throwIfAborted()
-            const result = request.action === 'preview' ? owner.preview(directory, request)
+            const result = request.action === 'preview' ? await owner.preview(directory, request, invocation.signal)
               : request.action === 'confirm' ? await owner.confirm(directory, request, invocation.signal)
                 : request.action === 'status' ? { ...owner.status(directory), assistedConsolidation: (sctx.get(SOUL_SELF_SERVICE) as { assistedStatus?: (id: string, agent: Agent) => Record<string, unknown> } | undefined)?.assistedStatus?.(request.moduleId, invocation.agent) ?? { state: 'unavailable', reason: 'Soul运行时未装配' } } : await owner.manage(directory, request, invocation.agent.session.id, invocation.signal)
             if (!result) throw new Error('知识库action无效')
