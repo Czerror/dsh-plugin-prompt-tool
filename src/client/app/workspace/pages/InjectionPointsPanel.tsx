@@ -17,8 +17,6 @@ import { ConfirmDialog } from '../../../ui/ConfirmDialog.tsx'
 import { Button } from '../../../ui/Button.tsx'
 import { PublicationNotice } from '../../../ui/PublicationNotice.tsx'
 import { EngineParamField, EngineParamFields, editorGroupSearchText } from '../../../features/modules/EngineParamFields.tsx'
-import { EngineModuleCard } from '../../../ui/EngineModuleCard.tsx'
-import { LAYER_LABEL_KEYS, translateLabel } from '../../../features/prompts/prompt-config-policy.ts'
 import { ModuleCapabilityCreateMenu } from '../../../features/modules/EngineModuleList.tsx'
 import { CurrentSessionModel } from '../../../features/models/CurrentSessionModel.tsx'
 import { TemplateVariablesModuleCard } from '../../../features/prompts/PromptConfigsEditor.tsx'
@@ -261,7 +259,7 @@ export interface InjectionPointSlots {
   renderInstructionSettings?: (config: PromptConfigDraft) => ReactNode
   /** 某层某模块的卡片（不含 add 与 missingCapability）：规则卡与能力补卡的搜索共用，不再传谓词。 */
   layerCards: (layer: string, moduleId: string) => readonly LayerCardView[]
-  renderModuleSettings: (moduleId: string, layers: readonly string[]) => ReactNode
+  renderModuleSettings: (moduleId: string, layer: string) => ReactNode
 }
 
 export interface InjectionPointSlotsInput {
@@ -306,23 +304,14 @@ export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionP
         audience={audience}
       />
     ),
-    renderModuleSettings: (moduleId, layers) => (
-      <>
-        {layers.map(layer => {
-          const key = `${moduleId}:module-settings:${layer}`
-          const module = store.meta.modules?.find(item => item.id === moduleId)
-          const query = (input.keyword ?? '').trim().toLowerCase()
-          const matchesModule = `${module?.name ?? ''} ${moduleId}`.toLowerCase().includes(query)
-          return <EngineModuleCard key={key} name={module?.name ?? moduleId}
-            layer={translateLabel(t, LAYER_LABEL_KEYS, layer)} meta={t('rules.source', { module: moduleId })}
-            defaultExpanded={store.editorDrafts.expanded.get(key) === true}
-            onExpandedChange={next => { store.editorDrafts.expanded.set(key, next); store.publishDrafts() }}>
-            <LayerSettingsContent store={store} t={t} layer={layer} moduleId={moduleId} configId={`module-${layer}`}
-              excludeCapabilities={excluded} keyword={matchesModule ? '' : input.keyword} audience={audience} kinds={['param', 'capability']} />
-          </EngineModuleCard>
-        })}
-      </>
-    ),
+    renderModuleSettings: (moduleId, layer) => {
+      const module = store.meta.modules?.find(item => item.id === moduleId)
+      if (!module?.enabled || module.broken !== undefined || module.renderable === false) return null
+      const query = (input.keyword ?? '').trim().toLowerCase()
+      const matchesModule = `${module.name ?? ''} ${moduleId}`.toLowerCase().includes(query)
+      return <LayerSettingsContent store={store} t={t} layer={layer} moduleId={moduleId} configId={`module-${layer}`}
+        excludeCapabilities={excluded} keyword={matchesModule ? '' : input.keyword} audience={audience} kinds={['param', 'capability']} />
+    },
     // 本层有可渲染内容就要有设置入口：参数组（固定设置区）不依赖声明面；
     // 通用资产节的「添加」只是它的创建入口，不是本层唯一的编辑器通路。
     // 未声明能力只是创建入口，不算「有设置」。

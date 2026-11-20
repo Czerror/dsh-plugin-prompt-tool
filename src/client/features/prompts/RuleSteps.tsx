@@ -14,57 +14,52 @@ import type { FieldDraft } from '../../data/workspace-drafts.ts'
 import type { EngineMeta } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
 import { Button } from '../../ui/Button.tsx'
+import { CanvasChoice } from '../../ui/CanvasChoice.tsx'
 import { FormField } from '../../ui/FormField.tsx'
 import { AutoSaveSelection } from '../../ui/AutoSaveSelection.ts'
 import { SearchInput } from '../../ui/SearchInput.tsx'
 import { IconChevronDownOutlineRegular, IconCloseFillRegular, IconCopyOutlineRegular } from '../../ui/icons.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
-import { StepCard, CloseButton, StepAdd, type StepCreation } from './RuleStepCard.tsx'
-import { RuleConditionFields, RuleParameterFields, cleared } from './RuleFields.tsx'
+import { CloseButton, StepAdd, type StepCreation } from './RuleStepCard.tsx'
+import { RuleConditionFields, RuleParameterFields, cleared, removeConditionDraft } from './RuleFields.tsx'
 import { AssemblyFields, MessageFilterFields, VisibilityFields } from './RuleSurfaceFields.tsx'
 import { ModulePersonaCard } from './ModulePersonaCard.tsx'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { triggerLabel } from './rule-labels.ts'
 import { ruleExecutionPoint } from '../../data/rule-execution-point.ts'
-import { RuleCanvas, type RuleCanvasView } from './RuleCanvas.tsx'
+import { fitCanvasView, instructionNodes, RuleCanvas, type CanvasInstructionFile, type RuleCanvasView } from './RuleCanvas.tsx'
 import { projectRuleCanvas, type RuleCanvasTarget } from './rule-canvas-projection.ts'
 import {
-  actionSummary, branchSummary, collectActionIds, conditionChain, conditionSummary, nodeSummary,
-  isActionNode, isBranchNode, nodeList, type RuleBranch, type RuleNode,
+  actionSummary, collectActionIds, conditionSummary, nodeList,
 } from './rule-steps.ts'
 import css from './rules.module.css'
 
-type LibraryKind = 'condition' | 'action'
+type LibraryKind = 'condition' | 'action' | 'branch'
+type LibraryItem = { kind: LibraryKind; name: string; label: string; example?: Record<string, unknown> }
 
-function RuleLibrary({ t, meta, libraryOpen, libraryId, onCloseLibrary, disabled, targets, payload, canAdd, add, addBranch, setDragPayload }: {
+function RuleLibrary({ t, meta, libraryOpen, libraryId, onCloseLibrary, disabled, selected, onSelect, payload, setDragPayload }: {
   t: PromptToolTranslate
   meta: RuleEditorMeta
   libraryOpen: boolean
   libraryId: string
   onCloseLibrary: (restoreFocus: boolean) => void
   disabled: boolean
-  targets: readonly RuleCanvasTarget[]
+  selected?: LibraryItem
+  onSelect: (item: LibraryItem, trigger: HTMLButtonElement) => void
   payload: (kind: LibraryKind, name: string) => string
-  canAdd: (id: string, text: string) => boolean
-  add: (id: string, text: string) => void
-  addBranch: (target: RuleCanvasTarget) => void
   setDragPayload: (data: string) => void
 }): ReactNode {
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState({ condition: true, action: false })
-  const [selected, select] = useState<{ kind: LibraryKind; name: string }>()
-  const [targetId, setTargetId] = useState('')
-  const groups = useMemo(() => (['condition', 'action'] as const).map(kind => ({
-    kind,
-    // 只用名称建立搜索索引，示例摘要在显示条目时才生成。
-    items: (kind === 'condition' ? meta.predicates : meta.actions).map(entry => {
-      const label = triggerLabel(t, entry.kind)
-      let detail: string | undefined
-      return { entry, label, search: `${entry.kind} ${label}`.toLowerCase(), summary: () => detail ??= kind === 'condition'
-        ? conditionSummary(t, entry.example as RuleCondition) : actionSummary(t, { ...entry.example, kind: entry.kind } as RuleAction) }
-    }),
-  })), [meta, t])
+  const branchLabel = t('rules.steps.branchLabel')
+  const groups = useMemo(() => (['condition', 'action'] as const).map(kind => {
+    const items: LibraryItem[] = (kind === 'condition' ? meta.predicates : meta.actions).map(entry => ({
+      kind, name: entry.kind, label: triggerLabel(t, entry.kind), example: entry.example,
+    }))
+    if (kind === 'action') items.push({ kind: 'branch', name: 'branch', label: branchLabel })
+    return { kind, items: items.map(item => ({ item, search: `${item.name} ${item.label}`.toLowerCase() })) }
+  }), [meta, t, branchLabel])
   if (!libraryOpen) return <section id={libraryId} className={css.canvasLibrary} hidden />
   const filter = query.trim().toLowerCase()
   const visible = groups.map(group => ({
@@ -86,16 +81,6 @@ function RuleLibrary({ t, meta, libraryOpen, libraryId, onCloseLibrary, disabled
       {visible.map(({ kind, items }) => {
         const open = filter ? items.length > 0 : expanded[kind]
         const label = t(kind === 'condition' ? 'rules.libraryConditions' : 'rules.libraryActions')
-        const activeEntry = selected?.kind === kind && items.some(item => item.entry.kind === selected.name)
-        const showBranch = kind === 'action' && !filter
-        const available = open && (activeEntry || showBranch) ? targets.filter(target => (target.kind === 'condition') === (kind === 'condition')) : []
-        const target = available.find(item => item.id === targetId) ?? available[0]
-        const targetInput = <AutoSaveSelection.Provider value={undefined}>
-          <MenuSelect ariaLabel={t('rules.libraryTarget')} value={target?.id ?? ''}
-            options={available.map(item => ({ value: item.id, label: item.label }))} onChange={setTargetId} />
-        </AutoSaveSelection.Provider>
-        const branchButton = <Button variant="outline" disabled={disabled || !target}
-          onClick={() => { if (target) addBranch(target) }}>{t('rules.steps.addBranch')}</Button>
         return <section key={kind} className={css.libraryGroup}>
           <h4 className={css.librarySection}>
             <button type="button" aria-expanded={open} aria-controls={`${libraryId}-${kind}`} aria-disabled={filter ? true : undefined}
@@ -104,40 +89,46 @@ function RuleLibrary({ t, meta, libraryOpen, libraryId, onCloseLibrary, disabled
             </button>
           </h4>
           <div id={`${libraryId}-${kind}`} hidden={!open}>
-            {open && items.map(({ entry, label: name, summary }) => {
-              const active = selected?.kind === kind && selected.name === entry.kind
-              const detail = summary()
-              return <div key={entry.kind}>
-                <button type="button" className={css.libraryItem} data-library-kind={kind} draggable={!disabled}
-                  onDragStart={event => {
-                    const data = payload(kind, entry.kind)
-                    setDragPayload(data)
-                    event.dataTransfer.effectAllowed = 'copy'
-                    event.dataTransfer.setData('application/x-prompt-tool-rule-node', data)
-                  }} onDragEnd={() => setDragPayload('')}
-                  aria-expanded={active} onClick={() => select(active ? undefined : { kind, name: entry.kind })}>
-                  <span className={css.libraryIcon} data-library-kind={kind} aria-hidden="true">{kind === 'condition' ? <span className={css.conditionMark} /> : <IconCopyOutlineRegular />}</span>
-                  <span><strong>{name}</strong><small>{detail === name ? entry.kind : detail}</small></span>
-                </button>
-                {active && <div className={css.libraryDetail}>
-                  <p>{detail}</p>
-                  <p>{t('rules.libraryAddHint')}</p>
-                  {targetInput}
-                  <Button shape="pill" variant="primary" disabled={!target || !canAdd(target.id, payload(kind, entry.kind))}
-                    onClick={() => { if (target) add(target.id, payload(kind, entry.kind)) }}>{t('rules.libraryAdd')}</Button>
-                  {showBranch && branchButton}
-                </div>}
-              </div>
-            })}
-            {open && showBranch && !activeEntry && <div className={css.libraryDetail}>
-              {targetInput}
-              {branchButton}
-            </div>}
+            {open && items.map(({ item }) => <button key={`${item.kind}:${item.name}`} type="button" className={css.libraryItem}
+              data-library-kind={item.kind} draggable={!disabled} aria-pressed={selected?.kind === item.kind && selected.name === item.name}
+              onDragStart={event => {
+                const data = payload(item.kind, item.name)
+                setDragPayload(data)
+                event.dataTransfer.effectAllowed = 'copy'
+                event.dataTransfer.setData('application/x-prompt-tool-rule-node', data)
+              }} onDragEnd={() => setDragPayload('')} onClick={event => onSelect(item, event.currentTarget)}>
+              <span className={css.libraryIcon} data-library-kind={kind} aria-hidden="true">{kind === 'condition' ? <span className={css.conditionMark} /> : <IconCopyOutlineRegular />}</span>
+              <strong>{item.label}</strong>
+            </button>)}
           </div>
         </section>
       })}
     </div>
   </section>
+}
+
+function LibraryProperties({ t, item, targets, disabled, onAdd }: {
+  t: PromptToolTranslate; item: LibraryItem; targets: readonly RuleCanvasTarget[]; disabled: boolean; onAdd: (targetId: string) => void
+}): ReactNode {
+  const [targetId, setTargetId] = useState('')
+  const options = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const target of targets) counts.set(target.label, (counts.get(target.label) ?? 0) + 1)
+    return targets.map(target => ({ value: target.id, label: (counts.get(target.label) ?? 0) > 1 ? `${target.label} · ${target.path}` : target.label }))
+  }, [targets])
+  const target = options.some(option => option.value === targetId) ? targetId : options[0]?.value
+  const detail = item.kind === 'branch' ? undefined : item.kind === 'condition'
+    ? conditionSummary(t, item.example as RuleCondition)
+    : actionSummary(t, { ...item.example, kind: item.name } as RuleAction)
+  return <div className={css.inspectorFields}>
+    {detail && detail !== item.label && <p className={css.libraryExample}>{detail.startsWith(item.label + ' · ') ? detail.slice(item.label.length + 3) : detail}</p>}
+    {options.length > 0 ? <AutoSaveSelection.Provider value={undefined}>
+      <FormField label={t('rules.libraryTarget')}><CanvasChoice t={t} ariaLabel={t('rules.libraryTarget')} value={target ?? ''}
+        options={options} onChange={setTargetId} disabled={disabled} /></FormField>
+    </AutoSaveSelection.Provider> : <p role="status">{t('rules.libraryNoTarget')}</p>}
+    <Button shape="pill" variant="primary" disabled={disabled || target === undefined}
+      onClick={() => { if (target !== undefined) onAdd(target) }}>{t('rules.libraryAdd')}</Button>
+  </div>
 }
 
 // 条件 not 的编辑路径沿用字段 owner 的 :not:0，定义中的 not 本身并非数组。
@@ -174,17 +165,6 @@ interface CanvasIdentity {
 // 不持久化身份；按仍存在的子树引用搬迁，原位字段替换保留旧节点身份。
 const canvasIdentities = new WeakMap<Map<string, RuleCanvasView>, Map<string, CanvasIdentity>>()
 
-/** 作用域头：只声明「下面这批动作属于哪个条件」，本身没有可编辑内容。 */
-function ScopeHead(props: { kindLabel: string; summary: string; disabled?: boolean; removeLabel?: string; onRemove?: () => void }): ReactNode {
-  return <div className={css.scopeHead}>
-    <span className={css.stepKind}>{props.kindLabel}</span>
-    <span className={css.stepSummary}>{props.summary}</span>
-    {props.onRemove !== undefined && props.removeLabel !== undefined && <span className={css.stepActions}>
-      <CloseButton label={props.removeLabel} disabled={props.disabled} onClick={props.onRemove} />
-    </span>}
-  </div>
-}
-
 /** 移动 / 删除两个按钮：动作卡与分支卡共用。 */
 function NodeActions(props: { t: PromptToolTranslate; id: string; index: number; total: number; disabled?: boolean; onMove: (offset: -1 | 1) => void; onRemove: () => void }): ReactNode {
   const { t } = props
@@ -205,25 +185,14 @@ interface StepContext {
   disabled: boolean
   onDraft: () => void
   creation: StepCreation
-  selected?: string
-  property: NonNullable<Parameters<typeof StepCard>[0]['property']>
   select: (path: string) => void
 }
 
-const rowOpen = (context: StepContext, path: string): boolean => context.selected === path
-
-/** 叶子动作卡：卡头是动作摘要，展开是该动作的全部字段。 */
-function ActionCard(props: {
+function ActionFields(props: {
   context: StepContext
   action: RuleAction
   path: string
-  chain: readonly RuleCondition[]
-  /** 所处作用域是否带条件：带条件的动作必须是 event 生命周期（引擎 rule-spec.mjs:143）。 */
   scopeConditional: boolean
-  index: number
-  total: number
-  onMove: (offset: -1 | 1) => void
-  onRemove: () => void
   onChange: (action: RuleAction) => void
 }): ReactNode {
   const { context, action } = props
@@ -237,10 +206,7 @@ function ActionCard(props: {
     : action.kind === 'request-params' ? { ...entry?.example, patch: { provider: '', model: '', reasoningEffort: '', temperature: undefined, maxTokens: undefined } }
     : action.kind === 'inject-text' ? { ...entry?.example, config: { strategy: 'static', configKind: 'ordered', ...(policy?.merge ? { mergeMode: 'separate' } : {}), ...(policy?.position ? { position: 'after-user' } : {}), ...(staticAudience ? { audience: '' } : {}), ...asTriggerRecord(entry?.example.config) } }
       : entry?.example
-  const chainLabel = props.chain.length > 0 ? conditionChain(t, props.chain) : undefined
-  return <StepCard kind="action" kindLabel={triggerLabel(t, String(action.kind))} summary={actionSummary(t, action)} hint={chainLabel}
-    level={2} nodeKey={`action:${action.id}`} open={rowOpen(context, `action:${action.id}`)} onToggle={() => context.select(`action:${action.id}`)} property={context.property}
-    actions={<NodeActions t={t} id={action.id} index={props.index} total={props.total} disabled={context.disabled} onMove={props.onMove} onRemove={props.onRemove} />}>
+  return <div className={css.inspectorFields}>
     {entry === undefined
       ? <><p role="note">{t('rules.unknown')}</p><TriggerJsonField {...context} label={t('rules.rawAction')} shape="object" value={action} fieldKey={fieldKey}
         onChange={next => props.onChange(asTriggerRecord(next) as unknown as RuleAction)} /></>
@@ -263,40 +229,6 @@ function ActionCard(props: {
           configOmit={action.kind === 'inject-text' ? ['modelScope', 'promotion', ...staticAudience ? [] : ['audience']] : undefined}
           onChange={next => props.onChange({ ...next, id: action.id, kind: String(next.kind ?? action.kind) } as unknown as RuleAction)} /></div>}
       </>}
-  </StepCard>
-}
-
-/** 分支卡：卡头即「当 ⟨条件⟩ → ⟨动作⟩」，卡内是本层条件 + 它的 then / else 动作。 */
-function BranchCard(props: {
-  context: StepContext
-  branch: RuleBranch
-  path: string
-  chain: readonly RuleCondition[]
-  index: number
-  total: number
-  onMove: (offset: -1 | 1) => void
-  onRemove: () => void
-  onChange: (branch: RuleBranch) => void
-  renderList: (nodes: RuleNode[], path: string, chain: readonly RuleCondition[], scopeConditional: boolean, onChange: (nodes: RuleNode[]) => void) => ReactNode
-}): ReactNode {
-  const { context, branch } = props
-  const { t } = context
-  const branchChain = [...props.chain, ...(branch.if === undefined ? [] : [branch.if])]
-  const elseChain: readonly RuleCondition[] = [...props.chain, ...(branch.if === undefined ? [] : [{ not: branch.if }])]
-  const patch = (next: Partial<RuleBranch>): void => props.onChange({ ...branch, ...next })
-  const ordinal = String(props.index + 1)
-  return <div className={css.stepScope}>
-    <StepCard kind="branch" kindLabel={t('rules.steps.branchLabel')} summary={branchSummary(t, branch)} hint={conditionChain(t, branchChain)}
-    level={1} nodeKey={props.path} open={rowOpen(context, props.path)} onToggle={() => context.select(props.path)} property={context.property}
-    actions={<NodeActions t={t} id={ordinal} index={props.index} total={props.total} disabled={context.disabled} onMove={props.onMove} onRemove={props.onRemove} />}>
-    <RuleConditionFields {...context} fieldKey={`${props.path}:if`} meta={context.meta} value={branch.if} onChange={condition => patch({ if: condition })} />
-    </StepCard>
-    <p className={css.stepSlot}>{t('rules.steps.then')}</p>
-    <div className={css.stepScope} data-step-scope="then">{props.renderList(nodeList(branch.then), `${props.path}:then`, branchChain, true, nodes => patch({ then: nodes }))}</div>
-    <p className={css.stepSlot}>{t('rules.steps.else')}</p>
-    {branch.else === undefined
-      ? <div className={css.stepAdd}><Button shape="pill" variant="outline" disabled={context.disabled} onClick={() => patch({ else: [] })}>{t('rules.steps.addElse')}</Button></div>
-      : <div className={css.stepScope} data-step-scope="else">{props.renderList(nodeList(branch.else), `${props.path}:else`, elseChain, true, nodes => patch({ else: nodes }))}</div>}
   </div>
 }
 
@@ -321,30 +253,43 @@ export function RuleStepsPanel(props: {
   onCloseLibrary: (restoreFocus: boolean) => void
   onBrowseChange?: () => void
   onCanvasInteract: () => void
+  instructionFiles: readonly CanvasInstructionFile[]
+  activeInstructionId?: string
+  hideNodeInspector?: boolean
+  onSelectInstruction: (id: string) => void
   diagnosticActionId?: string
+  diagnosticFocusToken?: object
   disabled?: boolean
   onDraft: () => void
   onChange: (rule: RuleDefinition) => void
   onMove: (path: string, index: number, offset: -1 | 1) => void
 }): ReactNode {
   const { t, rule, meta, libraryOpen } = props
+  const structureLabel = t('rules.structure')
   const disabled = props.disabled === true
-  const then = nodeList(rule.then), otherwise = nodeList(rule.else)
-  const usedIds = collectActionIds([...then, ...otherwise])
+  const usedIds = useMemo(() => collectActionIds([...nodeList(rule.then), ...nodeList(rule.else)]), [rule])
   const diagnosticNode = props.diagnosticActionId === undefined || !usedIds.has(props.diagnosticActionId) ? undefined : `action:${props.diagnosticActionId}`
   const [addActionKind, setAddActionKind] = useState('inject-text')
   const [addConditionKind, setAddConditionKind] = useState('')
   const [activeCreation, setActiveCreation] = useState(`${props.fieldKey}:then`)
+  const [libraryItem, setLibraryItem] = useState<LibraryItem>()
+  const libraryTrigger = useRef<HTMLButtonElement>()
+  const lastDiagnosticFocus = useRef(props.diagnosticFocusToken)
   const [localSelectedNode, selectNode] = useState(props.nodeBrowse?.get(props.browseKey))
   const selectedNode = props.onBrowseChange ? props.nodeBrowse?.get(props.browseKey) : localSelectedNode
-  const [propertyTarget, setPropertyTarget] = useState<HTMLDivElement | null>(null)
   const [localView, setLocalView] = useState<RuleCanvasView>({ x: 260, y: 110, scale: 0.8, positions: {} })
   const view = props.canvasBrowse?.get(props.browseKey) ?? localView
   const needsInitialFit = useRef(!props.canvasBrowse?.has(props.browseKey))
+  const userAdjustedView = useRef(!needsInitialFit.current)
+  const fitIncludedFiles = useRef(false)
   const changeView = (next: RuleCanvasView): void => {
     props.canvasBrowse?.set(props.browseKey, next)
     if (props.onBrowseChange) props.onBrowseChange()
     else setLocalView(next)
+  }
+  const adjustView = (next: RuleCanvasView): void => {
+    userAdjustedView.current = true
+    changeView(next)
   }
   const localIdentity = useRef<CanvasIdentity>({ next: 0, objects: new WeakMap(), paths: new Map() })
   let identityState = localIdentity.current
@@ -355,33 +300,42 @@ export function RuleStepsPanel(props: {
     if (existing) identityState = existing
     else owners.set(props.browseKey, identityState)
   }
-  const present = new WeakSet<object>()
-  const visit = (value: unknown): void => {
-    if (value === null || typeof value !== 'object' || present.has(value)) return
-    present.add(value)
-    for (const child of Object.values(value)) visit(child)
-  }
-  visit(rule)
-  const nextPaths = new Map<string, { value: unknown; id: string }>()
-  const graph = projectRuleCanvas({ rule, meta, t, resolveExecution: (action, current) => ruleExecutionPoint(action, current, meta), identity: { get: path => {
-    const value = valueAt(rule, path), previous = identityState.paths.get(path)
-    let id = value !== null && typeof value === 'object' ? identityState.objects.get(value) : undefined
-    if (!id && previous && (previous.value === value || previous.value === null || typeof previous.value !== 'object' || !present.has(previous.value))) id = previous.id
-    id ??= `node-${++identityState.next}`
-    if (value !== null && typeof value === 'object') identityState.objects.set(value, id)
-    nextPaths.set(path, { value, id })
-    return id
-  } } })
-  identityState.paths = nextPaths
+  const { graph, nodeById, idByPath, targetById, top } = useMemo(() => {
+    const present = new WeakSet<object>()
+    const visit = (value: unknown): void => {
+      if (value === null || typeof value !== 'object' || present.has(value)) return
+      present.add(value)
+      for (const child of Object.values(value)) visit(child)
+    }
+    visit(rule)
+    const nextPaths = new Map<string, { value: unknown; id: string }>()
+    const graph = projectRuleCanvas({ rule, meta, t, resolveExecution: (action, current) => ruleExecutionPoint(action, current, meta), identity: { get: path => {
+      const value = valueAt(rule, path), previous = identityState.paths.get(path)
+      let id = value !== null && typeof value === 'object' ? identityState.objects.get(value) : undefined
+      if (!id && previous && (previous.value === value || previous.value === null || typeof previous.value !== 'object' || !present.has(previous.value))) id = previous.id
+      id ??= `node-${++identityState.next}`
+      if (value !== null && typeof value === 'object') identityState.objects.set(value, id)
+      nextPaths.set(path, { value, id })
+      return id
+    } } })
+    identityState.paths = nextPaths
+    return {
+      graph,
+      nodeById: new Map(graph.nodes.map(node => [node.id, node])),
+      idByPath: new Map([...graph.descriptors].filter(([id]) => !id.startsWith('lane:')).map(([id, descriptor]) => [descriptor.path, id])),
+      targetById: new Map(graph.targets.map(target => [target.id, target])),
+      top: graph.nodes.reduce((min, node) => Math.min(min, node.y), 0),
+    }
+  }, [rule, meta, t, identityState, structureLabel])
   const [dragPayload, setDragPayload] = useState('')
   const propertyId = useId()
   const structureHeading = useRef<HTMLHeadingElement>(null)
   const propertyHeading = useRef<HTMLHeadingElement>(null)
-  const nodeButton = useRef<HTMLButtonElement | null>(null)
   const focusPane = useRef<'structure' | 'properties'>()
   const handledDiagnosticNode = useRef<string>()
   const structureRef = useRef<HTMLDivElement>(null)
   const libraryNode = useRef<string>()
+  const editedConditionPath = useRef<string>()
   useLayoutEffect(() => {
     const changed = selectedNode !== libraryNode.current
     libraryNode.current = selectedNode
@@ -394,7 +348,7 @@ export function RuleStepsPanel(props: {
   useLayoutEffect(() => {
     if (!selectedNode) { revealedNode.current = undefined; return }
     if (revealedNode.current === selectedNode) return
-    const node = graph.nodes.find(item => item.id === selectedNode)
+    const node = nodeById.get(selectedNode)
     const stage = structureRef.current?.querySelector<HTMLElement>('[data-rule-stage]')
     if (!node || !stage || stage.clientWidth < 896) return
     revealedNode.current = selectedNode
@@ -404,7 +358,7 @@ export function RuleStepsPanel(props: {
     const x = point.x * view.scale + view.x, y = point.y * view.scale + view.y
     const dx = x + 216 * view.scale > right ? right - x - 216 * view.scale : x < left ? left - x : 0
     const dy = y + 112 * view.scale > bottom ? bottom - y - 112 * view.scale : y < top ? top - y : 0
-    if (dx || dy) changeView({ ...view, x: view.x + dx, y: view.y + dy })
+    if (dx || dy) adjustView({ ...view, x: view.x + dx, y: view.y + dy })
   })
   const lastNodeKey = useRef(selectedNode)
   const select = (path: string | undefined): void => {
@@ -414,6 +368,16 @@ export function RuleStepsPanel(props: {
     else selectNode(path)
   }
   useLayoutEffect(() => {
+    if (editedConditionPath.current !== undefined) {
+      const id = idByPath.get(editedConditionPath.current)
+      editedConditionPath.current = undefined
+      if (id !== undefined && selectedNode !== id) {
+        lastNodeKey.current = id
+        focusPane.current = 'properties'
+        select(id)
+        return
+      }
+    }
     if (diagnosticNode !== handledDiagnosticNode.current) {
       handledDiagnosticNode.current = diagnosticNode
       if (diagnosticNode !== undefined) {
@@ -431,50 +395,74 @@ export function RuleStepsPanel(props: {
     }
     focusPane.current = undefined
   })
-  const shownNode = selectedNode?.startsWith('action:') && !usedIds.has(selectedNode.slice('action:'.length)) ? undefined : selectedNode
-  const conditional = rule.if !== undefined
+  const inspectingOther = props.activeInstructionId !== undefined || props.hideNodeInspector === true
+  const libraryDetail = libraryOpen && !inspectingOther && lastDiagnosticFocus.current === props.diagnosticFocusToken ? libraryItem : undefined
+  const selectedCanvasNode = selectedNode?.startsWith('action:') && !usedIds.has(selectedNode.slice('action:'.length)) ? undefined : selectedNode
+  const shownNode = inspectingOther || libraryDetail ? undefined : selectedCanvasNode
+  useLayoutEffect(() => {
+    if (inspectingOther || !libraryOpen || lastDiagnosticFocus.current !== props.diagnosticFocusToken) setLibraryItem(undefined)
+    lastDiagnosticFocus.current = props.diagnosticFocusToken
+  }, [inspectingOther, libraryOpen, props.diagnosticFocusToken])
+  const closeLibraryDetail = (restoreFocus: boolean): void => {
+    const trigger = libraryTrigger.current
+    setLibraryItem(undefined)
+    if (restoreFocus) requestAnimationFrame(() => {
+      const fallback = structureRef.current?.closest('[data-canvas-workspace]')
+        ?.querySelector<HTMLButtonElement>(`[aria-controls="${CSS.escape(props.libraryId)}"]`)
+      ;(trigger?.getClientRects().length ? trigger : fallback)?.focus({ preventScroll: true })
+    })
+    libraryTrigger.current = undefined
+  }
+  const openLibraryDetail = (item: LibraryItem, trigger: HTMLButtonElement): void => {
+    props.onCanvasInteract()
+    libraryTrigger.current = trigger
+    setLibraryItem(item)
+  }
+  useLayoutEffect(() => { if (libraryDetail) propertyHeading.current?.focus({ preventScroll: true }) }, [libraryDetail])
   const context: StepContext = {
     t, meta, engineMeta: props.engineMeta, fields: props.fields, expanded: props.expanded,
     prefix: props.prefix, disabled, onDraft: props.onDraft,
     creation: { active: activeCreation, select: setActiveCreation },
-    selected: shownNode,
     select: path => {
       lastNodeKey.current = path
       focusPane.current = 'properties'
       select(path)
-      if (path === selectedNode) { propertyHeading.current?.focus(); focusPane.current = undefined }
+      if (path === shownNode) { propertyHeading.current?.focus(); focusPane.current = undefined }
     },
-    property: { target: propertyTarget, id: propertyId, focus: button => { nodeButton.current = button } },
   }
   const patch = (next: Partial<RuleDefinition>): void => { if (!disabled) props.onChange({ ...rule, ...next }) }
   const changeAt = (path: string, value: unknown): void => {
     if (!disabled) props.onChange(withValue(rule, definitionPath(path), value) as RuleDefinition)
   }
-  const setNodes = (next: RuleNode[]): void => patch({ then: next as RuleAction[] })
 
   const nextActionId = (): string => { let number = 1; while (usedIds.has(`action-${number}`)) number++; return `action-${number}` }
   const actionSelectable = (scopeConditional: boolean) =>
     scopeConditional ? meta.actions.filter(action => action.supportsWhen) : meta.actions
 
   const selectedDescriptor = shownNode === undefined ? undefined : graph.descriptors.get(shownNode)
-  const nodeTitle = graph.nodes.find(node => node.id === shownNode)?.title
+  const conditionSelection = selectedDescriptor?.path.split(':').includes('if') === true
+  const nestedCondition = conditionSelection && /:(?:all|any|notAny|not):\d+$/.test(selectedDescriptor!.path)
+  const elseSelection = selectedDescriptor?.kind === 'group' && /(?:^|:)else$/.test(selectedDescriptor.path)
+    && shownNode !== undefined && !nodeById.get(shownNode)?.region
+  const nodeTitle = shownNode === undefined ? undefined : nodeById.get(shownNode)?.title
   const nodeIdentity = selectedDescriptor?.kind === 'action' ? selectedDescriptor.actionId
     : selectedDescriptor?.kind === 'branch' ? t('rules.steps.branchLabel')
       : selectedDescriptor?.kind === 'condition' ? t('rules.libraryConditions')
         : selectedDescriptor?.kind === 'unknown' ? t('rules.steps.unknown') : selectedDescriptor?.path
-  const payload = (kind: 'condition' | 'action', name: string): string => JSON.stringify({ rule: props.browseKey, kind, name })
-  const parsePayload = (text: string): { kind: 'condition' | 'action'; name: string } | undefined => {
+  const payload = (kind: LibraryKind, name: string): string => JSON.stringify({ rule: props.browseKey, kind, name })
+  const parsePayload = (text: string): { kind: LibraryKind; name: string } | undefined => {
     try {
       const value = JSON.parse(text) as Record<string, unknown>
-      return value.rule === props.browseKey && (value.kind === 'condition' || value.kind === 'action') && typeof value.name === 'string'
+      return value.rule === props.browseKey && (value.kind === 'condition' || value.kind === 'action' || value.kind === 'branch') && typeof value.name === 'string'
         ? { kind: value.kind, name: value.name } : undefined
     } catch { return undefined }
   }
-  const targetFor = (id: string) => graph.targets.find(target => target.id === id || target.id === `${id}:target`)
+  const targetFor = (id: string) => targetById.get(id) ?? targetById.get(`${id}:target`)
   const canAdd = (id: string, text: string): boolean => {
     const target = targetFor(id), item = parsePayload(text)
     if (disabled || !target || !item) return false
     if (target.kind === 'condition') return item.kind === 'condition' && meta.predicates.some(entry => entry.kind === item.name)
+    if (item.kind === 'branch') return item.name === 'branch' && !target.executionPoint && meta.predicates.some(entry => entry.kind === 'scope')
     if (item.kind !== 'action') return false
     const entry = meta.actions.find(entry => entry.kind === item.name)
     if (!entry || ((rule.if !== undefined || target.path.includes(':')) && !entry.supportsWhen)) return false
@@ -492,6 +480,8 @@ export function RuleStepsPanel(props: {
       changeAt(target.path, previous === undefined ? example
         : (kind === 'all' || kind === 'any' || kind === 'notAny') && Array.isArray(current[kind])
           ? { ...current, [kind]: [...current[kind] as unknown[], example] } : { all: [previous, example] })
+    } else if (item.kind === 'branch') {
+      changeAt(target.path, [...nodeList(valueAt(rule, target.path)), { if: { scope: { audience: 'main' } }, then: [], else: [] }])
     } else {
       const example = structuredClone(meta.actions.find(entry => entry.kind === item.name)!.example)
       const action = { ...example, id: nextActionId(), kind: item.name } as RuleAction
@@ -500,165 +490,226 @@ export function RuleStepsPanel(props: {
     }
   }
   const dropNode = (id: string, text: string): void => {
-    if (canAdd(id, text)) add(id, text)
+    if (canAdd(id, text)) { closeLibraryDetail(false); add(id, text) }
   }
 
-  /** 列表渲染器：动作卡与分支卡递归共用（分支内可再嵌分支）。 */
-  const renderList = (nodes: RuleNode[], path: string, chain: readonly RuleCondition[], scopeConditional: boolean, onChange: (next: RuleNode[]) => void): ReactNode => {
-    const setAt = (index: number, next: RuleNode): void => onChange(nodes.map((node, at) => at === index ? next : node))
-    const move = (index: number, offset: -1 | 1): void => {
-      if (!disabled) props.onMove(path, index, offset)
-      if (!selectedNode?.startsWith('action:')) select(undefined)
+  const removeNodeDrafts = (path: string, index: number): void => {
+    const prefix = `${props.fieldKey}:${path}`
+    removeConditionDraft(props.fields, prefix, index)
+    removeConditionDraft(props.expanded, `${props.prefix}:${prefix}`, index)
+  }
+  const removeCondition = (path: string): void => {
+    const child = /^(.*):(all|any|notAny|not):(\d+)$/.exec(path)
+    if (child) {
+      const [, parent, kind, index] = child
+      const listPath = `${parent}:${kind}`
+      if (kind === 'not' || nodeList(valueAt(rule, listPath)).length <= 1) {
+        removeCondition(parent!)
+        return
+      }
+      removeNodeDrafts(listPath, Number(index))
+      changeAt(path, undefined)
+      return
     }
-    const candidates = actionSelectable(scopeConditional)
+    const key = `${props.fieldKey}:${path}`
+    cleared(props.fields, key)
+    cleared(props.expanded, `${props.prefix}:${key}`)
+    changeAt(path, undefined)
+  }
+
+  const nodeLink = (id: string | undefined, actions?: ReactNode): ReactNode => {
+    const node = id === undefined ? undefined : nodeById.get(id)
+    if (!node) return null
+    return <div key={node.id} className={css.inspectorNodeRow}>
+      <Button className={css.inspectorNodeLink} onClick={() => context.select(node.id)}>{node.title}</Button>
+      {actions}
+    </div>
+  }
+
+  const renderScope = (path: string, id: string): ReactNode => {
+    const scope = nodeList(valueAt(rule, path))
+    const members = nodeById.get(id)?.members
+    const ids = members ?? scope.map((_, index) => idByPath.get(`${path}:${index}`))
+    const conditional = rule.if !== undefined || path.includes(':')
+    const target = targetFor(id)
+    const candidates = target ? actionSelectable(conditional).filter(entry => canAdd(target.id, payload('action', entry.kind))) : []
     const selected = candidates.find(action => action.kind === addActionKind) ?? candidates[0]
-    const addAction = (): void => { if (selected !== undefined) onChange([...nodes, { ...structuredClone(selected.example), id: nextActionId(), kind: selected.kind } as unknown as RuleNode]) }
     const addBranch = (): void => {
-      const predicate = meta.predicates.find(item => item.kind === addConditionKind) ?? meta.predicates.find(item => !meta.composites.includes(item.kind))
-      const action = actionSelectable(true).find(item => item.kind === addActionKind) ?? actionSelectable(true)[0]
-      if (predicate === undefined || action === undefined) return
-      onChange([...nodes, { if: structuredClone(predicate.example), then: [{ ...structuredClone(action.example), id: nextActionId(), kind: action.kind }] } as unknown as RuleNode])
+      const predicate = meta.predicates.find(item => item.kind === addConditionKind)
+      const action = selected?.supportsWhen ? selected : candidates.find(item => item.supportsWhen)
+      if (disabled || !predicate || !action) return
+      changeAt(path, [...scope, { if: structuredClone(predicate.example), then: [{ ...structuredClone(action.example), id: nextActionId(), kind: action.kind }] }])
     }
-    return <>
-      {nodes.map((node, index) => {
-        const nodePath = `${path}:${index}`
-        if (isActionNode(node)) return <ActionCard key={nodePath} context={context} action={node} path={nodePath} chain={chain} scopeConditional={scopeConditional}
-          index={index} total={nodes.length} onMove={offset => move(index, offset)} onRemove={() => { cleared(props.fields, nodePath); onChange(nodes.filter((_, at) => at !== index)) }}
-          onChange={next => setAt(index, next)} />
-        if (isBranchNode(node)) return <BranchCard key={nodePath} context={context} branch={node} path={nodePath} chain={chain}
-          index={index} total={nodes.length} onMove={offset => move(index, offset)} onRemove={() => { cleared(props.fields, nodePath); onChange(nodes.filter((_, at) => at !== index)) }}
-          onChange={next => setAt(index, next)} renderList={renderList} />
-        return <StepCard key={nodePath} kind="unknown" kindLabel={t('rules.steps.unknown')} summary={nodeSummary(t, node)} level={1}
-          nodeKey={nodePath} open={rowOpen(context, nodePath)} onToggle={() => context.select(nodePath)} property={context.property}
-          actions={<NodeActions t={t} id={String(index + 1)} index={index} total={nodes.length} disabled={disabled} onMove={offset => move(index, offset)} onRemove={() => onChange(nodes.filter((_, at) => at !== index))} />}>
-          <p role="note">{t('rules.unknown')}</p>
-          <TriggerJsonField {...context} label={t('rules.rawAction')} shape="object" value={node} fieldKey={nodePath}
-            onChange={next => setAt(index, asTriggerRecord(next) as unknown as RuleNode)} />
-        </StepCard>
+    return <div className={css.inspectorFields}>
+      {ids.map(childId => {
+        const child = childId === undefined ? undefined : graph.descriptors.get(childId)
+        if (!child) return null
+        const index = Number(child.path.split(':').at(-1))
+        return nodeLink(childId, <NodeActions t={t} id={child.kind === 'action' ? child.actionId : String(index + 1)} index={index} total={scope.length}
+          disabled={disabled} onMove={offset => props.onMove(`${props.fieldKey}:${path}`, index, offset)} onRemove={() => {
+            removeNodeDrafts(path, index)
+            changeAt(child.path, undefined)
+            propertyHeading.current?.focus()
+          }} />)
       })}
-      <StepAdd creation={context.creation} path={path} label={t('configList.create')} disabled={disabled}>
-        <MenuSelect compact ariaLabel={t('rules.steps.addConditionType')} value={addConditionKind} disabled={disabled || candidates.length === 0}
+      {target && candidates.length > 0 && <StepAdd creation={context.creation} path={`${props.fieldKey}:${path}`} label={t('configList.create')} disabled={disabled}>
+        <FormField label={t('rules.steps.addActionType')}><MenuSelect compact ariaLabel={t('rules.steps.addActionType')} value={selected?.kind ?? ''} disabled={disabled}
+          options={candidates.map(item => ({ value: item.kind, label: triggerLabel(t, item.kind) }))} onChange={setAddActionKind} /></FormField>
+        <Button shape="pill" variant="outline" disabled={disabled || !selected}
+          onClick={() => { if (selected) add(target.id, payload('action', selected.kind)) }}>{t('rules.addAction')}</Button>
+        {!members && <><FormField label={t('rules.steps.addConditionType')}><MenuSelect compact ariaLabel={t('rules.steps.addConditionType')} value={addConditionKind} disabled={disabled}
           options={[{ value: '', label: t('triggers.unconditional') }, ...meta.predicates.map(item => ({ value: item.kind, label: triggerLabel(t, item.kind) }))]}
-          onChange={setAddConditionKind} />
-        <MenuSelect compact ariaLabel={t('rules.steps.addActionType')} value={selected?.kind ?? ''} disabled={disabled || candidates.length === 0}
-          options={candidates.map(item => ({ value: item.kind, label: triggerLabel(t, item.kind) }))} onChange={setAddActionKind} />
-        <Button shape="pill" variant="outline" disabled={disabled || addConditionKind.length === 0 || candidates.length === 0} onClick={addBranch}>{t('rules.steps.addBranch')}</Button>
-        <Button shape="pill" variant="outline" disabled={disabled || selected === undefined} onClick={addAction}>{t('rules.addAction')}</Button>
-      </StepAdd>
-    </>
+          onChange={setAddConditionKind} /></FormField>
+        <Button shape="pill" variant="outline" disabled={disabled || !addConditionKind || !candidates.some(item => item.supportsWhen)} onClick={addBranch}>{t('rules.steps.addBranch')}</Button></>}
+      </StepAdd>}
+      {path === 'then' && !members && rule.else === undefined &&
+        <Button shape="pill" variant="outline" disabled={disabled} onClick={() => patch({ else: [] })}>{t('rules.steps.addElse')}</Button>}
+    </div>
   }
 
-  const fit = (): void => {
+  const renderCondition = (path: string): ReactNode => {
+    const value = valueAt(rule, path) as RuleCondition | undefined
+    const kind = Object.keys(value ?? {})[0] ?? ''
+    const listPath = `${path}:${kind}`
+    const children = kind === 'not' ? [0] : meta.composites.includes(kind) ? nodeList(valueAt(rule, listPath)).map((_, index) => index) : []
+    return <RuleConditionFields key={path} {...context} value={value} fieldKey={`${props.fieldKey}:${path}`} meta={meta}
+      nested={/:(?:all|any|notAny|not):\d+$/.test(path)}
+      childrenLinks={children.map(index => {
+        const child = `${listPath}:${index}`
+        return nodeLink(idByPath.get(child), <CloseButton label={t('rules.removeCondition')} disabled={disabled} onClick={() => {
+          removeCondition(child)
+          if (kind === 'not' || children.length <= 1) {
+            focusPane.current = 'structure'
+            select(undefined)
+          } else propertyHeading.current?.focus()
+        }} />)
+      })}
+      onChange={next => {
+        if (next === undefined) {
+          removeCondition(path)
+          focusPane.current = 'structure'
+          select(undefined)
+        } else {
+          if (selectedDescriptor?.path === path && !disabled) editedConditionPath.current = path
+          changeAt(path, next)
+        }
+      }} />
+  }
+
+  const nodes = useMemo(() => graph.nodes.map(node => ({
+    ...node, selected: node.id === selectedCanvasNode, dropTarget: targetById.get(`${node.id}:target`)?.id,
+  })), [graph, selectedCanvasNode, targetById])
+  const fileNodes = useMemo(() => instructionNodes(props.instructionFiles, props.activeInstructionId, 2, top),
+    [props.instructionFiles, props.activeInstructionId, top])
+
+  const fit = (): boolean => {
     const element = structureRef.current?.querySelector<HTMLElement>('[data-rule-stage]')
-    if (!element?.clientWidth || !element.clientHeight) return
+    if (!element?.clientWidth || !element.clientHeight) return false
     const width = element.clientWidth, height = element.clientHeight
-    const positions = graph.nodes.map(node => ({ ...node, ...view.positions[node.id] }))
-    const left = Math.min(0, ...positions.map(node => node.x)), top = Math.min(0, ...positions.map(node => node.y))
-    const right = Math.max(216, ...positions.map(node => node.x + (node.width ?? 216))), bottom = Math.max(112, ...positions.map(node => node.y + (node.height ?? 112)))
-    const wide = width >= 900, safeLeft = wide && libraryOpen ? 256 : 24, safeRight = wide && shownNode ? 344 : 24
-    const scale = Math.min(1, Math.max(1, width - safeLeft - safeRight) / (right - left), Math.max(1, height - 180) / (bottom - top))
+    const wide = width >= 900
+    const toolbarBottom = Number.parseFloat(getComputedStyle(element).getPropertyValue('--pt-canvas-top')) || 100
     needsInitialFit.current = false
-    const remainingWidth = width - safeLeft - safeRight - (right - left) * scale
-    const remainingHeight = height - 180 - (bottom - top) * scale
-    changeView({ ...view, scale, x: safeLeft + Math.max(0, remainingWidth / 2) - left * scale,
-      y: 100 + Math.max(0, remainingHeight / 2) - top * scale })
+    if (fileNodes.length > 0) fitIncludedFiles.current = true
+    changeView(fitCanvasView([...nodes, ...fileNodes], view, width, height, {
+      left: wide && libraryOpen ? 256 : 24, right: wide && (shownNode || libraryDetail || props.activeInstructionId) ? 344 : 24, top: toolbarBottom, bottom: 80,
+    }))
+    return true
   }
   useLayoutEffect(() => {
-    if (!needsInitialFit.current) return
+    const needsFileFit = fileNodes.length > 0 && !fitIncludedFiles.current && !userAdjustedView.current
+    if (!needsInitialFit.current && !needsFileFit) return
     const element = structureRef.current?.querySelector<HTMLElement>('[data-rule-stage]')
     if (!element) return
-    const observer = new ResizeObserver(() => { if (needsInitialFit.current) fit() })
+    if (fit()) return
+    const observer = new ResizeObserver(() => {
+      if (userAdjustedView.current || fit()) observer.disconnect()
+    })
     observer.observe(element)
-    fit()
     return () => observer.disconnect()
   })
 
-  return <div className={css.ruleCanvas} data-node-open={shownNode !== undefined || undefined} data-rule-steps onKeyDown={event => {
+  const libraryPayload = libraryDetail && payload(libraryDetail.kind, libraryDetail.name)
+  const libraryTargets = libraryPayload ? graph.targets.filter(target => canAdd(target.id, libraryPayload)) : []
+  const inspectorTitle = libraryDetail?.label ?? nodeTitle ?? t('rules.ruleEditor')
+  return <div className={css.ruleCanvas} data-node-open={shownNode !== undefined || libraryDetail !== undefined || undefined}
+    data-library-detail-open={libraryDetail !== undefined || undefined} data-rule-steps onKeyDown={event => {
     if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
-    // 动作输入框通过 React portal 渲染到属性栏，按实际 DOM 归属处理返回。
-    if (shownNode === undefined || !(event.target instanceof Element) ||
+    if (!(event.target instanceof Element) ||
       !event.target.closest('[data-node-inspector], [data-rule-stage]')) return
+    if (!libraryDetail && shownNode === undefined) return
     event.stopPropagation()
     event.preventDefault()
+    if (libraryDetail) { closeLibraryDetail(true); return }
     focusPane.current = 'structure'
     select(undefined)
   }}>
     <div className={css.steps} ref={structureRef}>
-    <h3 ref={structureHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{t('rules.structure')}</h3>
+    <h3 ref={structureHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{structureLabel}</h3>
     {props.diagnosticActionId !== undefined && diagnosticNode === undefined && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
     <div className={css.canvasLayout} data-library-open={libraryOpen || undefined}>
     <RuleLibrary t={t} meta={meta} libraryOpen={libraryOpen} libraryId={props.libraryId} onCloseLibrary={props.onCloseLibrary}
-      disabled={disabled} targets={graph.targets} payload={payload} canAdd={canAdd} add={add} setDragPayload={setDragPayload}
-      addBranch={target => {
-        if (disabled || target.kind === 'condition') return
-        changeAt(target.path, [...nodeList(valueAt(rule, target.path)), { if: { scope: { audience: 'main' } }, then: [], else: [] }])
-      }} />
-    <RuleCanvas t={t} nodes={graph.nodes.map(node => {
-      return { ...node, selected: node.id === shownNode,
-          dropTarget: graph.targets.find(target => target.id === `${node.id}:target`)?.id }
-    })} edges={graph.edges} view={view}
-      onViewChange={changeView} onSelect={id => { props.onCanvasInteract(); context.select(id) }}
+      selected={libraryDetail} onSelect={openLibraryDetail} disabled={disabled} payload={payload} setDragPayload={setDragPayload} />
+    <RuleCanvas t={t} nodes={nodes} fileNodes={fileNodes} edges={graph.edges} view={view}
+      onSelectInstruction={id => { closeLibraryDetail(false); props.onSelectInstruction(id) }}
+      onViewChange={adjustView} onSelect={id => { closeLibraryDetail(false); props.onCanvasInteract(); context.select(id) }}
       onPaneClick={() => {
+        closeLibraryDetail(false)
         props.onCanvasInteract()
         if (shownNode !== undefined) select(undefined)
       }}
-      onMove={(id, x, y) => changeView({ ...view, positions: { ...view.positions, [id]: { x, y } } })}
-      canDropNode={(id, data) => canAdd(id, data || dragPayload)} onDropNode={dropNode} onFit={fit} />
-    </div>
-    <div hidden>
-    {/* IF 卡：规则级条件；下面的节点卡都属于这个条件作用域。 */}
-    <StepCard kind="if" kindLabel={t('rules.steps.ifLabel')} summary={conditionSummary(t, rule.if)} level={0}
-      nodeKey={`${props.fieldKey}:if`} open={rowOpen(context, `${props.fieldKey}:if`)} onToggle={() => context.select(`${props.fieldKey}:if`)} property={context.property}
-      actions={rule.if === undefined ? undefined : <CloseButton label={t('rules.clearCondition')} disabled={disabled} onClick={() => patch({ if: undefined })} />}>
-      <RuleConditionFields {...context} fieldKey={`${props.fieldKey}:if`} meta={meta} value={rule.if} onChange={condition => patch({ if: condition })} />
-    </StepCard>
-    {/* then：任务卡与分支卡在顶层并列，收起时就是一张「条件 → 动作」一览。 */}
-    <div className={css.stepScope} data-step-scope="then">
-      <p className={css.stepSlot}>{t('rules.steps.then')}</p>
-      {renderList(then, `${props.fieldKey}:then`, rule.if === undefined ? [] : [rule.if], conditional, setNodes)}
-    </div>
-    {/* 规则级 else：`if` 不命中时执行，条件自带 not(if)。 */}
-    {rule.else === undefined
-      ? <div className={css.stepAdd}><Button shape="pill" variant="outline" disabled={disabled} onClick={() => patch({ else: [] })}>{t('rules.steps.addElse')}</Button></div>
-      : <div className={css.stepScope} data-step-scope="else">
-        <ScopeHead kindLabel={t('rules.steps.elseLabel')} summary={t('rules.steps.actionCount', { count: otherwise.length })} disabled={disabled}
-          removeLabel={t('rules.steps.removeElse')} onRemove={() => patch({ else: undefined })} />
-        {renderList(otherwise, `${props.fieldKey}:else`, rule.if === undefined ? [] : [{ not: rule.if }], rule.if !== undefined, nodes => patch({ else: nodes as RuleAction[] }))}
-      </div>}
+      onMove={(id, x, y) => adjustView({ ...view, positions: { ...view.positions, [id]: { x, y } } })}
+      canDropNode={(id, data) => canAdd(id, data || dragPayload)} onDropNode={dropNode} onFit={() => { userAdjustedView.current = true; fit() }} />
     </div>
     </div>
     <section className={css.ruleProperties} data-node-inspector aria-labelledby={`${propertyId}-heading`}>
       <header className={css.inspectorHeading}>
-        <div><h3 id={`${propertyId}-heading`} ref={propertyHeading} tabIndex={-1} title={nodeTitle}>{nodeTitle ?? t('rules.ruleEditor')}</h3>
+        <div><h3 id={`${propertyId}-heading`} ref={propertyHeading} tabIndex={-1} title={inspectorTitle}>{inspectorTitle}</h3>
           {nodeIdentity && <small>{selectedDescriptor?.kind === 'action' && 'ID '}{nodeIdentity}</small>}</div>
-        <Button icon aria-label={t('rules.closePanel', { name: t('rules.properties') })} onClick={() => { focusPane.current = 'structure'; select(undefined) }}><IconCloseFillRegular /></Button>
+        <Button icon aria-label={t('rules.closePanel', { name: inspectorTitle })} onClick={() => {
+          if (libraryDetail) closeLibraryDetail(true)
+          else { focusPane.current = 'structure'; select(undefined) }
+        }}><IconCloseFillRegular /></Button>
       </header>
       <div className={css.inspectorBody}>
-      {shownNode === undefined && <p>{t('rules.chooseNode')}</p>}
-      <div id={propertyId} ref={setPropertyTarget} />
-      {selectedDescriptor?.kind === 'group' && (selectedDescriptor.path === 'then' || selectedDescriptor.path === 'else' || selectedDescriptor.path.endsWith(':then') || selectedDescriptor.path.endsWith(':else')) && <>
-        {renderList(nodeList(valueAt(rule, selectedDescriptor.path)), `${props.fieldKey}:${selectedDescriptor.path}`, rule.if === undefined ? [] : [rule.if], conditional, nodes => changeAt(selectedDescriptor.path, nodes))}
-      </>}
-      {selectedDescriptor && (selectedDescriptor.kind === 'condition' || selectedDescriptor.kind === 'group') && selectedDescriptor.path.includes('if') &&
-        <RuleConditionFields {...context} value={valueAt(rule, selectedDescriptor.path) as RuleCondition | undefined} fieldKey={`${props.fieldKey}:${selectedDescriptor.path}`} meta={meta}
-          onChange={value => changeAt(selectedDescriptor.path, value)} />}
-      {selectedDescriptor?.kind === 'branch' && <RuleConditionFields {...context} value={selectedDescriptor.value.if as RuleCondition | undefined}
-        fieldKey={`${props.fieldKey}:${selectedDescriptor.path}:if`} meta={meta} onChange={value => changeAt(`${selectedDescriptor.path}:if`, value)} />}
+      {libraryDetail && libraryPayload && <LibraryProperties key={libraryPayload} t={t} item={libraryDetail} targets={libraryTargets} disabled={disabled}
+        onAdd={target => { closeLibraryDetail(false); add(target, libraryPayload) }} />}
+      {!libraryDetail && shownNode === undefined && <p>{t('rules.chooseNode')}</p>}
+      {selectedDescriptor?.kind === 'action' && <ActionFields key={selectedDescriptor.actionId} context={context} action={selectedDescriptor.value}
+        path={`${props.fieldKey}:${selectedDescriptor.path}`} scopeConditional={rule.if !== undefined || selectedDescriptor.path.split(':').length > 2}
+        onChange={action => changeAt(selectedDescriptor.path, action)} />}
+      {selectedDescriptor?.kind === 'group' && /(?:^|:)(then|else)$/.test(selectedDescriptor.path) &&
+        shownNode && renderScope(selectedDescriptor.path, shownNode)}
+      {selectedDescriptor && (selectedDescriptor.kind === 'condition' || selectedDescriptor.kind === 'group' && selectedDescriptor.path.includes('if')) &&
+        renderCondition(selectedDescriptor.path)}
+      {selectedDescriptor?.kind === 'branch' && <div className={css.inspectorFields}>
+        {renderCondition(`${selectedDescriptor.path}:if`)}
+        {nodeLink(idByPath.get(`${selectedDescriptor.path}:then`))}
+        {idByPath.has(`${selectedDescriptor.path}:else`) ? nodeLink(idByPath.get(`${selectedDescriptor.path}:else`))
+          : <Button shape="pill" variant="outline" disabled={disabled} onClick={() => changeAt(`${selectedDescriptor.path}:else`, [])}>{t('rules.steps.addElse')}</Button>}
+      </div>}
       {selectedDescriptor?.kind === 'unknown' && <><p role="note">{t('rules.unknown')}</p><TriggerJsonField {...context} value={selectedDescriptor.value} shape="object"
-        fieldKey={`${props.fieldKey}:${selectedDescriptor.path}`} label={t('rules.rawAction')} onChange={value => changeAt(selectedDescriptor.path, value)} /></>}
-      <details className={css.propertySummary}><summary>{t('rules.ruleOverview')}</summary><p>{rule.name || rule.id}</p><p>{conditionSummary(t, rule.if)}</p></details>
+        fieldKey={`${props.fieldKey}:${selectedDescriptor.path}`} label={t(conditionSelection ? 'triggers.conditionJson' : 'rules.rawAction')} onChange={value => changeAt(selectedDescriptor.path, value)} /></>}
+      {!libraryDetail && <details className={css.propertySummary}><summary>{t('rules.ruleOverview')}</summary><p>{rule.name || rule.id}</p><p>{conditionSummary(t, rule.if)}</p></details>}
       </div>
-      {selectedDescriptor?.kind === 'group' && selectedDescriptor.path === 'else' && <footer className={css.propertyFooter}>
-        <Button shape="pill" variant="outline" data-danger disabled={disabled} onClick={() => patch({ else: undefined })}>{t('rules.steps.removeElse')}</Button>
-      </footer>}
-      {selectedDescriptor && (selectedDescriptor.kind !== 'group' || selectedDescriptor.path.includes('if')) && <footer className={css.propertyFooter}>
+      {selectedDescriptor && (elseSelection || selectedDescriptor.kind !== 'group'
+        || conditionSelection) && (!conditionSelection || valueAt(rule, selectedDescriptor.path) !== undefined) &&
+      <footer className={css.propertyFooter}>
         <Button shape="pill" variant="outline" data-danger disabled={disabled} onClick={() => {
           const path = selectedDescriptor.path
-          cleared(props.fields, `${props.fieldKey}:${path}`)
-          // not 的唯一子条件删除时一并删除包装，避免留下非法的空 not。
-          changeAt(path.replace(/(?::not:0)+$/, ''), undefined)
+          if (conditionSelection) removeCondition(path)
+          else {
+            const entry = /^(.*):(\d+)$/.exec(path)
+            if (entry) removeNodeDrafts(entry[1]!, Number(entry[2]))
+            else {
+              cleared(props.fields, `${props.fieldKey}:${path}`)
+              cleared(props.expanded, `${props.prefix}:${props.fieldKey}:${path}`)
+            }
+            changeAt(path, undefined)
+          }
+          focusPane.current = 'structure'
           select(undefined)
-        }}>{t(selectedDescriptor.kind === 'action' ? 'rules.removeActionShort' : 'rules.clearCondition')}</Button>
+        }}>{t(elseSelection ? 'rules.steps.removeElse' : conditionSelection ? nestedCondition ? 'rules.removeCondition' : 'rules.clearCondition'
+          : selectedDescriptor.kind === 'action' ? 'rules.removeActionShort' : 'rules.steps.remove', { id: nodeTitle ?? selectedDescriptor.path })}</Button>
       </footer>}
     </section>
   </div>

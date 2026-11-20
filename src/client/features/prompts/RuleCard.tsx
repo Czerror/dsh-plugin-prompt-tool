@@ -20,6 +20,7 @@ import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleStepsPanel } from './RuleSteps.tsx'
+import type { CanvasInstructionFile } from './RuleCanvas.tsx'
 import { conditionalActions, countConditions, countNodes, isValidNode, nodeList } from './rule-steps.ts'
 import { deepEqual } from '../../data/dirty-state.ts'
 import ui from '../../ui/controls.module.css'
@@ -46,8 +47,14 @@ export function RuleCard(props: {
   libraryId: string
   onCloseLibrary: (restoreFocus: boolean) => void
   onCanvasInteract: () => void
+  instructionFiles: readonly CanvasInstructionFile[]
+  activeInstructionId?: string
+  hideNodeInspector?: boolean
+  onSelectInstruction: (id: string) => void
+  onCloseInstruction: () => void
   dismissDrawer: MutableRefObject<(() => void) | undefined>
   diagnosticActionId?: string
+  diagnosticFocusToken?: object
   onRuleEdit?: () => void
   onActivate?: () => void
   renderSettings?: (rule: RuleDefinition, moduleId: string) => ReactNode
@@ -61,6 +68,7 @@ export function RuleCard(props: {
   const surface = useRef<HTMLElement>(null)
   const drawerTrigger = useRef<HTMLElement>()
   const openDrawer = (next: NonNullable<typeof drawer>, trigger: HTMLButtonElement): void => {
+    props.onCloseInstruction()
     drawerTrigger.current = trigger
     setDrawer(drawer === next ? undefined : next)
   }
@@ -72,10 +80,11 @@ export function RuleCard(props: {
   useLayoutEffect(() => {
     const element = surface.current, header = element?.querySelector('header')
     if (!element || !header) return
-    const measure = () => element.style.setProperty('--pt-canvas-top', `${(header as HTMLElement).offsetTop + header.getBoundingClientRect().height + 16}px`)
+    const container = element.closest<HTMLElement>('[data-canvas-workspace]')
+    const measure = () => container?.style.setProperty('--pt-canvas-top', `${(header as HTMLElement).offsetTop + header.getBoundingClientRect().height + 16}px`)
     const observer = new ResizeObserver(measure)
     observer.observe(header); observer.observe(element); measure()
-    return () => observer.disconnect()
+    return () => { observer.disconnect(); container?.style.removeProperty('--pt-canvas-top') }
   }, [])
   useLayoutEffect(() => {
     if (drawer) surface.current?.querySelector<HTMLElement>('[data-rule-drawer] button')?.focus()
@@ -269,8 +278,10 @@ export function RuleCard(props: {
         <section data-config-panel="rule" aria-label={t('rules.stepsTab')} className={css.section}>{draft.meta && <RuleStepsPanel
           t={t} rule={rule} meta={draft.meta} engineMeta={props.meta} fields={draft.fields} expanded={props.expandedRows}
           libraryOpen={props.libraryOpen} libraryId={props.libraryId} onCloseLibrary={props.onCloseLibrary}
+          instructionFiles={props.instructionFiles} activeInstructionId={props.activeInstructionId} hideNodeInspector={props.hideNodeInspector || drawer !== undefined} onSelectInstruction={props.onSelectInstruction}
           onCanvasInteract={() => { closeDrawer(false); props.onCanvasInteract() }}
-          prefix={props.source ?? rule.id} fieldKey={entry.key} browseKey={JSON.stringify([props.moduleId, entry.key])} nodeBrowse={props.nodeBrowse} canvasBrowse={props.canvasBrowse} onBrowseChange={props.onBrowseChange} diagnosticActionId={props.diagnosticActionId} disabled={disabled} onDraft={onDraft}
+          prefix={props.source ?? rule.id} fieldKey={entry.key} browseKey={JSON.stringify([props.moduleId, entry.key])} nodeBrowse={props.nodeBrowse} canvasBrowse={props.canvasBrowse} onBrowseChange={props.onBrowseChange}
+          diagnosticActionId={props.diagnosticActionId} diagnosticFocusToken={props.diagnosticFocusToken} disabled={disabled} onDraft={onDraft}
           onChange={next => patch(next)} onMove={(path, index, offset) => autosave.commit(() => {
             if (!disabled && !unsupported) void editor.move(entry.key, path, index, offset)
           })} />}</section>

@@ -31,6 +31,7 @@ import {
   type InstructionDraft,
   type InstructionDraftPool,
   type InstructionSaveOutcome,
+  type InstructionSaveRequest,
 } from './instruction-drafts.ts'
 import { EMPTY_INSTRUCTION_POLICY_SNAPSHOT, instructionPolicyPatchForFile } from './instruction-policy.ts'
 import { instructionShellsFrom, projectInstructionCards } from './instruction-cards.ts'
@@ -110,6 +111,7 @@ export function createInstructionEditor(deps: InstructionEditorDependencies): In
   let shells: PromptConfigDraft[] = []
   let seq = 0
   let session: string | undefined
+  const activeSaves = new Map<string, { request: InstructionSaveRequest; completion: PromiseWithResolvers<string | undefined> }>()
 
   const setPool = (next: InstructionDraftPool): void => { pool = next; deps.onChange() }
 
@@ -152,43 +154,74 @@ export function createInstructionEditor(deps: InstructionEditorDependencies): In
     },
     saveFiles: async (fileIds) => {
       const snapshot = pool
+      const sessionId = deps.sessionId()
+      const isCurrent = (): boolean => isCurrentInstructionSeq(pool, snapshot.latest)
+        && pool.contextId === snapshot.contextId
+        && sessionId === deps.sessionId() && sessionId === session
+      const fileId = fileIds?.length === 1 ? fileIds[0] : undefined
+      if (fileId !== undefined) {
+        const active = activeSaves.get(fileId)
+        if (active && isCurrentSaveRequest(pool, active.request)) {
+          if (!isCurrent()) return false
+          const content = snapshot.drafts.find(draft => draft.fileId === fileId)?.content
+          const revision = await active.completion.promise
+          if (revision === undefined || !isCurrent()) return false
+          if (content === active.request.content) return true
+          // 离区时只承诺保存当时的正文；重新编辑、重读或换会话后的内容要重新离区提交。
+          const current = pool.drafts.find(draft => draft.fileId === fileId)
+          if (current === undefined || current.revision !== revision || current.contextId !== snapshot.contextId
+            || current.conflict || current.error || current.content !== content) return false
+          return editor.saveFiles([fileId])
+        }
+      }
       const pending = unsavedInstructionDrafts(snapshot)
         .filter((draft) => fileIds === undefined || fileIds.includes(draft.fileId))
       if (pending.length === 0) return true
       const targets = saveableInstructionDrafts(snapshot)
         .filter((draft) => fileIds === undefined || fileIds.includes(draft.fileId))
-      const sessionId = deps.sessionId()
-      const isCurrent = (): boolean => isCurrentInstructionSeq(pool, snapshot.latest)
-        && pool.contextId === snapshot.contextId
-        && sessionId === deps.sessionId() && sessionId === session
       if (!isCurrent()) return false
       const requests = new Map(targets.flatMap((draft) => {
         const request = instructionSaveRequest(pool, draft.fileId, sessionId)
         return request === undefined ? [] : [[draft.fileId, request] as const]
       }))
-      for (const fileId of requests.keys()) setPool(markDraftSaving(pool, fileId, true))
+      const saves = [...requests.values()].map(request => ({ request, completion: Promise.withResolvers<string | undefined>() }))
+      for (const save of saves) {
+        activeSaves.set(save.request.fileId, save)
+        setPool(markDraftSaving(pool, save.request.fileId, true))
+      }
       const results: InstructionSaveOutcome[] = pending.filter((draft) => !requests.has(draft.fileId)).map((draft) => ({
         fileId: draft.fileId, ok: false, message: draft.error ?? draft.message ?? '文件尚不可写、存在冲突或正在保存',
       }))
-      for (const [fileId, request] of requests) {
-        // 每次发送前和应答后都复核；切换工作区后不能继续提交批次中的旧文件。
-        if (!isCurrent()) return false
-        if (!isCurrentSaveRequest(pool, request)) {
-          results.push({ fileId, ok: false, message: '文件已重新读取，本次旧草稿未继续保存' })
-          continue
+      try {
+        for (const save of saves) {
+          const { request, completion } = save
+          const { fileId } = request
+          // 每次发送前和应答后都复核；切换工作区后不能继续提交批次中的旧文件。
+          if (!isCurrent()) return false
+          if (!isCurrentSaveRequest(pool, request)) {
+            results.push({ fileId, ok: false, message: '文件已重新读取，本次旧草稿未继续保存' })
+            continue
+          }
+          const res = await deps.request('agentsFile', request)
+          if (!isCurrent()) return false
+          if (!isCurrentSaveRequest(pool, request)) {
+            results.push({ fileId, ok: false, message: '文件已重新读取，迟到保存结果未应用' })
+            continue
+          }
+          const result: InstructionSaveOutcome = res.ok && typeof res.value.revision === 'string'
+            ? { fileId, ok: true, revision: res.value.revision }
+            : { fileId, ok: false, message: res.ok ? '保存响应缺少文件版本' : res.message ?? '写盘失败', conflict: !res.ok && isInstructionConflictCode(res.code) }
+          results.push(result)
+          // 已成功的文件立即确认；后续文件失败或切换上下文也不丢失成功基线。
+          setPool(applySaveOutcomes(pool, [result], requests))
+          if (activeSaves.get(fileId) === save) activeSaves.delete(fileId)
+          completion.resolve(result.ok ? result.revision : undefined)
         }
-        const res = await deps.request('agentsFile', request)
-        if (!isCurrent()) return false
-        if (!isCurrentSaveRequest(pool, request)) {
-          results.push({ fileId, ok: false, message: '文件已重新读取，迟到保存结果未应用' })
-          continue
+      } finally {
+        for (const save of saves) {
+          if (activeSaves.get(save.request.fileId) === save) activeSaves.delete(save.request.fileId)
+          save.completion.resolve(undefined)
         }
-        const result: InstructionSaveOutcome = res.ok && typeof res.value.revision === 'string'
-          ? { fileId, ok: true, revision: res.value.revision }
-          : { fileId, ok: false, message: res.ok ? '保存响应缺少文件版本' : res.message ?? '写盘失败', conflict: !res.ok && isInstructionConflictCode(res.code) }
-        results.push(result)
-        // 已成功的文件立即确认；后续文件失败或切换上下文也不丢失成功基线。
-        setPool(applySaveOutcomes(pool, [result], requests))
       }
       const failures = results.filter((result) => !result.ok)
       if (failures.length > 0) {

@@ -18,6 +18,10 @@
 .ruleWorkspace[data-rule-open], .ruleDetail, .canvasSurface, .canvasSurface > .body, .canvasSurface [data-config-panel=rule], .canvasSurface .ruleCanvas, .canvasSurface .steps, .canvasSurface .canvasLayout { flex: 1; min-block-size: 0; block-size: 100%; }
 .ruleWorkspace[data-rule-open] { position: relative; display: flex; }
 .ruleListPane:not([hidden]) { display: flex; position: absolute; z-index: 10; inset: 64px auto 72px 12px; inline-size: min(17rem, calc(100% - 24px)); overflow: auto; overscroll-behavior: contain; padding: 12px; background: #181c23; color: #e7edf6; border: 1px solid #313844; border-radius: 10px; box-shadow: 0 8px 24px #0005; }
+.moduleSettingsList { display: grid; gap: 4px; padding: 0; margin: 0; list-style: none; }
+.moduleSettingsList .ruleChoice { inline-size: 100%; }
+.moduleSettingsInspector { position: absolute; z-index: 8; inset: var(--pt-canvas-top, 68px) 12px 16px auto; inline-size: min(26rem, calc(100% - 52px)); display: flex; flex-direction: column; min-block-size: 0; gap: 10px; padding: 12px; color: #e7edf6; background: #181f2a; border: 1px solid #39495d; border-radius: 10px; box-shadow: 0 8px 24px #0005; }
+.moduleSettingsInspector .inspectorHeading h2 { margin: 0; font-size: 17px; line-height: 23px; overflow-wrap: anywhere; }
 .ruleListBackdrop { display: none; position: absolute; z-index: 9; inset: 0; }
 .ruleWorkspace:not([data-rule-open]) > .ruleListBackdrop { display: block; }
 .canvasSurface { position: relative; display: flex; flex-direction: column; color: #e7edf6; background: #0e1116; isolation: isolate; }
@@ -61,6 +65,7 @@
 .canvasSurface .ruleProperties, .canvasSurface .definitionDrawer { inset-block-start: var(--pt-canvas-top, 110px); }
 .canvasSurface .canvasLibrary:not([hidden]) { inset-block-start: var(--pt-canvas-top, 110px); }
 @container rule-workspace (width < 56rem) {
+  .ruleWorkspace { --pt-narrow-workspace: 1; }
   .canvasTopbar { inset-inline: 8px; }
   .moduleScope { inset: 8px auto auto 8px; }
   .ruleListPane:not([hidden]) { inset: 68px 40px 8px 8px; inline-size: auto; }
@@ -78,6 +83,8 @@
     inline-size: auto;
     max-block-size: none;
   }
+  .canvasSurface .ruleCanvas[data-library-detail-open] .canvasLibrary:not([hidden]) { display: none; }
+  .canvasSurface .ruleCanvas[data-library-detail-open] .ruleProperties { inset-block-end: 64px; }
 }
 @container rule-workspace (width >= 56rem) {
   .canvasSurface .ruleCanvas[data-node-open] > .steps { display: flex; }
@@ -104,7 +111,7 @@
 }
 .ruleWorkspace { display: grid; gap: 12px; min-width: 0; }
 .ruleListPane, .ruleDetail { flex-direction: column; align-items: stretch; min-width: 0; gap: 10px; }
-.ruleDetail { display: flex; }
+.ruleDetail { position: relative; display: flex; }
 .ruleDetail > button { align-self: flex-start; }
 .workspaceHeading { margin: 0; font: 600 14px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
 .ruleListHeader { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
@@ -250,7 +257,7 @@
   .moduleScope > button { min-block-size: 44px; }
   .moduleScope > .libraryToggle, .compactCommand button { min-inline-size: 44px; }
 }
-.libraryDetail { display: grid; gap: 8px; min-inline-size: 0; margin: 2px 4px 8px; padding: 8px; border-inline-start: 2px solid #40536d; }
+.libraryExample { margin: 0; overflow-wrap: anywhere; color: #b5c2d4; }
 .libraryHeading { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 2px 5px; border-block-end: 1px solid #313b4b; }
 .libraryHeading strong { font-size: 14px; }
 .libraryBody { flex: 1 1 auto; min-block-size: 0; padding: 2px; overflow: auto; overscroll-behavior: contain; }
@@ -264,11 +271,8 @@
 .canvasLibrary > * { flex: 0 0 auto; min-inline-size: 0; max-inline-size: 100%; }
 .canvasLibrary > .libraryBody { flex: 1 1 auto; }
 .libraryItem { display: flex; gap: 8px; align-items: center; inline-size: 100%; padding: 6px 5px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: inherit; text-align: start; font: inherit; cursor: pointer; }
-.libraryItem:hover, .libraryItem[aria-expanded=true] { background: #253146; border-color: #435a79; }
+.libraryItem:hover, .libraryItem[aria-pressed=true] { background: #253146; border-color: #435a79; }
 .librarySection button:focus-visible, .libraryItem:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }
-.libraryItem > span:last-child { min-inline-size: 0; flex: 1; }
-.libraryItem strong, .libraryItem small { display: block; }
-.libraryItem small { color: #aab7ca; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .libraryIcon { display: grid; place-items: center; flex: none; inline-size: 30px; block-size: 30px; border-radius: 7px; color: #95bcff; background: #25364e; }
 .libraryIcon[data-library-kind=action] { background: #19382f; color: #8ae2b7; }
 .conditionMark { inline-size: 9px; block-size: 9px; border: 1px solid currentColor; rotate: 45deg; }
@@ -278,6 +282,10 @@
 .inspectorHeading > div { min-inline-size: 0; }
 .inspectorBody { display: flex; flex: 1; flex-direction: column; align-items: stretch; gap: 10px; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 2px 4px; }
 .inspectorBody .stepBody { gap: 14px; padding: 0; border: 0; }
+.inspectorFields { display: grid; gap: 12px; min-inline-size: 0; }
+.inspectorNodeRow { display: flex; align-items: center; gap: 4px; min-inline-size: 0; }
+.inspectorNodeRow .inspectorNodeLink { flex: 1; min-inline-size: 0; min-block-size: 34px; height: auto; justify-content: flex-start; padding: 6px 8px; text-align: start; overflow-wrap: anywhere; background: #222b38; color: #e7edf6; }
+.inspectorNodeRow .inspectorNodeLink:hover { background: #293649; }
 .inspectorBody .fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .inspectorGroup { min-inline-size: 0; margin: 0; border: 0; padding: 0; }
 .inspectorGroup + .inspectorGroup { margin-block-start: 4px; }
@@ -300,10 +308,10 @@
 .inspectorHeading small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aab7ca; }
 .inspectorHeading button { flex: none; }
 .inspectorBody > div:empty { display: none; }
-.libraryDetail p { margin: 0; overflow-wrap: anywhere; }
 .propertySummary { align-self: stretch; color: #aab7ca; overflow-wrap: anywhere; }
 .propertyFooter { flex: none; padding-block-start: 10px; align-self: stretch; border-block-start: 1px solid #313844; }
 @media (pointer: coarse) {
+  .inspectorNodeRow .inspectorNodeLink { min-block-size: 44px; }
   .librarySection button { min-block-size: 44px; }
   .inspectorBody :is(button[aria-haspopup=dialog], input[aria-labelledby]:not([type=checkbox], [type=radio])) { min-block-size: 44px; }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import { MODULE_CAPABILITIES, isModuleCapabilityDeclared } from '../../../shared/engine-capabilities.ts'
 import type { ModuleConfigOrderEntry } from '../../../shared/module-config-order.ts'
@@ -25,7 +25,8 @@ import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { ModulePickerCards } from '../modules/ModuleSwitcher.tsx'
 import type { WorkspaceSidebar } from '../../app/workspace/workspace-browse-state.ts'
 import { IconChevronDownOutlineRegular, IconCloseFillRegular } from '../../ui/icons.tsx'
-import { PromptConfigCard } from './PromptConfigCard.tsx'
+import { InstructionFileInspector } from './InstructionFileInspector.tsx'
+import { InstructionCanvas, type CanvasInstructionFile } from './RuleCanvas.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleCard } from './RuleCard.tsx'
@@ -101,7 +102,7 @@ export interface RulesWorkspaceProps {
   hasLayerSettings?: (layer: string, moduleId: string) => boolean
   /** 某层某模块的卡片（不含 add 与 missingCapability）：规则卡与能力补卡的搜索共用。 */
   layerCards?: (layer: string, moduleId: string) => readonly LayerCardView[]
-  renderModuleSettings?: (moduleId: string, layers: readonly string[]) => ReactNode
+  renderModuleSettings?: (moduleId: string, layer: string) => ReactNode
   /** 页级「添加」下拉的创建项（注入模板按层）：创建编排由本组件统一持有，两页只传清单。 */
   createItems?: readonly ModuleCreateItem[]
   /** SSR 可断言的入口：直接以「模板已选完、等选目标」的状态渲染目标选择浮层本身。 */
@@ -113,6 +114,13 @@ export interface RulesWorkspaceProps {
 export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const { store, t } = props, fields = usePromptToolFields(store, value => value)
 
+  const workspace = useRef<HTMLDivElement>(null)
+  const saveInstruction = useRef<() => void>()
+  const [fileSelection, setFileSelection] = useState<{ id: string; owner: typeof store.getInstructionPool; contextId: string | null }>()
+  const [settingsSelection, setSettingsSelection] = useState<{ moduleId: string; layer: string; owner: typeof store.editorDrafts }>()
+  const settingsTitleId = useId()
+  const settingsHeading = useRef<HTMLHeadingElement>(null)
+  const settingsTrigger = useRef<HTMLButtonElement>()
   const [localExpanded, setExpanded] = useState<string | undefined>(props.browse?.expanded)
   const [localSidebar, setLocalSidebar] = useState<WorkspaceSidebar>('library')
   const sidebar = props.browse?.publish ? props.browse.sidebar ?? 'library' : localSidebar
@@ -173,10 +181,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     else { setFilter(value); props.onKeywordChange?.(value); if (props.browse) props.browse.filter = value }
   }
   const select = (key: string | undefined): void => {
+    if (key !== expanded) setSettingsSelection(undefined)
     if (props.browse) { props.browse.expanded = key; props.browse.publish?.() }
     if (!props.browse?.publish) setExpanded(key)
   }
-  const toggle = (key: string): void => select(expanded === key ? undefined : key)
   useEffect(() => { order.reset() }, [enabledModules.map(module => module.id).join('\u0000'), order.reset])
   useEffect(() => { void order.load() }, [revisions, store.meta.modules, order.load])
   /**
@@ -209,9 +217,17 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     .filter(({ entry, moduleId: id, key, facts }) => expanded === key || diagnosticKey === key || (view === 'all' || view === 'context-activation' && facts.contextActivation || entry.value.layer === view)
       && (!query || id.toLowerCase().includes(query) || searchableRule(entry.value).includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
     .sort((a, b) => (orderByIdentity.get(a.identity)?.sequence ?? Number.MAX_SAFE_INTEGER) - (orderByIdentity.get(b.identity)?.sequence ?? Number.MAX_SAFE_INTEGER))
-  const moduleSettings = enabledModules.flatMap(module => {
+  const settingsModule = !combination && settingsSelection?.owner === store.editorDrafts && props.renderModuleSettings
+    ? enabledModules.find(module => module.id === settingsSelection.moduleId && (!moduleFilter || module.id === moduleFilter)
+      && module.broken === undefined && module.renderable !== false
+      && MODULE_CAPABILITIES.some(capability => capability.displayLayer === settingsSelection.layer
+        && isModuleCapabilityDeclared(capability.id, module.facts))) : undefined
+  const activeSettings = settingsModule === undefined ? undefined : settingsSelection
+  const settingOwners = showList && !combination ? new Map(owners.map(owner => [owner.moduleId, owner])) : undefined
+  const moduleSettings = settingOwners === undefined || props.renderModuleSettings === undefined ? [] : enabledModules.flatMap(module => {
     if (moduleFilter && module.id !== moduleFilter) return []
-    const owner = owners.find(item => item.moduleId === module.id)
+    if (module.broken !== undefined || module.renderable === false) return []
+    const owner = settingOwners.get(module.id)
     if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
     const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted)
       .map(entry => entry.value.layer))
@@ -220,12 +236,15 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       .map(capability => capability.displayLayer)
       .filter((layer, index, all) => all.indexOf(layer) === index)
       .filter(layer => view === 'all' || view === layer)
-    if (missing.length === 0 || props.renderModuleSettings === undefined) return []
+    if (missing.length === 0) return []
     const name = `${module.name ?? ''} ${module.id}`.toLowerCase()
     const visible = missing.filter(layer => !query || name.includes(query)
       || props.layerCards?.(layer, module.id)?.some((card) => card.kind === 'capability' && card.searchText.includes(query)))
-    return visible.length === 0 ? [] : [{ moduleId: module.id, layers: visible }]
+    return visible.length === 0 ? [] : [{ moduleId: module.id, name: module.name || module.id, layers: visible }]
   })
+  useLayoutEffect(() => {
+    if (activeSettings) settingsHeading.current?.focus({ preventScroll: true })
+  }, [activeSettings])
   const batchEntries = pinnedModule === undefined ? entries : entries.filter(row => row.moduleId !== pinnedModule)
   const batchOwners = new Set(batchEntries.map(row => row.editor))
   const batchDisabled = batchEntries.length === 0 || owners.some(({ moduleId: id, draft, editor }) => batchOwners.has(editor)
@@ -300,13 +319,42 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       select(configIdentityKey({ moduleId, configId: configKey }))
     },
   })
-  // 指令文件卡是全局段（不属于任何模块）：设置区的主语由装配层按每个启用模块给出（参数按模块存储）。
-  const instructionCards = fields.instructionCards.map(config => <PromptConfigCard key={config.id} t={t} meta={store.meta} config={config} expanded={expanded === config.id} canMoveUp={false} canMoveDown={false}
-    renderLayerSettings={props.renderInstructionSettings === undefined ? undefined : (_layer, card) => props.renderInstructionSettings!(card)}
-    onToggleExpanded={() => toggle(config.id)} onToggleEnabled={() => {}} onPatch={(_id, patch) => { const fileId = instructionFileIdOf(config); if (fileId !== undefined && typeof patch.text === 'string') store.patchInstructionText(fileId, patch.text) }}
-    onMoveUp={() => {}} onMoveDown={() => {}} onDuplicate={() => {}} onDelete={() => {}}
-    onSaveInstructionFile={id => { void store.persistInstructionFiles([id]) }} onReloadInstructionFile={id => store.reloadInstructionFile(id).then(() => {})}
-    onPatchInstructionPolicy={store.instructionPolicy.error === undefined ? (id, override) => { void store.updateInstructionPolicy(id, override) } : undefined} />)
+  const files = useMemo(() => fields.instructionCards.flatMap(config => {
+    const id = instructionFileIdOf(config)
+    if (id === undefined) return []
+    const path = String(config.params?.displayPath ?? config.params?.file ?? '')
+    const name = path.split(/[\\/]/).pop() || config.name || id
+    const summary = t(config.params?.scope === 'global' ? 'rules.globalInstruction' : 'rules.workspaceInstruction')
+    return [{ id, path, name, summary, enabled: config.enabled !== false && config.agentControl?.enabled !== false } satisfies CanvasInstructionFile]
+  }), [fields.instructionCards, t])
+  const contextId = files.length ? store.getInstructionPool().contextId : null
+  const activeFile = fileSelection?.owner === store.getInstructionPool && fileSelection.contextId === contextId
+    ? fields.instructionCards.find(config => instructionFileIdOf(config) === fileSelection.id) : undefined
+  const activeFileId = activeFile && instructionFileIdOf(activeFile)
+  const closeInstruction = (restoreFocus: boolean): void => {
+    if (!activeFileId) return
+    saveInstruction.current?.()
+    setFileSelection(undefined)
+    if (restoreFocus) workspace.current?.querySelector<HTMLButtonElement>(`[data-instruction-file-id="${CSS.escape(activeFileId)}"]`)?.focus({ preventScroll: true })
+  }
+  const closeSettings = (restoreFocus: boolean): void => {
+    if (!settingsSelection) return
+    setSettingsSelection(undefined)
+    if (!restoreFocus) return
+    const trigger = settingsTrigger.current
+    const fallback = nav.current?.querySelector<HTMLButtonElement>(`[aria-controls="${CSS.escape(listPaneId)}"]`)
+    ;(trigger?.getClientRects().length ? trigger : fallback)?.focus({ preventScroll: true })
+  }
+  const closeRightEditor = (): void => { closeInstruction(false); closeSettings(false) }
+  const openInstruction = (id: string): void => {
+    if (id !== activeFileId) saveInstruction.current?.()
+    closeSettings(false)
+    dismissDrawer.current?.()
+    if (panelOpen || (libraryOpen && workspace.current && getComputedStyle(workspace.current).getPropertyValue('--pt-narrow-workspace').trim() === '1')) setSidebar('hidden')
+    setFileSelection({ id, owner: store.getInstructionPool, contextId })
+  }
+  const fileInspector = activeFile && <InstructionFileInspector key={activeFileId} store={store} t={t} config={activeFile}
+    leaveSave={saveInstruction} renderInstructionSettings={props.renderInstructionSettings} onClose={closeInstruction} />
   const selected = entries.find(row => row.key === expanded)
   useEffect(() => {
     if (expanded === undefined && !combination && entries[0]) select(entries[0].key)
@@ -322,6 +370,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   useLayoutEffect(() => {
     if (diagnosticTarget === undefined) handledDiagnostic.current = undefined
     else if (diagnosticKey !== undefined && handledDiagnostic.current !== diagnosticTarget) {
+      closeRightEditor()
       if (expanded !== diagnosticKey) select(diagnosticKey)
       else {
         handledDiagnostic.current = diagnosticTarget
@@ -341,12 +390,14 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     }
   })
   const changeCombination = (next: boolean): void => {
+    if (next) closeSettings(false)
     if (props.browse) { props.browse.combination = next; if (next) props.browse.moduleFilter = undefined; props.browse.publish?.() }
     if (!props.browse?.publish) setCombination(next)
     if (next) setModuleFilter(undefined)
     if (next && !showList) setSidebar('rules')
   }
   const changeModuleScope = (value: string, ruleKey?: string): void => {
+    closeRightEditor()
     const nextModule = value.startsWith('module:') ? value.slice('module:'.length) : undefined
     const nextAll = value !== 'active'
     const leavesRule = selected !== undefined && (nextModule !== undefined ? selected.moduleId !== nextModule : !nextAll && !enabledIds.has(selected.moduleId))
@@ -430,25 +481,30 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     }
   }
   return <CanvasChoiceContext.Provider value={t}><section className={css.workspaceContainer} aria-label={t('rules.list')}>
-    {diagnosticTarget && props.onReturnToDiagnostics && <div className={css.row}>
-      <Button shape="pill" variant="outline" onClick={() => { saveSelected.current?.(); props.onReturnToDiagnostics?.() }}>{t('diagnostics.return')}</Button>
-      {diagnosticKey === undefined && (diagnosticOwner === undefined || diagnosticOwner.draft.loaded || diagnosticOwner.draft.error)
-        && <p role="status">{t('diagnostics.targetUnavailable')}</p>}
-    </div>}
-    <div className={css.ruleWorkspace} data-rule-open={selected !== undefined || undefined} data-list-open={panelOpen || undefined} data-canvas-workspace
+    {diagnosticTarget && diagnosticKey === undefined && (diagnosticOwner === undefined || diagnosticOwner.draft.loaded || diagnosticOwner.draft.error) &&
+      <p role="status">{t('diagnostics.targetUnavailable')}</p>}
+    <div ref={workspace} className={css.ruleWorkspace} data-rule-open={selected !== undefined || files.length > 0 || undefined} data-list-open={panelOpen || undefined} data-canvas-workspace
       onClick={event => {
-        if ((!panelOpen && !dismissDrawer.current) || event.defaultPrevented || !(event.target instanceof Element)) return
+        if ((!panelOpen && !dismissDrawer.current && !activeSettings) || event.defaultPrevented || !(event.target instanceof Element)) return
         const target = event.target
-        if (!event.currentTarget.contains(target) || target.closest('dialog, [role="dialog"], [role="menu"], [popover], [data-rule-node]')
+        if (!event.currentTarget.contains(target) || target.closest('dialog, [role="dialog"], [role="menu"], [popover], [data-rule-node], [data-module-settings-inspector]')
           || !target.closest('button, input, select, textarea, summary, a[href]')) return
         if (panelOpen && !target.closest(`.${css.ruleListPane}`) && !nav.current?.contains(target)) closeList(false)
         if (!target.closest('[data-rule-drawer], [data-rule-drawer-trigger]')) dismissDrawer.current?.()
+        if (!target.closest('[data-open-module-settings]')) closeSettings(false)
       }}>
     <div ref={nav} className={css.moduleScope} role="group" aria-label={t('rules.sidebar')}>
       <Button aria-pressed={sidebar === 'modules'} aria-controls={modulePaneId} onClick={() => setSidebar(sidebar === 'modules' ? 'hidden' : 'modules')}>
         {t('rules.sidebarModules')}{enableFeedback && <span className={css.modulePickerIndicator} aria-label={t('rules.moduleFeedback')}>!</span>}
       </Button>
-      <Button aria-pressed={sidebar === 'diagnostics'} aria-controls={diagnosticPaneId} onClick={() => setSidebar(sidebar === 'diagnostics' ? 'hidden' : 'diagnostics')}>{t('rules.sidebarDiagnostics')}</Button>
+      <Button aria-pressed={sidebar === 'diagnostics'} aria-controls={diagnosticPaneId}
+        title={diagnosticTarget ? t('diagnostics.return') : undefined} onClick={() => {
+          if (diagnosticTarget && props.onReturnToDiagnostics) {
+            saveSelected.current?.()
+            closeRightEditor()
+            props.onReturnToDiagnostics()
+          } else setSidebar(sidebar === 'diagnostics' ? 'hidden' : 'diagnostics')
+        }}>{t('rules.sidebarDiagnostics')}</Button>
       <Button aria-pressed={showList} aria-controls={listPaneId} onClick={() => { if (showList) closeList(false); else openList() }}>{t('rules.sidebarRules')}</Button>
       <Button ref={libraryToggle} className={css.libraryToggle} disabled={!selected?.draft.meta} aria-pressed={libraryOpen && Boolean(selected?.draft.meta)}
         aria-label={t(libraryOpen ? 'rules.hideLibrary' : 'rules.showLibrary')} title={t('rules.nodeLibrary')}
@@ -469,6 +525,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         if (!point || Math.hypot(event.clientX - point.x, event.clientY - point.y) >= 4) return
         closeList(false)
         dismissDrawer.current?.()
+        closeSettings(false)
       }} />}
     <aside id={modulePaneId} className={css.ruleListPane} hidden={sidebar !== 'modules'} aria-label={t('rules.sidebarModules')}
       onKeyDown={event => {
@@ -544,6 +601,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         return <li key={key} data-module-id={id}>
           <button type="button" title={name} aria-label={t('rules.editNamed', { name })} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
             onClick={event => {
+              closeRightEditor()
               if (key !== expanded) saveSelected.current?.()
               if (combination) changeCombination(false)
               lastButton.current = event.currentTarget
@@ -572,31 +630,70 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       })}
     </ul>
     {entries.length === 0 && moduleSettings.length === 0 && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}
-    {!combination && <>{instructionCards}
-    {props.beforeCards}
-    {moduleSettings.map(item => <div key={`module-settings-${item.moduleId}`} className={css.workspace} data-module-settings={item.moduleId}>{props.renderModuleSettings!(item.moduleId, item.layers)}</div>)}</>}
+    {!combination && <>{props.beforeCards}
+    {moduleSettings.length > 0 && <ul className={css.moduleSettingsList}>
+      {moduleSettings.flatMap(item => item.layers.map(layer => <li key={configIdentityKey({ moduleId: item.moduleId, configId: layer })}>
+        <button className={css.ruleChoice} type="button" data-open-module-settings
+          aria-current={activeSettings?.moduleId === item.moduleId && activeSettings.layer === layer || undefined}
+          onClick={event => {
+            closeInstruction(false)
+            dismissDrawer.current?.()
+            settingsTrigger.current = event.currentTarget
+            if (workspace.current && getComputedStyle(workspace.current).getPropertyValue('--pt-narrow-workspace').trim() === '1') setSidebar('hidden')
+            setSettingsSelection({ moduleId: item.moduleId, layer, owner: store.editorDrafts })
+          }}>
+          <strong>{item.name}</strong><small>{translateLabel(t, LAYER_LABEL_KEYS, layer)}</small>
+        </button>
+      </li>))}
+    </ul>}</>}
     </div>
-    {!selected && !panelOpen && <div className={css.emptyCanvas}>
+    {!selected && files.length > 0 && <div className={css.ruleDetail}>
+      <InstructionCanvas t={t} files={files} activeId={activeFileId} onSelect={openInstruction} onPaneClick={() => { closeRightEditor(); if (panelOpen) closeList(false) }} />
+      {fileInspector}
+    </div>}
+    {!selected && files.length === 0 && !panelOpen && <div className={css.emptyCanvas}
+      onClick={event => { if (event.target === event.currentTarget) closeSettings(false) }}>
       <h2>{t('rules.noOpenRule')}</h2>
       <Button variant="outline" aria-controls={listPaneId} onClick={openList}>{t('rules.list')}</Button>
     </div>}
     {selected && <div className={css.ruleDetail}>
       <h2 ref={detailHeading} tabIndex={-1} className={css.canvasAccessibleHeading}>{selected.moduleId} / {selected.entry.value.id}</h2>
       <RuleCard key={selected.key} t={t} entry={selected.entry} draft={selected.draft} editor={selected.editor} meta={store.meta} source={selected.moduleId} moduleId={selected.moduleId} disabled={readOnly(selected.moduleId)}
-        dismissDrawer={dismissDrawer}
+        dismissDrawer={dismissDrawer} instructionFiles={files} activeInstructionId={activeFileId} onSelectInstruction={openInstruction}
+        onCloseInstruction={closeRightEditor} hideNodeInspector={activeSettings !== undefined}
         moduleName={modules.find(module => module.id === selected.moduleId)?.name || selected.moduleId} moduleEnabled={enabledIds.has(selected.moduleId)} modulesEnabled={fields.modulesEnabled}
         expanded onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
         libraryOpen={libraryOpen} libraryId={libraryId} onCloseLibrary={restoreFocus => {
           setSidebar('hidden')
           if (restoreFocus) libraryToggle.current?.focus({ preventScroll: true })
         }}
-        onCanvasInteract={() => { if (panelOpen) closeList(false) }}
+        onCanvasInteract={() => { closeRightEditor(); if (panelOpen) closeList(false) }}
+        diagnosticFocusToken={diagnosticKey === selected.key ? diagnosticTarget : undefined}
         diagnosticActionId={diagnosticKey === selected.key ? diagnosticTarget?.actionId : undefined}
         onRuleEdit={props.onRuleEdit}
         onActivate={() => refreshExclusivePeers(selected.moduleId, selected.entry.value)}
         expandedRows={store.editorDrafts.expanded}
         renderSettings={selected.entry.value.layer !== undefined && props.hasLayerSettings?.(selected.entry.value.layer, selected.moduleId) && props.renderLayerSettings ? (rule, module) => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }, module, create.openToolsForModule) : undefined} />
+      {fileInspector}
     </div>}
+    {activeSettings && settingsModule && <aside key={configIdentityKey({ moduleId: activeSettings.moduleId, configId: activeSettings.layer })}
+      className={css.moduleSettingsInspector} data-module-settings-inspector={settingsModule.id} data-layer-settings={activeSettings.layer}
+      aria-labelledby={settingsTitleId} onKeyDown={event => {
+        if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
+          || !(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return
+        event.preventDefault()
+        event.stopPropagation()
+        closeSettings(true)
+      }}>
+      <header className={css.inspectorHeading}>
+        <div>
+          <h2 id={settingsTitleId} ref={settingsHeading} tabIndex={-1}>{settingsModule.name || settingsModule.id}</h2>
+          <small>{translateLabel(t, LAYER_LABEL_KEYS, activeSettings.layer)}</small>
+        </div>
+        <Button icon aria-label={t('rules.closePanel', { name: t('form.navigation.settings') })} onClick={() => closeSettings(true)}><IconCloseFillRegular /></Button>
+      </header>
+      <div className={css.inspectorBody}>{props.renderModuleSettings?.(settingsModule.id, activeSettings.layer)}</div>
+    </aside>}
     </div>
     {discard && <ConfirmDialog title={t('triggers.discard')} description={t('triggers.discardHint')} confirmLabel={t('triggers.discard')} cancelLabel={t('triggers.cancel')} onCancel={() => setDiscard(undefined)} onConfirm={() => { owners.find(owner => owner.moduleId === discard)?.editor.discard(); setDiscard(undefined) }} />}
   </section></CanvasChoiceContext.Provider>
