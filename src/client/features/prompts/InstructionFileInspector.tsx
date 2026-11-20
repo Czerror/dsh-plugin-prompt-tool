@@ -26,7 +26,7 @@ export function InstructionFileInspector({ store, t, config, renderInstructionSe
   const [confirmReload, setConfirmReload] = useState(false)
   const fileId = instructionFileIdOf(config)
   const path = String(config.params?.displayPath ?? config.params?.file ?? '')
-  const name = path.split(/[\\/]/).pop() || config.name || config.id
+  const name = (fileId && store.instructionPolicy.policy.files?.[fileId]?.name) || path.split(/[\\/]/).pop() || config.name || config.id
   const isReadOnly = config.contentStatus !== 'ready' || config.contentConflict === true
   const controlled = config.agentControl?.enabled === false
   const autosave = useAutosave(config.id, () => {

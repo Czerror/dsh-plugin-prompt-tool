@@ -323,10 +323,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     const id = instructionFileIdOf(config)
     if (id === undefined) return []
     const path = String(config.params?.displayPath ?? config.params?.file ?? '')
-    const name = path.split(/[\\/]/).pop() || config.name || id
+    const name = store.instructionPolicy.policy.files?.[id]?.name || path.split(/[\\/]/).pop() || config.name || id
     const summary = t(config.params?.scope === 'global' ? 'rules.globalInstruction' : 'rules.workspaceInstruction')
     return [{ id, path, name, summary, enabled: config.enabled !== false && config.agentControl?.enabled !== false } satisfies CanvasInstructionFile]
-  }), [fields.instructionCards, t])
+  }), [fields.instructionCards, store.instructionPolicy.policy, t])
   const contextId = files.length ? store.getInstructionPool().contextId : null
   const activeFile = fileSelection?.owner === store.getInstructionPool && fileSelection.contextId === contextId
     ? fields.instructionCards.find(config => instructionFileIdOf(config) === fileSelection.id) : undefined

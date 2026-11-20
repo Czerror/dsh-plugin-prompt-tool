@@ -1,5 +1,4 @@
-import { useId, useRef, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import { useId, type ReactNode } from 'react'
 import clsx from 'clsx'
 import { Button } from '../../ui/Button.tsx'
 import { HintTooltip } from '../../ui/HintTooltip.tsx'
@@ -27,44 +26,4 @@ export function CloseButton(props: { label: string; disabled?: boolean; onClick:
       <IconCloseFillRegular />
     </button>
   </HintTooltip>
-}
-
-/** 条件、分支和动作共用摘要、键盘焦点与展开区。 */
-export function StepCard(props: {
-  kind: string
-  kindLabel: string
-  summary: string
-  hint?: string
-  open: boolean
-  onToggle: () => void
-  actions?: ReactNode
-  level: number
-  property?: { target: HTMLElement | null; id: string; focus: (button: HTMLButtonElement) => void }
-  nodeKey?: string
-  children: ReactNode
-}): ReactNode {
-  const panelId = useId()
-  const toggleRef = useRef<HTMLButtonElement>(null)
-  const bodyRef = useRef<HTMLDivElement>(null)
-  const toggle = (
-    <button ref={toggleRef} type="button" className={css.stepToggle} data-rule-node={props.nodeKey} aria-expanded={props.open} aria-controls={props.property?.id ?? panelId}
-      onClick={event => {
-        props.property?.focus(event.currentTarget)
-        if (props.open && bodyRef.current !== null && bodyRef.current.contains(document.activeElement)) toggleRef.current?.focus()
-        props.onToggle()
-      }}>
-      <IconChevronDownOutlineRegular className={clsx(ui.chevron, props.open && ui.chevronOpen)} />
-      <span className={css.stepKind}>{props.kindLabel}</span>
-      <span className={css.stepSummary}>{props.summary}</span>
-    </button>
-  )
-  return <section className={clsx(css.stepCard, props.open && css.stepCardOpen)} data-step={props.kind} data-open={props.open || undefined} data-level={props.level}>
-    <div className={css.stepHead}>
-      {props.hint === undefined ? toggle : <HintTooltip label={props.hint}>{toggle}</HintTooltip>}
-      {props.actions !== undefined && <span className={css.stepActions}>{props.actions}</span>}
-    </div>
-    {props.property === undefined
-      ? <div id={panelId} ref={bodyRef} hidden={!props.open} className={css.stepBody}>{props.open && props.children}</div>
-      : props.open && props.property.target && createPortal(<div className={css.stepBody}>{props.children}</div>, props.property.target)}
-  </section>
 }
