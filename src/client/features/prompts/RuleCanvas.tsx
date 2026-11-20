@@ -54,6 +54,8 @@ const FILE_GAP = 24
 const fileStride = FILE_HEIGHT + FILE_GAP
 const READABLE_SCALE = .75
 const CANVAS_GAP = 12
+// Keep all incident edges highlighted. Bound moving marks for high-degree nodes.
+const MAX_FLOW_EDGES = 8
 const OBSTACLE = '[data-canvas-obstacle], [data-instruction-inspector]'
 
 interface CanvasRect { left: number; right: number; top: number; bottom: number }
@@ -344,6 +346,7 @@ export function RuleCanvas(props: RuleCanvasProps) {
   const edges = useMemo(() => {
     if (!props.edges?.length) return null
     const hasSelection = !inspectingInstruction && props.nodes.some(node => node.selected)
+    let flowCount = 0
     return <svg className={css.edges} aria-hidden="true">{props.edges.map(edge => {
       const from = byId.get(edge.from), to = byId.get(edge.to)
       if (!from || !to) return null
@@ -351,10 +354,12 @@ export function RuleCanvas(props: RuleCanvasProps) {
       const path = x2 > x1 ? roundedRoute([[x1, y1], [(x1 + x2) / 2, y1], [(x1 + x2) / 2, y2], [x2, y2]])
         : roundedRoute([[x1, y1], [x1 + 24, y1], [x1 + 24, Math.min(y1, y2) - 24], [x2 - 24, Math.min(y1, y2) - 24], [x2 - 24, y2], [x2, y2]])
       const active = hasSelection && (from.selected || to.selected)
+      const showFlow = active && flowCount < MAX_FLOW_EDGES
+      if (showFlow) flowCount++
       const labelX = (x1 + x2) / 2, labelY = (y1 + y2) / 2
       return <g key={`${edge.from}-${edge.to}`} className={edge.kind ? css[edge.kind] : undefined} data-emphasis={active ? 'active' : hasSelection ? 'inactive' : undefined}>
         <path d={path} />
-        {active && <EdgeFlow path={path} />}
+        {showFlow && <EdgeFlow key={from.selected ? from.id : to.id} path={path} />}
         <circle className={css.outPort} cx={x1} cy={y1} r="5" /><circle className={css.inPort} cx={x2} cy={y2} r="5" />
         {edge.label && <g className={css.edgeLabel}><rect x={labelX - edge.label.length * 3.5 - 8} y={labelY - 10} width={edge.label.length * 7 + 16} height="20" rx="10" /><text x={labelX} y={labelY}>{edge.label}</text></g>}
       </g>
