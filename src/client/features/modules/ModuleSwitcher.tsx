@@ -1,5 +1,5 @@
 /** 模块管理：名称与创建归模块页；规则编辑仍归主会话／子代理。 */
-import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { memo, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import clsx from 'clsx'
 import { IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
@@ -105,6 +105,8 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
 export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort; t: PromptToolTranslate; onOpenModule?: (moduleId: string, ruleKey?: string) => void }): ReactNode {
   const { store, t } = props
   const fields = usePromptToolFields(store, (value) => value)
+  const { subscribeEnable, getEnableState, retryEnable } = store.moduleActions
+  const enableState = useSyncExternalStore(subscribeEnable, getEnableState, getEnableState)
   const modules = store.meta.modules ?? []
   const templates = store.meta.builtinTemplates ?? []
   const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
@@ -224,14 +226,31 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
    * 贡献自己的配置与参数，互不合并。这是模块页唯一改变装配范围的动作。
    */
   const setModuleEnabled = async (id: string, enabled: boolean): Promise<void> => {
+    const { busy, refreshFailed } = getEnableState()
+    if (busy || refreshFailed) return
+    const action = document.activeElement
     const res = await store.moduleActions.enable(id, enabled)
-    report(res, t(enabled ? 'moduleSwitcher.notice.enabled' : 'moduleSwitcher.notice.disabled', { id }),
-      res.ok ? '' : t('moduleSwitcher.notice.enableFailed', { reason: res.message ?? 'settings bridge unavailable' }),
-      () => store.moduleActions.retryEnable())
+    if (res.ok && !res.refreshError && !res.publication?.pending) {
+      store.showNotice('ok', t(enabled ? 'moduleSwitcher.notice.enabled' : 'moduleSwitcher.notice.disabled', { id }))
+    }
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body && action instanceof HTMLElement && action.getClientRects().length) {
+        action.focus({ preventScroll: true })
+      }
+    })
   }
 
   return (
     <div className={styles.rowGroup}>
+      {enableState.busy && <p role="status">{t('rules.moduleChanging')}</p>}
+      {enableState.error && <p role="alert">{t('moduleSwitcher.notice.enableFailed', { reason: enableState.error })}</p>}
+      {enableState.refreshFailed && <p role="alert">{t('rules.moduleListRefreshFailed')}</p>}
+      {enableState.refreshFailed && !enableState.publication?.pending &&
+        <Button variant="outline" shape="pill" size="sm" disabled={enableState.busy} onClick={() => { void retryEnable() }}>
+          {t('rules.refreshModules')}
+        </Button>}
+      <PublicationNotice publication={enableState.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
+        disabled={enableState.busy} onRetry={() => { void retryEnable() }} />
       {publicationRetry && <PublicationNotice publication={{ pending: true, error: publicationRetry.error }}
         pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         onRetry={() => { void publicationRetry.run().then((result) => {
@@ -261,7 +280,12 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
         onClose={() => { flow.cancel(); setImportOpen(false) }} onReset={flow.cancel} onSkip={flow.skip} onEnd={flow.end}
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
         publication={flow.publication} onRetryPublication={() => { void flow.retryPublication() }}
-        onUse={flow.resultLabel === undefined ? undefined : () => { void setModuleEnabled(flow.resultLabel!, true); flow.cancel(); setImportOpen(false) }} />}
+        onUse={flow.resultLabel === undefined || enableState.busy || enableState.refreshFailed ? undefined : () => {
+          if (getEnableState().busy || getEnableState().refreshFailed) return
+          void setModuleEnabled(flow.resultLabel!, true)
+          flow.cancel()
+          setImportOpen(false)
+        }} />}
       {exportTarget && <ModuleExportDialog t={t} module={exportTarget} onClose={() => setExportTarget(undefined)} />}
       <div className={styles.inlineControls}>
         <SearchInput aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query} onChange={event => setQuery(event.target.value)} />
@@ -330,7 +354,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
           {/* 开关与卡头徽章都表达启用状态；模块页只回答「谁参与装配」，没有「当前模块」高亮。 */}
           <Switch className={styles.moduleActivate}
             checked={module.enabled === true}
-            disabled={blocked}
+            disabled={blocked || enableState.busy || enableState.refreshFailed}
             label={blocked
               ? module.broken ?? t('moduleSwitcher.card.blocked.hint')
               : module.enabled === true

@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import { MODULE_CAPABILITIES, isModuleCapabilityDeclared } from '../../../shared/engine-capabilities.ts'
 import type { ModuleConfigOrderEntry } from '../../../shared/module-config-order.ts'
@@ -25,8 +25,6 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { useAnchoredPopoverStyle } from '../../ui/anchored-popover.ts'
 import { useDismissOnOutsidePointer } from '../../ui/outside-pointer.ts'
-import { errorMessage } from '../../data/bridge-client.ts'
-import type { ModuleActionResult } from '../../data/module-actions.ts'
 import { IconChevronDownOutlineRegular, IconFolderOpenOutlineRegular } from '../../ui/icons.tsx'
 import { PromptConfigCard } from './PromptConfigCard.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
@@ -206,11 +204,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const expanded = props.browse?.publish ? props.browse.expanded : localExpanded
   const allModules = props.browse?.publish ? props.browse.allModules === true : localAllModules
   const combination = props.browse?.publish ? props.browse.combination === true : localCombination
-  const [modulePending, setModulePending] = useState<string | null>()
-  const moduleWrite = useRef(false)
-  const [enablePublication, setEnablePublication] = useState<{ pending: boolean; error?: string }>()
-  const [enableError, setEnableError] = useState<string>()
-  const [enableRefreshFailed, setEnableRefreshFailed] = useState(false)
+  const { subscribeEnable, getEnableState, retryEnable } = store.moduleActions
+  const { busy: modulePending, error: enableError, publication: enablePublication, refreshFailed: enableRefreshFailed } =
+    useSyncExternalStore(subscribeEnable, getEnableState, getEnableState)
   const [orderFeedback, setOrderFeedback] = useState('')
   const [filter, setFilter] = useState(props.browse?.filter ?? '')
   const nodeBrowse = props.browse && (props.browse.ruleNodes ??= new Map())
@@ -452,37 +448,12 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     listToggle.current?.focus({ preventScroll: true })
   }
   const enableDisabled = (module: ModuleSummary): boolean =>
-    modulePending !== undefined || order.busy || enableRefreshFailed || module.broken !== undefined || module.renderable === false
-  const writeEnable = async (id: string | null, run?: () => Promise<ModuleActionResult<unknown>>): Promise<void> => {
-    if (moduleWrite.current || order.busy) return
+    modulePending || order.busy || enableRefreshFailed || module.broken !== undefined || module.renderable === false
+  const withEnableFocus = async (run: () => Promise<unknown>): Promise<void> => {
+    if (getEnableState().busy || order.busy) return
     const action = document.activeElement
     const actionPanel = action?.closest(`.${css.modulePickerPanel}`)
-    moduleWrite.current = true
-    setModulePending(id)
-    setEnableError(undefined)
-    const reportFailure = (reason: string): void => {
-      if (run === undefined) setEnableError(t('rules.moduleListRefreshFailed'))
-      else if (id === null) setEnablePublication({ pending: true, error: reason })
-      else setEnableError(t('moduleSwitcher.notice.enableFailed', { reason }))
-    }
-    try {
-      if (run === undefined) {
-        const refreshed = await store.moduleActions.refresh()
-        setEnableRefreshFailed(!refreshed)
-        if (!refreshed) reportFailure('')
-        return
-      }
-      const result = await run()
-      if (result.ok) {
-        setEnablePublication(result.publication)
-        setEnableRefreshFailed(result.refreshError !== undefined)
-        if (result.refreshError !== undefined) setEnableError(t('rules.moduleListRefreshFailed'))
-      } else reportFailure(result.message ?? result.code ?? t('workspace.retry'))
-    } catch (error) {
-      reportFailure(errorMessage(error))
-    } finally {
-      moduleWrite.current = false
-      setModulePending(undefined)
+    try { await run() } finally {
       requestAnimationFrame(() => {
         if (document.activeElement !== document.body || !(action instanceof HTMLElement)) return
         if (action.getClientRects().length) action.focus({ preventScroll: true })
@@ -495,18 +466,19 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   }
   const setModuleEnabled = (id: string, enabled: boolean): void => {
     const module = modules.find(item => item.id === id)
-    if (!module || enableDisabled(module) || (module.enabled === true) === enabled) return
-    void writeEnable(id, () => store.moduleActions.enable(id, enabled))
+    if (!module || enableDisabled(module) || getEnableState().refreshFailed || (module.enabled === true) === enabled) return
+    void withEnableFocus(() => store.moduleActions.enable(id, enabled))
   }
-  const enableFeedback = (modulePending !== undefined || enableError !== undefined || enablePublication?.pending === true) && <div className={css.modulePickerFeedback}>
-    {modulePending !== undefined && <p role="status">{t('rules.moduleChanging')}</p>}
-    {enableError && <p role="alert" className={css.error}>{enableError}</p>}
+  const enableFeedback = (modulePending || enableError !== undefined || enableRefreshFailed || enablePublication?.pending === true) && <div className={css.modulePickerFeedback}>
+    {modulePending && <p role="status">{t('rules.moduleChanging')}</p>}
+    {enableError && <p role="alert" className={css.error}>{t('moduleSwitcher.notice.enableFailed', { reason: enableError })}</p>}
+    {enableRefreshFailed && <p role="alert" className={css.error}>{t('rules.moduleListRefreshFailed')}</p>}
     {enableRefreshFailed && enablePublication?.pending !== true &&
-      <Button variant="outline" shape="pill" size="sm" disabled={modulePending !== undefined || order.busy}
-        onClick={() => { void writeEnable(null) }}>{t('rules.refreshModules')}</Button>}
+      <Button variant="outline" shape="pill" size="sm" disabled={modulePending || order.busy}
+        onClick={() => { void withEnableFocus(retryEnable) }}>{t('rules.refreshModules')}</Button>}
     <PublicationNotice publication={enablePublication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
-      disabled={modulePending !== undefined || order.busy}
-      onRetry={() => { void writeEnable(null, store.moduleActions.retryEnable) }} />
+      disabled={modulePending || order.busy}
+      onRetry={() => { void withEnableFocus(retryEnable) }} />
   </div>
   const refreshExclusivePeers = (id: string, rule: RuleDefinition): void => {
     if (!enabledIds.has(id) || rule.groupScope !== 'cross-module' || rule.exclusive !== true || !rule.group) return
@@ -612,7 +584,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
             <span aria-hidden="true">↗</span>
           </button>
           {combination && id !== pinnedModule && orderEntry && moveButtons(orderEntry)}
-          {combination && selectableWinner && <Button shape="pill" variant="outline" disabled={readOnly(id) || modulePending !== undefined || order.busy || orderBlocked.has(id)}
+          {combination && selectableWinner && <Button shape="pill" variant="outline" disabled={readOnly(id) || modulePending || order.busy || orderBlocked.has(id)}
             onClick={() => {
               const rule = entry.value
               if (!pendingWinner && rule.enabled === false) editor.patch(entry.key, { ...rule, enabled: true })
