@@ -555,7 +555,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     }}>
     <div className={css.ruleListHeader}>
       <h2 ref={workspaceHeading} tabIndex={-1} className={css.workspaceHeading}>{t('rules.list')}</h2>
-      <Button shape="pill" variant="outline" aria-label={t('rules.combination')} title={t('rules.combination')} aria-pressed={combination} onClick={() => changeCombination(!combination)}>{t('canvas.combine')}</Button>
+      <Button shape="pill" variant="outline" title={t('rules.combination')} aria-pressed={combination} onClick={() => changeCombination(!combination)}>{t('canvas.combine')}</Button>
       <Button icon aria-label={t('rules.closePanel', { name: t('rules.list') })} onClick={() => closeList(true)}><IconCloseFillRegular /></Button>
     </div>
     <div className={ui.listFilterRow} data-module-toolbar>
@@ -564,7 +564,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       <details className={css.listOptions}>
         <summary>{t('rules.listOptions')}{view !== 'all' && ' · ' + (view === 'context-activation' ? t('rules.worldBook') : translateLabel(t, LAYER_LABEL_KEYS, view))}</summary>
         <div className={css.browseScopes} role="group" aria-label={t('rules.browseScope')}>
-          <button type="button" aria-label={t('rules.participatingModules')} aria-pressed={!moduleFilter && !allModules} onClick={() => changeModuleScope('active')}>{t('canvas.participating')}</button>
+          <button type="button" title={t('rules.participatingModules')} aria-pressed={!moduleFilter && !allModules} onClick={() => changeModuleScope('active')}>{t('canvas.participating')}</button>
           <button type="button" aria-label={t('rules.allModules')} aria-pressed={!moduleFilter && allModules} onClick={() => changeModuleScope('all')}>{t('configs.view.all')}</button>
         </div>
         <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
