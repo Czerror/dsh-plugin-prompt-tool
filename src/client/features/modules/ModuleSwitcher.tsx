@@ -365,9 +365,9 @@ export const ModulePickerCards = memo(function ModulePickerCards(props: {
         {expanded && <div className={css.details}>
           {module.description && <p>{module.description}</p>}
           <p>{rules ? t('rules.moduleRuleCount', { count: rules.length }) : t('rules.moduleRulesOnOpen')}</p>
-          {rules !== undefined && rules.length > 0 && <div className={css.rules}>{rules.slice(0, 3).map(entry =>
-            <Button key={entry.key} shape="pill" size="sm" variant="outline" disabled={blocked}
-              onClick={() => props.onBrowse(module.id, entry.key)}>{entry.value.name || entry.value.id}</Button>)}</div>}
+          {rules !== undefined && rules.length > 0 && <ul className={css.rules}>{rules.slice(0, 3).map(entry =>
+            <li key={entry.key}><button type="button" disabled={blocked} title={entry.value.name || entry.value.id}
+              onClick={() => props.onBrowse(module.id, entry.key)}>{entry.value.name || entry.value.id}</button></li>)}</ul>}
           <div className={css.toolbar}>
           <Button variant="outline" shape="pill" size="sm" disabled={blocked || module.user !== true || module.facts?.editable !== true}
             onClick={() => setNameTarget(module)}>{t('moduleSwitcher.name.edit')}</Button>

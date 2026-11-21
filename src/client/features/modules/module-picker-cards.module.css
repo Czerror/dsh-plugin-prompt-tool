@@ -1,5 +1,5 @@
 .collection, .cards { display: grid; gap: 8px; min-inline-size: 0; }
-.toolbar, .filters, .rules { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.toolbar, .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .filters button[aria-pressed="true"] { border-color: #6688ae; background: #25344a; color: #e7f1ff; }
 .globalSwitch { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-block-size: 32px; cursor: pointer; }
 .card { display: grid; gap: 6px; min-inline-size: 0; padding: 6px; border: 1px solid #364251; border-radius: 8px; background: #181f2a; color: #e7edf6; }
@@ -18,7 +18,16 @@
 .details { display: grid; gap: 8px; padding: 8px 3px 2px; border-block-start: 1px solid #364251; overflow-wrap: anywhere; }
 .details p, .warning { margin: 0; color: #b5c2d4; }
 .warning { padding-inline: 5px; color: #f0c480; overflow-wrap: anywhere; }
-.rules button { max-inline-size: 100%; white-space: normal; overflow-wrap: anywhere; }
+.rules { display: grid; gap: 2px; min-inline-size: 0; margin: 0; padding: 0; list-style: none; }
+.rules li { min-inline-size: 0; }
+.rules button { display: block; width: 100%; min-block-size: 30px; padding: 4px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; border: 0; border-radius: 4px; background: #1c283a; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.rules li:nth-child(even) button { background: #233247; }
+.rules button:hover:not(:disabled), .rules button:focus-visible { background: #2e425f; }
+.rules button:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }
+.rules button:disabled { opacity: .5; cursor: default; }
+@media (pointer: coarse) {
+  .rules button { min-block-size: 44px; }
+}
 .commands { display: grid; gap: 6px; justify-items: start; min-inline-size: 0; }
 .commands ul { display: grid; gap: 4px; inline-size: 100%; margin: 0; padding: 0; list-style: none; }
 .commands li button { inline-size: 100%; justify-content: flex-start; text-align: start; white-space: normal; overflow-wrap: anywhere; }
