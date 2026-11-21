@@ -345,17 +345,15 @@ export const ModulePickerCards = memo(function ModulePickerCards(props: {
     return (
       <article key={module.id} className={css.card} data-active={current || undefined}>
         <div className={css.row}>
-          <button className={css.name} type="button" data-module-browse={module.id} aria-current={current || undefined} disabled={blocked}
+          <button className={css.name} type="button" data-module-browse={module.id}
+            title={name === module.id ? name : `${name} · ${module.id}`} aria-current={current || undefined} disabled={blocked}
             onClick={() => props.onBrowse(module.id)}>
             <strong>{name}</strong>
-            {name !== module.id && <small>{module.id}</small>}
-            {module.id === props.editingModule && <small className={css.editing}>{t('rules.editingModule')}</small>}
           </button>
-          <label className={css.switchLabel} data-enabled={enabled}>
-            <small>{t(enabled ? 'moduleSwitcher.enabled' : 'rules.moduleDisabled')}</small>
+          <div className={css.switchLabel}>
             <Switch checked={enabled} disabled={blocked || enableState.busy || enableState.refreshFailed}
               label={t('rules.moduleSwitchLabel', { name })} onChange={next => void setModuleEnabled(module.id, next)} />
-          </label>
+          </div>
           <Button icon aria-label={t('moduleSwitcher.moreAria', { name })} aria-expanded={expanded}
             onClick={() => setExpandedModule(expanded ? undefined : module.id)}>
             <IconChevronDownOutlineRegular />

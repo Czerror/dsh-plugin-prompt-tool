@@ -468,7 +468,7 @@ ui/ 只接收 props/callback，当前真实共享 seam 包括：
 - MenuSelect：共享单选控件，复用 Button 的尺寸、焦点与禁用行为，支持分组标题与 portal。
 - SearchInput：共用搜索输入，保留搜索图标、清空位置和主题焦点环。
 - StatusDot：6px实心状态点与3px柔和静态光晕，含success/neutral/danger/warning，语义由相邻文字表达，不使用循环动画。
-- StatusBadge：状态点和文字由同一 tone 驱动。模块卡按实际启用及可用状态显示，当前编辑目标单独标记。
+- StatusBadge：状态点和文字由同一 tone 驱动。模块卡将启用状态仅显示在开关，不重复显示状态文字；展开指示与名称共同行排列。
 - ImportFileButton：隐藏原生 file input 的导入入口。
 - DialogSurface：预设操作的 portal 浮层；ConfirmDialog 复用 DialogSurface 的警告对话、初始焦点与还焦能力。确认按钮沿用 `.pillButton[data-danger]`，取消按钮的 ref 承载初始焦点与 busy 还焦。
 - anchored-popover.ts / anchored-popover-fit.ts：锚点位置和窄视口适配。
