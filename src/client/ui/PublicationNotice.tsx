@@ -12,13 +12,16 @@ export function PublicationNotice(props: {
   onRetry?: () => void
   pendingLabel: string
   retryLabel: string
+  retryButtonLabel?: string
   disabled?: boolean
   className?: string
 }): ReactNode {
-  const { publication, onRetry, pendingLabel, retryLabel, disabled, className } = props
+  const { publication, onRetry, pendingLabel, retryLabel, retryButtonLabel, disabled, className } = props
   if (publication === undefined || !publication.pending) return null
   return <p role="alert" className={className}>
     {publication.error ?? pendingLabel}
-    {onRetry !== undefined && <Button variant="outline" shape="pill" size="sm" disabled={disabled} onClick={() => onRetry()}>{retryLabel}</Button>}
+    {onRetry !== undefined && <Button variant="outline" shape="pill" size="sm" disabled={disabled}
+      aria-label={retryButtonLabel === undefined ? undefined : retryLabel} title={retryButtonLabel === undefined ? undefined : retryLabel}
+      onClick={() => onRetry()}>{retryButtonLabel ?? retryLabel}</Button>}
   </p>
 }

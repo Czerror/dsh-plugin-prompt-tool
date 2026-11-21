@@ -46,6 +46,8 @@ test('rules bridge: moving commits the module once, rejects incomplete input and
   assert.equal(sent.expectedModuleId, 'module-a')
   assert.deepEqual(sent.expectedRevisions.rules, { alpha: 'baseline', beta: 'baseline' })
   assert.deepEqual(sent.edits[0].rule.then, [beta.then[0], branch])
+  assert.equal(sent.edits[0].rule.id, original.id, '主子分支仍属于同一条规则')
+  assert.deepEqual(sent.edits[0].rule.then[1].if, { scope: { audience: 'main' } }, '分支受众条件原样保存')
   assert.equal(sent.edits[1].rule.name, 'same module')
   assert.equal(h.draft.fields.has(path + ':0:then:0:alpha-text:n'), false)
   assert.equal(h.draft.fields.has(entry.key + ':else:0:alpha-text:n'), true)
@@ -79,6 +81,27 @@ test('rules bridge: rename/delete use previous identity and CAS; unknown payload
   assert.equal(rulesDirty(h.draft), false)
   await h.editor.submit()
   assert.equal(h.calls.length, 2, 'unchanged submit does not write')
+})
+
+test('lost save receipt is reconciled by reading the original module and preserves later input', async () => {
+  let stored = alpha
+  const h = harness(async body => {
+    if (!body.edits) return { ok: true, value: snapshot([stored, beta], stored === alpha ? 'before' : 'after') }
+    stored = structuredClone(body.edits[0].rule)
+    return { ok: false, code: 'bridge-response-unknown' }
+  })
+  await h.editor.load()
+  const key = h.draft.entries[0].key
+  h.editor.patch(key, { ...alpha, name: 'sent' })
+  assert.equal(await h.editor.submit(), false)
+  h.editor.patch(key, { ...alpha, name: 'later' })
+  assert.equal(h.editor.retryKind, 'read')
+  assert.equal(await h.editor.submit(), false)
+  await h.editor.retry()
+  assert.deepEqual(h.calls[2], { expectedModuleId: 'module-a' })
+  assert.equal(h.draft.saved[0].name, 'sent')
+  assert.equal(h.draft.entries[0].value.name, 'later')
+  assert.equal(h.calls.filter(body => body.edits).length, 1)
 })
 
 test('rules bridge: CAS failure and switched module never discard local input', async () => {
@@ -169,6 +192,16 @@ test('rules bridge: first creation stores the complete result without an active 
   assert.equal(h.draft.publicationPending, false)
   assert.equal(h.draft.revisions.rules.first, 'published')
   assert.equal(h.draft.entries[0].value.name, 'unsaved')
+})
+
+test('rules bridge: unknown create response remains pending and is not replayed', async () => {
+  const h = harness(async () => ({ ok: false, code: 'bridge-response-unknown' }))
+  await h.editor.load()
+  const result = await h.editor.create({ id: 'first', then: [{ id: 'text', kind: 'inject-text', config: { text: 'body' } }] }, true)
+  assert.equal(result.ok, false)
+  assert.equal(h.draft.pending !== undefined, true)
+  assert.equal(h.draft.retryCreate, undefined)
+  assert.equal(h.calls.filter(call => call.createRule).length, 1)
 })
 
 test('rules bridge: queued save and in-flight read survive leaving the view without losing input', async () => {

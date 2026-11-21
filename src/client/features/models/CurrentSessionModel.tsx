@@ -1,7 +1,6 @@
-import { useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { HostApiPort, ModelsPort, NoticePort } from '../../data/store-ports.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
-import { EngineModuleCard } from '../../ui/EngineModuleCard.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { buildEffortOptions, buildModelOptions, modelChoiceValue, parseModelChoice } from './model-options.ts'
 import styles from '../../ui/controls.module.css'
@@ -10,9 +9,11 @@ import styles from '../../ui/controls.module.css'
 export function CurrentSessionModel(props: { store: HostApiPort & ModelsPort & NoticePort; t: PromptToolTranslate }): ReactNode {
   const { store, t } = props, face = store.api.sessionModel
   const view = useSyncExternalStore(face.subscribe, face.snapshot)
+  const titleId = useId()
   const [busy, setBusy] = useState(false)
   const provider = view.selection?.provider ?? store.hostDefaultModel?.provider ?? ''
   const model = view.selection?.model ?? store.hostDefaultModel?.model ?? ''
+  useEffect(() => store.ensureModelReasoning(provider, model), [provider, model, store.ensureModelReasoning, store.modelCatalog])
   const reasoningEffort = view.selection?.reasoningEffort ?? store.hostDefaultModel?.reasoningEffort ?? ''
   const options = buildModelOptions(store.modelCatalog, provider && model ? [{ provider, model }] : []).filter(option => option.value !== '')
   const efforts = buildEffortOptions(store.modelReasoning[modelChoiceValue(provider, model)], reasoningEffort)
@@ -23,11 +24,16 @@ export function CurrentSessionModel(props: { store: HostApiPort & ModelsPort & N
     void face.select({ provider: selection.provider, model: selection.model, ...(selection.reasoningEffort ? { reasoningEffort: selection.reasoningEffort } : {}) }).then(() => { store.showNotice('ok', t('rules.sessionModelSaved')); void store.load() })
       .catch((error: unknown) => store.showNotice('error', String(error))).finally(() => setBusy(false))
   }
-  return <EngineModuleCard name={t('rules.sessionModel')} embedded>
-    <div className={styles.sessionModelRow}>
-      <MenuSelect compact ariaLabel={t('rules.sessionModel')} placeholder={t('field.default')} value={provider && model ? modelChoiceValue(provider, model) : ''} options={options} disabled={!view.selectable || busy}
-        onChange={value => { const next = parseModelChoice(value); if (next) select(next) }} />
-      <MenuSelect compact ariaLabel={t('rules.reasoningEffort')} placeholder={t('field.default')} value={reasoningEffort} options={efforts} disabled={!view.selectable || busy} onChange={reasoningEffort => select({ reasoningEffort })} />
+  return <section className={styles.moduleEmbedded} aria-labelledby={titleId}>
+    <header className={styles.moduleEmbeddedHeader}>
+      <h4 id={titleId} className={styles.moduleEmbeddedTitle}>{[t('rules.sessionModel'), view.sessionId].filter(Boolean).join(' · ')}</h4>
+    </header>
+    <div className={styles.moduleEmbeddedBody}>
+      <div className={styles.sessionModelRow}>
+        <MenuSelect compact ariaLabel={t('rules.sessionModel')} placeholder={t('field.default')} value={provider && model ? modelChoiceValue(provider, model) : ''} options={options} disabled={!view.selectable || busy}
+          onChange={value => { const next = parseModelChoice(value); if (next) select(next) }} />
+        <MenuSelect compact ariaLabel={t('rules.reasoningEffort')} placeholder={t('field.default')} value={reasoningEffort} options={efforts} disabled={!view.selectable || busy} onChange={reasoningEffort => select({ reasoningEffort })} />
+      </div>
     </div>
-  </EngineModuleCard>
+  </section>
 }

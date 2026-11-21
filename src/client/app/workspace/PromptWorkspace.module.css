@@ -1,5 +1,6 @@
 /* 工作台只有 canvas 一个主滚动根；页面响应以宿主容器宽度为准。 */
 .shell {
+  position: relative;
   container: workspace / inline-size;
   box-sizing: border-box;
   display: flex;
@@ -24,65 +25,30 @@
 }
 .shell button:not([role='switch']) { overflow-wrap: anywhere; }
 
-.masthead {
-  display: flex;
-  min-height: 40px;
-  flex: 0 0 auto;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  padding: 6px 16px;
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-}
-
-/* 标题行的状态反馈：单行截断——长文本若换行会把 masthead 撑高，破坏与官方会话头的对齐。 */
-.mastheadNotice { min-width: 0; flex: 1 1 auto; margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mastheadNoticeError { color: var(--dsw-alias-state-error-primary); }
-
-.brand { display: flex; min-width: 0; flex: 1 1 160px; align-items: center; flex-wrap: wrap; gap: 8px; }
-.brandLogo { display: grid; width: 28px; height: 28px; flex: none; place-items: center; color: var(--dsw-alias-label-secondary); font: 600 16px/24px system-ui, sans-serif; }
-.brand h1 { margin: 0; font: 600 16px/24px system-ui, sans-serif; overflow-wrap: anywhere; }
-/* 计数块与通知各自独立：既不被通知挤压，也不参与伸缩（加载点变灰单独表达加载中）。 */
-.statusCluster { display: flex; min-width: 0; flex: none; align-items: center; gap: 8px; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; font-variant-numeric: tabular-nums; }
-.statusCluster > span:last-child { overflow-wrap: anywhere; }
-
-.topNavigation { display: flex; min-width: 0; flex: 0 0 auto; padding: 0 16px; background: var(--dsw-alias-bg-base); }
-.nav { display: flex; min-width: 0; flex: 1; align-items: stretch; gap: 4px; overflow-x: auto; overscroll-behavior-inline: contain; border-bottom: 0.5px solid var(--dsw-alias-border-l2); padding: 4px 2px; }
-.nav button { display: flex; min-width: max-content; min-height: 36px; align-items: center; padding: 6px 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 8px 8px 0 0; color: var(--dsw-alias-label-secondary); background: transparent; text-align: left; cursor: pointer; font: 13px/20px system-ui, sans-serif; }
-.nav button:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
-.nav button > span { display: grid; min-width: 0; gap: 2px; }
-.nav button strong { font: 600 13px/20px system-ui, sans-serif; }
-.nav button small { color: var(--dsw-alias-label-secondary); font: 11px/16px system-ui, sans-serif; }
-.nav button[data-active] { color: var(--dsw-alias-label-primary); border-bottom-color: var(--dsw-alias-state-business-primary); }
-
 .canvas { min-width: 0; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scroll-padding-block-start: calc(var(--pt-sticky-height, 0px) + 8px); }
 :global([data-conversation-scroll] > [data-slot='conversation.session'] > div:has([data-slot='conversation.view'] [data-workspace-canvas])) {
   flex: 1 1 0;
   min-height: 0;
 }
 .canvas > div { width: 100%; padding: 14px 16px 16px; }
+.shell[data-d-surface] { background: #0e1116; color: #e7edf6; }
+.shell[data-d-surface] .canvas { overflow: clip; scrollbar-gutter: auto; }
+.shell[data-d-surface] .canvas > .surfaceContent { position: relative; height: 100%; min-height: 0; padding: 0; background: radial-gradient(#343b486b .8px, transparent .8px) 0 0 / 20px 20px #0e1116; }
+.surfaceContent > section { height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.surfaceNotice { position: absolute; z-index: 25; inset: auto 12px 12px auto; max-inline-size: min(30rem, 45%); padding: 6px 10px; margin: 0; border-radius: 6px; background: #181c23; color: #b5c2d4; overflow-wrap: anywhere; }
+.surfaceFeedback { position: absolute; inset: 100px auto auto 24px; padding: 16px; background: #181c23; border: 1px solid #313844; border-radius: 10px; }
+.canvas:has([data-rule-editor]) { overflow: clip; scrollbar-gutter: auto; }
+.canvas > div:has([data-rule-editor]) { height: 100%; padding: 0; }
+.canvas > div:has([data-rule-editor]) > section { height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; }
 
 @container workspace (max-width: 760px) {
-  .masthead { padding: 8px 12px; }
-  .topNavigation { padding-inline: 12px; }
-  .nav button { padding-inline: 10px; }
   .canvas > div { padding: 14px 12px 16px; }
 }
 
 @container workspace (max-width: 460px) {
-  .brand { flex-basis: 100%; }
-  .nav { flex-wrap: wrap; gap: 2px; }
-  .nav button { flex: 1 1 auto; justify-content: center; padding-inline: 8px; }
   .canvas > div { padding-inline: 10px; }
-  .mastheadNotice { flex-basis: 100%; white-space: normal; }
-}
-
-@media (pointer: coarse) {
-  .nav button { min-width: 44px; min-height: 44px; }
 }
 
 @media (forced-colors: active) {
-  .nav button[data-active] { border-bottom-color: Highlight; }
   .shell :is(button, input, select, textarea, summary):focus-visible { outline-color: Highlight; }
 }

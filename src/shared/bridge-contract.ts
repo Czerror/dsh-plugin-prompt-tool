@@ -5,7 +5,7 @@
  * 改路径或载荷形状必须同步更新 test/shared/bridge-contract.test.mjs。
  */
 import type { ModuleVariablesRequest, ModuleVariablesSnapshot } from './module-variables.ts'
-import type { RulesRequest, RulesSnapshot } from './rules.ts'
+import type { CompactRulesSnapshot, RulesRequest, RulesSnapshot } from './rules.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderSnapshot } from './module-config-order.ts'
 import type { AssetSummary, BridgeAssetImportRequest, ImportKind, ModuleExportRequest, ModuleExportResult } from './asset-transfer.ts'
 import type { PublicationFailure, PublicationFields } from './publication.ts'
@@ -55,7 +55,6 @@ export const BRIDGE_ENDPOINTS = {
   moduleName: '/module-name',
   moduleEnable: '/module-enable',
   moduleConfigOrder: '/module-config-order',
-  toolSurface: '/tool-surface',
   moduleCapability: '/module-capability',
   contextActivationDiagnostics: '/context-activation-diagnostics',
   ruleDiagnostics: '/rule-diagnostics',
@@ -121,7 +120,6 @@ export const BRIDGE_SUBJECT_POLICY = {
   moduleName: 'required',
   moduleEnable: 'none',
   moduleConfigOrder: 'none',
-  toolSurface: 'none',
   moduleCapability: 'required',
   contextActivationDiagnostics: 'none',
   ruleDiagnostics: 'none',
@@ -234,7 +232,6 @@ export interface BridgeRequestMap {
   moduleName: { name?: string; expectedRevision?: string; expectedModuleId?: string; refreshOnly?: boolean }
   moduleEnable: { id: string; enabled: boolean; refreshOnly?: false } | { refreshOnly: true; id?: never; enabled?: never }
   moduleConfigOrder: ({ moduleId: string } | { moduleId?: string; entries: ModuleConfigIdentity[]; expectedRevision: string }) & { refreshOnly?: boolean } | undefined
-  toolSurface: { sessionId: string; presetId?: never } | { presetId: string; sessionId?: never }
   moduleCapability: (
     | { action: 'create' | 'remove'; capabilityId: string }
     | { action: 'create-recipe'; recipeId: string }
@@ -511,7 +508,7 @@ export interface BridgeValueMap {
   /** 参数/提示词配置只保存当前模块，不同步宿主全局默认模型。 */
   paramOverrides: { overrides?: Record<string, unknown>; effective?: Record<string, unknown>; promptConfigs?: unknown[] } & PublicationFields
   triggers: { triggers: unknown[]; revision: string; meta: TriggerEditorMeta }
-  rules: RulesSnapshot
+  rules: RulesSnapshot | CompactRulesSnapshot
   moduleVariables: ModuleVariablesSnapshot
   customTools: { customTools?: unknown[] } & PublicationFields
   importModulePackage: {
@@ -539,12 +536,6 @@ export interface BridgeValueMap {
   moduleName: { name: string; revision: string } & PublicationFields
   moduleEnable: { enabled: string[] } & PublicationFields
   moduleConfigOrder: ModuleConfigOrderSnapshot & PublicationFields
-  toolSurface: {
-    source: 'session' | 'preset'
-    sessionId?: string
-    presetId?: string
-    tools: Array<{ name: string; description: string }>
-  }
   moduleCapability: { changed: boolean; addedModules?: string[]; removedModules?: string[]; capabilityIds: string[] } & PublicationFields
   /** 只读世界书诊断：只回当前授权会话最近一次选择的观测记录（读取不重新求值）。 */
   contextActivationDiagnostics: { records: ContextActivationDiagnosticRecord[]; truncated: boolean; step: number; evaluated: boolean }

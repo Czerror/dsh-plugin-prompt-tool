@@ -1,14 +1,15 @@
 import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import fs, { existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import fs, { existsSync, mkdirSync, readFileSync, readdirSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { createHash } from 'node:crypto'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
-const { moduleRoot } = isolatedHome('pt-package-roundtrip-')
+const { home, moduleRoot } = isolatedHome('pt-package-roundtrip-')
 const { moduleImportPreview, installModulePackage, exportModulePackage, expandModuleSource } = await import('../../src/host/module-package.ts')
-const { ensureModuleSlices, readRulesDir } = await import('../../src/host/module-slices.ts')
+const { ensureModuleSlices, assertModuleDefinitionFormat, loadModuleDefinition, readRulesDir, validateModuleDefinitionText } = await import('../../src/host/module-slices.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
 const rule = (id, text, extra = {}) => ({ id, enabled: false, then: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
 const source = (id, extra = {}) => ({ id, name: id, modules: [], rules: [rule('hello', 'SOURCE')], variables: { owner: 'Mia' }, variablesEnabled: false, configOrder: { hello: 40 }, ...extra })
@@ -76,6 +77,63 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
   const withManifest = [...files, { path: 'prompt-tool-package.json', content: JSON.stringify(manifest) }]
   await assert.rejects(expandModuleSource([...withManifest, { path: 'extra.txt', content: 'undeclared' }]), /集合/)
   await assert.rejects(expandModuleSource(withManifest.map(file => file.path === 'assets/notice.txt' ? { ...file, content: 'TAMPERED', encoding: 'utf8' } : file)), /摘要/)
+})
+
+test('同名包内模板回退只接受缺失资产，用户覆盖和包内变更使缓存失效', () => {
+  const packageRoot = join(home, 'packaged-modules')
+  const sourcePackageRoot = resolve(fileURLToPath(new URL('../../src/modules/', import.meta.url)))
+  const id = 'asset-fallback'
+  const dir = fixture(id, source(id, { rules: [rule('hello', 'SOURCE', { templateFile: './assets/notice.json' })] }))
+  const packaged = join(packageRoot, id)
+  mkdirSync(join(packaged, 'assets'), { recursive: true })
+  const packageDefinition = join(packaged, 'module.yml')
+  writeFileSync(packageDefinition, JSON.stringify({ id }))
+  const packageAsset = join(packaged, 'assets', 'notice.json')
+  writeFileSync(packageAsset, '"PACKAGE"')
+
+  // 包目录解析到临时夹具，后续模板路径与文件内容仍由真实文件系统检查。
+  for (const name of ['existsSync', 'lstatSync', 'realpathSync']) {
+    const original = fs[name]
+    mock.method(fs, name, (path, ...args) => original(
+      typeof path === 'string' && resolve(path) === sourcePackageRoot ? packageRoot : path, ...args))
+  }
+  syncBuiltinESMExports()
+  try {
+    const fallback = ensureModuleSlices(dir)
+    assertModuleDefinitionFormat(dir)
+    writeFileSync(packageDefinition, JSON.stringify({ id: 'other-module' }))
+    assert.throws(() => validateModuleDefinitionText(dir, fallback.text), /身份不匹配/)
+    assert.throws(() => assertModuleDefinitionFormat(dir), /身份不匹配/)
+    assert.throws(() => loadModuleDefinition(dir), /身份不匹配/)
+    writeFileSync(packageDefinition, JSON.stringify({ id }))
+    mkdirSync(join(dir, 'assets'))
+    const localAsset = join(dir, 'assets', 'notice.json')
+    writeFileSync(localAsset, '')
+    assert.throws(() => validateModuleDefinitionText(dir, fallback.text, {}, fallback), { code: 'rules-conflict' })
+    assert.throws(() => assertModuleDefinitionFormat(dir), /not valid JSON/)
+    assert.throws(() => loadModuleDefinition(dir), /not valid JSON/)
+
+    writeFileSync(localAsset, '"USER"')
+    writeFileSync(packageDefinition, JSON.stringify({ id: 'other-module' }))
+    const override = ensureModuleSlices(dir)
+    assertModuleDefinitionFormat(dir)
+    writeFileSync(packageDefinition, JSON.stringify({ id }))
+    rmSync(localAsset)
+    assert.throws(() => validateModuleDefinitionText(dir, override.text, {}, override), { code: 'rules-conflict' })
+    ensureModuleSlices(dir)
+    assertModuleDefinitionFormat(dir)
+    writeFileSync(packageAsset, 'INVALID')
+    assert.throws(() => assertModuleDefinitionFormat(dir), /not valid JSON/)
+    assert.throws(() => loadModuleDefinition(dir), /not valid JSON/)
+
+    writeFileSync(packageAsset, '"PACKAGE"')
+    ensureModuleSlices(dir)
+    assertModuleDefinitionFormat(dir)
+    rmdirSync(join(dir, 'assets'))
+    symlinkSync(join(packaged, 'assets'), join(dir, 'assets'), 'junction')
+    assert.throws(() => assertModuleDefinitionFormat(dir), /包含链接/)
+    assert.throws(() => loadModuleDefinition(dir), /包含链接/)
+  } finally { mock.restoreAll(); syncBuiltinESMExports() }
 })
 
 test('模块私有 data/ 不随包导出；覆盖安装旧数据优先，包内只补缺失', async () => {

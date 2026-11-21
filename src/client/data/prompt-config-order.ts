@@ -33,10 +33,8 @@ type SortableConfig = Pick<PromptConfigDraft, 'layer' | 'position'>
  * 入参只要排序相关的字段：排序快照的条目（`ModuleConfigOrderEntry`）与视图草稿
  * （`PromptConfigDraft`）都能直接传，页内不再另写一份判据。
  */
-export function sameConfigPosition(left: SortableConfig, right: SortableConfig): boolean {
-  return layerOf(left) === layerOf(right)
-    && (left.position ?? 'after-user') === (right.position ?? 'after-user')
-}
+export const configPositionKey = (config: SortableConfig): string => JSON.stringify([layerOf(config), config.position ?? 'after-user'])
+export const sameConfigPosition = (left: SortableConfig, right: SortableConfig): boolean => configPositionKey(left) === configPositionKey(right)
 
 /**
  * 把 `sourceId` 移到 `targetId` 前（`before`）或后：一步重排，返回新的身份顺序。

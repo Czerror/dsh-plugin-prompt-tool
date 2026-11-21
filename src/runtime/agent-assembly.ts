@@ -13,7 +13,7 @@
  *
  * 与官方挂载并存时不会重复：官方树里没有引擎行，引擎贡献只由本通道提供。
  */
-import { existsSync, unwatchFile, watchFile } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, statSync, unwatchFile, watchFile } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Context, Fiber, Plugin } from '@deepseek-ai/cordis'
@@ -22,14 +22,16 @@ import SystemPrompt, { PERSONA_PREFIX_SECTION } from '@deepseek-ai/dsh-system-pr
 import type { PromptSection } from '@deepseek-ai/dsh-system-prompt'
 import { scopeChainOf, scopeOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { MANIFEST_CHECK_SERVICE, SOUL_SELF_SERVICE } from '../../engine/service-names.mjs'
-import { packageEngineDir, resolveModuleDir } from '../host/module-dirs.ts'
-import { readModuleFacts, resolveModuleParams } from '../host/module-params.ts'
+import { packageEngineDir, packageModulesDir, resolveModuleDir, userModulesDir } from '../host/module-dirs.ts'
+import { resolveModuleFacts, resolveModuleParams } from '../host/module-params.ts'
 import { loadModuleSpec, readModulesRevision } from '../host/module-spec.ts'
 import { createProcessHostControls } from '../../engine/host-control-process.mjs'
 import type { ModuleSpec } from '../host/module-spec.ts'
 import { modelRequestRules } from '../host/prompt-configs.ts'
 import { pluginKind, pluginOwner } from '../../engine/source-kind.mjs'
-import { assertModuleDirectory, assertModuleId } from '../host/module-install.ts'
+import { assertModuleId } from '../host/module-install.ts'
+import { MODULE_DEFINITION_FILE } from '../host/paths.ts'
+import { revisionOf } from '../host/module-write.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-slices.ts'
 import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
@@ -49,7 +51,7 @@ import { contextRuntimeOf } from '../../engine/context-provenance.mjs'
 import { installToolStepAssembly } from '../../engine/tool-step-assembly.mjs'
 import { registerInstructionsBudgetReader } from '../../engine/instructions-budget-bridge.mjs'
 
-import { actionAudiences, compileRules, completeRuleSections } from '../../engine/rule-spec.mjs'
+import { actionAudiences, compileRules, completeRuleSections, instantiateCompiledRules } from '../../engine/rule-spec.mjs'
 import type { RuleAudience } from '../../engine/rule-spec.mjs'
 // 与引擎注册侧共用主子身份判据。
 import { isDelegated } from '../../engine/shared.mjs'
@@ -162,15 +164,22 @@ export interface PreparedAssembly {
 export async function prepareAssembly(
   moduleRoot: string, moduleId: string, hasService: (name: string) => boolean,
 ): Promise<PreparedAssembly> {
-  assertModuleId(moduleId)
   const moduleDir = resolveModuleDir(moduleId, moduleRoot)
-  const spec = loadModuleSpec(moduleDir) as ModuleSpec
+  return prepareDefinition(moduleRoot, moduleId, moduleDir, loadModuleSpec(moduleDir), hasService)
+}
+
+async function prepareDefinition(
+  moduleRoot: string, moduleId: string, moduleDir: string, spec: ModuleSpec,
+  hasService?: (name: string) => boolean,
+  dependOn?: (file: string) => void,
+): Promise<PreparedAssembly> {
   if (spec.customTools !== undefined && !Array.isArray(spec.customTools)) throw new TypeError('customTools must be an array')
   const toolErrors = validateCustomTools(spec.customTools ?? [])
   if (toolErrors.length > 0) throw new Error(`invalid customTools: ${toolErrors.join('; ')}`)
-  // 事实与桥端走同一条 `readModuleFacts` 链（`editable` 由目录判据自判）；定义仍在本函数自己读，
-  // 因为下面还要用它做工具校验与受管字段换算。
-  const facts = readModuleFacts(moduleDir)
+  const facts = resolveModuleFacts(spec, moduleDir, false, file => {
+    dependOn?.(file)
+    return readFileSync(file, 'utf8')
+  })
   if (facts.effectiveModules === null) throw new Error(`模块 ${moduleId} 的模块声明无效，无法配装`)
   const configsByModule = facts.effectiveConfigs ?? {}
   const ruleConfig = absolutizeManagedFields(configsByModule['rule-engine'] ?? {}, moduleDir)
@@ -181,14 +190,17 @@ export async function prepareAssembly(
   const declaredRules = spec.rules ?? []
   const syntheticRules = modelRequestRules(resolveModuleParams(spec, {}))
     .filter(rule => !declaredRules.some(declared => declared.id === rule.id))
+  const promptConfigOptions = rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir, dependOn)
+  const runtimePromptConfigOptions = dependOn === undefined ? promptConfigOptions : rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir)
   const rules = compileRules([...declaredRules, ...syntheticRules], {
     moduleId,
     ruleRevisions: spec.ruleRevisions,
     configOrder: readConfigOrder(spec.configOrder),
     variables: spec.variables, variablesEnabled: spec.variablesEnabled,
     contextActivationRecursive: spec.contextActivationRecursive,
-    promptConfigOptions: rulePromptConfigOptions(moduleDir, ruleConfig.strategyDir),
+    promptConfigOptions,
   })
+  for (const rule of rules) rule.promptConfigOptions = runtimePromptConfigOptions
   // 声明了 discovery 的规则必须把对应 adapter 行列进 modules；缺行在准备期就失败。
   assertDiscoveryRows(rules, facts.effectiveModules, moduleId)
   const engineDir = packageEngineDir()
@@ -203,7 +215,7 @@ export async function prepareAssembly(
     if (id === 'prompt-config-engine' || id === 'declared-triggers') continue
     const privateService = PRIVATE_SERVICES[id]
     if (privateService !== undefined) {
-      if (!hasService(privateService)) throw new Error(`配装所需能力不可用：${privateService}`)
+      if (hasService?.(privateService) === false) throw new Error(`配装所需能力不可用：${privateService}`)
       services.add(privateService)
     }
     const file = engineModuleFile(engineDir, id)
@@ -235,10 +247,30 @@ export async function prepareAssembly(
     services.add('tools')
     services.add('llm')
   }
-  for (const name of services) {
-    if (!hasService(name)) throw new Error(`配装所需宿主能力不可用：${name}`)
-  }
+  if (hasService !== undefined) requireServices(services, hasService)
   return { rules, modules, services, moduleId, variablesEnabled: spec.variablesEnabled, skippedOfficialRows }
+}
+
+function requireServices(services: Set<string>, hasService: (name: string) => boolean): void {
+  for (const name of services) if (!hasService(name)) throw new Error(`配装所需宿主能力不可用：${name}`)
+}
+
+function fileStamp(file: string, read = lstatSync): string {
+  const stat = read(file, { bigint: true, throwIfNoEntry: false })
+  return stat === undefined ? '' : `${stat.dev}:${stat.ino}:${stat.ctimeNs}:${stat.mtimeNs}:${stat.size}`
+}
+
+function dependencyStamp(file: string): string {
+  return fileStamp(file, statSync)
+}
+
+function dependenciesCurrent(files: ReadonlyMap<string, string>, stamp = dependencyStamp): boolean {
+  try {
+    for (const [file, revision] of files) {
+      if (stamp(file) !== revision) return false
+    }
+    return true
+  } catch { return false }
 }
 
 /** 上报点只读 message（本文件的 `warn`、settings-bridge 的 `String(error)`）：原因写进文本。 */
@@ -354,15 +386,19 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const ruleDiagnostics = createRuleDiagnosticsLedger()
   const processControls = createProcessHostControls(ctx, record => ruleDiagnostics.record(record))
   let processStamp: string | undefined
+  let publicationDependencies: ReadonlyMap<string, string> = new Map()
+  const processSources = new Map<string, PreparedAssembly>()
   const initialization = createModuleInitialization(ctx)
   const lastGood = new WeakMap<Agent, Map<string, PreparedAssembly>>()
-  const sourceVersions = new WeakMap<PreparedAssembly, string>()
+  const sourceInputs = new WeakMap<PreparedAssembly, { dir: string; signature: string; version: string; dependencies: ReadonlyMap<string, string> }>()
   const rejectedVersions = new WeakMap<Agent, Map<string, Map<string, string>>>()
   type Slot = { fiber: Fiber; owners: PreparedAssembly[]; ready: boolean; failed?: unknown; live: boolean; off(): void; signature?: string }
   type Mounted = {
     agent: Agent; scope: Context; fiber: { dispose(): Promise<void> | void }; rules: ReturnType<typeof createRuleRuntime>
     modules: Map<string, Slot>; shared: Map<string, Slot>
-    prepared: PreparedAssembly[]; moduleIds: readonly string[]; stamp: string; content: string
+    prepared: PreparedAssembly[]; moduleIds: readonly string[]; stamp: string
+    content: ReadonlyMap<string, string>
+    dependencies: ReadonlyMap<string, string>
     live: boolean; committed: boolean; mutating: boolean
   }
   const mounts = new Map<string, Mounted>()
@@ -375,7 +411,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const watched = new Map<string, () => void>()
   const disposed = new WeakSet<Agent>()
   let pending: Promise<void> = Promise.resolve()
-  let publishingContent: string | undefined
+  let isCurrentPublication: ((file: string) => boolean) | undefined
   const serialQueue = createTargetQueue()
   const agentQueues = new WeakMap<Agent, ReturnType<typeof createTargetQueue>>()
   const withAgent = <T>(agent: Agent, task: () => T | Promise<T>): Promise<T> => {
@@ -467,11 +503,13 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     if (rejected === undefined) { rejected = new Map(); rejectedVersions.set(agent, rejected) }
     let versions = rejected.get(item.moduleId)
     if (versions === undefined) { versions = new Map(); rejected.set(item.moduleId, versions) }
-    versions.set(sourceVersions.get(item) ?? '', failureReason(error))
+    versions.set(sourceInputs.get(item)?.version ?? '', failureReason(error))
     if (lastGood.get(agent)?.get(item.moduleId) === item) lastGood.get(agent)?.delete(item.moduleId)
   }
 
-  const mount = async (agent: Agent, prepared: PreparedAssembly[], duplicateIdentities: DuplicateIdentity[] = [], stamp = '', content = ''): Promise<void> => withAgent(agent, async () => {
+  const mount = async (agent: Agent, prepared: PreparedAssembly[], duplicateIdentities: DuplicateIdentity[], stamp: string, content: ReadonlyMap<string, string>,
+    dependencies: ReadonlyMap<string, string>, assertCurrent?: () => void): Promise<void> => withAgent(agent, async () => {
+    assertCurrent?.()
     for (const item of prepared) for (const name of item.services) {
       if (agent.ctx.get(name) === undefined) throw Object.assign(new Error(`模块 ${item.moduleId} 挂载所需宿主能力不可用：${name}`), { sourceModuleId: item.moduleId })
     }
@@ -488,7 +526,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       } }) }
       catch (error) { await root.dispose(); throw error }
       const record: Mounted = { agent, scope, rules, modules: new Map(), shared: new Map(), prepared: [], moduleIds: [],
-        stamp: '', content: '', live: true, committed: false, mutating: false,
+        stamp: '', content: new Map(), dependencies: new Map(), live: true, committed: false, mutating: false,
         fiber: { dispose: () => {} } }
       const disposeFiber = ctx.effect(() => async () => {
         record.live = false
@@ -512,7 +550,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const disposeSlot = async (slot: Slot): Promise<void> => { slot.live = false; slot.off(); await slot.fiber.dispose() }
     const applyCapability = async (scopeCtx: Context, item: PreparedAssembly, module: PreparedAssembly['modules'][number]): Promise<void> => {
       const result = await module.apply(scopeCtx, module.config, { agent, sourceModuleId: item.moduleId,
-        sourceModuleDir: resolveModuleDir(item.moduleId, options.moduleRoot), recoveryState, contextRuntimeOf })
+        sourceModuleDir: sourceInputs.get(item)!.dir, recoveryState, contextRuntimeOf })
       if (typeof result === 'function') scopeCtx.effect(() => result as () => void, module.id)
     }
     const createSlot = async (map: Map<string, Slot>, key: string, owners: PreparedAssembly[], apply: (scopeCtx: Context) => Promise<void>, signature?: string): Promise<void> => {
@@ -566,12 +604,14 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         else await createSlot(record.shared, id, entry.owners, scopeCtx => applyCapability(scopeCtx, entry.item, entry.module), entry.signature)
       }
       if (!active || disposed.has(agent)) { await releaseNow(agent.id, agent); return }
+      assertCurrent?.()
       // 来源授权与规则提交同栈完成；求值失败先恢复授权，再进入异步回滚。
       record.moduleIds = prepared.map(item => item.moduleId)
       record.rules.replace(prepared.filter(item => item.rules.length > 0).map(item => ({ moduleId: item.moduleId, rules: item.rules })))
       ruleDiagnostics.invalidateIdentity([...new Set([...record.prepared.filter(item => !prepared.includes(item)).map(item => item.moduleId),
         ...prepared.filter(item => !record.prepared.includes(item)).map(item => item.moduleId)])])
       record.prepared = prepared
+      record.dependencies = dependencies
       record.stamp = stamp; record.content = content; record.committed = true
       const soul = ctx.get(SOUL_SELF_SERVICE) as { attached?: (id: string, agent: Agent, boundary: number) => Promise<void>; detached?: (id: string, agent: Agent) => void } | undefined
       for (const id of previousModuleIds) if (!record.moduleIds.includes(id)) soul?.detached?.(id, agent)
@@ -597,36 +637,61 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
 
   // 每请求只 stat 源文件；戳变时再算内容签名（剔除变量值），变量自增不触发重挂。
   const assemblyStamp = (ids: readonly string[]): string => readModulesRevision(options.moduleRoot, ids)
-  const contentSignature = (ids: readonly string[], previous = ''): string => JSON.stringify([
-    ids.map(id => {
-      try {
-        const { variables: _variables, ...definition } = loadModuleSpec(assertModuleDirectory(options.moduleRoot, id))
-        // 变量值在求值时读取；自增不能让下一步重新注册规则。
-        return [id, definition]
-      } catch (error) {
-        warnOnce(`模块 ${id} 读取失败：${failureReason(error)}`)
-        const old = previous === '' ? undefined : (JSON.parse(previous)[0] as Array<[string, unknown]>).find(entry => entry[0] === id)
-        return old ?? [id, { readError: failureReason(error) }]
-      }
-    }),
-  ])
+  type Definition = { dir: string; spec: ModuleSpec; signature: string }
+  const oldSnapshot = new Error('模块定义正在保存，当前仅有上一次已验证快照')
+  const readDefinitions = (ids: readonly string[], files = new Map<string, string>()) => new Map<string, Definition | { error: unknown }>(ids.map(id => {
+    const dependOn = (file: string): void => { if (!files.has(file)) files.set(file, fileStamp(file)) }
+    try {
+      assertModuleId(id)
+      const userFile = join(options.moduleRoot, id, MODULE_DEFINITION_FILE)
+      dependOn(userFile)
+      if (files.get(userFile) === '') dependOn(join(packageModulesDir(), id, MODULE_DEFINITION_FILE))
+      const dir = resolveModuleDir(id, options.moduleRoot)
+      const spec = loadModuleSpec(dir, revision => {
+        if (revisionOf(readFileSync(join(dir, MODULE_DEFINITION_FILE))) !== revision) throw oldSnapshot
+      })
+      const { variables: _variables, ...definition } = spec
+      // 变量值在求值时读取；自增不能让下一步重新注册规则。
+      return [id, { dir, spec, signature: revisionOf(JSON.stringify([id, dir, definition])) }]
+    } catch (error) {
+      if (error !== oldSnapshot) warnOnce(`模块 ${id} 读取失败：${failureReason(error)}`)
+      return [id, { error }]
+    }
+  }))
+  const sourceSignature = (source: Definition | { error: unknown }): string =>
+    'signature' in source ? source.signature : `error:${failureReason(source.error)}`
+  const unchanged = (definitions: ReturnType<typeof readDefinitions>, previous: ReadonlyMap<string, string>): boolean => {
+    if (definitions.size !== previous.size) return false
+    const ids = previous.keys()
+    for (const [id, source] of definitions) {
+      if (id !== ids.next().value || ('signature' in source && source.signature !== previous.get(id))) return false
+    }
+    return true
+  }
+  const currentDependencies = (item: PreparedAssembly): boolean => {
+    const files = sourceInputs.get(item)?.dependencies
+    return files === undefined || dependenciesCurrent(files)
+  }
+  const mountedDependenciesCurrent = (current: Mounted): boolean => dependenciesCurrent(current.dependencies)
   const watchSources = (ids: readonly string[]): void => {
-    const files = new Set([enableTablePath(options.moduleRoot), ...ids
+    const files = new Set([enableTablePath(options.moduleRoot), enableTablePath(userModulesDir()), ...publicationDependencies.keys(), ...ids
       .map(id => { assertModuleId(id); return join(options.moduleRoot, id, 'module.yml') })])
     for (const [file, listener] of watched) if (!files.has(file)) { unwatchFile(file, listener); watched.delete(file) }
     for (const file of files) if (!watched.has(file)) {
       const listener = (): void => {
         if (!active) return
         try {
+          if (isCurrentPublication?.(file) === true) return
           const ids = options.enabledModules(), stamp = assemblyStamp(ids)
-          if (publishingContent !== undefined && contentSignature(ids) === publishingContent) return
           const agents = new Set([...knownAgents, ...(ctx.get('agents')?.list() ?? [])])
-          let changed = processStamp !== stamp
+          let changed = processStamp !== stamp || !dependenciesCurrent(publicationDependencies)
+          let definitions: ReturnType<typeof readDefinitions> | undefined
           for (const agent of agents) {
             if (disposed.has(agent)) continue
             const current = mounts.get(agent.id)
-            if (current?.stamp === stamp) continue
-            if (current !== undefined && current.content === contentSignature(ids, current.content)) current.stamp = stamp
+            if (current?.stamp === stamp && mountedDependenciesCurrent(current)) continue
+            if (current !== undefined && mountedDependenciesCurrent(current)
+              && unchanged(definitions ??= readDefinitions(ids), current.content)) current.stamp = stamp
             else changed = true
           }
           if (changed) publication.schedule()
@@ -637,6 +702,13 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     }
   }
   const replace = async (targets: readonly Agent[], retry: readonly string[] | boolean = false, attempt = 0): Promise<void> => {
+    const files = new Map([options.moduleRoot, userModulesDir()].map(root => {
+      const file = enableTablePath(root)
+      return [file, fileStamp(file)] as const
+    }))
+    const observed = new Map<string, string>()
+    isCurrentPublication = file => files.has(file) ? fileStamp(file) === files.get(file)
+      : observed.has(file) && dependencyStamp(file) === observed.get(file)
     // 部署配置属于整份装配，读取失败不能伪装成每个模块各自失败。
     readGlobalLayerSettings(options.moduleRoot)
     const ids = [...options.enabledModules()]
@@ -644,14 +716,54 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const live = targets.filter(agent => active && !disposed.has(agent))
     const failures: Error[] = []
     const candidates = []
-    const signatureSnapshot = contentSignature(ids)
-    const versions = new Map(ids.map(id => [id, contentSignature([id])]))
+    const definitions = readDefinitions(ids, files)
+    const signatureSnapshot = new Map([...definitions].map(([id, source]) => [id, sourceSignature(source)]))
+    const batchCurrent = (): boolean => JSON.stringify(options.enabledModules()) === JSON.stringify(ids)
+      && dependenciesCurrent(files, fileStamp) && dependenciesCurrent(observed)
+    const stale = new Error('模块定义在准备期间持续变化，已安排重新发布')
+    const retryChanged = (): Promise<void> => {
+      if (attempt < 3) return replace(targets, retry, attempt + 1)
+      publication.schedule()
+      throw stale
+    }
+    const preparedDefinitions = new Map<string, { item: PreparedAssembly; dependencies: Map<string, string>; version: string } | { error: unknown }>()
+    const prepare = async (id: string, source: Definition) => {
+      let result = preparedDefinitions.get(id)
+      if (result === undefined) {
+        const dependencies = new Map<string, string>()
+        try {
+          const item = await prepareDefinition(options.moduleRoot, id, source.dir, source.spec, undefined, file => {
+            if (!dependencies.has(file)) dependencies.set(file, dependencyStamp(file))
+            if (!observed.has(file)) observed.set(file, dependencies.get(file)!)
+          })
+          result = { item, dependencies, version: source.signature + JSON.stringify([...dependencies]) }
+        } catch (error) { result = { error } }
+        preparedDefinitions.set(id, result)
+      }
+      if ('error' in result) throw result.error
+      return result
+    }
+    const rememberDependencies = (item: PreparedAssembly): void => {
+      for (const [file, version] of sourceInputs.get(item)?.dependencies ?? []) {
+        if (!observed.has(file)) observed.set(file, version)
+      }
+    }
     const processCandidates = new Map<string, PreparedAssembly | null>()
-    for (const id of ids) {
+    for (const [id, source] of definitions) {
       try {
-        const spec = loadModuleSpec(assertModuleDirectory(options.moduleRoot, id))
-        processCandidates.set(id, spec.rules?.some(rule => rule.executionScope === 'process')
-          ? await prepareAssembly(options.moduleRoot, id, name => ctx.get(name) !== undefined) : null)
+        if ('error' in source) throw source.error
+        if (!source.spec.rules?.some(rule => rule.executionScope === 'process')) { processCandidates.set(id, null); continue }
+        const old = processSources.get(id)
+        if (old !== undefined && sourceInputs.get(old)?.signature === source.signature && currentDependencies(old)) {
+          requireServices(old.services, name => ctx.get(name) !== undefined)
+          rememberDependencies(old)
+          processCandidates.set(id, old)
+        } else {
+          const { item, dependencies, version } = await prepare(id, source)
+          requireServices(item.services, name => ctx.get(name) !== undefined)
+          sourceInputs.set(item, { dir: source.dir, signature: source.signature, version, dependencies })
+          processCandidates.set(id, item)
+        }
       } catch (error) {
         failures.push(new Error(`模块 ${id}（进程）准备失败：${failureReason(error)}`, { cause: error }))
       }
@@ -663,19 +775,42 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       const good = lastGood.get(agent)
       const goodSnapshot = good === undefined ? undefined : new Map(good)
       const prepared: PreparedAssembly[] = []
-      for (const id of ids) {
+      const previousSources = new Map(previous?.prepared.map(item => [item.moduleId, item]))
+      for (const [id, source] of definitions) {
         try {
-          const version = versions.get(id)!
-          const old = previous?.prepared.find(item => item.moduleId === id)
-          const item = old !== undefined && sourceVersions.get(old) === version
-            ? old : await prepareAssembly(options.moduleRoot, id, name => agent.ctx.get(name) !== undefined)
-          sourceVersions.set(item, version)
+          if ('error' in source) throw source.error
+          const old = previousSources.get(id)
+          const oldInputs = old === undefined ? undefined : sourceInputs.get(old)
+          let item: PreparedAssembly
+          let version: string
+          let dependencies: ReadonlyMap<string, string>
+          if (old !== undefined && oldInputs?.signature === source.signature && currentDependencies(old)) {
+            item = old
+            version = oldInputs.version
+            dependencies = oldInputs.dependencies
+            rememberDependencies(old)
+          } else {
+            const definition = await prepare(id, source)
+            dependencies = definition.dependencies
+            version = definition.version
+            item = definition.item
+          }
+          requireServices(item.services, name => agent.ctx.get(name) !== undefined)
           if (rejectedVersions.get(agent)?.get(id)?.has(version)) {
             failures.push(new Error(`模块 ${id}（Agent ${agent.id}）上次发布失败：${rejectedVersions.get(agent)!.get(id)!.get(version)}`))
             const fallback = good?.get(id)
             if (fallback !== undefined) prepared.push(fallback)
           } else {
             rejectedVersions.get(agent)?.delete(id)
+            if (item !== old) {
+              const definition = item
+              item = {
+                ...definition,
+                rules: instantiateCompiledRules(definition.rules),
+                modules: definition.modules.map(module => ({ ...module, config: structuredClone(module.config) })),
+              }
+              sourceInputs.set(item, { dir: source.dir, signature: source.signature, version, dependencies })
+            }
             prepared.push(item)
           }
         }
@@ -689,12 +824,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       candidates.push({ agent, prepared, previous: previous === undefined ? undefined : { ...previous }, goodSnapshot })
     }
     // 准备期会让出事件循环；变更中的候选不得盖上较新定义的版本戳。
-    if (JSON.stringify(options.enabledModules()) !== JSON.stringify(ids)
-      || contentSignature(ids) !== signatureSnapshot) {
-      if (attempt < 3) return replace(targets, retry, attempt + 1)
-      publication.schedule()
-      throw new Error('模块定义在准备期间持续变化，已安排重新发布')
-    }
+    if (!batchCurrent() || [...definitions.values()].some(definition => 'error' in definition && definition.error === oldSnapshot)) return retryChanged()
     // 重切规则切片会写文件，戳只在已复核的准备结束后捕获。
     const stamp = assemblyStamp(ids)
     for (const item of candidates.flatMap(candidate => candidate.prepared)) {
@@ -704,6 +834,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     }
     if (!active) return
     await readPersonaKnowledge()
+    if (!batchCurrent()) return retryChanged()
     const validatePrepared = (agent: Agent, prepared: PreparedAssembly[]): void => {
       validateCrossModuleGroups(prepared)
       const sections = { main: completeSectionsOf(prepared, 'main'), subagent: completeSectionsOf(prepared, 'subagent') }
@@ -721,16 +852,16 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     }
     // 跨来源冲突仍在撤旧之前拒绝，不替用户选择赢家。
     for (const { agent, prepared } of candidates) validatePrepared(agent, prepared)
-    validateCrossModuleGroups([...processCandidates.values()].filter((item): item is PreparedAssembly => item !== null))
+    validateCrossModuleGroups([...processCandidates.values()].filter((source): source is PreparedAssembly => source !== null))
     const changed: typeof candidates = []
     try {
       for (const candidate of candidates) {
         if (!active || disposed.has(candidate.agent)) continue
         changed.push(candidate)
-        const content = signatureSnapshot
         while (true) {
           try {
-            await mount(candidate.agent, candidate.prepared, duplicateDedupeIdentities(candidate.prepared), stamp, content)
+            await mount(candidate.agent, candidate.prepared, duplicateDedupeIdentities(candidate.prepared), stamp, signatureSnapshot, observed,
+              () => { if (!batchCurrent()) throw stale })
             break
           } catch (error) {
             const sourceIds = error !== null && typeof error === 'object'
@@ -751,6 +882,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
           }
         }
         await new Promise<void>(resolve => setImmediate(resolve))
+        if (!batchCurrent()) throw stale
       }
     } catch (error) {
       const restoreErrors: unknown[] = []
@@ -761,7 +893,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
           if (goodSnapshot === undefined) lastGood.delete(agent)
           else lastGood.set(agent, new Map(goodSnapshot))
           if (error !== null && typeof error === 'object' && 'recoveryFailed' in error && error.recoveryFailed === true && !mounts.has(agent.id)) continue
-          if (previous?.agent === agent) await mount(agent, previous.prepared, [], previous.stamp, previous.content)
+          if (previous?.agent === agent) await mount(agent, previous.prepared, [], previous.stamp, previous.content, previous.dependencies)
           else await release(agent.id, agent)
         } catch (restoreError) {
           restoreErrors.push(restoreError)
@@ -772,16 +904,26 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         throw new AggregateError([error, ...restoreErrors],
           `切换装配失败（${failureReason(error)}），且恢复原有装配也失败（${restoreErrors.map(failureReason).join('；')}）`)
       }
+      if (error === stale) return retryChanged()
       throw error
     }
     if (!active) return
     // Agent 批次异常会在上面回滚并抛出；process 只在该批次可发布后提交。
     for (const [id, item] of processCandidates) {
-      await processControls.publish(id, item, () => active)
+      if (item === null && !processSources.has(id)) continue
+      let accepted = false
+      await processControls.publish(id, item, () => accepted = active && batchCurrent())
       if (!active) return
+      if (!accepted) return retryChanged()
+      if (item === null) processSources.delete(id)
+      else processSources.set(id, item)
+      if (!batchCurrent()) return retryChanged()
     }
     processControls.retain(ids)
+    for (const id of processSources.keys()) if (!definitions.has(id)) processSources.delete(id)
     processStamp = assemblyStamp(ids)
+    publicationDependencies = observed
+    watchSources(ids)
     for (const { agent } of candidates) {
       const good = lastGood.get(agent)
       for (const id of good?.keys() ?? []) if (!ids.includes(id)) good?.delete(id)
@@ -791,8 +933,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const install = async (agent: Agent): Promise<void> => {
     knownAgents.add(agent)
     if (!active || disposed.has(agent) || mounts.get(agent.id)?.agent === agent) return
-    publishingContent = contentSignature(options.enabledModules())
-    try { await replace([agent]) } finally { publishingContent = undefined }
+    try { await replace([agent]) } finally { isCurrentPublication = undefined }
   }
   const publication = createPublicationQueue({
     warn: message => warn(message),
@@ -803,8 +944,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       const live = [...known].filter(agent => !disposed.has(agent))
       const targets = live.filter(agent => moduleIds === undefined || moduleIds.some(id =>
         enabled.includes(id) || mounts.get(agent.id)?.moduleIds.includes(id)))
-      publishingContent = contentSignature(enabled)
-      try { await replace(targets, retry) } finally { publishingContent = undefined }
+      try { await replace(targets, retry) } finally { isCurrentPublication = undefined }
       return targets.length === live.length
     }),
   })
@@ -820,9 +960,10 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       watchSources(ids)
       const stamp = assemblyStamp(ids)
       const current = mounts.get(agent.id)
-      if (current?.stamp !== stamp) {
+      const dependenciesUnchanged = current !== undefined && mountedDependenciesCurrent(current)
+      if (current?.stamp !== stamp || !dependenciesUnchanged) {
         // 只改变量时戳变、内容签名不变：更新戳即可，不撤装重挂。
-        if (current?.content === contentSignature(ids, current?.content)) current.stamp = stamp
+        if (dependenciesUnchanged && unchanged(readDefinitions(ids), current.content)) current.stamp = stamp
         else { publication.schedule(); await publication.flush(undefined, false) }
       }
       lastReadError = undefined
@@ -880,6 +1021,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     watched.clear()
     knownAgents.clear()
     processControls.withdraw()
+    processSources.clear()
+    publicationDependencies = new Map()
     return publication.dispose().then(() => pending).then(async () => {
       await processControls.dispose()
       for (const id of mounts.keys()) await release(id)
@@ -927,6 +1070,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       watched.clear()
       knownAgents.clear()
       processControls.withdraw()
+      processSources.clear()
+      publicationDependencies = new Map()
       await publication.dispose()
       await pending
       await processControls.dispose()

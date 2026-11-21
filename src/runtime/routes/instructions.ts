@@ -10,7 +10,7 @@ import { writeAgentsFileChecked } from '../../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, writeInstructionPolicy } from '../../host/instructions-policy.ts'
 import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
 import { published } from '../../shared/publication.ts'
-import type { RuleDefinition, RuleEdit, RuleEditorMeta, RuleRevisions } from '../../shared/rules.ts'
+import type { CompactRulesSnapshot, RuleDefinition, RuleEdit, RuleEditorMeta, RuleRevisions } from '../../shared/rules.ts'
 import { writeLayerSettingsError } from '../module-subject-gate.ts'
 import {
   instructionOwner,
@@ -168,6 +168,16 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         tx.write(400, { ok: false, code: 'rules-invalid', message: '规则请求字段、模块身份或版本格式不合法' })
         return
       }
+      const compactEdit = Array.isArray(record.edits) ? record.edits[0] : undefined
+      if (record.compactEdit !== undefined && (record.compactEdit !== true || !Array.isArray(record.edits)
+        || record.edits.length !== 1 || record.createRule !== undefined || record.activateRuleId !== undefined
+        || record.validateOnly !== undefined || record.refreshOnly !== undefined
+        || !isRecord(compactEdit) || typeof compactEdit.previousId !== 'string'
+        || !isRecord(compactEdit.rule) || typeof compactEdit.rule.id !== 'string'
+        || compactEdit.previousId !== compactEdit.rule.id || compactEdit.settingsChanged === true)) {
+        tx.write(400, { ok: false, code: 'rules-invalid', message: '紧凑保存只接受单条已存在规则正文编辑' })
+        return
+      }
       if (record.refreshOnly === true) {
         if (runtime.gate(tx, 'rules').authorize() === undefined) return
         try { await runtime.deps.overridesChanged?.(basename(dir)) }
@@ -190,6 +200,7 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         return
       }
       let createdRuleId: string | undefined
+      let candidateRevision: string | undefined
       try {
         // 动态 import 之后的写前复检：可写 + 身份都在这里再判一次（豁免不适用，写端点默认核形状）。
         if (runtime.gate(tx, 'rules').inspect(writing) === undefined) return
@@ -204,10 +215,30 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
           ...(record.edits === undefined ? {} : { edits: record.edits as RuleEdit[] }),
           ...(record.activateRuleId === undefined ? {} : { activateRuleId: record.activateRuleId as string }),
           ...(record.validateOnly === undefined ? {} : { validateOnly: record.validateOnly as boolean }),
-        }) : isEditableModuleDir(dir) ? readModuleRules(dir) : ensureModuleSlices(dir, { writable: false })
+        }, revision => { candidateRevision = revision }) : isEditableModuleDir(dir) ? readModuleRules(dir) : ensureModuleSlices(dir, { writable: false })
         const publication = writing ? await runtime.schedulePublication(basename(dir)) : undefined
         if (publication?.publicationPending) {
           tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...publication } })
+          return
+        }
+        if (record.compactEdit === true) {
+          const edit = (record.edits as RuleEdit[])[0]!
+          if (candidateRevision === undefined) throw new Error('紧凑保存事务没有返回已验证版本')
+          const saved = candidate.rules.find(rule => rule.id === edit.rule!.id)
+          if (!saved) {
+            tx.write(409, { ok: false, code: 'rules-conflict', message: '目标规则保存后不存在；请重新读取，当前草稿仍保留' })
+            return
+          }
+          const compact: CompactRulesSnapshot = {
+            rule: saved,
+            ruleRevision: candidate.revisions.rules[saved.id]!,
+            definitionRevision: candidateRevision,
+            settingsRevision: candidate.revisions.settings,
+            variablesRevision: candidate.revisions.variables,
+            meta: await ruleEditorMeta(),
+            ...publication,
+          }
+          tx.write(200, { ok: true, value: compact })
           return
         }
         const result = writing ? readModuleRules(dir) : candidate

@@ -1,8 +1,7 @@
-/** 模块管理：名称与创建归模块页；规则编辑仍归主会话／子代理。 */
-import { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+/** 浏览范围的模块卡片和独立写入对话框。 */
+import { memo, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
-import clsx from 'clsx'
-import { IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
+import { IconChevronDownOutlineRegular, IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
 import type { ModuleActions, ModuleActionResult } from '../../data/module-actions.ts'
 import { previewAsset, commitAsset } from '../../data/asset-import.ts'
 import { poolDirty } from '../../data/workspace-drafts.ts'
@@ -19,10 +18,8 @@ import { Switch } from '../../ui/Switch.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { TextInput } from '../../ui/TextInput.tsx'
-import { StatusBadge } from '../../ui/StatusBadge.tsx'
-import sharedCss from '../../ui/controls.module.css'
-
-const styles = sharedCss
+import styles from '../../ui/controls.module.css'
+import css from './module-picker-cards.module.css'
 
 function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions; t: PromptToolTranslate; onClose: () => void; onSaved: (publication?: { pending: boolean; error?: string }) => void }): ReactNode {
   const { module, t } = props
@@ -33,7 +30,6 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
   const activeRef = useRef(true)
   const baselineRef = useRef(module.name)
   const inputRef = useRef<HTMLInputElement>(null)
-  const editorRef = useRef<HTMLSpanElement>(null)
   const errorId = useId()
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string>()
@@ -76,14 +72,11 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
     busyRef.current = false; setBusy(false)
   }
   const close = (): void => { if (!busyRef.current) { activeRef.current = false; props.onClose() } }
-  return <span ref={editorRef} className={styles.moduleNameEditor} aria-busy={busy || !loaded}>
-    <TextInput ref={inputRef} value={name} autoFocus aria-label={t('moduleSwitcher.name.label')}
+  return <DialogSurface title={t('moduleSwitcher.name.title')} closeLabel={t('moduleSwitcher.name.close')} initialFocusRef={inputRef} onClose={close}>
+    <div className={styles.moduleNameEditor} aria-busy={busy || !loaded}>
+    <TextInput ref={inputRef} value={name} aria-label={t('moduleSwitcher.name.label')}
       aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : errorId}
       readOnly={busy || !loaded} onChange={(event) => { setName(event.target.value); if (revision !== undefined) setError(undefined) }}
-      onBlur={(event) => {
-        if (editorRef.current?.contains(event.relatedTarget)) return
-        if (error === undefined) void save()
-      }}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== 'Escape') return
         event.stopPropagation()
@@ -93,27 +86,48 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
         else void save()
       }} />
     {error !== undefined && <span id={errorId} className={styles.configFieldHint} role="alert">{error}</span>}
-    {error !== undefined && <span className={styles.inlineControls}>
-      {revision === undefined && <Button variant="outline" shape="pill" size="sm" disabled={busy} onClick={() => void reload()}>{t('moduleSwitcher.name.reload')}</Button>}
+    <span className={styles.inlineControls}>
+      {error !== undefined && revision === undefined && <Button variant="outline" shape="pill" size="sm" disabled={busy} onClick={() => void reload()}>{t('moduleSwitcher.name.reload')}</Button>}
       <Button variant="outline" shape="pill" size="sm" disabled={busy} onClick={close}>{t('moduleSwitcher.name.cancel')}</Button>
-    </span>}
-  </span>
+      <Button variant="primary" shape="pill" size="sm" disabled={busy || revision === undefined} onClick={() => void save()}>{t('moduleSwitcher.name.save')}</Button>
+    </span>
+    </div>
+  </DialogSurface>
 }
 
-export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort; t: PromptToolTranslate }): ReactNode {
-  const { store, t } = props
-  const fields = usePromptToolFields(store, (value) => value)
+export const ModulePickerCards = memo(function ModulePickerCards(props: {
+  store: ModuleActionsPort & ModuleFactsPort & NoticePort & DraftsPort
+  t: PromptToolTranslate
+  open: boolean
+  query: string
+  scope: string
+  editingModule?: string
+  onBrowse: (moduleId: string, ruleKey?: string) => void
+}): ReactNode {
+  const { store, t, open } = props
+  const modulesEnabled = usePromptToolFields(store, value => value.modulesEnabled)
+  const { subscribeEnable, getEnableState } = store.moduleActions
+  const enableState = useSyncExternalStore(subscribeEnable, getEnableState, getEnableState)
   const modules = store.meta.modules ?? []
   const templates = store.meta.builtinTemplates ?? []
-  const [confirmingDelete, setConfirmingDelete] = useState<string | undefined>(undefined)
+  const [confirmingDelete, setConfirmingDelete] = useState<ModuleSummary>()
   const [pickerOpen, setPickerOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [exportTarget, setExportTarget] = useState<{ id: string; name: string }>()
   const [nameTarget, setNameTarget] = useState<ModuleSummary | undefined>()
+  const [status, setStatus] = useState('all')
+  const [expandedModule, setExpandedModule] = useState<string>()
+  const query = props.query.trim().toLowerCase()
+  const visibleModules = useMemo(() => {
+    if (!open) return []
+    if (!query && status === 'all') return modules
+    return modules.filter(module => (!query || `${module.id} ${module.name} ${module.description ?? ''}`.toLowerCase().includes(query))
+      && (status === 'all' || (module.enabled === true) === (status === 'on')))
+  }, [modules, open, query, status])
   const [creating, setCreating] = useState(false)
   const [publicationRetry, setPublicationRetry] = useState<{ error?: string; run: () => Promise<ModuleActionResult<unknown>> }>()
   const creatingRef = useRef(false)
-  const pickerAnchorRef = useRef<HTMLButtonElement>(null)
+  const filtersRef = useRef<HTMLDivElement>(null)
   const report = (result: ModuleActionResult<unknown>, success: string, failure: string, retry?: () => Promise<ModuleActionResult<unknown>>): void => {
     if (!result.ok) { store.showNotice('error', failure); return }
     if (result.publication?.pending) {
@@ -154,7 +168,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
       if (res.publication?.pending) {
         setPublicationRetry({ error: res.publication.error, run: () => store.moduleActions.retryDelete(id) })
         store.showNotice('error', res.publication.error ?? t('publication.pending'))
-        setConfirmingDelete((current) => current === id ? undefined : current)
+        setConfirmingDelete((current) => current?.id === id ? undefined : current)
         return
       }
       const backupPath = res.value.backupPath
@@ -169,7 +183,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
       } else {
         report(res, t('moduleSwitcher.notice.deleted', { id }), '')
       }
-      setConfirmingDelete((current) => current === id ? undefined : current)
+      setConfirmingDelete((current) => current?.id === id ? undefined : current)
     } else {
       throw new Error(t('moduleSwitcher.notice.deleteFailed', { reason: res.message ?? 'settings bridge unavailable' }))
     }
@@ -195,11 +209,15 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
 
   /** 新建：从插件目录模板复制到用户目录（还原/自定义起点）；自定义入口重名自动递增。 */
   const cloneModule = async (id: string, autoSuffix = false): Promise<void> => {
-    const res = await store.moduleActions.clone(id, autoSuffix)
-    if (res.ok) setPickerOpen(false)
-    report(res, res.ok ? t('moduleSwitcher.notice.cloned', { id: res.value.id }) : '',
-      res.ok ? '' : t('moduleSwitcher.notice.cloneFailed', { reason: res.message ?? 'settings bridge unavailable' }),
-      () => store.moduleActions.retryClone(res.ok ? res.value.id : id))
+    if (creatingRef.current) return
+    creatingRef.current = true; setCreating(true)
+    try {
+      const res = await store.moduleActions.clone(id, autoSuffix)
+      if (res.ok) setPickerOpen(false)
+      report(res, res.ok ? t('moduleSwitcher.notice.cloned', { id: res.value.id }) : '',
+        res.ok ? '' : t('moduleSwitcher.notice.cloneFailed', { reason: res.message ?? 'settings bridge unavailable' }),
+        () => store.moduleActions.retryClone(res.ok ? res.value.id : id))
+    } finally { creatingRef.current = false; setCreating(false) }
   }
 
   const createBlankModule = async (): Promise<void> => {
@@ -215,17 +233,28 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
    * 启用/停用模块 = 改存储根 `config.yml` 的启用表。
    *
    * 启用即配装：打开 A、再打开 B 就是 A+B 的组合，追加 C 就是 A+B+C——每个模块各自
-   * 贡献自己的配置与参数，互不合并。这是模块页唯一改变装配范围的动作。
+   * 贡献自己的配置与参数，互不合并。
    */
   const setModuleEnabled = async (id: string, enabled: boolean): Promise<void> => {
+    const { busy, refreshFailed } = getEnableState()
+    if (busy || refreshFailed) return
+    const action = document.activeElement
     const res = await store.moduleActions.enable(id, enabled)
-    report(res, t(enabled ? 'moduleSwitcher.notice.enabled' : 'moduleSwitcher.notice.disabled', { id }),
-      res.ok ? '' : t('moduleSwitcher.notice.enableFailed', { reason: res.message ?? 'settings bridge unavailable' }),
-      () => store.moduleActions.retryEnable())
+    if (res.ok && !res.refreshError && !res.publication?.pending) {
+      store.showNotice('ok', t(enabled ? 'moduleSwitcher.notice.enabled' : 'moduleSwitcher.notice.disabled', { id }))
+    }
+    requestAnimationFrame(() => {
+      if (document.activeElement !== document.body || !(action instanceof HTMLElement)) return
+      if (action.getClientRects().length) action.focus({ preventScroll: true })
+      else if (!action.isConnected) filtersRef.current?.querySelector<HTMLElement>('button[aria-pressed=true]')?.focus({ preventScroll: true })
+    })
   }
 
+  const deleteTarget = confirmingDelete
   return (
-    <div className={styles.rowGroup}>
+    <>
+      {open && <div className={css.collection}>
+      {store.meta.moduleWarnings?.map(message => <p key={message} role="alert" className={css.warning}>{message}</p>)}
       {publicationRetry && <PublicationNotice publication={{ pending: true, error: publicationRetry.error }}
         pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
         onRetry={() => { void publicationRetry.run().then((result) => {
@@ -238,32 +267,53 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
           setPublicationRetry({ error, run: publicationRetry.run })
           store.showNotice('error', error ?? t('publication.pending'))
         }) }} />}
-      <div className={styles.settingRowStack}>
-        <span className={styles.inlineControls}>
-          <Button ref={pickerAnchorRef} shape="pill" variant="primary" size="md" onClick={() => setPickerOpen(true)}>{t('moduleSwitcher.new')}</Button>
-          <Button shape="pill" variant="outline" size="md" onClick={() => setImportOpen(true)}>{t('assetImport.moduleTitle')}…</Button>
-          {/* 模块运行总闸：与新建/导入同排、靠最右，说明文字在开关左侧常驻。全局设置，无模块主语。 */}
-          <span className={styles.moduleGlobalSwitch}>
-            <span>{t('modules.globalSwitch')}</span>
-            <Switch checked={fields.modulesEnabled} label={t('modules.globalSwitch')}
-              onChange={() => store.toggle()} />
-          </span>
-        </span>
+      <label className={css.globalSwitch}>
+        <span>{t('modules.globalSwitch')}</span>
+        <Switch checked={modulesEnabled} label={t('modules.globalSwitch')} onChange={() => store.toggle()} />
+      </label>
+      {!modulesEnabled && <p className={css.warning}>{t('configs.readOnly.disabled')}</p>}
+      <div ref={filtersRef} className={css.filters} role="group" aria-label={t('rules.moduleFilter')}>
+        {[
+          { value: 'all', label: t('rules.moduleAll') }, { value: 'on', label: t('moduleSwitcher.enabled') }, { value: 'off', label: t('rules.moduleDisabled') },
+        ].map(option => <Button key={option.value} shape="pill" variant="outline" size="sm"
+          aria-pressed={option.value === status} onClick={() => setStatus(option.value)}>{option.label}</Button>)}
       </div>
+      <div className={css.toolbar}>
+        <Button shape="pill" variant="primary" size="sm" aria-label={t('moduleSwitcher.new')} title={t('moduleSwitcher.new')} onClick={() => setPickerOpen(true)}>{t('configList.create')}</Button>
+        <Button shape="pill" variant="outline" size="sm" aria-label={t('assetImport.moduleTitle')} title={t('assetImport.moduleTitle')} onClick={() => setImportOpen(true)}>{t('canvas.import')}</Button>
+      </div>
+      <div className={css.cards}>
+        {visibleModules.length === 0
+          ? <p className={styles.readOnly} role="status">{t('moduleSwitcher.empty')}</p>
+          : visibleModules.map(renderCard)}
+      </div>
+      </div>}
       {importOpen && <ImportDialog t={t} {...flow} targets={modules}
         onFiles={(files) => { void flow.run(files) }} onChoices={flow.updateChoices} onConfirm={() => { void flow.confirm() }}
         onClose={() => { flow.cancel(); setImportOpen(false) }} onReset={flow.cancel} onSkip={flow.skip} onEnd={flow.end}
         onRepreview={() => { void flow.repreview() }} onRefresh={() => { void flow.retryRefresh() }}
         publication={flow.publication} onRetryPublication={() => { void flow.retryPublication() }}
-        onUse={flow.resultLabel === undefined ? undefined : () => { void setModuleEnabled(flow.resultLabel!, true); flow.cancel(); setImportOpen(false) }} />}
+        onUse={flow.resultLabel === undefined ? undefined : () => {
+          if (flow.resultLabel !== undefined) props.onBrowse(flow.resultLabel)
+          flow.cancel()
+          setImportOpen(false)
+        }} />}
       {exportTarget && <ModuleExportDialog t={t} module={exportTarget} onClose={() => setExportTarget(undefined)} />}
-      <div className={styles.moduleGrid}>
-        {modules.length === 0 ? (
-          <p className={styles.readOnly} role="status">{t('moduleSwitcher.empty')}</p>
-        ) : modules.map((module) => renderCard(module))}
-      </div>
+      {deleteTarget && <ConfirmDialog title={t('card.deleteTitle', { name: deleteTarget.name || deleteTarget.id })}
+        description={t('moduleSwitcher.delete.description', { name: deleteTarget.name || deleteTarget.id })}
+        confirmLabel={t('moduleSwitcher.delete.confirm')} cancelLabel={t('moduleSwitcher.delete.cancel')}
+        onConfirm={() => deleteModule(deleteTarget.id)} onCancel={() => setConfirmingDelete(undefined)} />}
+      {nameTarget && <ModuleNameEditor key={nameTarget.id} module={nameTarget} actions={store.moduleActions} t={t}
+        onClose={() => setNameTarget(undefined)} onSaved={publication => {
+          const { id } = nameTarget
+          setNameTarget(undefined)
+          if (publication?.pending) {
+            setPublicationRetry({ error: publication.error, run: () => store.moduleActions.retryName(id) })
+            store.showNotice('error', publication.error ?? t('publication.pending'))
+          } else store.showNotice('ok', t('moduleSwitcher.name.saved'))
+        }} />}
       {pickerOpen && (
-        <DialogSurface title={t('moduleSwitcher.dialog.title')} closeLabel={t('moduleSwitcher.dialog.close')} anchorRef={pickerAnchorRef} onClose={() => setPickerOpen(false)}>
+        <DialogSurface title={t('moduleSwitcher.dialog.title')} closeLabel={t('moduleSwitcher.dialog.close')} onClose={() => { if (!creatingRef.current) setPickerOpen(false) }}>
           <button type="button" className={styles.templateModalItem} disabled={creating} onClick={() => void createBlankModule()}>
             <strong>{t('moduleSwitcher.custom.title')}</strong>
             <small>{t('moduleSwitcher.custom.detail')}</small>
@@ -271,7 +321,7 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
           {templates.length === 0 && <p className={styles.configFieldHint}>{t('moduleSwitcher.dialog.noTemplates')}</p>}
           {templates.map((template) => (
             <HintTooltip key={template.id} label={t('moduleSwitcher.template.hint', { id: template.id })}>
-              <button type="button" className={styles.templateModalItem} onClick={() => void cloneModule(template.id)}>
+              <button type="button" className={styles.templateModalItem} disabled={creating} onClick={() => void cloneModule(template.id)}>
                 <strong>{template.name}</strong>
                 <small>{template.id}</small>
               </button>
@@ -279,84 +329,78 @@ export const ModuleSwitcher = memo(function ModuleSwitcher(props: { store: Modul
           ))}
         </DialogSurface>
       )}
-    </div>
+    </>
   )
 
   function renderCard(module: ModuleSummary): ReactNode {
-    const confirming = confirmingDelete === module.id
+    const expanded = expandedModule === module.id
+    const draft = expanded ? store.editorDrafts.rules.get(module.id) : undefined
+    const rules = draft?.loaded ? draft.entries.filter(entry => !entry.deleted) : undefined
+    const name = module.name || module.id
+    const enabled = module.enabled === true
+    const current = props.scope === `module:${module.id}`
     // 不可渲染（缺 modules/组合文件，包内也无同名模板可回退）：灰显禁切换，
     // 提示还原路径——避免点击后宿主挂载失败的哑弹。
     const blocked = module.renderable === false || module.broken !== undefined
     return (
-      <article key={module.id} className={clsx(styles.moduleCard, blocked && styles.moduleCardBlocked)}>
-        <div className={styles.moduleCardBody}>
-          <span className={styles.moduleCardHead}>
-            {nameTarget?.id === module.id ? <ModuleNameEditor key={module.id} module={nameTarget} actions={store.moduleActions} t={t}
-              onClose={() => setNameTarget(current => current?.id === module.id ? undefined : current)} onSaved={(publication) => {
-                setNameTarget(current => current?.id === module.id ? undefined : current)
-                if (publication?.pending) {
-                  setPublicationRetry({ error: publication.error, run: () => store.moduleActions.retryName(module.id) })
-                  store.showNotice('error', publication.error ?? t('publication.pending'))
-                } else store.showNotice('ok', t('moduleSwitcher.name.saved'))
-              }} /> : <button type="button" className={clsx(styles.moduleCardName, styles.moduleNameTrigger)}
-              disabled={nameTarget !== undefined || blocked || module.user !== true || module.facts?.editable !== true}
-              aria-label={t('moduleSwitcher.name.editAria', { name: module.name })} onClick={() => setNameTarget(module)}>{module.name}</button>}
-            {module.enabled === true && !blocked && <StatusBadge className={styles.moduleHeadBadge} tone="success" label={t('moduleSwitcher.enabled')} />}
-            {blocked && <span className={styles.moduleBlocked}>{t('moduleSwitcher.blocked')}</span>}
-          </span>
-          {module.description !== undefined && module.description.length > 0
-            && <p className={styles.moduleCardDesc}>{module.description}</p>}
-          {module.broken !== undefined && <p className={styles.moduleBlocked} role="alert">{module.broken}</p>}
-          <code className={styles.moduleCardId}>{module.id}</code>
+      <article key={module.id} className={css.card} data-active={current || undefined}>
+        <div className={css.row}>
+          <button className={css.name} type="button" data-module-browse={module.id} aria-current={current || undefined} disabled={blocked}
+            onClick={() => props.onBrowse(module.id)}>
+            <strong>{name}</strong>
+            {name !== module.id && <small>{module.id}</small>}
+            {module.id === props.editingModule && <small className={css.editing}>{t('rules.editingModule')}</small>}
+          </button>
+          <label className={css.switchLabel} data-enabled={enabled}>
+            <small>{t(enabled ? 'moduleSwitcher.enabled' : 'rules.moduleDisabled')}</small>
+            <Switch checked={enabled} disabled={blocked || enableState.busy || enableState.refreshFailed}
+              label={t('rules.moduleSwitchLabel', { name })} onChange={next => void setModuleEnabled(module.id, next)} />
+          </label>
+          <Button icon aria-label={t('moduleSwitcher.moreAria', { name })} aria-expanded={expanded}
+            onClick={() => setExpandedModule(expanded ? undefined : module.id)}>
+            <IconChevronDownOutlineRegular />
+          </Button>
         </div>
-        <span className={styles.moduleCardFooter}>
-          {/* 开关与卡头徽章都表达启用状态；模块页只回答「谁参与装配」，没有「当前模块」高亮。 */}
-          <Switch className={styles.moduleActivate}
-            checked={module.enabled === true}
-            disabled={blocked}
-            label={blocked
-              ? module.broken ?? t('moduleSwitcher.card.blocked.hint')
-              : module.enabled === true
-                ? t('moduleSwitcher.card.disable.hint', { name: module.name })
-                : t('moduleSwitcher.card.enable.hint', { name: module.name })}
-            onChange={(next) => void setModuleEnabled(module.id, next)} />
+        {blocked && <p className={css.warning}>{module.broken ?? t('moduleSwitcher.card.blocked.hint')}</p>}
+        {expanded && <div className={css.details}>
+          {module.description && <p>{module.description}</p>}
+          <p>{rules ? t('rules.moduleRuleCount', { count: rules.length }) : t('rules.moduleRulesOnOpen')}</p>
+          {rules !== undefined && rules.length > 0 && <div className={css.rules}>{rules.slice(0, 3).map(entry =>
+            <Button key={entry.key} shape="pill" size="sm" variant="outline" disabled={blocked}
+              onClick={() => props.onBrowse(module.id, entry.key)}>{entry.value.name || entry.value.id}</Button>)}</div>}
+          <div className={css.toolbar}>
+          <Button variant="outline" shape="pill" size="sm" disabled={blocked || module.user !== true || module.facts?.editable !== true}
+            onClick={() => setNameTarget(module)}>{t('moduleSwitcher.name.edit')}</Button>
           <HintTooltip label={t('moduleSwitcher.export')}>
             <button type="button" className={styles.moduleIconButton}
-              aria-label={t('moduleSwitcher.export.aria', { name: module.name })}
-              onClick={() => setExportTarget({ id: module.id, name: module.name })}>
+              aria-label={t('moduleSwitcher.export.aria', { name })}
+              onClick={() => setExportTarget({ id: module.id, name })}>
               <IconDownloadOutlineRegular />
             </button>
           </HintTooltip>
           <HintTooltip label={t('moduleSwitcher.duplicate.label')}>
             <button type="button" className={styles.moduleIconButton}
-              aria-label={t('moduleSwitcher.duplicate.aria', { name: module.name })}
+              aria-label={t('moduleSwitcher.duplicate.aria', { name })}
               onClick={() => void duplicateModule(module.id)}>
               <IconCopyOutlineRegular />
             </button>
           </HintTooltip>
           <HintTooltip label={t('moduleSwitcher.open.label')}>
             <button type="button" className={styles.moduleIconButton}
-              aria-label={t('moduleSwitcher.open.aria', { name: module.name })}
+              aria-label={t('moduleSwitcher.open.aria', { name })}
               onClick={() => void openLocation(module.id)}>
               <IconFolderOpenOutlineRegular />
             </button>
           </HintTooltip>
-          {confirming && (
-            <ConfirmDialog title={t('card.deleteTitle', { name: module.name })}
-              description={t('moduleSwitcher.delete.description', { name: module.name })}
-              confirmLabel={t('moduleSwitcher.delete.confirm')} cancelLabel={t('moduleSwitcher.delete.cancel')}
-              onConfirm={() => deleteModule(module.id)} onCancel={() => setConfirmingDelete((current) => current === module.id ? undefined : current)} />
-          )}
-          {(
-            <HintTooltip label={t('moduleSwitcher.delete.hint')}>
-              <button type="button" className={styles.moduleIconButton}
-                aria-label={t('moduleSwitcher.delete.aria', { name: module.name })}
-                onClick={() => setConfirmingDelete(module.id)}>
-                <IconTrashOutlineRegular />
-              </button>
-            </HintTooltip>
-          )}
-        </span>
+          <HintTooltip label={t('moduleSwitcher.delete.hint')}>
+            <button type="button" className={styles.moduleIconButton}
+              aria-label={t('moduleSwitcher.delete.aria', { name })}
+              onClick={() => setConfirmingDelete(module)}>
+              <IconTrashOutlineRegular />
+            </button>
+          </HintTooltip>
+          </div>
+        </div>}
       </article>
     )
   }

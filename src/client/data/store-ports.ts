@@ -33,9 +33,9 @@ export interface ModuleFactsPort {
 export interface DraftsPort {
   editorDrafts: WorkspaceDrafts
   /** 草稿修订号与订阅：同一参数的多个镜像渲染点据此同步未完成的输入。 */
-  getDraftRevision: () => number
-  subscribeDrafts: (listener: () => void) => () => void
-  publishDrafts: () => void
+  getDraftRevision: (moduleId?: string) => number
+  subscribeDrafts: (listener: () => void, moduleId?: string) => () => void
+  publishDrafts: (moduleId?: string) => void
 }
 
 /** 公共参数：模块参数与全局层参数共用一套读写（落盘分别走 `persist*`）。 */
@@ -78,6 +78,7 @@ export interface InstructionFilesPort {
 
 /** 规则编辑：已绑定模块身份的规则事务与模板建卡。 */
 export interface RuleEditingPort {
+  reconcileRules: () => void
   enqueueRuleTask: <T>(task: () => Promise<T>) => Promise<T>
   createTemplateRule: ReturnType<typeof createTemplateRuleWriter>
 }
@@ -104,8 +105,7 @@ export interface ModuleActionsPort {
 export interface NoticePort {
   notice: string
   noticeKind: 'ok' | 'error'
-  noticePill: string | undefined
-  showNotice: (kind: 'ok' | 'error', message: string, pill?: string) => void
+  showNotice: (kind: 'ok' | 'error', message: string) => void
   load: (options?: { silent?: boolean }) => Promise<Fields>
   patch: (partial: Partial<Omit<Fields, 'instructionCards'>>) => void
   loading: boolean
@@ -113,6 +113,7 @@ export interface NoticePort {
 
 /** 当前会话模型事实（模型路由卡）。 */
 export interface ModelsPort {
+  ensureModelReasoning: (provider: string, model: string) => void
   modelCatalog: Record<string, string[]>
   modelReasoning: Record<string, ModelReasoningView>
   hostDefaultModel?: HostDefaultModel

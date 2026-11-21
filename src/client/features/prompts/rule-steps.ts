@@ -111,22 +111,6 @@ export function actionSummary(t: PromptToolTranslate, action: RuleAction): strin
   return parts.join(' · ')
 }
 
-/** 分支卡头：`当 ⟨条件⟩ → ⟨动作⟩`；单个动作时直接写该动作，多动作写条数。 */
-export function branchSummary(t: PromptToolTranslate, branch: RuleBranch): string {
-  const then = nodeList(branch.then)
-  const otherwise = nodeList(branch.else)
-  const lead = then.length === 1 && otherwise.length === 0 && isActionNode(then[0])
-    ? actionSummary(t, then[0])
-    : t('rules.steps.actionCount', { count: then.length })
-  return t('rules.steps.branch', { condition: conditionSummary(t, branch.if), actions: lead })
-}
-
-export function nodeSummary(t: PromptToolTranslate, node: RuleNode): string {
-  if (isActionNode(node)) return actionSummary(t, node)
-  if (isBranchNode(node)) return branchSummary(t, node)
-  return t('rules.steps.unknown')
-}
-
 /** 递归统计生效动作数与分支数（卡头摘要用）。 */
 export function countNodes(nodes: readonly RuleNode[]): { actions: number; branches: number } {
   return nodes.reduce((total, node) => {
@@ -185,9 +169,4 @@ export function isValidNode(node: unknown): boolean {
   }
   const record = asRecord(node)
   return isActionNode(node) && typeof record.id === 'string' && record.id.length > 0
-}
-
-/** 生效条件链：从根到该节点的所有条件用「且」连接，放进卡头提示逐字可读。 */
-export function conditionChain(t: PromptToolTranslate, chain: readonly RuleCondition[]): string {
-  return t('rules.steps.chain', { chain: chain.map(item => conditionSummary(t, item)).join(` ${t('rules.steps.and')} `) })
 }

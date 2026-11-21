@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fakeReq, fakeRes, handlerTable, isolatedHome } from '../fixtures/host-harness.mjs'
@@ -23,11 +23,6 @@ test.after(() => {
 
 function makeHarness(otherServices = {}, logger = undefined) {
   const table = handlerTable()
-  const agentPresets = {
-    list: async () => [{ id: 'official', trust: 'system' }],
-    acquireScope: async (id) => ({ key: { id }, [Symbol.asyncDispose]: async () => {} }),
-    ...otherServices.agentPresets,
-  }
   const sctx = {
     on: () => () => {},
     settings: {
@@ -43,13 +38,9 @@ function makeHarness(otherServices = {}, logger = undefined) {
       schemas: () => [{ name: 'bash', description: '运行命令' }],
       ...otherServices.tools,
     },
-    get: (name) => name === 'agentPresets' ? agentPresets : otherServices[name],
+    get: (name) => otherServices[name],
     effect: (fn) => { const dispose = fn(); if (dispose) bridgeDisposers.push(dispose) },
   }
-  // Cordis 语义：未 inject 的服务属性访问直接抛错，可选服务只能经 ctx.get 解析。
-  Object.defineProperty(sctx, 'agentPresets', {
-    get() { throw new Error('cannot get property "agentPresets" without inject') },
-  })
   const ctx = { inject: (_deps, cb) => cb(sctx), ...(logger === undefined ? {} : { logger }) }
   return { ctx, handlers: table.handlers }
 }
@@ -161,7 +152,7 @@ test('契约：桥事务不为 handler 兜底成功——静默 500、抛错 500
   assert.equal(wroteThenThrew.state.writes, 1)
 })
 
-test('契约：moduleName 的公开主语与身份安全边界', async () => {
+test('契约：moduleName 主语安全与 rules 非正文紧凑保存的写前拒绝', async () => {
   const { userModulesDir } = await import('../../src/host/module-dirs.ts')
   const subjectDir = join(userModulesDir(), 'module-name-subject')
   mkdirSync(subjectDir, { recursive: true })
@@ -201,6 +192,43 @@ test('契约：moduleName 的公开主语与身份安全边界', async () => {
   await handlers.get(path)(fakeReq({ body: { name: '过期写入', expectedRevision: initial.revision, expectedModuleId: 'module-name-subject' }, headers: { 'x-module-id': 'module-name-subject' } }), stale)
   assert.equal(stale.status, 409)
   assert.equal(JSON.parse(stale.body).code, 'module-name-conflict')
+  const definitionFile = join(subjectDir, 'module.yml')
+  const savedBytes = readFileSync(definitionFile)
+  const invalidFormat = fakeRes()
+  writeFileSync(definitionFile, 'id: module-name-subject\nname: external\nmodules: []\nrules: []\nlayerSettings: []\n')
+  await handlers.get(path)(fakeReq({ body: {}, headers: { 'x-module-id': 'module-name-subject' } }), invalidFormat)
+  assert.equal(invalidFormat.status, 400, '已通过格式检查的同目录仍拒绝外部非法层设置')
+  assert.equal(JSON.parse(invalidFormat.body).code, 'module-layer-settings-invalid')
+  writeFileSync(definitionFile, savedBytes)
+  const restored = fakeRes()
+  await handlers.get(path)(fakeReq({ body: {}, headers: { 'x-module-id': 'module-name-subject' } }), restored)
+  assert.equal(restored.status, 200, '外部修正后恢复，不保留负缓存')
+
+  // 非正文 compactEdit 必须在提交及发布前拒绝，不能返回失败却已删除规则。
+  const rulesDir = join(userModulesDir(), 'compact-rejection')
+  mkdirSync(rulesDir, { recursive: true })
+  const rulesFile = join(rulesDir, 'module.yml')
+  writeFileSync(rulesFile, JSON.stringify({ id: 'compact-rejection', modules: [], rules: [{ id: 'keep', then: [{ id: 'text', kind: 'inject-text', config: { text: 'KEEP' } }] }] }))
+  let publications = 0
+  const rulesHandler = register({
+    moduleDirectory: () => rulesDir,
+    schedulePublication: () => { publications++ },
+  }).get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.rules)
+  const headers = { 'x-module-id': 'compact-rejection' }
+  const rulesRead = fakeRes()
+  await rulesHandler(fakeReq({ body: { expectedModuleId: 'compact-rejection' }, headers }), rulesRead)
+  assert.equal(rulesRead.status, 200)
+  const rulesBytes = readFileSync(rulesFile)
+  const rejected = fakeRes()
+  await rulesHandler(fakeReq({ body: {
+    expectedModuleId: 'compact-rejection', compactEdit: true,
+    expectedRevisions: JSON.parse(rulesRead.body).value.revisions,
+    edits: [{ previousId: 'keep', rule: null }],
+  }, headers }), rejected)
+  assert.deepEqual(readFileSync(rulesFile), rulesBytes, '拒绝 compactEdit 删除时完整定义不得变化')
+  assert.equal(publications, 0, '拒绝 compactEdit 删除时不得安排发布')
+  assert.equal(rejected.status, 400)
+  assert.equal(JSON.parse(rejected.body).code, 'rules-invalid')
 })
 
 test('契约：全部桥路径拒绝非 loopback，无一条绕过事务', async () => {

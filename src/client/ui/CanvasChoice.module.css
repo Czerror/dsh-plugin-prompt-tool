@@ -1,0 +1,51 @@
+.radios { display: flex; flex-wrap: wrap; gap: 6px; min-inline-size: 0; }
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 32px;
+  max-inline-size: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.radio input { flex: none; margin: 0; accent-color: var(--dsw-alias-state-business-primary); }
+.radio:has(input:checked) { border-color: var(--dsw-alias-state-business-primary); background: var(--dsw-alias-bg-layer-2); }
+.radio:has(input:disabled) { color: var(--dsw-alias-label-tertiary); cursor: default; }
+.radio:has(input:focus-visible) { outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 1px; }
+.unknown { flex-basis: 100%; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.trigger { display: flex; justify-content: space-between; gap: 8px; max-inline-size: 100%; min-inline-size: 0; text-align: start; }
+.trigger span { min-inline-size: 0; overflow-wrap: anywhere; }
+.trigger svg { flex: none; }
+
+.dialog:modal {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  inline-size: min(30rem, calc(100vw - 24px));
+  max-block-size: min(40rem, calc(100dvh - 24px));
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l3);
+  border-radius: 12px;
+  background: #181f2a;
+  color: #e7edf6;
+  overscroll-behavior: contain;
+}
+.dialog::backdrop { background: var(--dsw-alias-bg-mask-1); overflow: hidden; overscroll-behavior: contain; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.heading h2 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+.list { min-block-size: 0; overflow: auto; overscroll-behavior: contain; }
+.group { display: grid; gap: 4px; }
+.group + .group { margin-block-start: 12px; }
+.group h3 { margin: 4px 0; color: var(--dsw-alias-label-secondary); font-size: 13px; overflow-wrap: anywhere; }
+.option { justify-content: flex-start; min-block-size: 36px; text-align: start; overflow-wrap: anywhere; }
+.option[aria-pressed=true] { color: #e7f1ff; background: #26344a; border: 1px solid #445879; }
+.option[aria-pressed=true]::after { content: '✓'; margin-inline-start: auto; }
+
+@media (pointer: coarse) {
+  .radio, .trigger, .option, .heading button { min-block-size: 44px; }
+}

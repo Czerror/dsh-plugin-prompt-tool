@@ -3,6 +3,7 @@
  * 标签、搜索文本与渲染归页面层；这里只回答「有哪些」。
  */
 import type { ModuleSummary } from '../../shared/bridge-contract.ts'
+import type { InjectionPoint } from '../../shared/engine-capabilities.ts'
 import {
   ENGINE_EDITOR_GROUP_MAP,
   MODULE_CAPABILITIES,
@@ -35,6 +36,25 @@ export const LAYER_ASSET_SECTIONS: Record<string, readonly string[]> = {
 }
 
 const isLayerAsset = (id: string): boolean => (LAYER_ASSET_IDS as readonly string[]).includes(id)
+
+export const toolSettingsDeclared = (module: ModuleSummary): boolean =>
+  module.declares?.includes('customTools') === true
+
+export function moduleSettingsLayers(module: ModuleSummary): Set<InjectionPoint> {
+  const layers = new Set<InjectionPoint>()
+  for (const capability of MODULE_CAPABILITIES) {
+    if (isModuleCapabilityDeclared(capability.id, module.facts)) layers.add(capability.displayLayer)
+  }
+  if (toolSettingsDeclared(module)) {
+    const group = ENGINE_EDITOR_GROUP_MAP.find(({ id }) => id === 'custom-tools')
+    if (group) layers.add(group.displayLayer)
+  }
+  return layers
+}
+
+export const isModuleSettingsCard = (card: LayerCard, toolsDeclared: boolean): boolean =>
+  card.kind === 'param' || card.kind === 'capability'
+  || toolsDeclared && card.kind === 'asset' && card.id === 'custom-tools'
 
 /** 本层归属的结构化资产候选（不看声明面）；子代理模型卡由受众视图另行渲染。 */
 function assetCandidates(layer: string, exclude: readonly string[]): string[] {

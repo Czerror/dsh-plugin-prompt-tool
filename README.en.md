@@ -11,7 +11,7 @@ Manage prompts and rules in [DeepSeek Harness (DSH)](https://deepseek-harness.gi
 In the Prompt Tool workspace, you can:
 
 - Edit prompts, personas, conditions, variables, and model parameters for main sessions and subagents
-- Create, enable, disable, copy, and share modules; preview available tools
+- Create, enable, disable, copy, and share modules; edit custom tools and tool permission rules
 - Import SillyTavern presets, character cards, and world books as modules
 - Configure ledgers, knowledge retrieval, and continuous memory in modules as needed; knowledge access and continuous memory require separate authorization
 
@@ -19,14 +19,20 @@ In the Prompt Tool workspace, you can:
 
 After [installing the plugin](#install-the-plugin) below, open **Prompt Tool** from the sidebar:
 
-1. Create a module on the **Modules** page, or import existing files.
-2. Enable the module on the **Modules** page and confirm the module runtime switch is on.
-3. Edit the module’s rules on **Main session** or **Subagent**. Save the text, conditions, and actions, and enable rules as needed.
-4. To check the result, click **Run diagnostics once** for rule and current-session diagnostics.
+1. Select **Modules** in the top-left toolbar and search by name or ID. Select a card's name to browse its rules, or use the switch inside the card to change whether that module runs. Create, import, and the global runtime switch are in the same sidebar. Open the card's additional actions to rename, duplicate, or export it.
+2. The rule list defaults to participating modules and can also show all modules. Select a rule to see its owning module and rule name in the canvas header. **Enable rule** controls that rule alone. Use scope conditions and branches to express main-session and subagent actions within the same rule. The combination view also opens over the canvas.
+3. Select a rule by name to open the canvas. The disclosure on its row shows its source. Search across the condition and action groups in the left library. Select an item to inspect it, choose a target, and add it on the right, or drag it onto a valid target. The same inspector edits canvas nodes. Branches and condition groups link directly to their child nodes.
+4. The five toolbar icons open Modules, Diagnostics, Rules, or the condition and action library, or hide the sidebar. Hover or focus an icon to see its name. Run a diagnostic check to load records. Select a record with a rule or action identity to locate its canvas node, then select **Diagnostics** to return to the same record.
+
+Each instruction file discovered for the session, such as `AGENTS.md` or `CLAUDE.md`, has its own canvas card. Select a file to edit it, then select **Save** to write to that file. The switch beside Save controls the global instruction path hint. File cards are also available when there are no module rules. Leaving the inspector saves pending edits when possible. A version conflict preserves the draft and provides a reload action.
 
 You can import [YAML](https://yaml.org/)/[JSON](https://www.json.org/json-en.html) module files, folders/[ZIP archives](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT), SillyTavern presets, [PNG images](https://www.w3.org/TR/png/)/JSON character cards, and world books. New and imported modules start disabled. See [SillyTavern import details](docs/SillyTavern.md) for conversion limits.
 
-Save before refreshing the page: unsaved drafts may be lost. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
+Use the right panel to edit node properties, instruction files, module settings, and custom tools. When adding an injection template, use the searchable dialog to choose the template and target module. Click empty canvas to dismiss the current panel, or drag to pan with the node selected. If publication fails after saving module status, retry from the Modules sidebar in any workspace entry point.
+
+On narrow screens, the canvas starts zoomed in for readability. Use the bottom toolbar to fit the full diagram. Selecting a node briefly highlights its directly connected lines in their direction of flow. With reduced motion enabled, the highlight stays static.
+
+All three workspace entry points share browsing position and rule drafts in one layout. Template insertion preserves its declared audience; existing separate rules are never merged automatically. Wait for save confirmation before refreshing. In the terminal interface, use `/prompt-tool` to manage modules. The **Prompt Tool** section in `/settings` has the module runtime switch.
 
 ## Install the plugin
 

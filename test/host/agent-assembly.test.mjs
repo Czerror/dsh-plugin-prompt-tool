@@ -44,7 +44,11 @@ async function liveAssembly(t, enabledModules) {
   const inject = (agent) => root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, signal: new AbortController().signal }, async () => ({
     kind: 'continue', messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }],
   }))
-  return { root, runtime, makeAgent, inject, warnings }
+  const assemble = async agent => {
+    const request = agent.ctx.plugin({ inject: ['systemPrompt'], async apply(ctx) { await ctx.systemPrompt.assemble({ agent, scope: agent }) } })
+    try { await request } finally { await request.dispose() }
+  }
+  return { root, runtime, makeAgent, inject, assemble, warnings }
 }
 
 test('真实注入：启用配置进入主/子会话正确位置，关闭项不注入，释放后不再贡献', async (t) => {
@@ -123,7 +127,11 @@ test('首次装配跳过坏模块，健康模块在主子会话继续注入，�
     modules: ['rule-engine'], promptConfigs: [{ id, text, strategy, position: 'after-user' }],
   })
   write('isolated-broken', 'RECOVERED', 'invalid')
-  write('isolated-healthy', 'HEALTHY')
+  const healthy = writeModuleFixture('isolated-healthy', { modules: ['rule-engine'], promptConfigs: [
+    { id: 'isolated-healthy', templateFile: 'body.txt', position: 'after-user' },
+  ] })
+  const template = join(healthy, 'body.txt')
+  writeFileSync(template, 'HEALTHY')
   const h = await liveAssembly(t, () => ['isolated-broken', 'isolated-healthy'])
   const agents = [await h.makeAgent('isolated-main'), await h.makeAgent('isolated-child', 1)]
   const texts = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
@@ -132,16 +140,23 @@ test('首次装配跳过坏模块，健康模块在主子会话继续注入，�
     assert.deepEqual(h.runtime.moduleIds(agent.id), ['isolated-healthy'])
   }
   assert.ok(h.warnings.some(message => message.includes('isolated-broken')), '诊断标识故障模块')
+  writeFileSync(template, 'TEMPLATE-CHANGED')
+  await h.assemble(agents[0])
+  for (const agent of agents) assert.deepEqual(await texts(agent), ['USER', 'TEMPLATE-CHANGED'], '已启用来源按实际模板更新')
   write('isolated-broken', 'RECOVERED')
   await h.runtime.refresh('isolated-broken')
   await h.runtime.refresh('isolated-broken')
   for (const agent of agents) {
-    assert.deepEqual(await texts(agent), ['USER', 'RECOVERED', 'HEALTHY'])
+    assert.deepEqual(await texts(agent), ['USER', 'RECOVERED', 'TEMPLATE-CHANGED'])
     assert.deepEqual(h.runtime.moduleIds(agent.id), ['isolated-broken', 'isolated-healthy'])
   }
   const section = h.root.systemPrompt.section
+  let rejectedMounts = 0
   t.mock.method(h.root.systemPrompt, 'section', function (config) {
-    if (config.name.includes('isolated-broken')) throw new Error('HOST-SECTION-REJECTED')
+    if (config.name.includes('isolated-broken')) {
+      rejectedMounts++
+      throw new Error('HOST-SECTION-REJECTED')
+    }
     return section.call(this, config)
   })
   writeModuleFixture('isolated-broken', { modules: ['rule-engine'], promptConfigs: [
@@ -152,6 +167,10 @@ test('首次装配跳过坏模块，健康模块在主子会话继续注入，�
   for (const agent of agents) {
     assert.deepEqual(await texts(agent), ['USER', 'RECOVERED', 'HEALTHY-AFTER-RULE-FAILURE'], '规则注册失败也只回退所属模块')
   }
+  assert.equal(rejectedMounts, 2)
+  h.runtime.schedule('isolated-broken')
+  await h.assemble(agents[0])
+  assert.equal(rejectedMounts, 2, '普通发布保留拒绝标记，避免同坏版本重新挂载')
   await h.runtime.dispose()
   for (const agent of agents) {
     assert.deepEqual(await texts(agent), ['USER'])
@@ -170,13 +189,25 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   const agent = await h.makeAgent('hot-agent')
   const injected = async () => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
   assert.deepEqual(await injected(), ['USER'])
+  const child = await h.makeAgent('hot-child', 1)
+  const childText = async () => (await h.inject(child)).messages.flatMap(message => message.content.map(block => block.text))
+  const count = { id: 'hot-count', if: { count: { of: 'assistant-message', min: 1 } }, then: [
+    { id: 'count-text', kind: 'inject-text', config: { layer: 'pre-step', text: 'COUNT', position: 'after-user' } },
+  ] }
+  writeFileSync(join(moduleRoot, 'hot-a', 'module.yml'), JSON.stringify({ id: 'hot-a', modules: ['rule-engine'], rules: [count] }))
   setModuleEnabled(moduleRoot, 'hot-a', true)
   await h.runtime.refresh()
-  assert.deepEqual(await injected(), ['USER', 'hot-a'])
+  assert.deepEqual(await injected(), ['USER'])
+  assert.deepEqual(await childText(), ['USER'])
+  const assistant = { seq: 1, type: 'assistant/message', data: {} }
+  agent.session.snapshotEvents().push(assistant)
+  h.root.emit(scopeTarget(agent.session, agent), 'session/event', agent.session, assistant)
+  assert.deepEqual(await injected(), ['USER', 'COUNT'])
+  assert.deepEqual(await childText(), ['USER'], '共享定义的计数按 Agent 隔离')
   setModuleEnabled(moduleRoot, 'hot-b', true)
   await h.runtime.refresh()
   await h.runtime.refresh()
-  assert.deepEqual(await injected(), ['USER', 'hot-a', 'hot-b'])
+  assert.deepEqual(await injected(), ['USER', 'COUNT', 'hot-b'])
   writeModuleFixture('hot-a', {
     modules: ['prompt-config-engine'],
     promptConfigs: [{ id: 'hot-a', text: 'CHANGED', enabled: false, position: 'after-user' }],

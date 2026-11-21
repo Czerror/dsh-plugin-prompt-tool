@@ -23,6 +23,10 @@ export const DIAGNOSTIC_ZH = {
   'diagnostics.configs': '配置：{enabled}/{total}',
   'diagnostics.configsUnavailable': '配置数量不可用',
   'diagnostics.record': '命中 {hit} · 未命中 {miss} · 不可用 {unavailable} · 错误 {error}',
+  'diagnostics.noRuleRecords': '没有可用的规则执行记录，无法判定实际结果。',
+  'diagnostics.openRule': '编辑 {target}',
+  'diagnostics.return': '返回诊断',
+  'diagnostics.targetUnavailable': '无法定位此规则或动作。可从列表查找现有定义。',
 } as const
 
 export const DIAGNOSTIC_EN: Record<keyof typeof DIAGNOSTIC_ZH, string> = {
@@ -50,4 +54,8 @@ export const DIAGNOSTIC_EN: Record<keyof typeof DIAGNOSTIC_ZH, string> = {
   'diagnostics.configs': 'Configurations: {enabled}/{total}',
   'diagnostics.configsUnavailable': 'Configuration count unavailable',
   'diagnostics.record': 'Hits {hit} · Misses {miss} · Unavailable {unavailable} · Errors {error}',
+  'diagnostics.noRuleRecords': 'No rule execution records are available to determine the outcome.',
+  'diagnostics.openRule': 'Edit {target}',
+  'diagnostics.return': 'Return to diagnostics',
+  'diagnostics.targetUnavailable': 'This rule or action could not be located. Use the list to find the current definition.',
 }

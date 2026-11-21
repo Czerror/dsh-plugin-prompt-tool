@@ -20,11 +20,14 @@ export function createProcessHostControls(ctx, record) {
         await installations.get(owner)
       }
       if (!isActive()) return
-      const releases = item === null ? [] : processHostControls().map(owner => owner.state.replace(id,
-        actions.filter(action => hostControlDescriptor(action)?.process === owner).map(({ capability, value }) => ({ capability, value }))))
-      sources.get(id)?.()
-      if (item === null) sources.delete(id)
-      else sources.set(id, () => { for (const release of releases) release() })
+      const old = sources.get(id)
+      if (old?.item !== item) {
+        const releases = item === null ? [] : processHostControls().map(owner => owner.state.replace(id,
+          actions.filter(action => hostControlDescriptor(action)?.process === owner).map(({ capability, value }) => ({ capability, value }))))
+        old?.release()
+        if (item === null) sources.delete(id)
+        else sources.set(id, { item, release: () => { for (const release of releases) release() } })
+      }
       for (const rule of rules) for (const action of rule.actions) {
         const owner = hostControlDescriptor(action).process
         const status = owner.state.status(action.capability)
@@ -34,10 +37,10 @@ export function createProcessHostControls(ctx, record) {
       }
     },
     retain(ids) {
-      for (const [id, release] of sources) if (!ids.includes(id)) { release(); sources.delete(id) }
+      for (const [id, source] of sources) if (!ids.includes(id)) { source.release(); sources.delete(id) }
     },
     withdraw() {
-      for (const release of sources.values()) release()
+      for (const source of sources.values()) source.release()
       sources.clear()
     },
     async dispose() { for (const dispose of disposers.values()) await dispose() },

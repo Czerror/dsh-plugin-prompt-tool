@@ -35,7 +35,7 @@ export const BRIDGE_REQUEST_FIELDS = {
   paramOverrides: { fields: ['overrides', 'promptConfigs', 'rebuild', 'expectedModuleId', 'refreshOnly'] },
   // 退役端点（410）：请求类型已改为 undefined，这里只有「无 body」这一事实。
   triggers: { body: 'none' },
-  rules: { fields: ['expectedModuleId', 'expectedRevisions', 'expectedRulesAbsent', 'createRule', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly'] },
+  rules: { fields: ['expectedModuleId', 'expectedRevisions', 'expectedRulesAbsent', 'createRule', 'edits', 'activateRuleId', 'validateOnly', 'refreshOnly', 'compactEdit'] },
   moduleVariables: { fields: ['scope', 'variables', 'enabled', 'expectedModuleId', 'expectedRevisions', 'refreshOnly'] },
   customTools: { fields: ['customTools', 'expectedModuleId', 'refreshOnly'] },
   importModulePackage: { fields: [...ASSET_IMPORT_FIELD_KEYS, 'refreshOnly'] },
@@ -49,7 +49,6 @@ export const BRIDGE_REQUEST_FIELDS = {
   moduleName: { fields: ['name', 'expectedRevision', 'expectedModuleId', 'refreshOnly'] },
   moduleEnable: { fields: ['id', 'enabled', 'refreshOnly'] },
   moduleConfigOrder: { fields: ['moduleId', 'entries', 'expectedRevision', 'refreshOnly'] },
-  toolSurface: { fields: ['sessionId', 'presetId'] },
   moduleCapability: { fields: ['action', 'capabilityId', 'recipeId', 'expectedModuleId', 'refreshOnly'] },
   contextActivationDiagnostics: { fields: ['sessionId'] },
   ruleDiagnostics: { fields: [] },

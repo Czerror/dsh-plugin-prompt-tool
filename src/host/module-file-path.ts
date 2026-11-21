@@ -5,6 +5,7 @@ import { assertSafeRelativePath } from '../shared/asset-path.ts'
 import { resolveRealWithin } from '../../engine/path-safety.mjs'
 import { assertNoModuleLinks, modulePathExists } from './module-install.ts'
 import { findModuleDir, packageModulesDir } from './module-dirs.ts'
+import { MODULE_DEFINITION_FILE } from './paths.ts'
 
 export type ModuleFileRoot = 'assets' | 'data'
 
@@ -50,15 +51,19 @@ export function resolveModuleFilePath(
 /** 只读资产按同名模块回退；空文件、链接和读取失败都不是缺失。 */
 export function resolveModuleReadPath(
   moduleDir: string, path: string, roots: readonly ModuleFileRoot[], options: ModuleFilePathOptions = {},
+  dependOn?: (file: string) => void,
 ): string {
   const { file } = moduleFilePath(moduleDir, path, roots, options)
   assertNoModuleLinks(file)
+  dependOn?.(file)
   if (modulePathExists(file)) return resolveModuleFilePath(moduleDir, path, roots, options)
   if (path === 'assets' || path.startsWith('assets/')) {
     const builtin = findModuleDir(packageModulesDir(), basename(moduleDir))
     if (builtin !== undefined) {
       const fallback = moduleFilePath(builtin, path, roots, options).file
       assertNoModuleLinks(fallback)
+      dependOn?.(join(builtin, MODULE_DEFINITION_FILE))
+      dependOn?.(fallback)
       if (modulePathExists(fallback)) return resolveModuleFilePath(builtin, path, roots, options)
     }
   }

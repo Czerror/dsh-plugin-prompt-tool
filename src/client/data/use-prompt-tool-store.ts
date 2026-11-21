@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { EngineMeta, PromptConfigDraft } from '../prompt-tool-types.ts'
+import type { EngineMeta } from '../prompt-tool-types.ts'
 import type { PromptToolHostApi } from './host-api.ts'
 import { bridgeCall, errorMessage } from './bridge-client.ts'
 import { readPublication } from '../../shared/publication.ts'
@@ -19,10 +19,8 @@ import {
   switchesEqual,
   type SwitchSnapshot,
 } from './dirty-state.ts'
-import { EMPTY_INSTRUCTION_POOL, unsavedInstructionDrafts, type InstructionDraftPool } from './instruction-drafts.ts'
-import { EMPTY_INSTRUCTION_POLICY_SNAPSHOT } from './instruction-policy.ts'
-import type { InstructionPolicyFileOverride, InstructionPolicySnapshot } from '../../shared/instructions.ts'
-import { createInstructionEditor, type InstructionEditor } from './instruction-editor.ts'
+import { createWorkspaceInstructions } from './workspace-instructions.ts'
+import { createInstructionPolicyState } from './instruction-editor.ts'
 import { createParamEditor, type ParamEditor, type ParamEditorDependencies } from './param-editor.ts'
 import { createSerialTaskQueue } from './save-queue.ts'
 import { createWorkspaceDrafts } from './workspace-drafts.ts'
@@ -82,6 +80,13 @@ export type PromptToolStore =
   & HostApiPort
 
 
+export type GlobalWorkspaceStore = Omit<PromptToolStore, keyof InstructionFilesPort | 'load'> & {
+  load(options?: { silent?: boolean; sessionId?: string }): Promise<Fields>
+  instructionsFor(sessionId?: string): ReturnType<typeof createWorkspaceInstructions>
+  openWorkspace(sessionId?: string): Promise<void>
+  releaseInstructions(sessionId?: string): void
+}
+
 /** 等待共享 mirror 的首次应答离开 loading（ready/idle/unavailable 都会返回）。 */
 function waitForScope(scope: ConfigForm<Record<string, unknown>>): Promise<ConfigFormSnapshot<Record<string, unknown>>> {
   const current = scope.getSnapshot()
@@ -106,7 +111,7 @@ function waitForScope(scope: ConfigForm<Record<string, unknown>>): Promise<Confi
   })
 }
 
-export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport, active = true): PromptToolStore {
+export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolSettingsTransport, active = true): GlobalWorkspaceStore {
   const activeRef = useRef(active)
   activeRef.current = active
   const editorDrafts = useRef(createWorkspaceDrafts()).current
@@ -129,9 +134,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       : candidate) })
   }, [publishMeta])
   const [savedSwitches, setSavedSwitches] = useState<SwitchSnapshot>(EMPTY_SWITCHES)
-  // 池本体读 ref（`getInstructionPool` 回调式读取）；这里的 state 只承担触发重渲染。
-  const [, setInstructionPool] = useState<InstructionDraftPool>(EMPTY_INSTRUCTION_POOL)
-  const [instructionPolicy, setInstructionPolicy] = useState<InstructionPolicySnapshot>(EMPTY_INSTRUCTION_POLICY_SNAPSHOT)
   /** 变量范围按模块各存一份（同一模块的层卡共享）；范围变化只影响该模块的读数与草稿键。 */
   const variablesScopesRef = useRef(new Map<string, ModuleVariableScope>())
   const [, publishSubject] = useState(0)
@@ -162,7 +164,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const [notice, setNotice] = useState('')
   const [noticeKind, setNoticeKind] = useState<'ok' | 'error'>('ok')
   /** 通知前导胶囊（会话名）：与 notice 同批更新，清空时一并清掉。 */
-  const [noticePill, setNoticePill] = useState<string | undefined>(undefined)
   const fieldsRef = useRef<Fields>(EMPTY_FIELDS)
   /** fields 订阅者集合：patch/load 每次产生新 fields 引用时广播。
    *  shortcut: 单订阅通道（无 selector 缓存层），selector 在消费侧 useRef 缓存。 */
@@ -180,15 +181,22 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   /** 参数草稿广播：未完成的数字输入与错误态按同一草稿键在镜像控件之间同步。
    *  草稿池是可变 Map（不触发 React 重渲染），因此写入方显式发布修订号；
    *  这是既有 subscribeFields 的同一模式，不是第二份状态或事件总线。 */
-  const draftListenersRef = useRef(new Set<() => void>())
+  const draftListenersRef = useRef(new Map<() => void, string | undefined>())
   const draftRevisionRef = useRef(0)
-  const getDraftRevision = useCallback(() => draftRevisionRef.current, [])
-  const publishDrafts = useCallback(() => {
+  const moduleDraftRevisions = useRef(new Map<string, number>()).current
+  const draftInvalidationRef = useRef(0)
+  const getDraftRevision = useCallback((moduleId?: string) => moduleId === undefined
+    ? draftRevisionRef.current : draftInvalidationRef.current + (moduleDraftRevisions.get(moduleId) ?? 0), [moduleDraftRevisions])
+  const publishDrafts = useCallback((moduleId?: string) => {
     draftRevisionRef.current += 1
-    for (const listener of draftListenersRef.current) listener()
-  }, [])
-  const subscribeDrafts = useCallback((listener: () => void) => {
-    draftListenersRef.current.add(listener)
+    if (moduleId === undefined) draftInvalidationRef.current += 1
+    else moduleDraftRevisions.set(moduleId, (moduleDraftRevisions.get(moduleId) ?? 0) + 1)
+    for (const [listener, target] of draftListenersRef.current) {
+      if (moduleId === undefined || target === undefined || target === moduleId) listener()
+    }
+  }, [moduleDraftRevisions])
+  const subscribeDrafts = useCallback((listener: () => void, moduleId?: string) => {
+    draftListenersRef.current.set(listener, moduleId)
     return () => { draftListenersRef.current.delete(listener) }
   }, [])
 
@@ -197,8 +205,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   const moduleSaveQueueRef = useRef(createSerialTaskQueue())
   const loadSeqRef = useRef(0)
   const metaSeqRef = useRef(0)
-  const loadInFlightRef = useRef(new Map<string | undefined, Promise<Fields>>())
-  const loadedSessionRef = useRef<string | undefined>()
+  const loadInFlightRef = useRef<Promise<Fields>>()
   const hasLoadedRef = useRef(false)
   /** 用户草稿版本：patch 时递增。load 应答返回时若版本变化，跳过覆盖，避免
    *  保存后的静默刷新吞掉用户在读取期间的编辑。 */
@@ -226,38 +233,29 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     return task()
   }), [])
   const enqueueRuleTask = useCallback(<T,>(task: () => Promise<T>): Promise<T> => moduleSaveQueueRef.current.enqueue(task), [])
+  const reconcileRules = useCallback(() => {
+    if (!activeRef.current || !api.isConnected() || document.visibilityState !== 'visible') return
+    for (const draft of editorDrafts.rules.values()) if (draft.pending) void draft.pending.read()
+  }, [api, editorDrafts])
 
-  const showNotice = useCallback((kind: 'ok' | 'error', message: string, pill?: string) => {
+  const showNotice = useCallback((kind: 'ok' | 'error', message: string) => {
     setNotice(message)
     setNoticeKind(kind)
-    setNoticePill(pill)
   }, [])
 
   /** 清空通知（含胶囊）：快照应用完成后调用，旧提示不跨加载常驻。 */
   const clearNotice = useCallback(() => {
     setNotice('')
-    setNoticePill(undefined)
   }, [])
 
-  /** 指令文件编辑 owner：池、策略、卡片壳与三条写路径同处一个 module（见 instruction-editor.ts）。 */
-  const instructionEditorRef = useRef<InstructionEditor>()
-  const instructionEditor = (instructionEditorRef.current ??= createInstructionEditor({
-    request: bridgeCall,
-    sessionId: () => api.currentSessionId(),
-    notify: (kind, message) => showNotice(kind, message),
-    onChange: () => {
-      const editor = instructionEditorRef.current!
-      setInstructionPool(editor.getPool())
-      setInstructionPolicy(editor.getPolicy())
-      // 壳或池变了必须重新投影卡片：applyView 只投影一次，之后的快照回填靠这里刷新。
-      publishFields({ ...fieldsRef.current, instructionCards: editor.projectCards() })
-    },
-  }))
-  /** 视图永远是 (壳, 池, 策略) 的投影：所有发布路径都从这里取，不再各写一份。 */
-  const projectInstructionFields = useCallback((base: Fields): Fields => ({
-    ...base,
-    instructionCards: instructionEditor.projectCards(),
-  }), [instructionEditor])
+  const contexts = useRef(new Map<string | undefined, ReturnType<typeof createWorkspaceInstructions>>()).current
+  const [policyState] = useState(() => createInstructionPolicyState(() => contexts.forEach(context => context.changed())))
+  const consumers = useRef(new Map<string | undefined, number>()).current
+  const instructionsFor = useCallback((sessionId?: string) => {
+    let context = contexts.get(sessionId)
+    if (!context) { context = createWorkspaceInstructions(sessionId, showNotice, policyState); contexts.set(sessionId, context) }
+    return context
+  }, [contexts, policyState, showNotice])
 
   const refreshVariables = useCallback(async (moduleId: string, scope: ModuleVariableScope): Promise<void> => {
     const draft = variablesDraftFor(moduleId, scope)
@@ -316,43 +314,34 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     setModelCatalog(res.ok ? res.modelCatalog ?? {} : {})
     setHostDefaultModel(res.ok ? res.hostDefaultModel : undefined)
     const next = fieldsFromView(res)
-    // descriptor 不供卡；壳由同一次 load 的 /bootstrap 会话段写入。
-    instructionEditor.clearShells()
-    const projected = projectInstructionFields(next)
-    publishFields(projected)
+    publishFields(next)
     setSavedSwitches(snapshotSwitches(next))
     // revision 只在首次建立，后续由 enqueueSave 的 mutate 应答维护——/bootstrap 的
     // descriptor 有 30s 服务端缓存，用其 revision 倒退会导致下一次保存 409。
     if (res.ok && revisionRef.current === undefined) revisionRef.current = res.value.revision
-    return projected
+    return next
   }, [])
 
-  const load = useCallback(async (options?: { silent?: boolean }) => {
+  const load = useCallback(async (options?: { silent?: boolean; sessionId?: string }) => {
     if (!activeRef.current) return fieldsRef.current
-    const sessionKey = api.currentSessionId()
-    const existing = loadInFlightRef.current.get(sessionKey)
-    if (existing !== undefined) return existing
+    if (loadInFlightRef.current) return loadInFlightRef.current
     const operation = (async (): Promise<Fields> => {
     // 并发保护：慢的旧请求不得覆盖新请求（last-good 语义保留旧数据）。
     const seq = ++loadSeqRef.current
     const metaSeq = ++metaSeqRef.current
     const draftVersion = draftVersionRef.current
-    const sessionId = sessionKey
+    const sessionId = options?.sessionId
+    const instructionEditor = contexts.get(sessionId)?.editor
     // silent：保存后静默刷新（不闪 loading、避免重渲染风暴与滚动跳动）；失败仍报错。
     if (!options?.silent) setLoading(true)
     try {
       // /bootstrap 聚合读取：meta + describe runtime facts + 实际生效配置一次取回（此前 5 端点
       // 串行，module.yml 每端点读盘解析）。**不带主语**：空主语只回全局段，模块数据由各卡按
       // 自己归属（`moduleId`）读——工作台按装配集合呈现，没有「当前模块」。
-      // 带当前会话 id：服务端据此解析该本地 Agent 的工作区，返回对应指令文件快照。
-      // 会话/工作区切换：建立新的指令上下文。草稿保留但旧上下文不可写，未保存的文件
-      // 与版本在切换到新工作区后必须重新读取校验，防止把 A 的正文写进 B 的文件集。
-      // 会话/工作区切换必须在请求之前：否则 await 期间的旧草稿会被判定为仍可写。
-      instructionEditor.switchSession(sessionId)
-      const instructionSnapshot = instructionEditor.getPool()
-      const policySnapshot = instructionEditor.getPolicy()
+      const instructionSnapshot = instructionEditor?.getPool()
+      const policySnapshot = instructionEditor?.getPolicy()
       const boot = await bridgeCall('bootstrap', sessionId === undefined ? {} : { sessionId })
-      if (seq !== loadSeqRef.current || sessionId !== api.currentSessionId()) return EMPTY_FIELDS
+      if (seq !== loadSeqRef.current) return EMPTY_FIELDS
       if (!boot.ok) {
         showNotice('error', '读取配置失败：' + (boot.message ?? 'bootstrap unavailable'))
         return EMPTY_FIELDS
@@ -362,9 +351,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 客户端视图 `EngineMeta`（另含 layers／strategies／slotKinds…），按既有事实收窄一次。
       if (boot.meta !== undefined && metaSeq === metaSeqRef.current) publishMeta(boot.meta.meta as unknown as EngineMeta)
       // 两次读取都完成后才应用快照；任何 await 期间的新上下文/草稿/文件结果优先。
-      const policyRes = await bridgeCall('instructionsPolicy')
-      if (seq !== loadSeqRef.current || sessionId !== api.currentSessionId()) return EMPTY_FIELDS
-      if (instructionEditor.getPool() !== instructionSnapshot) return fieldsRef.current
+      if (instructionEditor && policySnapshot && consumers.has(sessionId) && contexts.get(sessionId)?.editor === instructionEditor) {
+        const policyRes = await bridgeCall('instructionsPolicy')
+        if (seq !== loadSeqRef.current) return EMPTY_FIELDS
+        if (instructionEditor.getPool() === instructionSnapshot && contexts.get(sessionId)?.editor === instructionEditor) {
+          contexts.get(sessionId)!.ingest({ instructions: boot.instructions, promptConfigs: boot.promptConfigs, policyResult: policyRes, expectPolicy: policySnapshot })
+        }
+      }
       const fieldsChanged = draftVersionRef.current !== draftVersion
       // /bootstrap 已携带 settings descriptor（value/base/revision）：直接作为 fields
       // 主源，不再 await settings.ensure()——宿主全量 describe mirror 是切换模块后
@@ -374,18 +367,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
         // 全局参数仍保护读取期间的新输入；指令文件上下文独立回填。
         if (boot.globalParams !== undefined) paramEditorRef.current!.editor.applyGlobal(boot.globalParams)
       }
-      // 指令文件（独立来源）：正文、身份、版本、读取状态来自同一次读取；策略解析也归 owner。
-      const { stranded } = instructionEditor.ingestSnapshot({
-        instructions: boot.instructions,
-        // 指令卡只来自 /bootstrap 的会话段；空数组或缺段都是权威结果，会清掉旧壳。
-        promptConfigs: boot.promptConfigs,
-        policyResult: policyRes,
-        expectPolicy: policySnapshot,
-      })
-      // 切到别的工作区后，未保存草稿的文件可能已不在当前可见范围：保留草稿，但要说清楚。
-      if (stranded.length > 0) {
-        showNotice('error', `有 ${stranded.length} 个未保存的指令文件草稿不在当前工作区（${stranded.map((draft) => draft.displayPath).join('、')}），已保留；切回原工作区后可继续保存`)
-      }
       if (fieldsChanged) return fieldsRef.current
       paramEditorRef.current!.editor.reloadModules()
       for (const moduleId of variablesScopesRef.current.keys()) {
@@ -394,7 +375,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       // 共享的模块文件同时承载参数与规则：全局重载后已加载的规则草稿重新取版本；
       // 原始字段与未保存编辑由各规则 owner 保留（owner 侧只在 loaded=false 时重读）。
       for (const rulesDraft of editorDrafts.rules.values()) {
-        if (rulesDraft.loaded && rulesDraft.busy === undefined) rulesDraft.loaded = false
+        if (rulesDraft.loaded && rulesDraft.busy === undefined && !rulesDraft.pending) rulesDraft.loaded = false
       }
       publishDrafts()
       const pendingPublication = [...variablesScopesRef.current].flatMap(([moduleId, scope]) => {
@@ -403,55 +384,44 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
       })[0]
       if (pendingPublication) showNotice('error', pendingPublication)
       else clearNotice()
-      loadedSessionRef.current = sessionId
       hasLoadedRef.current = true
       return fieldsRef.current
     } catch (error) {
-      if (seq === loadSeqRef.current && sessionId === api.currentSessionId() && draftVersionRef.current === draftVersion) showNotice('error', '读取失败：' + errorMessage(error))
+      if (seq === loadSeqRef.current && draftVersionRef.current === draftVersion) showNotice('error', '读取失败：' + errorMessage(error))
       return EMPTY_FIELDS
     } finally {
       if (seq === loadSeqRef.current && !options?.silent) setLoading(false)
     }
     })()
-    loadInFlightRef.current.set(sessionKey, operation)
-    try { return await operation } finally { loadInFlightRef.current.delete(sessionKey) }
-  }, [api, applyView, assembledModule, clearNotice, editorDrafts, publishDrafts, settings, showNotice, variablesDraftFor])
+    loadInFlightRef.current = operation
+    try { return await operation } finally { loadInFlightRef.current = undefined }
+  }, [applyView, assembledModule, clearNotice, consumers, contexts, editorDrafts, publishDrafts, showNotice, variablesDraftFor])
+
+  const openWorkspace = useCallback(async (sessionId?: string) => {
+    const context = instructionsFor(sessionId)
+    consumers.set(sessionId, (consumers.get(sessionId) ?? 0) + 1)
+    if (!hasLoadedRef.current) await load({ sessionId })
+    if (activeRef.current && consumers.has(sessionId)) await context.ensure()
+  }, [consumers, instructionsFor, load])
+
+  const releaseInstructions = useCallback((sessionId?: string) => {
+    const count = consumers.get(sessionId) ?? 0
+    if (count > 1) { consumers.set(sessionId, count - 1); return }
+    consumers.delete(sessionId)
+    const context = contexts.get(sessionId)
+    if (context?.hasDraft()) context.invalidate()
+    else contexts.delete(sessionId)
+  }, [consumers, contexts])
 
   // 挂载即后台拉取模型目录（不阻塞工作台首屏；10min 缓存兜底重复打开）。
   useEffect(() => {
     if (!active) return
+    reconcileRules()
     void loadModels()
-  }, [active, loadModels])
+  }, [active, loadModels, reconcileRules])
 
-  // 会话 id 晚于工作台首次打开就绪时（页面加载、会话恢复）补一次加载。
-  // ui-session 的作用域绑定要等主视图 retain 该会话之后才有值（官方 publishMain
-  // 以 retainedBy.mainView > 0 为准），否则首屏会一直停在「只有全局文件」的范围，
-  // 直到用户关掉工作台重开。
-  useEffect(() => {
-    if (!active) return
-    return api.subscribeSessionChange(() => {
-      const sessionId = api.currentSessionId()
-      if (!hasLoadedRef.current) return
-      if (sessionId !== loadedSessionRef.current) void load()
-    })
-  }, [active, api, load])
 
-  // 目录就绪后补查当前会话与宿主默认路由的推理档位。
-  // 只查这几条可见路由：不遍历整个目录，也不把目录当授权白名单。
-  useEffect(() => {
-    reasoningRequestedRef.current.clear()
-    const face = api.sessionModel.snapshot()
-    const sessionSelection = face.selection
-    const routes: Array<{ provider?: string; model?: string }> = [
-      { provider: sessionSelection?.provider, model: sessionSelection?.model },
-      { provider: hostDefaultModel?.provider, model: hostDefaultModel?.model },
-    ]
-    for (const route of routes) {
-      if (route.provider !== undefined && route.model !== undefined) {
-        ensureModelReasoning(route.provider, route.model)
-      }
-    }
-  }, [api, ensureModelReasoning, hostDefaultModel?.model, hostDefaultModel?.provider, modelCatalog])
+  useEffect(() => { reasoningRequestedRef.current.clear() }, [modelCatalog])
 
   const refreshRevision = useCallback(async () => {
     try {
@@ -469,12 +439,6 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     publishFields(next)
   }, [publishFields])
 
-  /** 指令卡正文只经草稿池：其余字段由卡壳与投影持有，这条通道不接收。 */
-  const patchInstructionText = useCallback((fileId: string, text: string) => {
-    // 无改动不参与草稿版本：否则并发的静默重载会被误判成「用户在保存期间有编辑」。
-    if (!instructionEditor.patchText(fileId, text)) return
-    draftVersionRef.current += 1
-  }, [instructionEditor])
 
   const enqueueSave = useCallback((ops: SettingsPathOpView[], okMessage: string | undefined, onSaved: () => void, setBusy?: (busy: boolean) => void): Promise<boolean> => {
     setBusy?.(true)
@@ -546,7 +510,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     prepareRefresh: scope => {
       if (scope === 'global') return async () => { await load({ silent: true }) }
       const draftVersion = draftVersionRef.current
-      const noUnsavedDrafts = unsavedInstructionDrafts(instructionEditor.getPool()).length === 0
+      const noUnsavedDrafts = ![...contexts.values()].some(context => context.hasDraft())
       return async () => {
         if (shouldReloadAfterModuleSave(draftVersion, draftVersionRef.current, noUnsavedDrafts)) await load({ silent: true })
       }
@@ -702,30 +666,17 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
   templateWriter.current ??= createTemplateRuleWriter({
     drafts: editorDrafts, modules: () => metaRef.current.modules, changed: publishDrafts, markDeclared: markModuleDeclared,
     enqueue: enqueueRuleTask, actions: moduleActions,
+    reconcileRules,
   })
 
   const currentSwitches = snapshotSwitches(fields)
   const dirtySwitches = !switchesEqual(currentSwitches, savedSwitches)
 
 
-  /**
-   * 离开前保存：只做「判断 → 调已有 persist」，不新写保存逻辑。
-   *
-   * 开关先比实时快照（脏了才发请求，避免每次关抽屉都空写一次）；指令文件直接交给
-   * `persistInstructionFiles` 自己过滤（它的契约就是只提交已改动、可写、上下文匹配的文件）。
-   * 失败只报一次并保留脏标记（`savedSwitches` 没被更新、文件草稿仍脏），**不阻断离开**。
-   */
-  const persistBeforeLeave = useCallback(async (): Promise<boolean> => {
-    let ok = true
-    if (!switchesEqual(snapshotSwitches(fieldsRef.current), savedSwitchesRef.current)) ok = await persistSwitches()
-    if (!await instructionEditor.saveFiles()) ok = false
-    if (!ok) showNotice('error', '离开前保存未完成：草稿仍在本地，请检查后重试')
-    return ok
-  }, [persistSwitches, instructionEditor, showNotice])
 
   // 返回引用稳定化：memo 子组件以 props.store 同一性跳过父级重渲染（订阅式 selector
   // 化依赖稳定 store 引用）；每次渲染重建内容对象但复用 ref 外壳。
-  const storeRef = useRef<PromptToolStore>()
+  const storeRef = useRef<GlobalWorkspaceStore>()
   storeRef.current = {
     editorDrafts,
     api,
@@ -739,17 +690,13 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     loading,
     modelCatalog,
     modelReasoning,
+    ensureModelReasoning,
     hostDefaultModel,
-    getInstructionPool: instructionEditor.getPool,
-    patchInstructionText,
-    persistInstructionFiles: instructionEditor.saveFiles,
-    persistBeforeLeave,
-    reloadInstructionFile: instructionEditor.reloadFile,
-    instructionPolicy,
-    updateInstructionPolicy: instructionEditor.updatePolicy,
+    instructionsFor,
+    openWorkspace,
+    releaseInstructions,
     notice,
     noticeKind,
-    noticePill,
     load,
     showNotice,
     patch,
@@ -766,6 +713,7 @@ export function usePromptToolStore(api: PromptToolHostApi, settings: PromptToolS
     publicationOf: paramEditor.publicationOf,
     retryParamPublication: paramEditor.retryParamPublication,
     enqueueRuleTask,
+    reconcileRules,
     moduleVariables,
     ensureModuleVariables,
     setModuleVariablesScope,

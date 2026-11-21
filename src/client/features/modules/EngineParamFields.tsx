@@ -41,7 +41,7 @@ export function matchesEditorGroup(id: string, keyword: string, t: PromptToolTra
  */
 export function EngineParamFields({ store, moduleId, card, t, instanceId, audience }: { store: EngineParamStore; moduleId: string; card: string; t: PromptToolTranslate; instanceId?: string; audience?: 'main' | 'subagent' }): ReactNode {
   const keys = SHARED_PARAM_KEYS.filter((key) => ENGINE_PARAM_DEFINITIONS[key].card === card
-    && (ENGINE_PARAM_DEFINITIONS[key].audience === undefined || ENGINE_PARAM_DEFINITIONS[key].audience === audience))
+    && (audience === undefined || ENGINE_PARAM_DEFINITIONS[key].audience === undefined || ENGINE_PARAM_DEFINITIONS[key].audience === audience))
   const primary = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'enabled')
   const subagents = keys.find((key) => ENGINE_PARAM_DEFINITIONS[key].module?.key === 'includeSubagents')
   const paired = primary !== undefined && subagents !== undefined ? [primary, subagents] : []

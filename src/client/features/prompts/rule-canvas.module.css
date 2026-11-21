@@ -1,0 +1,86 @@
+.canvas { container: viewport / inline-size; display: flex; flex: 1; position: relative; flex-direction: column; min-width: 0; min-height: 0; block-size: 100%; }
+.stage { position: relative; flex: 1; min-height: 0; overflow: clip; touch-action: none; cursor: grab; background: #0e1116; background-image: radial-gradient(#343b486b .8px, transparent .8px); background-size: 20px 20px; }
+.stage:active { cursor: grabbing; }
+.world { position: absolute; width: 1280px; height: 710px; transform-origin: 0 0; }
+.edges { position: absolute; inset: 0; width: 1280px; height: 710px; overflow: visible; pointer-events: none; }
+.edges path { fill: none; stroke: var(--edge-color, #72aaff); stroke-width: 2; }
+.edges [data-emphasis=active] path { stroke-width: 3; }
+.edges [data-emphasis=inactive] { opacity: .38; }
+.then { --edge-color: #70d5ad; }
+.condition { --edge-color: #72aaff; }
+.else { --edge-color: #efc467; }
+.order { --edge-color: #9ca7b7; }
+.edges .else path { stroke-dasharray: 7 5; }
+.edges .order path { stroke-dasharray: 2 4; }
+.inPort { fill: #0e1116; stroke: var(--edge-color, #72aaff); stroke-width: 2; }
+.outPort { fill: var(--edge-color, #72aaff); stroke: #0e1116; stroke-width: 1; }
+.edgeLabel rect { fill: #202c3b; stroke: #496787; }
+.edgeLabel text { fill: #e7edf6; text-anchor: middle; dominant-baseline: central; font: 11px system-ui, sans-serif; }
+.node { --node-accent: #e9c777; position: absolute; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-height: 7rem; padding: .7rem .8rem; border: 1px solid #40516a; border-radius: 10px; background: #192230; color: inherit; text-align: start; cursor: grab; box-shadow: 0 6px 16px #0003; -webkit-user-select: none; user-select: none; }
+.node[data-node-kind=group] { --node-accent: #a6c7f6; }
+.node[data-node-kind=action] { --node-accent: #79d7ae; }
+.node:active { cursor: grabbing; }
+.region { position: absolute; padding: 12px 16px; text-align: start; display: flex; align-items: flex-start; border: 1px solid #3b4859; border-radius: 12px; background: #17202c66; color: #b5c2d4; }
+.region[data-drop-ready], .region[aria-pressed=true] { outline: 2px solid #70d5ad; }
+.node[data-drop-ready] { outline: 3px solid #70d5ad; outline-offset: 3px; }
+.node[aria-pressed=true] { border: 2px solid #72aaff; box-shadow: 0 0 0 5px #72aaff18; }
+.node small, .node strong, .node span { display: block; }
+.node small { display: flex; align-items: center; gap: 8px; color: var(--node-accent); font: 11px ui-monospace, monospace; }
+.node small::before { content: ""; inline-size: 8px; block-size: 8px; flex: none; border: 1.5px solid currentColor; rotate: 45deg; }
+.node[data-node-kind=group] small::before { border-radius: 50%; rotate: none; }
+.node[data-node-kind=action] small::before { border-radius: 2px; rotate: none; }
+.node span { color: #9ca7b7; margin-top: .25rem; overflow-wrap: anywhere; }
+.node strong { margin-block: 6px; }
+.node span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.instructionsOnly { display: flex; flex: 1; min-inline-size: 0; min-block-size: 0; }
+.instructionCard { box-sizing: border-box; position: absolute; display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid #46536b; border-radius: 9px; background: #1a2230; color: #e7edf6; text-align: start; cursor: pointer; box-shadow: 0 5px 14px #0003; }
+.instructionCard[data-enabled=false] { border-style: dashed; }
+.instructionCard:hover, .instructionCard[aria-pressed=true] { border-color: #a6c7f6; background: #243146; }
+.instructionCard:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 3px; }
+.fileMark { position: relative; display: grid; align-content: end; justify-items: center; flex: none; inline-size: 30px; block-size: 38px; padding-block-end: 4px; border: 1px solid #5d7da6; border-radius: 4px; color: #b4d3fa; background: #293953; clip-path: polygon(0 0, 65% 0, 100% 28%, 100% 100%, 0 100%); font: 600 10px/15px ui-monospace, monospace; }
+.fileMark::after { content: ""; position: absolute; inset: 0 0 auto auto; inline-size: 10px; block-size: 10px; border: solid #5d7da6; border-width: 0 0 1px 1px; background: #3e5678; }
+.fileCopy { display: grid; gap: 3px; min-inline-size: 0; flex: 1; }
+.fileCopy > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fileCopy strong { font: 650 15px/20px system-ui, sans-serif; }
+.fileCopy small { color: #adc0d9; font: 11px/16px ui-monospace, monospace; }
+.fileCopy span { color: #b5c2d4; font: 12px/17px system-ui, sans-serif; }
+.dock { position: absolute; inset: auto auto 12px 12px; z-index: 5; max-inline-size: calc(100% - 24px); display: flex; align-items: center; gap: 2px; padding: 4px 8px; border: 1px solid #323842; border-radius: 11px; background: #181c23; color: #bcc3d0; box-shadow: 0 3px 12px #0003; }
+.dockToolbar, .dockGroup { display: flex; align-items: center; gap: 2px; }
+.dock button { display: inline-grid; place-items: center; min-inline-size: 34px; min-block-size: 34px; padding: 0 6px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; font-size: 18px; cursor: pointer; }
+.dock button[aria-disabled=true] { opacity: .4; cursor: default; }
+.dock button:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 2px; }
+.dock svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.percent { min-inline-size: 46px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+.dockSeparator { block-size: 20px; margin-inline: 1px 2px; border-inline-start: 1px solid #363d48; }
+.legend::before { content: ""; position: absolute; block-size: 20px; inset-inline-start: -4px; inset-block-start: 50%; translate: 0 -50%; border-inline-start: 1px solid #363d48; }
+.legend { position: relative; }
+.legend { display: flex; align-items: center; gap: 15px; padding-inline: 10px 4px; margin-inline-start: 8px; font-size: 14px; white-space: nowrap; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { position: relative; display: inline-block; inline-size: 22px; border-block-start: 2px solid var(--edge-color); }
+.legend i::after { content: ""; position: absolute; right: -1px; top: -5px; border-block: 4px solid transparent; border-inline-start: 7px solid var(--edge-color); }
+.legend .else i { border-block-start-style: dashed; }
+.legend .order i { border-block-start-style: dotted; }
+.inKey { padding-inline-start: 14px; border-inline-start: 1px solid #363d48; }
+.inKey::before, .outKey::before { content: ""; inline-size: 9px; block-size: 9px; border-radius: 50%; border: 2px solid currentColor; }
+.outKey::before { background: currentColor; }
+.dock .legendToggle { display: none; }
+.keysPanel, .legend[data-open] { color: #c6cdd8; }
+.keysPanel { position: absolute; inset: auto auto calc(100% + 6px) 0; inline-size: max-content; max-inline-size: 100%; padding: 10px 12px; border: 1px solid #38404c; border-radius: 9px; background: #1a2029; box-shadow: 0 4px 12px #0003; }
+.keysPanel p { margin: 3px 0; }
+.keysPanel kbd { font-family: ui-monospace, monospace; color: #d6e1f5; }
+.keysPanel button { margin-top: 6px; font-size: 13px; }
+.dock button[aria-expanded=true] { background: #2a3443; color: #fff; }
+@media (hover: hover) { .dock button:not([aria-disabled=true]):hover { background: #2a3443; color: #fff; } }
+@media (forced-colors: active) { .dock button:focus-visible { outline-color: Highlight; } .dockSeparator { border-color: ButtonText; } }
+.node strong { font-size: 17px; line-height: 1.25; }
+.node span { font-size: 14px; line-height: 1.4; }
+@container viewport (width < 46rem) {
+  .dock { inset-inline-start: 8px; inset-block-end: 8px; }
+  .dock .legendToggle { display: inline-flex; font-size: 13px; }
+  .legend { display: none; }
+  .legend[data-open] { position: absolute; inset: auto 0 calc(100% + 6px); display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 12px; border: 1px solid #38404c; border-radius: 9px; background: #1a2029; }
+  .legend::before { display: none; }
+}
+@media (pointer: coarse) { .dock button { min-block-size: 44px; } }
+@container viewport (width < 56rem) { .world { width: 900px; } }
+@media (prefers-reduced-motion: reduce) { .stage, .node { scroll-behavior: auto; transition: none; } }

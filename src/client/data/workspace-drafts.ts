@@ -18,7 +18,7 @@ export interface ToolsEditorDraft {
   refresh?: () => void
   tools: Record<string, unknown>[]
   saved: Record<string, unknown>[]
-  expanded: Set<number>
+  selected?: number
   fields: Map<string, FieldDraft>
   loaded: boolean
   error: string
@@ -54,7 +54,7 @@ export function poolDirty(drafts: WorkspaceDrafts, moduleId?: string): boolean {
   const owner = (key: string): boolean => key.startsWith(`${moduleId}:`)
   const rules = drafts.rules.get(moduleId)
   const tools = drafts.tools.get(moduleId)
-  return (rules !== undefined && (rules.busy === 'save' || rulesDirty(rules)))
+  return (rules !== undefined && (rules.busy === 'save' || rules.pending !== undefined || rulesDirty(rules)))
     || (tools !== undefined && (tools.saving || JSON.stringify(tools.tools) !== JSON.stringify(tools.saved)
     || [...tools.fields.values()].some((field) => field.text !== field.source || field.error.length > 0)))
     || [...drafts.variables].some(([key, draft]) => owner(key) && variablesDirty(draft))

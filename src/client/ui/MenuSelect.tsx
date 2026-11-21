@@ -1,5 +1,7 @@
-import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import type { PromptToolTranslate } from '../locales.ts'
 import { AutoSaveSelection } from './AutoSaveSelection.ts'
+import { CanvasChoice } from './CanvasChoice.tsx'
 import clsx from 'clsx'
 import { IconChevronDownOutlineRegular } from './icons.tsx'
 import { Menu, type MenuEntry } from './Menu.tsx'
@@ -14,8 +16,7 @@ export interface MenuSelectOption {
   group?: string
 }
 
-/** 紧凑单选控件，保留未知值与分组。 */
-export function MenuSelect(props: {
+export interface MenuSelectProps {
   value: string
   options: readonly MenuSelectOption[]
   onChange: (value: string) => void
@@ -31,7 +32,17 @@ export function MenuSelect(props: {
   'aria-labelledby'?: string
   'aria-invalid'?: boolean
   'aria-describedby'?: string
-}): ReactNode {
+}
+
+export const CanvasChoiceContext = createContext<PromptToolTranslate | null>(null)
+
+/** 工作台使用直接单选或对话框，其他入口保留现有菜单。 */
+export function MenuSelect(props: MenuSelectProps): ReactNode {
+  const t = useContext(CanvasChoiceContext)
+  return t ? <CanvasChoice {...props} t={t} /> : <AnchoredSelect {...props} />
+}
+
+function AnchoredSelect(props: MenuSelectProps): ReactNode {
   const [open, setOpen] = useState(false)
   const commitSelection = useContext(AutoSaveSelection)
   const triggerRef = useRef<HTMLButtonElement>(null)

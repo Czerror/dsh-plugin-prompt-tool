@@ -6,13 +6,14 @@ import { isWritableTarget } from './module-subject.ts'
 import type { WorkspaceDrafts } from './workspace-drafts.ts'
 import type { ModuleActions } from './module-actions.ts'
 
-export type TemplateWriteResult = BridgeResult<RulesSnapshot> & { moduleEnabled?: boolean; moduleEnableError?: string; refreshError?: string; localConflict?: boolean }
+export type TemplateWriteResult = BridgeResult<RulesSnapshot> & { unconfirmed?: boolean; moduleEnabled?: boolean; moduleEnableError?: string; refreshError?: string; localConflict?: boolean }
 
 /** 操作完成后先接纳共享事实；视图只拥有选择意图、提示与展开。 */
 export function createTemplateRuleWriter(deps: {
   drafts: WorkspaceDrafts
   modules: () => readonly ModuleSummary[] | undefined
   changed: () => void
+  reconcileRules?: () => void
   markDeclared: (moduleId: string, section: string) => void
   enqueue: <T>(task: () => Promise<T>) => Promise<T>
   actions: Pick<ModuleActions, 'enable'>
@@ -23,11 +24,12 @@ export function createTemplateRuleWriter(deps: {
     const module = deps.modules()?.find(candidate => candidate.id === moduleId)
     const declared = newlyCreated ? false : module?.declares?.includes('rules')
     const editor = createRuleEditor(moduleId, draft, {
-      request: body => bridgeCall('rules', body, moduleId), enqueue: (_id, task) => deps.enqueue(task),
+      request: body => bridgeCall('rules', body, moduleId) as Promise<BridgeResult<RulesSnapshot>>, enqueue: (_id, task) => deps.enqueue(task),
       isCurrent: () => true, changed: deps.changed,
+      onUnconfirmed: deps.reconcileRules,
     })
     const result = await editor.create(rule, declared)
-    if (!result.ok) return result
+    if (!result.ok) return draft.pending ? { ...result, unconfirmed: true } : result
     deps.markDeclared(moduleId, 'rules')
     const committed = { ...result, localConflict: draft.remote !== undefined }
     if (!newlyCreated) return committed

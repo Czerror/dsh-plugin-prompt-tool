@@ -111,8 +111,8 @@ export const PROMPTS_ZH = {
   'card.chip.fileConflict': '磁盘已变，需重新读取',
   'card.chip.fileUnavailable': '文件不可读',
   'card.fileStatusDetail': '指令文件状态：{message}',
-  'card.saveFile': '保存到文件',
-  'card.reloadFile': '重新读取',
+  'card.saveFile': '保存',
+  'card.reloadFile': '重读',
 
   // 表单字段（PromptConfigForm）。
   'form.section.basic': '基础信息',
@@ -377,6 +377,7 @@ export const PROMPTS_ZH = {
   'persona.off': '关',
   'publication.pending': '已保存，运行发布尚未完成。',
   'publication.retry': '重试发布',
+  'publication.retryButton': '重试',
   'publication.done': '运行发布已完成',
   'persona.prefix.label': '前缀',
   'persona.prefix.aria': '人设前缀',
@@ -489,7 +490,7 @@ export const PROMPTS_EN: Record<keyof typeof PROMPTS_ZH, string> = {
   'card.chip.fileConflict': 'Changed on disk — reload required',
   'card.chip.fileUnavailable': 'File unreadable',
   'card.fileStatusDetail': 'Instruction file status: {message}',
-  'card.saveFile': 'Save to file',
+  'card.saveFile': 'Save',
   'card.reloadFile': 'Reload',
 
   'form.section.basic': 'Basics',
@@ -746,6 +747,7 @@ export const PROMPTS_EN: Record<keyof typeof PROMPTS_ZH, string> = {
   'persona.off': 'Off',
   'publication.pending': 'Saved; runtime publication is pending.',
   'publication.retry': 'Retry publication',
+  'publication.retryButton': 'Retry',
   'publication.done': 'Runtime publication completed',
   'persona.prefix.label': 'Prefix',
   'persona.prefix.aria': 'Persona prefix',

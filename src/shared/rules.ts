@@ -66,9 +66,13 @@ export interface RulesRequest {
   validateOnly?: boolean
   /** 只重新发布已提交定义，不能与规则修改或候选校验混用。 */
   refreshOnly?: boolean
+  /** 单条独立编辑仅返回目标规则与版本；省略时维持完整公开快照。 */
+  compactEdit?: true
 }
 
 export interface RuleEditorMeta {
+  /** 动态注入层的真实执行点；旧宿主未提供时画布只显示未知，不猜测次序。 */
+  injectionPoints?: Record<string, { channel: string; phase: string }>
   predicates: Array<{ kind: string; example: Record<string, unknown> }>
   composites: string[]
   actions: Array<{
@@ -80,6 +84,17 @@ export interface RuleEditorMeta {
     lifecycle?: 'event' | 'registration'
   }>
   waterfallPositions: string[]
+}
+
+/** 单条保存的紧凑确认，绑定原子定义字节版本和目标规则 CAS。 */
+export interface CompactRulesSnapshot extends PublicationFields {
+  rule: RuleDefinition
+  ruleRevision: string
+  definitionRevision: string
+  settingsRevision: string
+  variablesRevision: string
+  meta: RuleEditorMeta
+  createdRuleId?: string
 }
 
 export interface RulesSnapshot extends PublicationFields {

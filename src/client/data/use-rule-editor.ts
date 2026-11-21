@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import { bridgeCall } from './bridge-client.ts'
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { bridgeCall, type BridgeResult } from './bridge-client.ts'
+import type { RulesSnapshot } from '../../shared/rules.ts'
 import { createRuleEditor, getRulesDraft, type RuleEditor, type RulesDraft } from './rule-drafts.ts'
 import type { DraftsPort, RuleEditingPort } from './store-ports.ts'
 
@@ -10,19 +11,26 @@ export type RuleEditorStore = DraftsPort & RuleEditingPort
 
 /** 规则按模块共享草稿；读取集合＝装配集合里各模块自己的 id（没有「当前模块」特例）。 */
 export function useModuleRuleEditors(store: RuleEditorStore, moduleIds: readonly string[]): ModuleRuleEditor[] {
-  useSyncExternalStore(store.subscribeDrafts, store.getDraftRevision, store.getDraftRevision)
   const identity = JSON.stringify([...new Set(moduleIds)].filter(Boolean))
+  const ids = useMemo(() => JSON.parse(identity) as string[], [identity])
+  const subscribe = useCallback((listener: () => void) => {
+    const disposers = ids.map(id => store.subscribeDrafts(() => listener(), id))
+    return () => { for (const dispose of disposers) dispose() }
+  }, [ids, store.subscribeDrafts])
+  const snapshot = useCallback(() => ids.reduce((revision, id) => revision + store.getDraftRevision(id), 0), [ids, store.getDraftRevision])
+  useSyncExternalStore(subscribe, snapshot, snapshot)
   const active = useRef(moduleIds)
   active.current = moduleIds
   useEffect(() => { active.current = moduleIds; return () => { active.current = [] } }, [identity])
   const editors = useMemo(() => (JSON.parse(identity) as string[]).map(moduleId => {
     const draft = getRulesDraft(store.editorDrafts, moduleId)
     return { moduleId, draft, editor: createRuleEditor(moduleId, draft, {
-      request: body => bridgeCall('rules', body, moduleId),
+      request: body => bridgeCall('rules', body, moduleId) as Promise<BridgeResult<RulesSnapshot>>,
+      onUnconfirmed: store.reconcileRules,
       enqueue: (_id, task) => store.enqueueRuleTask(task),
-      isCurrent: () => active.current.includes(moduleId), changed: store.publishDrafts,
+      isCurrent: () => active.current.includes(moduleId), changed: () => store.publishDrafts(moduleId),
     }) }
-  }), [identity, store.editorDrafts, store.enqueueRuleTask, store.publishDrafts])
+  }), [identity, store.editorDrafts, store.enqueueRuleTask, store.publishDrafts, store.reconcileRules])
   // 未加载的草稿才重读：全局加载（改总闸、导入）会把 loaded 清成 false，届时按各模块主语重取一次。
   const pending = editors.filter(({ draft }) => !draft.loaded).map(({ moduleId }) => moduleId).join(',')
   useEffect(() => {

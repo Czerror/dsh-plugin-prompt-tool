@@ -1,41 +1,31 @@
-/* 参考官方管理列表的几何；只共享语义主题 token。 */
-.toolHeading { min-width: 0; }
-.toolHeadingDot { display: none; }
-.customToolList { margin-top: 10px; }
-.customToolsFields { min-width: 0; margin: 0; padding: 0; border: 0; }
-/* 只读边界：卡头操作区可被 fieldset 禁用，而卡片折叠按钮留在边界之外保持可点。 */
-.cardScopeActions { display: flex; align-items: center; gap: 8px; min-width: 0; border: 0; margin: 0; padding: 0; }
-.toolsPreviewPage { container: tool-preview / inline-size; display: flex; flex-direction: column; gap: 12px; width: 100%; min-width: 0; color: var(--dsw-alias-label-primary); }
-.toolGroup { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.toolGroup + .toolGroup { border-top: .5px solid var(--dsw-alias-border-l2); padding-top: 14px; }
-.toolGroupHeading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 36px; }
-.toolGroupToggle { display: flex; min-height: 28px; flex: 0 1 auto; align-items: center; gap: 8px; border: 0; padding: 4px 0; background: transparent; color: inherit; font: 500 13px/20px system-ui, sans-serif; cursor: pointer; }
-.toolGroupToggle > .toolChevron { transform: rotate(-90deg); }
-.toolGroupToggle[aria-expanded='true'] > .toolChevron { transform: none; }
-.toolGroupToggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
-.toolHeaderAction { margin-left: auto; min-width: 0; max-width: 100%; }
-.toolPresetControls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
-.toolPresetSelect { max-width: 100%; }
-.toolGroupBody { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.toolSurfaceControls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-.toolSurfaceHint, .toolSurfaceError { margin: 0; font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
-.toolSurfaceHint { color: var(--dsw-alias-label-secondary); }
-.toolSurfaceError { color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 80%, var(--dsw-alias-label-primary)); }
-.toolSurfaceCards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; list-style: none; margin: 0; padding: 0; }
-.toolSurfaceCard { min-width: 0; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-alias-bg-layer-3); }
-.toolSurfaceCard[data-open] { border-color: var(--dsw-alias-border-l3); }
-.toolCardToggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; border: 0; padding: 12px 14px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.toolCardToggle:hover, .toolSurfaceCard[data-open] > .toolCardToggle { background: var(--dsw-alias-interactive-bg-hover); }
-.toolCardToggle:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
-.toolCardTitle { min-width: 0; font: 500 13px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
-.toolCardTrailing { display: inline-flex; flex: none; align-items: center; gap: 7px; }
-.toolChevron { flex: none; color: var(--dsw-alias-label-tertiary); }
-.toolSurfaceCard[data-open] .toolChevron { transform: rotate(180deg); }
-.toolCardDetails { border-top: .5px solid var(--dsw-alias-border-l2); border-radius: 0 0 14px 14px; padding: 14px 16px; background: var(--dsw-alias-bg-layer-2); }
-.toolEntryValue { display: block; overflow-wrap: anywhere; font: 12px/19px ui-monospace, monospace; font-family: ui-monospace, monospace; }
-.toolFacts { display: grid; grid-template-columns: minmax(0, 70px) minmax(0, 1fr); gap: 6px 10px; margin: 8px 0 0; font: 12px/18px system-ui, sans-serif; }
-.toolFacts dt { color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
-.toolFacts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; color: var(--dsw-alias-label-secondary); }
-@media (prefers-reduced-motion: no-preference) { .toolChevron { transition: transform 150ms ease-in-out; } }
-@container tool-preview (max-width: 680px) { .toolSurfaceCards { grid-template-columns: minmax(0, 1fr); } }
-@media (forced-colors: active) { .toolSurfaceCard { border-color: CanvasText; } }
+.customToolsFields,
+.customToolForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.customToolsFields { margin-top: 8px; }
+.customToolList { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.customToolList .customToolChoice {
+  justify-content: space-between;
+  width: 100%;
+  height: auto;
+  padding: 6px 10px;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.customToolChoice[aria-pressed=true] {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.customToolForm {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding-top: 12px;
+}
+.customToolActions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.customToolToggle { display: flex; align-items: center; gap: 8px; }

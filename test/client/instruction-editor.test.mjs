@@ -1,7 +1,7 @@
 /**
  * 指令文件编辑 owner 的 seam 回归（`src/client/data/instruction-editor.ts`）。
  *
- * 这三条只在组合层成立：纯函数测试看不出「会话变了还在写」「冲突后没保留草稿」
+ * 这些行为只在组合层成立：纯函数测试看不出「会话变了还在写」「冲突后没保留草稿」
  * 「策略 409 后仍用旧 revision」。断言落在注入的 request 载荷与 owner 的公共读数上。
  */
 import test from 'node:test'
@@ -78,19 +78,38 @@ test('逐文件结果：一个成功一个冲突，成功文件立即确认基�
 })
 
 test('在途会话变化：不再发第二个请求，迟到响应不写回草稿', async () => {
-  let harness
-  harness = ready({
-    agentsFile: () => {
-      harness.setSession('session-b')
-      return { ok: true, value: { fileId: 'a', revision: 'rev-a2' } }
-    },
-  })
+  const first = Promise.withResolvers()
+  const harness = ready({ agentsFile: () => first.promise })
+  const saving = harness.editor.saveFiles()
+  harness.editor.patchText('a', 'A2')
+  const closing = harness.editor.saveFiles(['a'])
+  harness.setSession('session-b')
+  first.resolve({ ok: true, value: { fileId: 'a', revision: 'rev-a2' } })
 
-  assert.equal(await harness.editor.saveFiles(), false)
+  assert.deepEqual(await Promise.all([saving, closing]), [false, false])
 
   assert.equal(harness.calls.filter((call) => call.endpoint === 'agentsFile').length, 1, '切换后不继续提交批次')
   assert.equal(harness.editor.getPool().drafts.find((draft) => draft.fileId === 'a').revision, 'rev-a', '迟到成功不写入')
   assert.equal(harness.editor.getPool().drafts.find((draft) => draft.fileId === 'b').saving, true, '未发出的请求不会被误清忙碌态')
+})
+
+test('关闭编辑栏后只续写选中文件在途期间的新正文，采用确认后的文件版本', async () => {
+  const first = Promise.withResolvers()
+  const harness = ready({
+    agentsFile: body => body.expectedRevision === 'rev-a' ? first.promise : { ok: true, value: { fileId: 'a', revision: 'rev-a3' } },
+  })
+  const saving = harness.editor.saveFiles(['a'])
+  const unchangedBlur = harness.editor.saveFiles(['a'])
+  harness.editor.patchText('a', 'A2')
+  const closing = harness.editor.saveFiles(['a'])
+  const blur = harness.editor.saveFiles(['a'])
+  assert.equal(harness.calls.length, 1)
+  first.resolve({ ok: true, value: { fileId: 'a', revision: 'rev-a2' } })
+  assert.deepEqual(await Promise.all([saving, closing, blur, unchangedBlur]), [true, true, true, true])
+  assert.deepEqual(harness.calls.map(({ body }) => [body.fileId, body.expectedRevision, body.content]), [
+    ['a', 'rev-a', 'A1'], ['a', 'rev-a2', 'A2'],
+  ])
+  assert.equal(harness.editor.getPool().drafts.find(draft => draft.fileId === 'b').savedContent, 'B')
 })
 
 test('策略乐观并发：409 不更新快照，下一次请求仍带读取时的 revision', async () => {
