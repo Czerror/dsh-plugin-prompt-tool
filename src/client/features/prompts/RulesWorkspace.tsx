@@ -6,17 +6,17 @@ import { configIdentityKey } from '../../../shared/module-config-order.ts'
 import type { DraftsPort, InstructionFilesPort, ModuleActionsPort, ModuleFactsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { useModuleRuleEditors, type ModuleRuleEditor } from '../../data/use-rule-editor.ts'
-import { canEditModule, moduleDeclares, writableModuleTargets } from '../../data/module-subject.ts'
+import { canEditSubject, moduleDeclares, writableModuleTargets } from '../../data/module-subject.ts'
 import { useModuleConfigOrder } from '../../data/use-module-config-order.ts'
 import type { RuleDiagnosticTarget } from '../../data/rule-diagnostics-session.ts'
-import { configPositionKey, reorderToView, sameConfigPosition } from '../../data/prompt-config-order.ts'
+import { configPositionKey, swapConfigOrder } from '../../data/prompt-config-order.ts'
 import { hasRuleFields, rulesDirty } from '../../data/rule-drafts.ts'
 import { instructionFileIdOf } from '../../data/prompt-config-content.ts'
 import { ruleFacts, type RuleFacts } from '../../data/rule-facts.ts'
 import { isModuleSettingsCard, moduleSettingsLayers, toolSettingsDeclared, type LayerCardView } from '../../data/layer-cards.ts'
 import type { PromptConfigDraft } from '../../prompt-tool-types.ts'
 import type { PromptToolTranslate } from '../../locales.ts'
-import { CanvasChoiceContext, MenuSelect } from '../../ui/MenuSelect.tsx'
+import { CanvasChoiceContext } from '../../ui/MenuSelect.tsx'
 import { SearchInput } from '../../ui/SearchInput.tsx'
 import { Button } from '../../ui/Button.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
@@ -24,7 +24,7 @@ import { HintTooltip } from '../../ui/HintTooltip.tsx'
 import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { ModulePickerCards } from '../modules/ModuleSwitcher.tsx'
 import type { WorkspaceSidebar } from '../../app/workspace/workspace-browse-state.ts'
-import { IconChevronDownOutlineRegular, IconCloseFillRegular } from '../../ui/icons.tsx'
+import { IconCloseFillRegular } from '../../ui/icons.tsx'
 import { ActivityIcon, BlocksIcon, LibraryBigIcon, ListChecksIcon, PanelLeftCloseIcon } from './canvas-sidebar-icons.tsx'
 import { InstructionFileInspector } from './InstructionFileInspector.tsx'
 import { InstructionCanvas, type CanvasInstructionFile } from './RuleCanvas.tsx'
@@ -88,7 +88,7 @@ export interface RulesWorkspaceProps {
   store: ModuleFactsPort & DraftsPort & RuleEditingPort & InstructionFilesPort & NoticePort & ModuleActionsPort
   t: PromptToolTranslate
   renderDiagnostics?: () => ReactNode
-  browse?: { sidebar?: WorkspaceSidebar; filter: string; expanded?: string; allModules?: boolean; moduleFilter?: string; rulesScroll?: number; ruleNodes?: Map<string, string>; ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>; combination?: boolean; diagnosticTarget?: RuleDiagnosticTarget; publish?: () => void }
+  browse?: { sidebar?: WorkspaceSidebar; filter: string; expanded?: string; allModules?: boolean; moduleFilter?: string; rulesScroll?: number; ruleNodes?: Map<string, string>; ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>; diagnosticTarget?: RuleDiagnosticTarget; publish?: () => void }
   onRuleEdit?: () => void
   onReturnToDiagnostics?: () => void
   createdHidden?: boolean; onShowCreated?: () => void
@@ -134,10 +134,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const libraryToggle = useRef<HTMLButtonElement>(null)
   const [localAllModules, setAllModules] = useState(props.browse?.allModules ?? false)
   const [localModuleFilter, setModuleFilter] = useState(props.browse?.moduleFilter)
-  const [localCombination, setCombination] = useState(props.browse?.combination ?? false)
   const expanded = props.browse?.publish ? props.browse.expanded : localExpanded
   const allModules = props.browse?.publish ? props.browse.allModules === true : localAllModules
-  const combination = props.browse?.publish ? props.browse.combination === true : localCombination
   const { subscribeEnable, getEnableState, retryEnable } = store.moduleActions
   const { busy: modulePending, error: enableError, publication: enablePublication, refreshFailed: enableRefreshFailed } =
     useSyncExternalStore(subscribeEnable, getEnableState, getEnableState)
@@ -158,7 +156,16 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     .filter(module => moduleDeclares(modules, module.id, 'rules') !== false).map(module => module.id)
   // 排序请求生命周期归 useModuleConfigOrder（全仓唯一一份实现）；页面只提供「保存成功后要刷新哪些编辑器」。
   const ownersRef = useRef<ModuleRuleEditor[]>([])
-  const order = useModuleConfigOrder(t, async () => (await Promise.all(ownersRef.current.map(owner => owner.editor.load(true)))).every(Boolean))
+  const order = useModuleConfigOrder(t, async () => {
+    const activeIds = new Set(ownersRef.current.map(owner => owner.moduleId))
+    for (const [id, draft] of store.editorDrafts.rules) {
+      if (enabledIds.has(id) && !activeIds.has(id) && draft.loaded) {
+        draft.loaded = false
+        store.publishDrafts(id)
+      }
+    }
+    return (await Promise.all(ownersRef.current.filter(owner => enabledIds.has(owner.moduleId)).map(owner => owner.editor.load(true)))).every(Boolean)
+  })
   const owners = useModuleRuleEditors(store, ownerIds)
   const diagnosticOwner = owners.find(owner => owner.moduleId === diagnosticTarget?.moduleId)
   const diagnosticEntry = diagnosticOwner?.draft.entries.find(entry => !entry.deleted && (entry.previousId ?? entry.value.id) === diagnosticTarget?.ruleId)
@@ -168,10 +175,18 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const revisions = JSON.stringify(owners.map(owner => [owner.moduleId, owner.draft.revisions?.settings]))
   const [discard, setDiscard] = useState<string>()
   // 逐模块可编辑判据：判据来源是该模块自己的事实（/meta 的 modules[].facts）。
-  const readOnly = (id: string): boolean => !canEditModule(fields, store.meta.modules, id)
-  const orderBlocked = new Set(combination ? owners.filter(owner => enabledIds.has(owner.moduleId)
-    && (owner.draft.busy !== undefined || rulesDirty(owner.draft) || owner.draft.remote !== undefined)).map(owner => owner.moduleId) : [])
-  const sortDisabled = order.busy || orderBlocked.size > 0
+  const writableIds = useMemo(() => new Set(store.meta.modules?.filter(module =>
+    canEditSubject({ modulesEnabled: fields.modulesEnabled, moduleFacts: module.facts })).map(module => module.id)),
+  [fields.modulesEnabled, store.meta.modules])
+  const readOnly = (id: string): boolean => !writableIds.has(id)
+  const needsOrderBlock = (draft: ModuleRuleEditor['draft']): boolean =>
+    draft.busy !== undefined || draft.pending !== undefined || draft.remote !== undefined || rulesDirty(draft)
+  const orderBlocked = () => showList && enabledModules.some(({ id }) => {
+    const draft = store.editorDrafts.rules.get(id)
+    return draft !== undefined && needsOrderBlock(draft)
+  })
+  const blocked = useSyncExternalStore(store.subscribeDrafts, orderBlocked, orderBlocked)
+  const sortDisabled = order.busy || modulePending || blocked
   const query = (props.keyword ?? filter).trim().toLowerCase(), view = props.viewFilter ?? 'all'
   const changeFilter = (value: string): void => {
     if (props.browse?.publish) { props.browse.filter = value; props.browse.publish() }
@@ -184,17 +199,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   }
   useEffect(() => { order.reset() }, [enabledModules.map(module => module.id).join('\u0000'), order.reset])
   useEffect(() => { void order.load() }, [revisions, store.meta.modules, order.load])
-  /**
-   * 把源卡移到目标卡前/后：判据（`sameConfigPosition`）与重排（`reorderToView`）都在 data 层，
-   * 这里只算可移动集合、调一次保存。跨插入点的目标不在集合里，重排原样返回。
-   */
-  const saveOrder = async (sourceId: string, targetId: string, before: boolean): Promise<boolean> => {
+  const saveOrder = async (sourceId: string, targetId: string): Promise<boolean> => {
     const cards = order.configs
-    if (order.busy || sortDisabled || order.snapshot === undefined || sourceId === targetId) return false
-    const source = cards.find(card => card.id === sourceId), target = cards.find(card => card.id === targetId)
-    if (source === undefined || target === undefined || !sameConfigPosition(source, target)) return false
-    const movableIds = cards.filter(card => sameConfigPosition(card, source)).map(card => card.id)
-    const next = reorderToView(cards, sourceId, targetId, before, movableIds)
+    if (sortDisabled || order.snapshot === undefined || orderBlocked()) return false
+    const next = swapConfigOrder(cards, sourceId, targetId)
     if (next === cards) return false
     return order.save(next)
   }
@@ -203,23 +211,27 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (facts === undefined) { facts = ruleFacts(rule); factsOf.set(rule, facts) }
     return facts
   }
-  const orderByIdentity = new Map(order.snapshot?.entries.map(entry => [configIdentityKey(entry), entry]) ?? [])
-  const entries = owners.flatMap(owner => (owner.moduleId === pinnedModule
+  const orderByIdentity = new Map(order.snapshot?.entries.map((entry, index) => [configIdentityKey(entry), { entry, index }]) ?? [])
+  const rows = owners.flatMap(owner => (owner.moduleId === pinnedModule
     ? owner.draft.entries.filter(entry => entry.key === editingKey)
     : owner.draft.entries).map(entry => ({ ...owner, entry,
     key: configIdentityKey({ moduleId: owner.moduleId, configId: entry.key }),
     identity: configIdentityKey({ moduleId: owner.moduleId, configId: entry.previousId ?? entry.value.id }),
     facts: factsFor(entry.value),
   }))).filter(({ entry }) => !entry.deleted)
-    .filter(({ entry, moduleId: id, key, facts }) => expanded === key || diagnosticKey === key || (view === 'all' || view === 'context-activation' && facts.contextActivation || entry.value.layer === view)
-      && (!query || id.toLowerCase().includes(query) || searchableRule(entry.value).includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
-    .sort((a, b) => (orderByIdentity.get(a.identity)?.sequence ?? Number.MAX_SAFE_INTEGER) - (orderByIdentity.get(b.identity)?.sequence ?? Number.MAX_SAFE_INTEGER))
-  const settingsModule = !combination && settingsSelection?.owner === store.editorDrafts && props.renderModuleSettings
+  const visibleRows = rows.filter(({ entry, moduleId: id, facts }) =>
+    (view === 'all' || view === 'context-activation' && facts.contextActivation || entry.value.layer === view)
+    && (!query || id.toLowerCase().includes(query) || searchableRule(entry.value).includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
+  const entries = [...visibleRows]
+  const diagnosticRow = rows.find(row => row.key === diagnosticKey)
+  if (diagnosticRow && !entries.includes(diagnosticRow)) entries.push(diagnosticRow)
+  entries.sort((a, b) => (orderByIdentity.get(a.identity)?.index ?? Number.MAX_SAFE_INTEGER) - (orderByIdentity.get(b.identity)?.index ?? Number.MAX_SAFE_INTEGER))
+  const settingsModule = settingsSelection?.owner === store.editorDrafts && props.renderModuleSettings
     ? enabledModules.find(module => module.id === settingsSelection.moduleId && (!moduleFilter || module.id === moduleFilter)
       && module.broken === undefined && module.renderable !== false
       && moduleSettingsLayers(module).has(settingsSelection.layer)) : undefined
   const activeSettings = settingsModule === undefined ? undefined : settingsSelection
-  const settingOwners = showList && !combination ? new Map(owners.map(owner => [owner.moduleId, owner])) : undefined
+  const settingOwners = showList ? new Map(owners.map(owner => [owner.moduleId, owner])) : undefined
   const moduleSettings = settingOwners === undefined || props.renderModuleSettings === undefined ? [] : enabledModules.flatMap(module => {
     if (moduleFilter && module.id !== moduleFilter) return []
     if (module.broken !== undefined || module.renderable === false) return []
@@ -238,7 +250,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   useLayoutEffect(() => {
     if (activeSettings) settingsHeading.current?.focus({ preventScroll: true })
   }, [activeSettings])
-  const batchEntries = pinnedModule === undefined ? entries : entries.filter(row => row.moduleId !== pinnedModule)
+  const batchEntries = pinnedModule === undefined ? visibleRows : visibleRows.filter(row => row.moduleId !== pinnedModule)
   const batchOwners = new Set(batchEntries.map(row => row.editor))
   const batchDisabled = batchEntries.length === 0 || owners.some(({ moduleId: id, draft, editor }) => batchOwners.has(editor)
     && (readOnly(id) || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined))
@@ -250,10 +262,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     props.onRuleEdit?.()
     for (const editor of batchOwners) void editor.submit()
   }
-  const visibleIdentities = new Set(batchEntries.map(row => row.identity))
+  const visibleIdentities = new Set(showList ? batchEntries.map(row => row.identity) : [])
   const peersByPosition = new Map<string, ModuleConfigOrderEntry[]>()
   const peerIndex = new Map<string, number>()
-  if (combination) for (const item of order.snapshot?.entries ?? []) {
+  for (const item of showList ? order.snapshot?.entries ?? [] : []) {
     const identity = configIdentityKey(item)
     if (!visibleIdentities.has(identity)) continue
     const position = configPositionKey(item)
@@ -262,27 +274,26 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     peers.push(item)
     peersByPosition.set(position, peers)
   }
-  const moveButtons = (entry: ModuleConfigOrderEntry): ReactNode => {
-    const identity = configIdentityKey(entry)
-    const peers = peersByPosition.get(configPositionKey(entry)) ?? [], index = peerIndex.get(identity) ?? -1
-    const pinned = peers.length <= 1
-    const id = `${entry.moduleId} / ${entry.configId}`
-    return <span className={css.row}>
-      {[-1, 1].map(delta => <HintTooltip key={delta} label={pinned ? t('rules.orderPinnedHint') : t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id })}>
-        <Button variant="outline" shape="pill" icon aria-label={t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id })}
-          aria-disabled={sortDisabled || peers[index + delta] === undefined}
-          onClick={event => {
-            const target = peers[index + delta]
-            if (sortDisabled || target === undefined) return
-            const trigger = event.currentTarget
-            setOrderFeedback('')
-            void saveOrder(identity, configIdentityKey(target), delta < 0).then(saved => {
-              if (saved) setOrderFeedback(t('rules.orderSaved', { id }))
-              requestAnimationFrame(() => { if (document.activeElement === document.body) trigger.focus({ preventScroll: true }) })
-            })
-          }}>{delta < 0 ? '↑' : '↓'}</Button>
-      </HintTooltip>)}
-    </span>
+  const moveButtons = (identity: string, entry: ModuleConfigOrderEntry | undefined, id: string): ReactNode => {
+    const peers = entry === undefined ? undefined : peersByPosition.get(configPositionKey(entry))
+    const index = peerIndex.get(identity)
+    return [-1, 1].map(delta => {
+      const target = index === undefined ? undefined : peers?.[index + delta]
+      const label = t(delta < 0 ? 'rules.moveUp' : 'rules.moveDown', { id })
+      const unavailable = sortDisabled || entry === undefined || target === undefined || readOnly(entry.moduleId) || readOnly(target.moduleId)
+      return <button key={delta} type="button" className={css.ruleMove} aria-label={label} title={label}
+        aria-disabled={unavailable} tabIndex={unavailable ? -1 : undefined}
+        onClick={event => {
+          event.stopPropagation()
+          if (unavailable) return
+          const trigger = event.currentTarget
+          setOrderFeedback('')
+          void saveOrder(identity, configIdentityKey(target)).then(saved => {
+            if (saved) setOrderFeedback(t('rules.orderSaved', { id }))
+            requestAnimationFrame(() => { if (document.activeElement === document.body) trigger.focus({ preventScroll: true }) })
+          })
+        }}>{delta < 0 ? '↑' : '↓'}</button>
+    })
   }
   const duplicate = ({ moduleId, draft, editor }: ModuleRuleEditor, rule: RuleDefinition): void => {
     let id = rule.id + '-copy', suffix = 2
@@ -347,9 +358,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   }
   const fileInspector = activeFile && <InstructionFileInspector key={activeFileId} store={store} t={t} config={activeFile}
     leaveSave={saveInstruction} renderInstructionSettings={props.renderInstructionSettings} onClose={closeInstruction} />
-  const selected = entries.find(row => row.key === expanded)
+  const selected = rows.find(row => row.key === expanded)
   useEffect(() => {
-    if (expanded === undefined && !combination && entries[0]) select(entries[0].key)
+    if (expanded === undefined && entries[0]) select(entries[0].key)
   })
   const list = useRef<HTMLUListElement>(null)
   const selectedButton = useRef<HTMLButtonElement>(null)
@@ -384,13 +395,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       focus.current = undefined
     }
   })
-  const changeCombination = (next: boolean): void => {
-    if (next) closeSettings(false)
-    if (props.browse) { props.browse.combination = next; if (next) props.browse.moduleFilter = undefined; props.browse.publish?.() }
-    if (!props.browse?.publish) setCombination(next)
-    if (next) setModuleFilter(undefined)
-    if (next && !showList) setSidebar('rules')
-  }
   const changeModuleScope = (value: string, ruleKey?: string): void => {
     closeRightEditor()
     const nextModule = value.startsWith('module:') ? value.slice('module:'.length) : undefined
@@ -404,13 +408,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (props.browse) {
       props.browse.moduleFilter = nextModule
       props.browse.allModules = nextAll
-      props.browse.combination = false
       props.browse.sidebar = 'rules'
     }
     if (!props.browse?.publish) {
       setModuleFilter(nextModule)
       setAllModules(nextAll)
-      setCombination(false)
       setLocalSidebar('rules')
     }
     if (nextModule !== undefined && ruleKey !== undefined) {
@@ -422,13 +424,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (next === sidebar) return
     if (props.browse) {
       props.browse.sidebar = next
-      if (next !== 'rules') props.browse.combination = false
       props.browse.publish?.()
     }
-    if (!props.browse?.publish) {
-      setLocalSidebar(next)
-      if (next !== 'rules') setCombination(false)
-    }
+    if (!props.browse?.publish) setLocalSidebar(next)
   }
   const openList = (): void => {
     saveSelected.current?.()
@@ -532,25 +530,30 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     <div id={listPaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={!showList}>
     <div className={css.ruleListHeader}>
       <h2 ref={workspaceHeading} tabIndex={-1} className={css.workspaceHeading}>{t('rules.list')}</h2>
-      <Button shape="pill" variant="outline" title={t('rules.combination')} aria-pressed={combination} onClick={() => changeCombination(!combination)}>{t('canvas.combine')}</Button>
+      {create.toolbar}
       <Button icon aria-label={t('rules.closePanel', { name: t('rules.list') })}
         onClick={event => { event.stopPropagation(); closeList(true) }}><IconCloseFillRegular /></Button>
     </div>
-    <div className={ui.listFilterRow} data-module-toolbar>
+    <div className={css.ruleSearchBar}>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
-      {!combination && create.toolbar}
-      <details className={css.listOptions}>
-        <summary>{t('rules.listOptions')}{view !== 'all' && ' · ' + (view === 'context-activation' ? t('rules.worldBook') : translateLabel(t, LAYER_LABEL_KEYS, view))}</summary>
-        <div className={css.browseScopes} role="group" aria-label={t('rules.browseScope')}>
-          <button type="button" title={t('rules.participatingModules')} aria-pressed={!moduleFilter && !allModules} onClick={() => changeModuleScope('active')}>{t('canvas.participating')}</button>
-          <button type="button" aria-label={t('rules.allModules')} aria-pressed={!moduleFilter && allModules} onClick={() => changeModuleScope('all')}>{t('configs.view.all')}</button>
-        </div>
-        <MenuSelect compact className={css.control} ariaLabel={t('rules.layerFilter')} value={view} options={[{ value: 'all', label: t('rules.all') }, { value: 'context-activation', label: t('rules.worldBook') }, ...store.meta.layers.map(layer => ({ value: layer, label: translateLabel(t, LAYER_LABEL_KEYS, layer) }))]} onChange={value => props.onViewFilterChange?.(value)} />
-        <span className={ui.batchControls}>
-          <Button shape="pill" variant="outline" data-batch="enable" disabled={batchDisabled} onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</Button>
-          <Button shape="pill" variant="outline" data-danger data-batch="disable" disabled={batchDisabled} onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible')}</Button>
-        </span>
-      </details>
+      <div className={css.ruleBatchActions} role="group" aria-label={t('rules.batchActions')}>
+        <button type="button" data-batch="enable" disabled={batchDisabled} aria-label={t('rules.enableVisible')} title={t('rules.enableVisible')}
+          onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</button>
+        <button type="button" data-batch="disable" disabled={batchDisabled} aria-label={t('rules.disableVisible')} title={t('rules.disableVisible')}
+          onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible')}</button>
+      </div>
+    </div>
+    <div className={css.ruleFilters}>
+      <select className={css.ruleLayerFilter} aria-label={t('rules.layerFilter')} value={view}
+        onChange={event => props.onViewFilterChange?.(event.currentTarget.value)}>
+        <option value="all">{t('rules.all')}</option>
+        <option value="context-activation">{t('rules.worldBook')}</option>
+        {store.meta.layers.map(layer => <option key={layer} value={layer}>{translateLabel(t, LAYER_LABEL_KEYS, layer)}</option>)}
+      </select>
+      <div className={css.browseScopes} role="group" aria-label={t('rules.browseScope')}>
+        <button type="button" title={t('rules.participatingModules')} aria-pressed={!moduleFilter && !allModules} onClick={() => changeModuleScope('active')}>{t('canvas.participating')}</button>
+        <button type="button" aria-label={t('rules.allModules')} aria-pressed={!moduleFilter && allModules} onClick={() => changeModuleScope('all')}>{t('configs.view.all')}</button>
+      </div>
     </div>
     {owners.map(({ moduleId: id, draft, editor }) => {
       return (draft.error || hasRuleFields(draft)) && <div key={id}>
@@ -566,53 +569,45 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       </div>
     })}
     {order.error && <p role="alert" className={css.error}>{order.error}</p>}
-    {combination && <>
-      <div role="status">{orderFeedback}</div>
-      <PublicationNotice publication={order.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')} retryButtonLabel={t('publication.retryButton')}
-        onRetry={() => { void order.retryPublication() }} />
-    </>}
+    <div role="status" className={ui.visuallyHidden}>{orderFeedback}</div>
+    <PublicationNotice publication={order.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')} retryButtonLabel={t('publication.retryButton')}
+      disabled={order.busy} onRetry={() => { void order.retryPublication() }} />
     {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
     <ul className={css.ruleList} ref={list} onScroll={event => { if (props.browse) props.browse.rulesScroll = event.currentTarget.scrollTop }}>
     {entries.map(row => {
         const { entry, moduleId: id, key, draft, editor } = row
-        const orderEntry = orderByIdentity.get(row.identity)
+        const orderEntry = orderByIdentity.get(row.identity)?.entry
         const pendingWinner = draft.activationPending === entry.value.id
         const selectableWinner = enabledIds.has(id) && entry.value.groupScope === 'cross-module' && entry.value.exclusive === true && Boolean(entry.value.group)
         const name = entry.value.name || entry.value.id
         return <li key={key} data-module-id={id}>
-          <button type="button" title={name} aria-label={t('rules.editNamed', { name })} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
+          <button type="button" title={`${name} · ${id}`} aria-label={t('rules.editNamed', { name })} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
             onClick={event => {
               closeRightEditor()
               if (key !== expanded) saveSelected.current?.()
-              if (combination) changeCombination(false)
               lastButton.current = event.currentTarget
               focus.current = 'detail'
               select(key)
             }}>
             <strong>{name}</strong>
-            {!moduleFilter && <small>{id}</small>}
           </button>
-          <details className={css.ruleDisclosure}>
-            <summary aria-label={t('rules.ruleDetails', { name })} title={t('rules.ruleDetails', { name })}><IconChevronDownOutlineRegular /></summary>
-            <small>{id} · {entry.value.id} · {entry.value.layer === undefined ? t('rules.module') : translateLabel(t, LAYER_LABEL_KEYS, entry.value.layer)}
-              {!enabledIds.has(id) ? ' · ' + t('rules.moduleInactive') : entry.value.enabled === false ? ' · ' + t('rules.identity.disabled') : ''}
-              {combination && orderEntry && ' · ' + t('rules.combinationSequence', { sequence: orderEntry.sequence })}</small>
-          </details>
-          {combination && id !== pinnedModule && orderEntry && moveButtons(orderEntry)}
-          {combination && selectableWinner && <Button shape="pill" variant="outline" disabled={readOnly(id) || modulePending || order.busy || orderBlocked.has(id)}
+          {showList && selectableWinner && <button type="button" className={css.ruleWinner}
+            disabled={readOnly(id) || modulePending || order.busy || (pendingWinner ? draft.busy !== undefined : needsOrderBlock(draft))}
             aria-label={pendingWinner ? t('rules.resumeWinner') : t('rules.selectWinner', { id: entry.value.id })}
             title={pendingWinner ? t('rules.resumeWinner') : t('rules.selectWinner', { id: entry.value.id })}
-            onClick={() => {
+            onClick={event => {
+              event.stopPropagation()
               const rule = entry.value
               if (!pendingWinner && rule.enabled === false) editor.patch(entry.key, { ...rule, enabled: true })
               const result = pendingWinner ? editor.retry() : editor.submit({ activateRuleId: rule.id })
               void result.then(() => refreshExclusivePeers(id, rule))
-            }}>{pendingWinner ? t('rules.resumeWinnerButton') : t('rules.selectWinnerButton')}</Button>}
+            }}>{pendingWinner ? '↻' : '✓'}</button>}
+          {showList && moveButtons(row.identity, orderEntry, `${id} / ${name}`)}
         </li>
       })}
     </ul>
     {entries.length === 0 && moduleSettings.length === 0 && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}
-    {!combination && <>{props.beforeCards}
+    {props.beforeCards}
     {moduleSettings.length > 0 && <ul className={css.moduleSettingsList}>
       {moduleSettings.flatMap(item => item.layers.map(layer => <li key={configIdentityKey({ moduleId: item.moduleId, configId: layer })}>
         <button className={css.ruleChoice} type="button" data-open-module-settings
@@ -626,7 +621,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
           <strong>{item.name}</strong><small>{translateLabel(t, LAYER_LABEL_KEYS, layer)}</small>
         </button>
       </li>))}
-    </ul>}</>}
+    </ul>}
     </div>
     {!selected && files.length > 0 && <div className={css.ruleDetail}>
       <InstructionCanvas t={t} files={files} activeId={activeFileId} onSelect={openInstruction} onPaneClick={closeRightEditor} />

@@ -12,7 +12,6 @@ export interface ConfigPageBrowse {
   rulesScroll?: number
   ruleNodes?: Map<string, string>
   ruleCanvas?: Map<string, { scale: number; x: number; y: number; positions: Record<string, { x: number; y: number }> }>
-  combination?: boolean
   diagnosticTarget?: RuleDiagnosticTarget
   sidebar?: WorkspaceSidebar
   publish(): void

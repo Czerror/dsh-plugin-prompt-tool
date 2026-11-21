@@ -3,18 +3,14 @@
 .workspaceContainer { container: rule-workspace / inline-size; min-width: 0; block-size: 100%; min-block-size: 0; }
 .ruleWorkspace[data-canvas-workspace] { position: relative; display: flex; block-size: 100%; min-block-size: 0; background: radial-gradient(#343b486b .8px, transparent .8px) 0 0 / 20px 20px #0e1116; color: #e7edf6; }
 .moduleScope { position: absolute; z-index: 11; inset: 12px auto auto 12px; display: flex; align-items: center; gap: 2px; max-inline-size: calc(100% - 24px); padding: 4px; border: 1px solid #363f4d; border-radius: 10px; background: #171c24; }
-.moduleScope > button, .browseScopes button { min-block-size: 34px; padding-inline: 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #c7d0dc; cursor: pointer; font: inherit; }
-.moduleScope > button[aria-pressed=true], .browseScopes button[aria-pressed=true] { color: #eaf1fd; border-color: #445879; background: #273547; }
-.moduleScope > button:hover:not(:disabled), .browseScopes button:hover { background: #263141; }
+.moduleScope > button { min-block-size: 34px; padding-inline: 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #c7d0dc; cursor: pointer; font: inherit; }
+.moduleScope > button[aria-pressed=true] { color: #eaf1fd; border-color: #445879; background: #273547; }
+.moduleScope > button:hover:not(:disabled) { background: #263141; }
 .moduleScope > button { position: relative; display: grid; place-items: center; inline-size: 34px; padding: 0; }
 .moduleScope > button:disabled { cursor: not-allowed; opacity: .4; }
 .moduleScope > button:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 1px; }
-.browseScopes { display: flex; gap: 4px; align-items: center; }
-.browseScopes button { min-block-size: 30px; }
 .modulePickerFeedback { overflow-wrap: anywhere; }
 .modulePickerIndicator { position: absolute; inset: 1px 2px auto auto; padding-inline: 2px; border-radius: 3px; background: #171c24; color: #f0c480; font: 700 10px/12px system-ui, sans-serif; }
-.ruleListPane :global([data-module-toolbar]) { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0; border: 0; border-radius: 0; background: transparent; }
-.ruleListPane :global([data-module-toolbar]) > * { min-block-size: 0; block-size: auto; }
 .emptyCanvas { display: grid; align-content: center; justify-items: center; flex: 1; min-inline-size: 0; padding: 60px 16px 16px; text-align: center; }
 .workspaceContainer:has(.canvasSurface) { display: flex; flex-direction: column; }
 .ruleWorkspace[data-rule-open], .ruleDetail, .canvasSurface, .canvasSurface > .body, .canvasSurface [data-config-panel=rule], .canvasSurface .ruleCanvas, .canvasSurface .steps, .canvasSurface .canvasLayout { flex: 1; min-block-size: 0; block-size: 100%; }
@@ -87,7 +83,9 @@
 }
 @container rule-workspace (width >= 56rem) {
   .canvasSurface .ruleCanvas[data-node-open] > .steps { display: flex; }
-  .ruleWorkspace[data-list-open] > .ruleDetail { margin-inline-start: calc(17rem + 24px); }
+  .ruleWorkspace:has(.ruleListPane:not([hidden]) > .ruleList) { --rule-list-width: clamp(17rem, 30cqi, 22rem); }
+  .ruleListPane:has(> .ruleList):not([hidden]) { inline-size: var(--rule-list-width); }
+  .ruleWorkspace[data-list-open] > .ruleDetail { margin-inline-start: calc(var(--rule-list-width, 17rem) + 24px); }
   .ruleListPane:not([hidden]) { inset-block-start: 68px; }
 }
 @container rule-workspace (width >= 64rem) {
@@ -100,6 +98,7 @@
   .commandCluster { justify-content: flex-start; margin-inline-start: 0; }
 }
 @container rule-workspace (width < 30rem) {
+  .ruleListPane:has(> .ruleList):not([hidden]) { inset-inline-end: 8px; }
   /* Leave a readable strip of canvas above the editor and keep its fit control reachable. */
   .ruleWorkspace { --pt-inspector-top: calc(var(--pt-canvas-top, 68px) + clamp(0px, (100% - var(--pt-canvas-top, 68px) - 64px) / 3, 9rem)); }
   .ruleWorkspace :global([data-instruction-inspector]), .ruleWorkspace .moduleSettingsInspector,
@@ -121,23 +120,40 @@
 .ruleDetail > button { align-self: flex-start; }
 .workspaceHeading { margin: 0; font: 600 14px/20px system-ui, sans-serif; overflow-wrap: anywhere; }
 .ruleListHeader { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.listOptions { min-inline-size: 0; }
-.listOptions summary { padding: 5px 0; color: #b5c2d4; cursor: pointer; }
-.listOptions[open] > :not(summary) { margin-block: 4px; }
+.ruleListHeader .workspaceHeading { flex: 1; }
+.ruleListPane:has(> .ruleList) { gap: 6px; }
+.ruleSearchBar, .ruleFilters { display: flex; align-items: center; gap: 6px; }
+.ruleSearchBar > :first-child, .ruleLayerFilter { flex: 1; min-inline-size: 0; }
+.ruleSearchBar input[type=search] { height: 30px; padding-inline-end: 8px; border-radius: 6px; }
+.browseScopes, .ruleBatchActions { display: inline-flex; align-items: center; flex: none; gap: 1px; }
+.browseScopes, .ruleLayerFilter { box-sizing: border-box; min-block-size: 28px; border: 1px solid #40516d; border-radius: 6px; color: #dfebff; background: #1b2638; }
+.browseScopes { padding: 1px; }
+.browseScopes button, .ruleBatchActions button { min-block-size: 24px; padding: 2px 7px; border: 0; border-radius: 4px; background: transparent; color: #bbcae2; font: 500 12px/18px system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
+.browseScopes button:hover, .ruleBatchActions button:hover:not(:disabled) { background: #2f425e; }
+.browseScopes button[aria-pressed=true] { background: #a9c2ea; color: #152338; }
+.ruleBatchActions button:disabled { opacity: .42; cursor: default; }
+.ruleLayerFilter { padding-inline: 6px; font: 500 12px/18px system-ui, sans-serif; color-scheme: dark; }
+.ruleFilters :focus-visible, .ruleBatchActions button:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 1px; }
 .ruleList { display: flex; flex: 0 0 auto; flex-direction: column; gap: 4px; margin: 0; padding: 2px; max-block-size: 60vh; overflow: auto; list-style: none; }
-.ruleList > li { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
-.ruleDisclosure[open] { flex-basis: 100%; }
-.ruleDisclosure summary { position: absolute; inset: 0 0 auto auto; display: grid; place-items: center; inline-size: 34px; min-block-size: 36px; border-radius: 6px; color: #b5c2d4; cursor: pointer; list-style: none; }
-.ruleDisclosure summary::-webkit-details-marker { display: none; }
-.ruleDisclosure[open] summary svg { rotate: 180deg; }
-.ruleDisclosure small { display: block; padding: 0 8px 8px; color: #b5c2d4; overflow-wrap: anywhere; }
-.ruleChoice { display: grid; align-content: center; inline-size: calc(100% - 38px); min-block-size: 36px; padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; text-align: start; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.ruleList > li { display: flex; align-items: center; min-inline-size: 0; padding-inline-end: 3px; border: 1px solid #34445e; border-radius: 6px; background: #1c283a; }
+.ruleList > li:hover { border-color: #4d6282; }
+.ruleList > li:has(.ruleChoice[aria-current]) { border-color: #7a9ed0; background: #293e5c; }
+.ruleChoice { display: grid; align-content: center; min-inline-size: 0; min-block-size: 36px; padding: 5px 8px; border: 1px solid transparent; border-radius: 5px; text-align: start; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.ruleList .ruleChoice { flex: 1; min-block-size: 32px; padding-block: 2px; }
+.ruleList .ruleChoice strong { font-size: 14px; line-height: 20px; font-weight: 600; }
 .ruleChoice strong, .ruleChoice small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ruleChoice small { color: #b5c2d4; }
-.ruleChoice:hover, .ruleDisclosure summary:hover { background: #222c38; }
-.ruleChoice[aria-current] { background: #26344a; border-color: #445879; }
-.ruleChoice:focus-visible, .ruleDisclosure summary:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }
-.ruleList button[aria-disabled=true] { opacity: .6; cursor: default; }
+.moduleSettingsList .ruleChoice:hover { background: #222c38; }
+.moduleSettingsList .ruleChoice[aria-current] { background: #26344a; border-color: #445879; }
+.ruleMove, .ruleWinner { display: grid; place-items: center; flex: none; inline-size: 27px; block-size: 28px; padding: 0; border: 0; border-radius: 4px; color: #c1d1e9; background: transparent; font: inherit; cursor: pointer; }
+.ruleList :is(.ruleMove, .ruleWinner):hover:not(:disabled, [aria-disabled=true]) { background: #374e70; color: #fff; }
+.ruleChoice:focus-visible, .ruleMove:focus-visible, .ruleWinner:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }
+.ruleList button:is(:disabled, [aria-disabled=true]) { opacity: .42; cursor: default; }
+@media (pointer: coarse) {
+  .ruleFilters :is(select, button), .ruleBatchActions button { min-block-size: 44px; min-inline-size: 44px; }
+  .ruleList :is(.ruleChoice, .ruleMove, .ruleWinner) { min-block-size: 44px; }
+  .ruleMove, .ruleWinner { inline-size: 44px; }
+}
 .ruleCanvas { display: grid; position: relative; gap: 12px; min-width: 0; }
 .ruleCanvas[data-node-open] > .steps, .ruleCanvas:not([data-node-open]) > .ruleProperties { display: none; }
 .ruleProperties { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
