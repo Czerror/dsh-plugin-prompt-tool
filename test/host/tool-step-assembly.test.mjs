@@ -44,7 +44,7 @@ async function harness(t, rules = [{ id: 'narrow', then: [{ id: 'allow', kind: '
     execute: () => { calls++; return { name } },
   }, { when: () => { conditions++; return name !== 'unavailable' } }))
   let services
-  await agent.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) { services = { tools: ctx.tools, prompt: ctx.systemPrompt } } })
+  await agent.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) { services = { tools: ctx.tools, get prompt() { return ctx.systemPrompt } } } })
   const signal = new AbortController().signal
   const context = { agent, scope: agent, signal, modelSelection: { model: 'deepseek-pro' } }
   const execute = (toolSet, name = 'keep', tools = services.tools) => tools.execute({ agent, signal, toolSet,
@@ -119,12 +119,42 @@ test('pending 拒绝公开批次和原服务 guard，失败或取消关闭一次
   await assert.rejects(h.execute(toolSet), { code: 'TOOL_STEP_UNAVAILABLE' })
   assert.equal((await h.execute(original, 'keep', h.rawTools)).results[0].result.isError, true)
   assert.equal(h.counts().calls, 0)
-  let presentations = 0
-  const off = h.root.on('system-prompt/assemble', async (_assembly, _context, next) => { presentations++; return next() })
-  const first = await h.services.prompt.assemble({ ...h.context, toolSet })
+  const scope = {}
+  const marker = Symbol('fixture extension')
+  createScope(h.agent.ctx, scope)
+  const presented = []
+  const off = h.root.on('system-prompt/assemble', async (_assembly, context, next) => {
+    presented.push(context)
+    return next()
+  }, { global: true })
+  const wrappedAssemble = h.services.prompt.assemble
+  let wrappers = 0, decoratedSignal
+  Object.defineProperty(h.services.prompt, 'assemble', { configurable: true, async value(context) {
+    wrappers++
+    decoratedSignal = AbortSignal.any([context.signal])
+    let timer
+    try {
+      const assembled = await Promise.race([
+        wrappedAssemble({ ...context, scope, toolSet: context.toolSet === undefined ? undefined : original, signal: decoratedSignal, [marker]: 'decorated' }),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('装配包装等待超时')), 1000) }),
+      ])
+      return { ...assembled, sections: [...assembled.sections, { name: 'fixture.decorated', text: 'preserved' }] }
+    } finally { clearTimeout(timer) }
+  } })
+  const [first, concurrent] = await Promise.all([
+    h.services.prompt.assemble({ ...h.context, toolSet }),
+    h.services.prompt.assemble({ ...h.context, toolSet: original }),
+  ])
+  assert.equal(concurrent, first)
+  assert.equal(wrappers, 1)
+  assert.deepEqual(first.sections.at(-1), { name: 'fixture.decorated', text: 'preserved' })
+  assert.equal(presented[0].scope, scope)
+  assert.equal(presented[0].signal, decoratedSignal)
+  assert.equal(presented[0][marker], 'decorated')
+  assert.equal(presented[0].toolSet, toolSet)
   h.context.modelSelection.model = 'deepseek-flash'
   assert.equal(await h.services.prompt.assemble({ ...h.context, toolSet: original }), first)
-  assert.equal(presentations, 1)
+  assert.equal(presented.length, 1)
   assert.deepEqual((await h.execute(toolSet)).results[0].result.value, { name: 'keep' })
   const outsider = { id: 'outsider', session: { header: {} } }
   outsider.ctx = createScope(h.root, outsider).ctx
@@ -138,6 +168,10 @@ test('pending 拒绝公开批次和原服务 guard，失败或取消关闭一次
   toolSet.dispose(); toolSet.dispose()
   assert.equal(released, 1)
   await assert.rejects(h.services.prompt.assemble({ ...h.context, toolSet }), { code: 'TOOL_STEP_UNAVAILABLE' })
+  assert.deepEqual((await h.services.prompt.assemble(h.context)).sections.at(-1), { name: 'fixture.decorated', text: 'preserved' })
+  assert.equal(presented[1].scope, scope)
+  assert.equal(presented[1].signal, decoratedSignal)
+  assert.equal(presented.length, 2)
   off()
   const failed = await h.services.tools.resolve(h.context)
   const fail = h.root.on('system-prompt/assemble', () => { throw new Error('assembly failed') })
