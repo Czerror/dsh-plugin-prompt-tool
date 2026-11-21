@@ -86,7 +86,8 @@ test('同名包内模板回退只接受缺失资产，用户覆盖和包内变�
   const dir = fixture(id, source(id, { rules: [rule('hello', 'SOURCE', { templateFile: './assets/notice.json' })] }))
   const packaged = join(packageRoot, id)
   mkdirSync(join(packaged, 'assets'), { recursive: true })
-  writeFileSync(join(packaged, 'module.yml'), JSON.stringify({ id }))
+  const packageDefinition = join(packaged, 'module.yml')
+  writeFileSync(packageDefinition, JSON.stringify({ id }))
   const packageAsset = join(packaged, 'assets', 'notice.json')
   writeFileSync(packageAsset, '"PACKAGE"')
 
@@ -100,6 +101,11 @@ test('同名包内模板回退只接受缺失资产，用户覆盖和包内变�
   try {
     const fallback = ensureModuleSlices(dir)
     assertModuleDefinitionFormat(dir)
+    writeFileSync(packageDefinition, JSON.stringify({ id: 'other-module' }))
+    assert.throws(() => validateModuleDefinitionText(dir, fallback.text), /身份不匹配/)
+    assert.throws(() => assertModuleDefinitionFormat(dir), /身份不匹配/)
+    assert.throws(() => loadModuleDefinition(dir), /身份不匹配/)
+    writeFileSync(packageDefinition, JSON.stringify({ id }))
     mkdirSync(join(dir, 'assets'))
     const localAsset = join(dir, 'assets', 'notice.json')
     writeFileSync(localAsset, '')
@@ -108,8 +114,10 @@ test('同名包内模板回退只接受缺失资产，用户覆盖和包内变�
     assert.throws(() => loadModuleDefinition(dir), /not valid JSON/)
 
     writeFileSync(localAsset, '"USER"')
+    writeFileSync(packageDefinition, JSON.stringify({ id: 'other-module' }))
     const override = ensureModuleSlices(dir)
     assertModuleDefinitionFormat(dir)
+    writeFileSync(packageDefinition, JSON.stringify({ id }))
     rmSync(localAsset)
     assert.throws(() => validateModuleDefinitionText(dir, override.text, {}, override), { code: 'rules-conflict' })
     ensureModuleSlices(dir)
