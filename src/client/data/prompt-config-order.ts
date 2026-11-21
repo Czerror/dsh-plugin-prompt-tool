@@ -36,30 +36,15 @@ type SortableConfig = Pick<PromptConfigDraft, 'layer' | 'position'>
 export const configPositionKey = (config: SortableConfig): string => JSON.stringify([layerOf(config), config.position ?? 'after-user'])
 export const sameConfigPosition = (left: SortableConfig, right: SortableConfig): boolean => configPositionKey(left) === configPositionKey(right)
 
-/**
- * 把 `sourceId` 移到 `targetId` 前（`before`）或后：一步重排，返回新的身份顺序。
- *
- * `movableIds` 是**必填**的可移动集合（身份键）——调用方用 `sameConfigPosition` 过滤出同位置集合，
- * 跨插入点的目标不在集合里，本函数原样返回入参。这个参数刻意没有「不限制」的缺省值：
- * 缺省不限制正是历史上跨插入点错位的来源。
- *
- * 返回值交给 `use-module-config-order` 的 `save(next)`，由 `/module-config-order` 端点写回
- * `configOrder`；本函数只重排身份顺序，不修改任何卡的字段。
- */
-export function reorderToView(
-  all: PromptConfigDraft[],
-  sourceId: string,
-  targetId: string,
-  before: boolean,
-  movableIds: readonly string[],
-): PromptConfigDraft[] {
+/** 交换同位置的两个条目，保留其他条目在完整列表中的槽位。 */
+export function swapConfigOrder(all: PromptConfigDraft[], sourceId: string, targetId: string): PromptConfigDraft[] {
   if (sourceId === targetId) return all
-  if (!movableIds.includes(sourceId) || !movableIds.includes(targetId)) return all
   const sourceIndex = all.findIndex(config => config.id === sourceId)
-  if (sourceIndex < 0 || !all.some(config => config.id === targetId)) return all
-  const source = all[sourceIndex]!
-  const rest = all.filter((_, index) => index !== sourceIndex)
-  const anchor = rest.findIndex(config => config.id === targetId)
-  const insertAt = before ? anchor : anchor + 1
-  return [...rest.slice(0, insertAt), source, ...rest.slice(insertAt)]
+  const targetIndex = all.findIndex(config => config.id === targetId)
+  const source = all[sourceIndex], target = all[targetIndex]
+  if (source === undefined || target === undefined || !sameConfigPosition(source, target)) return all
+  const next = all.slice()
+  next[sourceIndex] = target
+  next[targetIndex] = source
+  return next
 }

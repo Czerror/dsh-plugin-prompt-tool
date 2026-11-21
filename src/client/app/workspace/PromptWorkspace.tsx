@@ -24,7 +24,6 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
   const openDiagnosticTarget = useCallback((target: RuleDiagnosticTarget): void => {
     ruleBrowse.diagnosticTarget = target
     ruleBrowse.moduleFilter = target.moduleId
-    ruleBrowse.combination = false
     ruleBrowse.sidebar = 'rules'
     browse.diagnosticReturn = target
     ruleBrowse.publish()

@@ -345,17 +345,15 @@ export const ModulePickerCards = memo(function ModulePickerCards(props: {
     return (
       <article key={module.id} className={css.card} data-active={current || undefined}>
         <div className={css.row}>
-          <button className={css.name} type="button" data-module-browse={module.id} aria-current={current || undefined} disabled={blocked}
+          <button className={css.name} type="button" data-module-browse={module.id}
+            title={name === module.id ? name : `${name} · ${module.id}`} aria-current={current || undefined} disabled={blocked}
             onClick={() => props.onBrowse(module.id)}>
             <strong>{name}</strong>
-            {name !== module.id && <small>{module.id}</small>}
-            {module.id === props.editingModule && <small className={css.editing}>{t('rules.editingModule')}</small>}
           </button>
-          <label className={css.switchLabel} data-enabled={enabled}>
-            <small>{t(enabled ? 'moduleSwitcher.enabled' : 'rules.moduleDisabled')}</small>
+          <div className={css.switchLabel}>
             <Switch checked={enabled} disabled={blocked || enableState.busy || enableState.refreshFailed}
               label={t('rules.moduleSwitchLabel', { name })} onChange={next => void setModuleEnabled(module.id, next)} />
-          </label>
+          </div>
           <Button icon aria-label={t('moduleSwitcher.moreAria', { name })} aria-expanded={expanded}
             onClick={() => setExpandedModule(expanded ? undefined : module.id)}>
             <IconChevronDownOutlineRegular />
@@ -365,9 +363,9 @@ export const ModulePickerCards = memo(function ModulePickerCards(props: {
         {expanded && <div className={css.details}>
           {module.description && <p>{module.description}</p>}
           <p>{rules ? t('rules.moduleRuleCount', { count: rules.length }) : t('rules.moduleRulesOnOpen')}</p>
-          {rules !== undefined && rules.length > 0 && <div className={css.rules}>{rules.slice(0, 3).map(entry =>
-            <Button key={entry.key} shape="pill" size="sm" variant="outline" disabled={blocked}
-              onClick={() => props.onBrowse(module.id, entry.key)}>{entry.value.name || entry.value.id}</Button>)}</div>}
+          {rules !== undefined && rules.length > 0 && <ul className={css.rules}>{rules.slice(0, 3).map(entry =>
+            <li key={entry.key}><button type="button" disabled={blocked} title={entry.value.name || entry.value.id}
+              onClick={() => props.onBrowse(module.id, entry.key)}>{entry.value.name || entry.value.id}</button></li>)}</ul>}
           <div className={css.toolbar}>
           <Button variant="outline" shape="pill" size="sm" disabled={blocked || module.user !== true || module.facts?.editable !== true}
             onClick={() => setNameTarget(module)}>{t('moduleSwitcher.name.edit')}</Button>

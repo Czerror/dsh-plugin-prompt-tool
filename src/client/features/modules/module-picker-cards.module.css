@@ -1,24 +1,31 @@
 .collection, .cards { display: grid; gap: 8px; min-inline-size: 0; }
-.toolbar, .filters, .rules { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.toolbar, .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .filters button[aria-pressed="true"] { border-color: #6688ae; background: #25344a; color: #e7f1ff; }
 .globalSwitch { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-block-size: 32px; cursor: pointer; }
 .card { display: grid; gap: 6px; min-inline-size: 0; padding: 6px; border: 1px solid #364251; border-radius: 8px; background: #181f2a; color: #e7edf6; }
 .card[data-active] { border-color: #6688ae; }
-.row { display: flex; align-items: center; gap: 4px; min-inline-size: 0; }
-.name { flex: 1; align-self: stretch; display: grid; align-content: center; justify-items: start; gap: 1px; min-inline-size: 0; border: 0; border-radius: 5px; padding: 3px 5px; background: transparent; color: inherit; font: inherit; text-align: start; overflow-wrap: anywhere; cursor: pointer; }
+.row { display: flex; align-items: center; gap: 6px; min-inline-size: 0; }
+.name { flex: 1; align-self: stretch; display: flex; align-items: center; min-inline-size: 0; overflow: hidden; border: 0; border-radius: 5px; padding: 3px 5px; background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.name strong { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .name:hover:not(:disabled) { background: #232f40; }
 .name:disabled { cursor: default; color: #abb6c4; }
 .name:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }
-.name small { color: #aab8ca; }
-.name .editing { color: #adcbf5; }
-.switchLabel { flex: none; display: grid; justify-items: center; gap: 2px; color: #b5c2d4; cursor: pointer; }
+.switchLabel { flex: none; display: flex; align-items: center; color: #b5c2d4; cursor: pointer; }
 .switchLabel:has(button:disabled) { cursor: default; }
-.switchLabel[data-enabled="true"] { color: #a3dfc2; }
 .row > button[aria-expanded="true"] svg { rotate: 180deg; }
 .details { display: grid; gap: 8px; padding: 8px 3px 2px; border-block-start: 1px solid #364251; overflow-wrap: anywhere; }
 .details p, .warning { margin: 0; color: #b5c2d4; }
 .warning { padding-inline: 5px; color: #f0c480; overflow-wrap: anywhere; }
-.rules button { max-inline-size: 100%; white-space: normal; overflow-wrap: anywhere; }
+.rules { display: grid; gap: 2px; min-inline-size: 0; margin: 0; padding: 0; list-style: none; }
+.rules li { min-inline-size: 0; }
+.rules button { display: block; width: 100%; min-block-size: 30px; padding: 4px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; border: 0; border-radius: 4px; background: #1c283a; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.rules li:nth-child(even) button { background: #233247; }
+.rules button:hover:not(:disabled), .rules button:focus-visible { background: #2e425f; }
+.rules button:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }
+.rules button:disabled { opacity: .5; cursor: default; }
+@media (pointer: coarse) {
+  .rules button { min-block-size: 44px; }
+}
 .commands { display: grid; gap: 6px; justify-items: start; min-inline-size: 0; }
 .commands ul { display: grid; gap: 4px; inline-size: 100%; margin: 0; padding: 0; list-style: none; }
 .commands li button { inline-size: 100%; justify-content: flex-start; text-align: start; white-space: normal; overflow-wrap: anywhere; }
