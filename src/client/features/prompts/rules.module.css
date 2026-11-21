@@ -77,7 +77,7 @@
   }
   .canvasSurface .ruleCanvas[data-node-open] .canvasLibrary:not([hidden]),
   .ruleDetail:has(> :global([data-instruction-inspector])) .canvasLibrary:not([hidden]) {
-    inset: calc((100% + var(--pt-canvas-top, 110px)) / 2) 8px 8px;
+    inset: calc((100% + var(--pt-canvas-top, 110px)) / 2) 8px 64px;
     inline-size: auto;
     max-block-size: none;
   }

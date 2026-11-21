@@ -376,9 +376,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       scrollRestored.current = true
     }
     if (focus.current === 'detail' && detailHeading.current) {
-      const target = getComputedStyle(detailHeading.current).visibility === 'hidden'
-        ? selectedButton.current : detailHeading.current
-      target?.focus({ preventScroll: true })
+      if (getComputedStyle(detailHeading.current).visibility === 'hidden') selectedButton.current?.focus()
+      else detailHeading.current.focus({ preventScroll: true })
       focus.current = undefined
     } else if (focus.current === 'list') {
       (lastButton.current?.isConnected && lastButton.current.getClientRects().length ? lastButton.current : workspaceHeading.current)?.focus({ preventScroll: true })
