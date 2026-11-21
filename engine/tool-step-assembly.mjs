@@ -49,6 +49,7 @@ function createInstallation(ctx) {
   const settling = new WeakMap()
   const closes = new Set()
   const calls = new AsyncLocalStorage()
+  const assemblyCalls = new AsyncLocalStorage()
   let active = true
   const offExecute = ctx.on('tools/execute', (exec, next) => calls.run(exec, next), { global: true, prepend: true })
   const selected = agent => [...owners].filter(owner => owner.knows(agent))
@@ -129,40 +130,57 @@ function createInstallation(ctx) {
       }
       if (name !== 'systemPrompt' || property !== 'assemble') return value
       return async (context = {}) => {
-        const agent = context.agent
+        const { agent, signal } = context
         const current = agent === undefined ? [] : selected(agent)
         if (current.length === 0) return Reflect.apply(value, target, [context])
         const wrapped = context.toolSet === undefined ? undefined : wrappers.get(context.toolSet)
         if (context.toolSet !== undefined && wrapped === undefined) throw new Error('prompt-tool: assemble requires a tool set from the adapted resolve')
         const step = toolStepOf(wrapped, agent)
         if (wrapped !== undefined && step === undefined) throw new Error('prompt-tool: tool set belongs to another Agent')
-        try { context.signal?.throwIfAborted() } catch (error) { wrapped?.dispose(); throw error }
+        try { signal?.throwIfAborted() } catch (error) { wrapped?.dispose(); throw error }
         if (step?.status === 'closed') throw unavailable()
         if (step?.status === 'sealed') return snapshots.get(step)
+        // A service decorator may call an older adapter while the outer adapter is waiting for it.
+        const forwarding = assemblyCalls.getStore()
+        if (active && forwarding?.context !== undefined && forwarding.agent === agent && forwarding.step === step) {
+          if (forwarding.method === value) throw unavailable()
+          forwarding.signal?.throwIfAborted()
+          const captured = forwarding.context
+          // Keep the context identity used by rule preparation and deferred catalog rendering.
+          if (context !== captured || step !== undefined && (context.toolSet !== wrapped || context.modelSelection !== step.modelSelection)) {
+            const adapted = { ...context, ...(step === undefined ? {} : { toolSet: wrapped, modelSelection: step.modelSelection }) }
+            for (const key of Reflect.ownKeys(captured)) if (!Object.hasOwn(adapted, key)) delete captured[key]
+            Object.defineProperties(captured, Object.getOwnPropertyDescriptors(adapted))
+          }
+          return Reflect.apply(value, target, [captured])
+        }
         if (step !== undefined && settling.has(step)) return settling.get(step)
         const run = async () => {
           try {
-            context.signal?.throwIfAborted()
+            signal?.throwIfAborted()
             if (step === undefined) for (const owner of current) await owner.ensureFresh(agent)
             const captured = { ...context, ...(step === undefined ? {} : { toolSet: wrapped, modelSelection: step.modelSelection }) }
+            const checkAbort = () => { signal?.throwIfAborted(); captured.signal?.throwIfAborted() }
             beginToolCatalog(captured)
             const invoke = async index => {
               if (index !== current.length) return current[index].assemble(captured, () => invoke(index + 1))
               await settleSkillDescriptions(ctx, captured)
-              captured.signal?.throwIfAborted()
+              checkAbort()
               if (!active || step?.status === 'closed') throw unavailable()
-              return Reflect.apply(value, target, [captured])
+              const forwarding = { agent, step, signal, context: captured, method: value }
+              try { return await assemblyCalls.run(forwarding, () => Reflect.apply(value, target, [captured])) }
+              finally { forwarding.context = undefined }
             }
             let final = await invoke(0)
             for (const owner of current) {
-              captured.signal?.throwIfAborted()
+              checkAbort()
               final = await owner.settle(final, captured)
             }
             final = applySubagentDepthContexts(final, captured, step)
             final = normalizeMessageShapeAssembly(final, captured, step)
-            captured.signal?.throwIfAborted()
+            checkAbort()
             await settleToolCatalog(final, captured)
-            captured.signal?.throwIfAborted()
+            checkAbort()
             if (step !== undefined) {
               if (step.status === 'closed') throw unavailable()
               step.allowed ??= new Set(wrapped.view(agent).keys())
