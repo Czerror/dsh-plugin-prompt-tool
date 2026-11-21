@@ -199,15 +199,24 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   return projected
 }
 
+// 同名包内资产回退时，用户资产的缺失也是快照依赖。
+function templateDependencyRevision(file: string): string | undefined {
+  assertNoModuleLinks(file)
+  try { return revisionOf(readFileSync(file)) }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+}
+
 // 投影仅对应不可变原文；调用方可编辑的 doc/source 不作为缓存键或缓存内容。
-const projections = new WeakMap<ModuleDefinitionSnapshot, { text: string; dir: string; projected: Projection; dependencies: Map<string, string> }>()
+const projections = new WeakMap<ModuleDefinitionSnapshot, { text: string; dir: string; projected: Projection; dependencies: Map<string, string | undefined> }>()
 const verifiedProjections = new WeakSet<ModuleDefinitionSnapshot>()
 const plainRuleDocuments = new WeakSet<ModuleDefinitionSnapshot>()
 function projectedSnapshot(snapshot: ModuleDefinitionSnapshot): Projection {
   const cached = projections.get(snapshot)!
   for (const [file, revision] of cached.dependencies) {
-    assertNoModuleLinks(file)
-    if (revisionOf(readFileSync(file)) !== revision) throw sourceConflict()
+    if (templateDependencyRevision(file) !== revision) throw sourceConflict()
   }
   return cached.projected
 }
@@ -224,10 +233,9 @@ function snapshotFromDocument(dir: string, text: string, doc: ReturnType<typeof 
   if (source.id !== undefined && source.id !== basename(dir)) throw new ModuleWriteError('模块定义身份不匹配')
   readModuleLayerSettings(source)
   const revision = revisionOf(text)
-  const dependencies = new Map<string, string>()
+  const dependencies = new Map<string, string | undefined>()
   const projected = projection(source, dir, revision, validation, file => {
-    assertNoModuleLinks(file)
-    const current = revisionOf(readFileSync(file))
+    const current = templateDependencyRevision(file)
     if (dependencies.has(file) && dependencies.get(file) !== current) throw sourceConflict()
     dependencies.set(file, current)
   }, previous, unchangedRules)
@@ -308,7 +316,7 @@ function readDefinitionText(directory: string): { dir: string; text: string } {
 }
 
 // 模块实例仅保留最近一份实际源的格式摘要；不保留或外泄可变 AST，内容/依赖变化即失效。
-let lastFormat: { dir: string; text: string; dependencies: ReadonlyMap<string, string> } | undefined
+let lastFormat: { dir: string; text: string; dependencies: ReadonlyMap<string, string | undefined> } | undefined
 
 /** 归属门只核完整定义与层设置，不需要取得可编辑快照。每次仍读取实际字节与依赖。 */
 export function assertModuleDefinitionFormat(directory: string): void {
@@ -316,8 +324,7 @@ export function assertModuleDefinitionFormat(directory: string): void {
   if (lastFormat?.dir === dir && lastFormat.text === text) {
     let current = true
     for (const [file, revision] of lastFormat.dependencies) {
-      assertNoModuleLinks(file)
-      if (revisionOf(readFileSync(file)) !== revision) { current = false; break }
+      if (templateDependencyRevision(file) !== revision) { current = false; break }
     }
     if (current) return
   }
