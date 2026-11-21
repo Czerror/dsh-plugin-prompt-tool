@@ -220,7 +220,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     facts: factsFor(entry.value),
   }))).filter(({ entry }) => !entry.deleted)
   const visibleRows = rows.filter(({ entry, moduleId: id, facts }) =>
-    (view === 'all' || view === 'context-activation' && facts.contextActivation || entry.value.layer === view)
+    (moduleFilter !== undefined || allModules || enabledIds.has(id))
+    && (view === 'all' || view === 'context-activation' && facts.contextActivation || entry.value.layer === view)
     && (!query || id.toLowerCase().includes(query) || searchableRule(entry.value).includes(query) || entry.value.layer !== undefined && props.layerCards?.(entry.value.layer, id)?.some((card) => card.searchText.includes(query))))
   const entries = [...visibleRows]
   const diagnosticRow = rows.find(row => row.key === diagnosticKey)
@@ -250,19 +251,18 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   useLayoutEffect(() => {
     if (activeSettings) settingsHeading.current?.focus({ preventScroll: true })
   }, [activeSettings])
-  const batchEntries = pinnedModule === undefined ? visibleRows : visibleRows.filter(row => row.moduleId !== pinnedModule)
-  const batchOwners = new Set(batchEntries.map(row => row.editor))
-  const batchDisabled = batchEntries.length === 0 || owners.some(({ moduleId: id, draft, editor }) => batchOwners.has(editor)
+  const batchOwners = new Set(visibleRows.map(row => row.editor))
+  const batchDisabled = visibleRows.length === 0 || owners.some(({ moduleId: id, draft, editor }) => batchOwners.has(editor)
     && (readOnly(id) || !draft.loaded || draft.busy !== undefined || hasRuleFields(draft) || draft.remote !== undefined))
   const batchSetEnabled = (enabled: boolean): void => {
     if (batchDisabled) return
-    for (const { entry, editor } of batchEntries) {
+    for (const { entry, editor } of visibleRows) {
       if ((entry.value.enabled !== false) !== enabled) editor.patch(entry.key, { ...entry.value, enabled })
     }
     props.onRuleEdit?.()
     for (const editor of batchOwners) void editor.submit()
   }
-  const visibleIdentities = new Set(showList ? batchEntries.map(row => row.identity) : [])
+  const visibleIdentities = new Set(showList ? visibleRows.map(row => row.identity) : [])
   const peersByPosition = new Map<string, ModuleConfigOrderEntry[]>()
   const peerIndex = new Map<string, number>()
   for (const item of showList ? order.snapshot?.entries ?? [] : []) {
@@ -396,10 +396,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     }
   })
   const changeModuleScope = (value: string, ruleKey?: string): void => {
-    closeRightEditor()
     const nextModule = value.startsWith('module:') ? value.slice('module:'.length) : undefined
     const nextAll = value !== 'active'
-    const leavesRule = selected !== undefined && (nextModule !== undefined ? selected.moduleId !== nextModule : !nextAll && !enabledIds.has(selected.moduleId))
+    if (nextModule !== undefined) closeRightEditor()
+    const leavesRule = selected !== undefined && nextModule !== undefined && selected.moduleId !== nextModule
     if (leavesRule || (ruleKey !== undefined && selected?.entry.key !== ruleKey)) saveSelected.current?.()
     if (!showList || ruleKey !== undefined) {
       focus.current = ruleKey === undefined ? 'list' : 'detail'
@@ -466,10 +466,15 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   </div>
   const refreshExclusivePeers = (id: string, rule: RuleDefinition): void => {
     if (!enabledIds.has(id) || rule.groupScope !== 'cross-module' || rule.exclusive !== true || !rule.group) return
-    for (const owner of ownersRef.current) {
-      if (owner.moduleId !== id && enabledIds.has(owner.moduleId)
-        && owner.draft.saved.some(saved => saved.group === rule.group && saved.groupScope === 'cross-module' && saved.exclusive)) {
-        void owner.editor.load(true)
+    const active = new Map(ownersRef.current.map(owner => [owner.moduleId, owner.editor]))
+    for (const [peerId, draft] of store.editorDrafts.rules) {
+      if (peerId === id || !enabledIds.has(peerId) || !draft.loaded
+        || !draft.saved.some(saved => saved.group === rule.group && saved.groupScope === 'cross-module' && saved.exclusive)) continue
+      const editor = active.get(peerId)
+      if (editor) void editor.load(true)
+      else {
+        draft.loaded = false
+        store.publishDrafts(peerId)
       }
     }
   }
