@@ -44,7 +44,7 @@ export function RuleCard(props: {
   onBrowseChange?: () => void
   libraryOpen: boolean
   libraryId: string
-  onCloseLibrary: (restoreFocus: boolean) => void
+  onCloseLibrary: () => void
   onCanvasInteract: () => void
   instructionFiles: readonly CanvasInstructionFile[]
   activeInstructionId?: string

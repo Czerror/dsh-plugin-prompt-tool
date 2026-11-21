@@ -41,7 +41,7 @@ export interface RuleCanvasProps {
   onViewChange: (view: RuleCanvasView) => void
   onSelect: (id: string) => void
   onSelectInstruction?: (id: string) => void
-  onPaneClick: (fullView?: boolean) => void
+  onPaneClick: () => void
   onMove?: (id: string, x: number, y: number) => void
   canDropNode?: (targetId: string, data: string) => boolean
   onDropNode?: (targetId: string, data: string) => void
@@ -180,6 +180,7 @@ export function RuleCanvas(props: RuleCanvasProps) {
   const stage = useRef<HTMLDivElement>(null)
   const dock = useRef<HTMLDivElement>(null)
   const [area, setArea] = useState<CanvasArea>()
+  const measureArea = useRef<() => CanvasArea | undefined>()
   const firstFit = useRef(!props.hasStoredView)
   const userAdjustedView = useRef(Boolean(props.hasStoredView))
   const fitIncludedFiles = useRef(false)
@@ -204,7 +205,9 @@ export function RuleCanvas(props: RuleCanvasProps) {
       setArea(current => current && next && current.stageWidth === next.stageWidth && sameRect(current.base, next.base)
         && current.spaces.length === next.spaces.length
         && current.spaces.every((rect, index) => sameRect(rect, next.spaces[index]!)) ? current : next)
+      return next
     }
+    measureArea.current = measure
     const resize = new ResizeObserver(measure)
     const observeObstacles = () => {
       const next = new Set([controls, ...root.querySelectorAll<HTMLElement>(OBSTACLE)])
@@ -227,7 +230,7 @@ export function RuleCanvas(props: RuleCanvasProps) {
     resize.observe(element)
     mutation.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden'] })
     measure()
-    return () => { resize.disconnect(); mutation.disconnect() }
+    return () => { measureArea.current = undefined; resize.disconnect(); mutation.disconnect() }
   }, [])
   const drag = useRef<{ id?: string; pointerId: number; startX: number; startY: number; baseX: number; baseY: number; moved: boolean; dismissOnClick: boolean }>()
   const suppressClick = useRef(false)
@@ -321,8 +324,11 @@ export function RuleCanvas(props: RuleCanvasProps) {
   const fitManually = () => {
     if (!area) return
     if (area.stageWidth <= 480 && !sameRect(area.visible, area.base)) {
-      props.onPaneClick(true)
-      adjustView(fit({ ...area, visible: area.base }, false))
+      props.onPaneClick()
+      requestAnimationFrame(() => {
+        const next = measureArea.current?.()
+        if (next) adjustView(fit(next, false))
+      })
       return
     }
     adjustView(fit(area, false))

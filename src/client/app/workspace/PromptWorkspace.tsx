@@ -25,7 +25,7 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     ruleBrowse.diagnosticTarget = target
     ruleBrowse.moduleFilter = target.moduleId
     ruleBrowse.combination = false
-    ruleBrowse.sidebar = 'hidden'
+    ruleBrowse.sidebar = 'rules'
     browse.diagnosticReturn = target
     ruleBrowse.publish()
   }, [browse, ruleBrowse])

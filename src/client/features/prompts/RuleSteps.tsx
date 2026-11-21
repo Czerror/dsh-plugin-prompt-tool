@@ -43,7 +43,7 @@ function RuleLibrary({ t, meta, libraryOpen, libraryId, onCloseLibrary, disabled
   meta: RuleEditorMeta
   libraryOpen: boolean
   libraryId: string
-  onCloseLibrary: (restoreFocus: boolean) => void
+  onCloseLibrary: () => void
   disabled: boolean
   selected?: LibraryItem
   onSelect: (item: LibraryItem, trigger: HTMLButtonElement) => void
@@ -66,14 +66,10 @@ function RuleLibrary({ t, meta, libraryOpen, libraryId, onCloseLibrary, disabled
     ...group,
     items: filter ? group.items.filter(item => item.search.includes(filter)) : group.items,
   }))
-  return <section id={libraryId} className={css.canvasLibrary} data-canvas-obstacle="left" aria-label={t('rules.nodeLibrary')} onKeyDown={event => {
-    if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
-    event.stopPropagation()
-    onCloseLibrary(true)
-  }}>
+  return <section id={libraryId} className={css.canvasLibrary} data-canvas-obstacle="left" aria-label={t('rules.nodeLibrary')}>
     <header className={css.libraryHeading}>
       <strong>{t('rules.nodeLibrary')}</strong>
-      <Button icon aria-label={t('rules.hideLibrary')} onClick={() => onCloseLibrary(true)}><IconCloseFillRegular /></Button>
+      <Button icon aria-label={t('rules.hideLibrary')} onClick={event => { event.stopPropagation(); onCloseLibrary() }}><IconCloseFillRegular /></Button>
     </header>
     <SearchInput aria-label={t('rules.librarySearch')} placeholder={t('rules.librarySearch')} value={query} onChange={event => setQuery(event.target.value)} />
     <div className={css.libraryBody}>
@@ -250,7 +246,7 @@ export function RuleStepsPanel(props: {
   browseKey: string
   libraryOpen: boolean
   libraryId: string
-  onCloseLibrary: (restoreFocus: boolean) => void
+  onCloseLibrary: () => void
   onBrowseChange?: () => void
   onCanvasInteract: () => void
   instructionFiles: readonly CanvasInstructionFile[]
@@ -327,16 +323,7 @@ export function RuleStepsPanel(props: {
   const focusPane = useRef<'structure' | 'properties'>()
   const handledDiagnosticNode = useRef<string>()
   const structureRef = useRef<HTMLDivElement>(null)
-  const libraryNode = useRef<string>()
   const editedConditionPath = useRef<string>()
-  useLayoutEffect(() => {
-    const changed = selectedNode !== libraryNode.current
-    libraryNode.current = selectedNode
-    if (changed && selectedNode && libraryOpen && structureRef.current
-      && getComputedStyle(structureRef.current).getPropertyValue('--pt-stacked-panes').trim() === '1') {
-      props.onCloseLibrary(false)
-    }
-  })
   const lastNodeKey = useRef(selectedNode)
   const select = (path: string | undefined): void => {
     if (path === undefined) props.nodeBrowse?.delete(props.browseKey)
@@ -583,7 +570,7 @@ export function RuleStepsPanel(props: {
   const libraryTargets = libraryPayload ? graph.targets.filter(target => canAdd(target.id, libraryPayload)) : []
   const inspectorTitle = libraryDetail?.label ?? nodeTitle ?? t('rules.ruleEditor')
   return <div className={css.ruleCanvas} data-node-open={shownNode !== undefined || libraryDetail !== undefined || undefined}
-    data-library-detail-open={libraryDetail !== undefined || undefined} data-rule-steps onKeyDown={event => {
+    data-rule-steps onKeyDown={event => {
     if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing) return
     if (!(event.target instanceof Element) ||
       !event.target.closest('[data-node-inspector], [data-rule-stage]')) return
@@ -604,10 +591,9 @@ export function RuleStepsPanel(props: {
       activeInstructionId={props.activeInstructionId} selectedNodeId={selectedCanvasNode} hasStoredView={props.canvasBrowse?.has(props.browseKey)}
       onSelectInstruction={id => { closeLibraryDetail(false); props.onSelectInstruction(id) }}
       onViewChange={changeView} onSelect={id => { closeLibraryDetail(false); props.onCanvasInteract(); context.select(id) }}
-      onPaneClick={fullView => {
+      onPaneClick={() => {
         closeLibraryDetail(false)
         props.onCanvasInteract()
-        if (fullView && libraryOpen) props.onCloseLibrary(false)
         if (shownNode !== undefined) select(undefined)
       }}
       onMove={(id, x, y) => changeView({ ...view, positions: { ...view.positions, [id]: { x, y } } })}
