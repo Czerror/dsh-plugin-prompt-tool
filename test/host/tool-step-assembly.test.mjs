@@ -44,7 +44,7 @@ async function harness(t, rules = [{ id: 'narrow', then: [{ id: 'allow', kind: '
     execute: () => { calls++; return { name } },
   }, { when: () => { conditions++; return name !== 'unavailable' } }))
   let services
-  await agent.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) { services = { tools: ctx.tools, prompt: ctx.systemPrompt } } })
+  await agent.ctx.plugin({ inject: ['tools', 'systemPrompt'], apply(ctx) { services = { tools: ctx.tools, get prompt() { return ctx.systemPrompt } } } })
   const signal = new AbortController().signal
   const context = { agent, scope: agent, signal, modelSelection: { model: 'deepseek-pro' } }
   const execute = (toolSet, name = 'keep', tools = services.tools) => tools.execute({ agent, signal, toolSet,
@@ -121,7 +121,24 @@ test('pending 拒绝公开批次和原服务 guard，失败或取消关闭一次
   assert.equal(h.counts().calls, 0)
   let presentations = 0
   const off = h.root.on('system-prompt/assemble', async (_assembly, _context, next) => { presentations++; return next() })
-  const first = await h.services.prompt.assemble({ ...h.context, toolSet })
+  const wrappedAssemble = h.services.prompt.assemble
+  let wrappers = 0
+  Object.defineProperty(h.services.prompt, 'assemble', { configurable: true, async value(context) {
+    wrappers++
+    let timer
+    try {
+      return await Promise.race([
+        wrappedAssemble({ ...context }),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('装配包装等待超时')), 1000) }),
+      ])
+    } finally { clearTimeout(timer) }
+  } })
+  const [first, concurrent] = await Promise.all([
+    h.services.prompt.assemble({ ...h.context, toolSet }),
+    h.services.prompt.assemble({ ...h.context, toolSet: original }),
+  ])
+  assert.equal(concurrent, first)
+  assert.equal(wrappers, 1)
   h.context.modelSelection.model = 'deepseek-flash'
   assert.equal(await h.services.prompt.assemble({ ...h.context, toolSet: original }), first)
   assert.equal(presentations, 1)
@@ -138,6 +155,8 @@ test('pending 拒绝公开批次和原服务 guard，失败或取消关闭一次
   toolSet.dispose(); toolSet.dispose()
   assert.equal(released, 1)
   await assert.rejects(h.services.prompt.assemble({ ...h.context, toolSet }), { code: 'TOOL_STEP_UNAVAILABLE' })
+  await h.services.prompt.assemble(h.context)
+  assert.equal(presentations, 2)
   off()
   const failed = await h.services.tools.resolve(h.context)
   const fail = h.root.on('system-prompt/assemble', () => { throw new Error('assembly failed') })

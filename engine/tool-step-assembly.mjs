@@ -49,6 +49,7 @@ function createInstallation(ctx) {
   const settling = new WeakMap()
   const closes = new Set()
   const calls = new AsyncLocalStorage()
+  const assemblyCalls = new AsyncLocalStorage()
   let active = true
   const offExecute = ctx.on('tools/execute', (exec, next) => calls.run(exec, next), { global: true, prepend: true })
   const selected = agent => [...owners].filter(owner => owner.knows(agent))
@@ -139,6 +140,13 @@ function createInstallation(ctx) {
         try { context.signal?.throwIfAborted() } catch (error) { wrapped?.dispose(); throw error }
         if (step?.status === 'closed') throw unavailable()
         if (step?.status === 'sealed') return snapshots.get(step)
+        // A service decorator may call an older adapter while the outer adapter is waiting for it.
+        const forwarding = assemblyCalls.getStore()
+        if (active && forwarding?.context !== undefined && forwarding.context.agent === agent
+          && forwarding.context.toolSet === context.toolSet && forwarding.context.signal === context.signal) {
+          if (forwarding.method === value) throw unavailable()
+          return Reflect.apply(value, target, [forwarding.context])
+        }
         if (step !== undefined && settling.has(step)) return settling.get(step)
         const run = async () => {
           try {
@@ -151,7 +159,9 @@ function createInstallation(ctx) {
               await settleSkillDescriptions(ctx, captured)
               captured.signal?.throwIfAborted()
               if (!active || step?.status === 'closed') throw unavailable()
-              return Reflect.apply(value, target, [captured])
+              const forwarding = { context: captured, method: value }
+              try { return await assemblyCalls.run(forwarding, () => Reflect.apply(value, target, [captured])) }
+              finally { forwarding.context = undefined }
             }
             let final = await invoke(0)
             for (const owner of current) {
