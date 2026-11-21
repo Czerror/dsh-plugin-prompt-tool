@@ -128,7 +128,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const nav = useRef<HTMLDivElement>(null)
   const listPaneId = useId()
   const dismissDrawer = useRef<() => void>()
-  const backdropPress = useRef<{ x: number; y: number }>()
   const modulePaneId = useId()
   const diagnosticPaneId = useId()
   const libraryId = useId()
@@ -344,7 +343,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (id !== activeFileId) saveInstruction.current?.()
     closeSettings(false)
     dismissDrawer.current?.()
-    if (panelOpen || (libraryOpen && workspace.current && getComputedStyle(workspace.current).getPropertyValue('--pt-narrow-workspace').trim() === '1')) setSidebar('hidden')
     setFileSelection({ id, owner: store.getInstructionPool, contextId })
   }
   const fileInspector = activeFile && <InstructionFileInspector key={activeFileId} store={store} t={t} config={activeFile}
@@ -368,7 +366,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       if (expanded !== diagnosticKey) select(diagnosticKey)
       else {
         handledDiagnostic.current = diagnosticTarget
-        if (diagnosticTarget.actionId === undefined) focus.current = 'detail'
+        if (diagnosticTarget.actionId === undefined || (detailHeading.current && getComputedStyle(detailHeading.current).visibility === 'hidden')) {
+          focus.current = 'detail'
+        }
       }
     }
     if (list.current?.getClientRects().length && !scrollRestored.current && entries.length > 0) {
@@ -376,7 +376,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       scrollRestored.current = true
     }
     if (focus.current === 'detail' && detailHeading.current) {
-      detailHeading.current.focus({ preventScroll: true })
+      const target = getComputedStyle(detailHeading.current).visibility === 'hidden'
+        ? selectedButton.current : detailHeading.current
+      target?.focus({ preventScroll: true })
       focus.current = undefined
     } else if (focus.current === 'list') {
       (lastButton.current?.isConnected && lastButton.current.getClientRects().length ? lastButton.current : workspaceHeading.current)?.focus({ preventScroll: true })
@@ -404,13 +406,13 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       props.browse.moduleFilter = nextModule
       props.browse.allModules = nextAll
       props.browse.combination = false
-      props.browse.sidebar = ruleKey === undefined ? 'rules' : 'hidden'
+      props.browse.sidebar = 'rules'
     }
     if (!props.browse?.publish) {
       setModuleFilter(nextModule)
       setAllModules(nextAll)
       setCombination(false)
-      setLocalSidebar(ruleKey === undefined ? 'rules' : 'hidden')
+      setLocalSidebar('rules')
     }
     if (nextModule !== undefined && ruleKey !== undefined) {
       select(configIdentityKey({ moduleId: nextModule, configId: ruleKey }))
@@ -481,11 +483,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       <p role="status">{t('diagnostics.targetUnavailable')}</p>}
     <div ref={workspace} className={css.ruleWorkspace} data-rule-open={selected !== undefined || files.length > 0 || undefined} data-list-open={panelOpen || undefined} data-canvas-workspace
       onClick={event => {
-        if ((!panelOpen && !dismissDrawer.current && !activeSettings) || event.defaultPrevented || !(event.target instanceof Element)) return
+        if ((!dismissDrawer.current && !activeSettings) || event.defaultPrevented || !(event.target instanceof Element)) return
         const target = event.target
         if (!event.currentTarget.contains(target) || target.closest('dialog, [role="dialog"], [role="menu"], [popover], [data-rule-node], [data-module-settings-inspector]')
           || !target.closest('button, input, select, textarea, summary, a[href]')) return
-        if (panelOpen && !target.closest(`.${css.ruleListPane}`) && !nav.current?.contains(target)) closeList(false)
         if (!target.closest('[data-rule-drawer], [data-rule-drawer-trigger]')) dismissDrawer.current?.()
         if (!target.closest('[data-open-module-settings]')) closeSettings(false)
       }}>
@@ -496,6 +497,22 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
           <BlocksIcon />{enableFeedback && <span className={css.modulePickerIndicator} aria-hidden="true">!</span>}
         </button>
       </HintTooltip>
+      <HintTooltip label={t('rules.sidebarRules')}>
+        <button type="button" aria-label={t('rules.sidebarRules')} aria-pressed={showList} aria-controls={listPaneId}
+          onClick={event => {
+            if (showList) { event.stopPropagation(); closeList(false) }
+            else openList()
+          }}><ListChecksIcon /></button>
+      </HintTooltip>
+      <HintTooltip label={libraryLabel}>
+        <button type="button" ref={libraryToggle} disabled={!selected?.draft.meta} aria-pressed={libraryOpen && Boolean(selected?.draft.meta)}
+          aria-label={libraryLabel} title={!selected?.draft.meta ? t('rules.nodeLibrary') : undefined}
+          aria-controls={selected?.draft.meta ? libraryId : undefined} onClick={() => setSidebar(libraryOpen ? 'hidden' : 'library')}><LibraryBigIcon /></button>
+      </HintTooltip>
+      <HintTooltip label={t('rules.sidebarHide')}>
+        <button type="button" aria-label={t('rules.sidebarHide')} aria-pressed={sidebar === 'hidden'}
+          onClick={event => { event.stopPropagation(); setSidebar('hidden') }}><PanelLeftCloseIcon /></button>
+      </HintTooltip>
       <HintTooltip label={diagnosticsLabel}>
         <button type="button" aria-label={diagnosticsLabel} aria-pressed={sidebar === 'diagnostics'} aria-controls={diagnosticPaneId} onClick={() => {
           if (diagnosticTarget && props.onReturnToDiagnostics) {
@@ -505,58 +522,20 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
           } else setSidebar(sidebar === 'diagnostics' ? 'hidden' : 'diagnostics')
         }}><ActivityIcon /></button>
       </HintTooltip>
-      <HintTooltip label={t('rules.sidebarRules')}>
-        <button type="button" aria-label={t('rules.sidebarRules')} aria-pressed={showList} aria-controls={listPaneId}
-          onClick={() => { if (showList) closeList(false); else openList() }}><ListChecksIcon /></button>
-      </HintTooltip>
-      <HintTooltip label={libraryLabel}>
-        <button type="button" ref={libraryToggle} disabled={!selected?.draft.meta} aria-pressed={libraryOpen && Boolean(selected?.draft.meta)}
-          aria-label={libraryLabel} title={!selected?.draft.meta ? t('rules.nodeLibrary') : undefined}
-          aria-controls={selected?.draft.meta ? libraryId : undefined} onClick={() => setSidebar(libraryOpen ? 'hidden' : 'library')}><LibraryBigIcon /></button>
-      </HintTooltip>
-      <HintTooltip label={t('rules.sidebarHide')}>
-        <button type="button" aria-label={t('rules.sidebarHide')} aria-pressed={sidebar === 'hidden'} onClick={() => setSidebar('hidden')}><PanelLeftCloseIcon /></button>
-      </HintTooltip>
     </div>
-    {panelOpen && <div className={css.ruleListBackdrop} aria-hidden="true"
-      onPointerDown={event => {
-        backdropPress.current = event.button === 0 && !document.activeElement?.closest('[role="menu"], [popover]')
-          ? { x: event.clientX, y: event.clientY } : undefined
-      }}
-      onPointerCancel={() => { backdropPress.current = undefined }}
-      onClick={event => {
-        const point = backdropPress.current
-        backdropPress.current = undefined
-        if (!point || Math.hypot(event.clientX - point.x, event.clientY - point.y) >= 4) return
-        closeList(false)
-        dismissDrawer.current?.()
-        closeSettings(false)
-      }} />}
-    <aside id={modulePaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={sidebar !== 'modules'} aria-label={t('rules.sidebarModules')}
-      onKeyDown={event => {
-        if (event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing && event.currentTarget.contains(event.target as Node)) {
-          event.stopPropagation(); closeList(true)
-        }
-      }}>
+    <aside id={modulePaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={sidebar !== 'modules'} aria-label={t('rules.sidebarModules')}>
       <ModuleBrowser store={store} t={t} open={sidebar === 'modules'} scope={moduleFilter ? `module:${moduleFilter}` : allModules ? 'all' : 'active'}
         editingModule={selected?.moduleId} onBrowse={(id, key) => changeModuleScope(`module:${id}`, key)} feedback={enableFeedback} />
     </aside>
-    <aside id={diagnosticPaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={sidebar !== 'diagnostics'} aria-label={t('rules.sidebarDiagnostics')}
-      onKeyDown={event => {
-        if (event.key === 'Escape' && !event.defaultPrevented && !event.nativeEvent.isComposing) { event.stopPropagation(); closeList(true) }
-      }}>
+    <aside id={diagnosticPaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={sidebar !== 'diagnostics'} aria-label={t('rules.sidebarDiagnostics')}>
       {sidebar === 'diagnostics' && <><h2 className={css.workspaceHeading}>{t('rules.sidebarDiagnostics')}</h2>{props.renderDiagnostics?.()}</>}
     </aside>
-    <div id={listPaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={!showList} onKeyDown={event => {
-      if (event.key !== 'Escape' || event.nativeEvent.isComposing || event.defaultPrevented) return
-      event.stopPropagation()
-      event.preventDefault()
-      closeList(true)
-    }}>
+    <div id={listPaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={!showList}>
     <div className={css.ruleListHeader}>
       <h2 ref={workspaceHeading} tabIndex={-1} className={css.workspaceHeading}>{t('rules.list')}</h2>
       <Button shape="pill" variant="outline" title={t('rules.combination')} aria-pressed={combination} onClick={() => changeCombination(!combination)}>{t('canvas.combine')}</Button>
-      <Button icon aria-label={t('rules.closePanel', { name: t('rules.list') })} onClick={() => closeList(true)}><IconCloseFillRegular /></Button>
+      <Button icon aria-label={t('rules.closePanel', { name: t('rules.list') })}
+        onClick={event => { event.stopPropagation(); closeList(true) }}><IconCloseFillRegular /></Button>
     </div>
     <div className={ui.listFilterRow} data-module-toolbar>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
@@ -610,7 +589,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
               lastButton.current = event.currentTarget
               focus.current = 'detail'
               select(key)
-              setSidebar('hidden')
             }}>
             <strong>{name}</strong>
             {!moduleFilter && <small>{id}</small>}
@@ -644,7 +622,6 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
             closeInstruction(false)
             dismissDrawer.current?.()
             settingsTrigger.current = event.currentTarget
-            if (workspace.current && getComputedStyle(workspace.current).getPropertyValue('--pt-narrow-workspace').trim() === '1') setSidebar('hidden')
             setSettingsSelection({ moduleId: item.moduleId, layer, owner: store.editorDrafts })
           }}>
           <strong>{item.name}</strong><small>{translateLabel(t, LAYER_LABEL_KEYS, layer)}</small>
@@ -653,7 +630,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     </ul>}</>}
     </div>
     {!selected && files.length > 0 && <div className={css.ruleDetail}>
-      <InstructionCanvas t={t} files={files} activeId={activeFileId} onSelect={openInstruction} onPaneClick={() => { closeRightEditor(); if (panelOpen) closeList(false) }} />
+      <InstructionCanvas t={t} files={files} activeId={activeFileId} onSelect={openInstruction} onPaneClick={closeRightEditor} />
       {fileInspector}
     </div>}
     {!selected && files.length === 0 && !panelOpen && <div className={css.emptyCanvas}
@@ -668,11 +645,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         onCloseInstruction={closeRightEditor} hideNodeInspector={activeSettings !== undefined}
         moduleName={modules.find(module => module.id === selected.moduleId)?.name || selected.moduleId} moduleEnabled={enabledIds.has(selected.moduleId)} modulesEnabled={fields.modulesEnabled}
         onDuplicate={() => duplicate(selected, selected.entry.value)} leaveSave={saveSelected} nodeBrowse={nodeBrowse} canvasBrowse={props.browse?.ruleCanvas} onBrowseChange={props.browse?.publish}
-        libraryOpen={libraryOpen} libraryId={libraryId} onCloseLibrary={restoreFocus => {
+        libraryOpen={libraryOpen} libraryId={libraryId} onCloseLibrary={() => {
           setSidebar('hidden')
-          if (restoreFocus) libraryToggle.current?.focus({ preventScroll: true })
+          libraryToggle.current?.focus({ preventScroll: true })
         }}
-        onCanvasInteract={() => { closeRightEditor(); if (panelOpen) closeList(false) }}
+        onCanvasInteract={closeRightEditor}
         diagnosticFocusToken={diagnosticKey === selected.key ? diagnosticTarget : undefined}
         diagnosticActionId={diagnosticKey === selected.key ? diagnosticTarget?.actionId : undefined}
         onRuleEdit={props.onRuleEdit}

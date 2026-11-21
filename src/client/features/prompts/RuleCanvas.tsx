@@ -41,7 +41,7 @@ export interface RuleCanvasProps {
   onViewChange: (view: RuleCanvasView) => void
   onSelect: (id: string) => void
   onSelectInstruction?: (id: string) => void
-  onPaneClick: (fullView?: boolean) => void
+  onPaneClick: () => void
   onMove?: (id: string, x: number, y: number) => void
   canDropNode?: (targetId: string, data: string) => boolean
   onDropNode?: (targetId: string, data: string) => void
@@ -321,8 +321,14 @@ export function RuleCanvas(props: RuleCanvasProps) {
   const fitManually = () => {
     if (!area) return
     if (area.stageWidth <= 480 && !sameRect(area.visible, area.base)) {
-      props.onPaneClick(true)
-      adjustView(fit({ ...area, visible: area.base }, false))
+      props.onPaneClick()
+      requestAnimationFrame(() => {
+        const element = stage.current
+        const root = element?.closest('[data-canvas-workspace]') ?? element?.parentElement
+        if (!element || !root) return
+        const next = readCanvasArea(element, new Set(root.querySelectorAll<HTMLElement>(OBSTACLE)))
+        adjustView(fit(next ?? area, false))
+      })
       return
     }
     adjustView(fit(area, false))
