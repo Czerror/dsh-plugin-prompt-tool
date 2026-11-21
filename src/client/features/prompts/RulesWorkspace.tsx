@@ -363,6 +363,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (expanded === undefined && entries[0]) select(entries[0].key)
   })
   const list = useRef<HTMLUListElement>(null)
+  const listScroll = useRef(props.browse?.rulesScroll ?? 0)
   const selectedButton = useRef<HTMLButtonElement>(null)
   const detailHeading = useRef<HTMLHeadingElement>(null)
   const workspaceHeading = useRef<HTMLHeadingElement>(null)
@@ -382,8 +383,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         }
       }
     }
-    if (list.current?.getClientRects().length && !scrollRestored.current && entries.length > 0) {
-      list.current.scrollTop = props.browse?.rulesScroll ?? 0
+    if (!showList) scrollRestored.current = false
+    else if (list.current && !scrollRestored.current && entries.length > 0) {
+      list.current.scrollTop = props.browse?.rulesScroll ?? listScroll.current
       scrollRestored.current = true
     }
     if (focus.current === 'detail' && detailHeading.current) {
@@ -578,7 +580,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     <PublicationNotice publication={order.publication} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')} retryButtonLabel={t('publication.retryButton')}
       disabled={order.busy} onRetry={() => { void order.retryPublication() }} />
     {props.createdHidden && <Button variant="outline" shape="pill" onClick={props.onShowCreated}>{t('rules.showCreated')}</Button>}
-    <ul className={css.ruleList} ref={list} onScroll={event => { if (props.browse) props.browse.rulesScroll = event.currentTarget.scrollTop }}>
+    {showList && <ul className={css.ruleList} ref={list} onScroll={event => {
+      listScroll.current = event.currentTarget.scrollTop
+      if (props.browse) props.browse.rulesScroll = listScroll.current
+    }}>
     {entries.map(row => {
         const { entry, moduleId: id, key, draft, editor } = row
         const orderEntry = orderByIdentity.get(row.identity)?.entry
@@ -586,7 +591,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         const selectableWinner = enabledIds.has(id) && entry.value.groupScope === 'cross-module' && entry.value.exclusive === true && Boolean(entry.value.group)
         const name = entry.value.name || entry.value.id
         return <li key={key} data-module-id={id}>
-          <button type="button" title={`${name} · ${id}`} aria-label={t('rules.editNamed', { name })} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
+          <button type="button" title={`${name} · ${id}`} aria-label={`${t('rules.editNamed', { name })} · ${id}`} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
             onClick={event => {
               closeRightEditor()
               if (key !== expanded) saveSelected.current?.()
@@ -610,7 +615,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
           {showList && moveButtons(row.identity, orderEntry, `${id} / ${name}`)}
         </li>
       })}
-    </ul>
+    </ul>}
     {entries.length === 0 && moduleSettings.length === 0 && owners.every(owner => owner.draft.loaded) && <p>{t('rules.noMatch')}</p>}
     {props.beforeCards}
     {moduleSettings.length > 0 && <ul className={css.moduleSettingsList}>
