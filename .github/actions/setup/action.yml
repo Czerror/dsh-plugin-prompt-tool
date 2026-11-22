@@ -12,6 +12,13 @@ runs:
       run: |
         $prefix = Join-Path $env:RUNNER_TEMP 'project-pnpm'
         $packageManager = node -p "require('./package.json').packageManager"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $version = $null
+        if ($packageManager -isnot [string] -or $packageManager -cnotmatch '\Apnpm@(.+)\z' -or
+            -not [semver]::TryParse($Matches[1], [ref]$version) -or
+            $packageManager -cne "pnpm@$version") {
+          throw 'package.json must declare packageManager as pnpm@<exact-version>.'
+        }
         npm install --global --prefix $prefix $packageManager
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         Add-Content -LiteralPath $env:GITHUB_PATH -Value $prefix
