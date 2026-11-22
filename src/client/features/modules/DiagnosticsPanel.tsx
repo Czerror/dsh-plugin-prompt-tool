@@ -21,6 +21,12 @@ export function DiagnosticsPanel(props: {
   const [open, setOpen] = useState(false)
   const [openModules, setOpenModules] = useState(() => new Set<string | undefined>())
   const [openRecords, setOpenRecords] = useState(() => new Set<string>())
+  const [previousRecords, setPreviousRecords] = useState(snapshot.records)
+  if (previousRecords !== snapshot.records) {
+    setPreviousRecords(snapshot.records)
+    if (openModules.size) setOpenModules(new Set())
+    if (openRecords.size) setOpenRecords(new Set())
+  }
   const returnKey = returnTarget === undefined ? undefined : recordKey(returnTarget)
   const expanded = open || returnKey !== undefined
   const groups = useMemo(() => {

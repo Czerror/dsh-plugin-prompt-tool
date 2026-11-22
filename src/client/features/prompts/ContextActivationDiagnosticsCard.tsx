@@ -35,9 +35,10 @@ export function ContextActivationDiagnosticsCard(props: {
 }): ReactNode {
   const { snapshot, t } = props
   const count = snapshot?.diagnosedAt === undefined ? undefined : snapshot.records.length
-  const meta = snapshot?.error !== undefined
-    ? [count, t('diagnostics.contextFailed')].filter(value => value !== undefined).join(' · ')
-    : count
+  const warning = props.sessionId === undefined ? t('diagnostics.noSessionShort')
+    : snapshot?.error !== undefined ? t('diagnostics.contextFailed')
+      : snapshot?.truncated ? t('diagnostics.truncatedShort') : undefined
+  const meta = [count, warning].filter(value => value !== undefined).join(' · ') || undefined
   return <DiagnosticGroup label={t('diagnostics.context')} meta={meta}>
     {() => <>
       {props.sessionId === undefined ? <p className={css.notice}>{t('diagnostics.noSession')}</p>

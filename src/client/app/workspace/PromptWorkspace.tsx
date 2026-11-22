@@ -33,7 +33,11 @@ export function PromptWorkspace(props: PromptWorkspaceProps): ReactNode {
     ruleBrowse.sidebar = 'diagnostics'
     ruleBrowse.publish()
   }, [ruleBrowse])
-  const finishDiagnosticReturn = useCallback(() => { browse.diagnosticReturn = undefined }, [browse])
+  const finishDiagnosticReturn = useCallback(() => {
+    if (!browse.diagnosticReturn) return
+    browse.diagnosticReturn = undefined
+    ruleBrowse.publish()
+  }, [browse, ruleBrowse])
   const renderDiagnostics = useCallback(() => <WorkspaceDiagnostics diagnostics={diagnostics} sessionId={sessionId} t={t}
     onLocate={openDiagnosticTarget} returnTarget={browse.diagnosticReturn} onReturnFocus={finishDiagnosticReturn} />,
   [diagnostics, sessionId, t, openDiagnosticTarget, browse, finishDiagnosticReturn])
