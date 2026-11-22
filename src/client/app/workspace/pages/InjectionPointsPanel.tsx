@@ -279,7 +279,7 @@ export interface InjectionPointSlotsInput {
 
 /** 按受众视图装配人设卡、层内设置和诊断。 */
 export function injectionPointSlots(input: InjectionPointSlotsInput): InjectionPointSlots {
-  const { store, t, viewFilter, audience } = input
+  const { store, t, audience } = input
   const excluded = input.excludeCapabilities ?? []
   const beforeCards = (
     <>

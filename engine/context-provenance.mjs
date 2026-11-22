@@ -146,7 +146,7 @@ export async function mountContextRuntime(ctx, raw, { agent, sourceModuleId }, p
     const signal = combined(payload.signal)
     const info = await llm.resolveModelInfo(request.provider, request.model, signal)
     check(signal)
-    const policy = { ...compaction.config, ...(compaction.config.modelPolicies?.find(p => p.provider === request.provider && p.model === request.model) ?? {}) }
+    const policy = { ...compaction.config, ...compaction.config.modelPolicies?.find(p => p.provider === request.provider && p.model === request.model) }
     const capacity = info.context?.contextWindow
     const reserved = request.maxTokens ?? info.defaultMaxTokens ?? 0
     if (!Number.isFinite(capacity) || capacity <= reserved + policy.headroomTokens) throw new Error('context-provenance: model switch has no message budget')

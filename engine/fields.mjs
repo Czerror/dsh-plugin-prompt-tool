@@ -207,7 +207,7 @@ export function defineConfig(fields) {
     throw new TypeError('fields: defineConfig(fields) requires an object of field declarations')
   }
   const entries = Object.entries(fields)
-  for (const [key, spec] of entries) makeField(spec)
+  for (const [, spec] of entries) makeField(spec)
   const allowedKeys = new Set(entries.map(([key]) => key))
   const parse = (source, plugin) => {
     const config = validateConfig(plugin, source, allowedKeys)

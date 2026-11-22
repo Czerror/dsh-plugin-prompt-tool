@@ -134,7 +134,7 @@ export function rankRows(rows, admit = (row) => row.exact || row.score >= 1) {
  * 渲染命中：标题、逐行、截断提示、页脚；空结果只回 emptyText。
  * lineOf 负责单个条目的格式（描述截断长度等由各 adapter 决定）。
  */
-export function renderRows(rows, { query, limit, noun, lineOf, emptyText, footer, warnings = [] } = {}) {
+export function renderRows(rows, { limit, noun, lineOf, emptyText, footer, warnings = [] } = {}) {
   const matches = rows.slice(0, limit)
   if (matches.length === 0) return [emptyText]
   const lines = [`Matching ${noun} (${matches.length}${rows.length > limit ? ` of ${rows.length}` : ''}):`]

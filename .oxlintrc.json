@@ -1,4 +1,5 @@
 {
+  "ignorePatterns": ["/engine/vendor/"],
   "overrides": [
     {
       "files": ["test/**/*.mjs", "engine/**/*.mjs", "src/**/*.ts", "src/**/*.tsx"],

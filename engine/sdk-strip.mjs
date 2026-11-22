@@ -239,7 +239,7 @@ function stripPython(lines, names) {
   const header = lines.indexOf(PY_PROTOCOL_HEADER)
   const footer = lines.lastIndexOf(PY_FOOTER)
   if (header < 0 || footer <= header) return undefined
-  const classRegionStart = lines.findIndex((line) => /^from typing import /.test(line))
+  const classRegionStart = lines.findIndex((line) => line.startsWith('from typing import '))
   if (classRegionStart < 0 || classRegionStart >= header) return undefined
   const classes = parsePyClasses(lines, classRegionStart + 1, header)
   if (classes.length === 0) return undefined

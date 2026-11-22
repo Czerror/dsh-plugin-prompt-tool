@@ -37,7 +37,7 @@ export function createAgentCapability(mount) {
       try { dispose() } catch { /* 释放失败不得反过来打断卸载 */ }
     }
   }
-  const releaseAll = () => { for (const session of [...states.keys()]) release(session) }
+  const releaseAll = () => { for (const session of Array.from(states.keys())) release(session) }
 
   const sync = (agent, key) => {
     const session = agent?.session
