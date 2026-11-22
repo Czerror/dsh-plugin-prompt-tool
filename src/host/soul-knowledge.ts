@@ -1,9 +1,10 @@
 /** 本机知识库授权：只由用户命令确认，模块导出不包含官方持久域。 */
-import { constants, lstatSync, mkdirSync, realpathSync, readFileSync, writeFileSync } from 'node:fs'
+import { constants, lstatSync, mkdirSync, realpath, realpathSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Stats } from 'node:fs'
-import { lstat, open, opendir, realpath } from 'node:fs/promises'
+import { lstat, open, opendir } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import { promisify } from 'node:util'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
@@ -72,6 +73,8 @@ function identity(path: string): string {
   if (!stat.isDirectory()) throw new Error('知识库根不是目录')
   return revisionOf(JSON.stringify([realpathSync(absolute), stat.dev, stat.ino, stat.birthtimeMs]))
 }
+// fs.realpath 与 realpathSync 保留同样的路径拼写，fs.promises.realpath 会展开 Windows 别名。
+const realpathAsync = promisify(realpath)
 function fileVersion(stat: Stats) {
   return revisionOf(JSON.stringify([stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs]))
 }
@@ -87,7 +90,7 @@ async function asyncIdentity(path: string, check: () => void): Promise<string> {
   const stat = await lstat(absolute)
   check()
   if (!stat.isDirectory()) throw new Error('知识库根不是目录')
-  const physical = await realpath(absolute)
+  const physical = await realpathAsync(absolute)
   check()
   // 短名、挂载点等别名会让字面路径与 realpath 不同却指向同一目录，只能按对象身份判断变化。
   const resolved = await lstat(physical)

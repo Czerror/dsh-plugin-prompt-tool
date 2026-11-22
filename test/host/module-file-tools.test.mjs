@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { cpSync, mkdirSync, readFileSync, readdirSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tempDir } from '../fixtures/host-harness.mjs'
 import { registerModuleFileTools } from '../../src/runtime/module-file-tools.ts'
@@ -177,7 +177,9 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
   const beta = join(f.root, 'modules', 'beta')
   mkdirSync(beta)
   writeFileSync(join(beta, 'module.yml'), 'id: beta\nmodules: []\nrules: []\n')
-  const root = join(beta, 'data')
+  // 在大小写不敏感的文件系统上，用同一目录的另一种拼写确认预览。
+  const alias = join(f.root, 'modules', 'BETA')
+  const root = join(existsSync(alias) ? alias : beta, 'data')
   mkdirSync(root)
   writeFileSync(join(root, 'old.md'), 'PRIVATE')
   writeFileSync(join(root, 'SELF.src.md'), 'MY SELF')
