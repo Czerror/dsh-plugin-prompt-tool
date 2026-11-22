@@ -17,18 +17,8 @@ jobs:
       NO_PROXY: localhost,127.0.0.1,::1
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
         with:
-          version: 11.28.5
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 26.13.0
-          registry-url: https://registry.npmjs.org
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run typecheck
-      - run: pnpm run lint
-      - run: pnpm run test
-      - name: Verify fixed host baseline
-        run: pnpm run verify:host
-      - run: pnpm run verify:pack
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm run verify:ci
       - run: npm publish --ignore-scripts

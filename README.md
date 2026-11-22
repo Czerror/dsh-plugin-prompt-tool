@@ -89,18 +89,17 @@ dsh --profile web
 
 ## 本地开发
 
-在仓库目录安装依赖并执行检查。Node.js 与 pnpm 版本以 [package.json](package.json) 为准：
+要复现发布检查，在干净的 Windows 工作区使用与 [GitHub Actions](.github/actions/setup/action.yml) 相同的 Node.js 版本和 [package.json](package.json) 中 `packageManager` 指定的 pnpm，运行以下命令。
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm build
+pnpm run verify:ci
 git diff --check
 ```
 
-涉及宿主接入或发布包时，再执行 `pnpm verify:host` 和 `pnpm verify:pack`。构建后可在 DSH 插件管理页用 `link:` 加仓库绝对路径安装本地版本；更新代码后重启宿主。
+`verify:ci` 依次执行类型检查、lint、含构建的完整测试、宿主契约和打包安装验证。提交到 `dev` 或 `main` 的 PR 会在 Windows runner 上执行同一入口；发布标签在 npm 发布前再验证一次。
+
+构建后可在 DSH 插件管理页用 `link:` 加仓库绝对路径安装本地版本；更新代码后重启宿主。
 
 ## 项目状态
 

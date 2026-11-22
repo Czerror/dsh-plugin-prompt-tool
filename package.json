@@ -145,6 +145,7 @@
     "rebuild:module-template": "node scripts/rebuild-module-template.mjs",
     "rematerialize:modules": "node scripts/rematerialize-modules.mjs",
     "repair:profile": "node scripts/repair-profile.mjs",
+    "verify:ci": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run verify:host && pnpm run verify:pack",
     "verify:host": "node scripts/verify-host-contracts.mjs",
     "verify:pack": "node scripts/verify-package.mjs"
   },
