@@ -67,10 +67,9 @@ function ModuleBrowser({ store, t, open, scope, editingModule, onBrowse, feedbac
   const [query, setQuery] = useState('')
   const search = useRef<HTMLInputElement>(null)
   useLayoutEffect(() => { if (open) search.current?.focus({ preventScroll: true }) }, [open])
-  return <>
-    {open && <>
-      <h2 className={css.workspaceHeading}>{t('rules.sidebarModules')}</h2>
-      <SearchInput ref={search} aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query}
+  return <ModulePickerCards store={store} t={t} open={open} query={query} scope={scope} editingModule={editingModule} onBrowse={onBrowse}
+    feedback={feedback} search={<div className={css.ruleSearchBar}>
+      <SearchInput inline ref={search} aria-label={t('rules.moduleSearch')} placeholder={t('rules.moduleSearch')} value={query}
         onChange={event => setQuery(event.currentTarget.value)} onKeyDown={event => {
           if (event.key !== 'Enter' || event.nativeEvent.isComposing || !query.trim()) return
           const results = event.currentTarget.closest('aside')?.querySelectorAll<HTMLButtonElement>('[data-module-browse]')
@@ -78,10 +77,7 @@ function ModuleBrowser({ store, t, open, scope, editingModule, onBrowse, feedbac
           const target = exact ?? (results?.length === 1 ? results[0] : undefined)
           if (target && !target.disabled) { event.preventDefault(); target.click() }
         }} />
-      {feedback}
-    </>}
-    <ModulePickerCards store={store} t={t} open={open} query={query} scope={scope} editingModule={editingModule} onBrowse={onBrowse} />
-  </>
+    </div>} />
 }
 
 export interface RulesWorkspaceProps {
@@ -532,7 +528,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         editingModule={selected?.moduleId} onBrowse={(id, key) => changeModuleScope(`module:${id}`, key)} feedback={enableFeedback} />
     </aside>
     <aside id={diagnosticPaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={sidebar !== 'diagnostics'} aria-label={t('rules.sidebarDiagnostics')}>
-      {sidebar === 'diagnostics' && <><h2 className={css.workspaceHeading}>{t('rules.sidebarDiagnostics')}</h2>{props.renderDiagnostics?.()}</>}
+      {sidebar === 'diagnostics' && props.renderDiagnostics?.()}
     </aside>
     <div id={listPaneId} className={css.ruleListPane} data-canvas-obstacle="left" hidden={!showList}>
     <div className={css.ruleListHeader}>
@@ -557,7 +553,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         <option value="context-activation">{t('rules.worldBook')}</option>
         {store.meta.layers.map(layer => <option key={layer} value={layer}>{translateLabel(t, LAYER_LABEL_KEYS, layer)}</option>)}
       </select>
-      <div className={css.browseScopes} role="group" aria-label={t('rules.browseScope')}>
+      <div className={ui.segmentedFilter} role="group" aria-label={t('rules.browseScope')}>
         <button type="button" title={t('rules.participatingModules')} aria-pressed={!moduleFilter && !allModules} onClick={() => changeModuleScope('active')}>{t('canvas.participating')}</button>
         <button type="button" aria-label={t('rules.allModules')} aria-pressed={!moduleFilter && allModules} onClick={() => changeModuleScope('all')}>{t('configs.view.all')}</button>
       </div>

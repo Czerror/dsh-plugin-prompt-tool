@@ -100,6 +100,8 @@ export const ModulePickerCards = memo(function ModulePickerCards(props: {
   t: PromptToolTranslate
   open: boolean
   query: string
+  search: ReactNode
+  feedback: ReactNode
   scope: string
   editingModule?: string
   onBrowse: (moduleId: string, ruleKey?: string) => void
@@ -254,6 +256,26 @@ export const ModulePickerCards = memo(function ModulePickerCards(props: {
   return (
     <>
       {open && <div className={css.collection}>
+      <div className={css.header}>
+        <h2>{t('rules.sidebarModules')}</h2>
+        <Button variant="primary" aria-label={t('moduleSwitcher.new')} title={t('moduleSwitcher.new')} onClick={() => setPickerOpen(true)}>{t('configList.create')}</Button>
+        <Button variant="outline" aria-label={t('assetImport.moduleTitle')} title={t('assetImport.moduleTitle')} onClick={() => setImportOpen(true)}>{t('canvas.import')}</Button>
+      </div>
+      {props.search}
+      <div className={css.filterRow}>
+        <div ref={filtersRef} className={styles.segmentedFilter} role="group" aria-label={t('rules.moduleFilter')}>
+          {[
+            { value: 'all', label: t('configs.view.all') }, { value: 'on', label: t('moduleSwitcher.enabled') }, { value: 'off', label: t('rules.moduleDisabled') },
+          ].map(option => <button key={option.value} type="button"
+            aria-pressed={option.value === status} onClick={() => setStatus(option.value)}>{option.label}</button>)}
+        </div>
+        <label className={css.globalSwitch}>
+          <span>{t('modules.globalSwitch')}</span>
+          <Switch checked={modulesEnabled} label={t('modules.globalSwitch')} onChange={() => store.toggle()} />
+        </label>
+      </div>
+      {!modulesEnabled && <p className={css.warning}>{t('configs.readOnly.disabled')}</p>}
+      {props.feedback}
       {store.meta.moduleWarnings?.map(message => <p key={message} role="alert" className={css.warning}>{message}</p>)}
       {publicationRetry && <PublicationNotice publication={{ pending: true, error: publicationRetry.error }}
         pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
@@ -267,21 +289,6 @@ export const ModulePickerCards = memo(function ModulePickerCards(props: {
           setPublicationRetry({ error, run: publicationRetry.run })
           store.showNotice('error', error ?? t('publication.pending'))
         }) }} />}
-      <label className={css.globalSwitch}>
-        <span>{t('modules.globalSwitch')}</span>
-        <Switch checked={modulesEnabled} label={t('modules.globalSwitch')} onChange={() => store.toggle()} />
-      </label>
-      {!modulesEnabled && <p className={css.warning}>{t('configs.readOnly.disabled')}</p>}
-      <div ref={filtersRef} className={css.filters} role="group" aria-label={t('rules.moduleFilter')}>
-        {[
-          { value: 'all', label: t('rules.moduleAll') }, { value: 'on', label: t('moduleSwitcher.enabled') }, { value: 'off', label: t('rules.moduleDisabled') },
-        ].map(option => <Button key={option.value} shape="pill" variant="outline" size="sm"
-          aria-pressed={option.value === status} onClick={() => setStatus(option.value)}>{option.label}</Button>)}
-      </div>
-      <div className={css.toolbar}>
-        <Button shape="pill" variant="primary" size="sm" aria-label={t('moduleSwitcher.new')} title={t('moduleSwitcher.new')} onClick={() => setPickerOpen(true)}>{t('configList.create')}</Button>
-        <Button shape="pill" variant="outline" size="sm" aria-label={t('assetImport.moduleTitle')} title={t('assetImport.moduleTitle')} onClick={() => setImportOpen(true)}>{t('canvas.import')}</Button>
-      </div>
       <div className={css.cards}>
         {visibleModules.length === 0
           ? <p className={styles.readOnly} role="status">{t('moduleSwitcher.empty')}</p>

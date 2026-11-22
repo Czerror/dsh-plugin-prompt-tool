@@ -657,6 +657,20 @@
 }
 
 .menuSelectChevron { flex: none; }
+
+.segmentedFilter { display: inline-flex; align-items: center; flex: none; gap: 1px; box-sizing: border-box; min-block-size: 28px; padding: 1px; border: 1px solid #40516d; border-radius: 6px; background: #1b2638; }
+.segmentedFilter > button { min-block-size: 24px; padding: 2px 7px; border: 0; border-radius: 4px; background: transparent; color: #bbcae2; font: 500 12px/18px system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
+.segmentedFilter > button:hover { background: #2f425e; }
+.segmentedFilter > button[aria-pressed=true] { background: #a9c2ea; color: #152338; }
+.segmentedFilter > button:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 1px; }
+@media (pointer: coarse) {
+  .segmentedFilter > button { min-block-size: 44px; min-inline-size: 44px; }
+}
+@media (forced-colors: active) {
+  .segmentedFilter > button[aria-pressed=true] { outline: 1px solid Highlight; }
+  .segmentedFilter > button:focus-visible { outline: 2px solid Highlight; }
+}
+
 /* 批量启用/禁用按钮组：过滤行最右侧，仅作用于过滤后可见规则。 */
 .batchControls {
   display: flex;
