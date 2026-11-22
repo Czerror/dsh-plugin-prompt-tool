@@ -63,7 +63,7 @@ dsh --profile web
 
 升级插件后，重启对应的 DSH 应用或服务以加载新代码。升级不会覆盖已有模块定义或私有数据；需要新版内置模块配置时，请显式更新用户副本。旧版内容模块也不会自动移除，升级后请检查已启用的模块。
 
-旧模块格式的转换与数据迁移见 [参数说明](docs/architecture-params.md#旧格式与显式转换) 和 [资产交换](docs/asset-transfer.md)。
+旧模块格式的转换与数据迁移见 [旧格式转换](docs/subsystems/params-migration.md#旧格式与显式转换) 和 [资产交换](docs/asset-transfer.md)。
 
 ## 进一步配置
 
@@ -72,7 +72,7 @@ dsh --profile web
 | 任务 | 文档 |
 | --- | --- |
 | 编写模块、查看 YAML 示例 | [模块编写指南](skills/dsh-module/SKILL.md) · [字段参考](module.yml) |
-| 配置变量、人设与指令策略 | [参数与存储](docs/architecture-params.md) |
+| 配置变量、人设与指令策略 | [变量与模板](docs/subsystems/variables.md) · [人设与指令策略](docs/subsystems/params-editors.md) |
 | 配置注入位置、工具与高级动作 | [引擎指南](docs/engine-reuse.md) · [插入点契约](docs/injection-point-contracts.md) |
 | 导入角色卡、世界书或分享模块 | [SillyTavern 转换](docs/SillyTavern.md) · [资产交换](docs/asset-transfer.md) |
 

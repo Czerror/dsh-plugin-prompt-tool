@@ -41,7 +41,7 @@
 | `enable_web_search: true` | 提示确认官方预设已提供工具 | 不装配额外 web 工具 |
 | `enable_web_search: false` | 装配呈现、SDK 文本和执行拒绝规则 | 仍经官方工具管线执行 |
 
-含系统段的来源额外生成普通 persona 规则，prefix 为空串、complete:false，省略 audience 作用于主/子两类；随模块启用参与动态规则聚合，不再生成顶层人设或来源选择。该规则追加在转换规则尾部并避让已有 id，不改变来源报告的既有 targetIndex。多源组合沿普通规则身份与配置序号合并。布尔冲突、继承与回退见 [动态人设规则](architecture-params.md#动态人设规则与继承)。
+含系统段的来源额外生成普通 persona 规则，prefix 为空串、complete:false，省略 audience 作用于主/子两类；随模块启用参与动态规则聚合，不再生成顶层人设或来源选择。该规则追加在转换规则尾部并避让已有 id，不改变来源报告的既有 targetIndex。多源组合沿普通规则身份与配置序号合并。布尔冲突、继承与回退见 [动态人设规则](subsystems/params-editors.md#动态人设规则与继承)。
 
 ### 世界书到上下文激活
 
@@ -97,7 +97,7 @@ ST 导入正文设置 `params.templateEvaluation: true`，变量操作经有界 
 |---|---|
 | set/get/add/inc/decvar | `module.set/get/add/inc/dec` |
 | 对应 globalvar | `global.set/get/add/inc/dec` |
-| 裸 `{{key}}` | 模块覆盖全局；具名空值替换为空 |
+| 裸 `{{key}}` | 保留裸引用，交给原生模板求值；具名空值替换为空 |
 | `getvar::key::default` | 保留现有缺值默认写回扩展，纳入单域事务 |
 | 嵌套表达式 | 同一 parser 分隔参数、递归求值 |
 | pick/random/roll/chance 与事实宏 | 沿用有界求值；pick 不随普通前后缀长度漂移 |
@@ -106,9 +106,9 @@ ST 导入正文设置 `params.templateEvaluation: true`，变量操作经有界 
 
 **自动登记只属于 ST 导入。** 转换器扫描正文与激活键中的未声明裸引用，登记到模块 `variables`，初值为 `''`；触发键的缺值还进入报告。普通规则、模板选择器和手写模块不自动创建变量，需在变量卡手动建立。`WHO`、`stateKeys` 这类示例也遵守该边界。
 
-正文中的角色名和用户称呼按当前转换器的名称处理；触发键保留引用并登记空占位，不猜测匹配词。空值不是删除。导入登记的模块变量跨会话共享；原生另有按真实会话隔离的 session 域，不复刻 ST 的 local/global 表，详见[持久变量事务](architecture-params.md#持久变量事务)。
+正文中的角色名和用户称呼按当前转换器的名称处理；触发键保留引用并登记空占位，不猜测匹配词。空值不是删除。导入登记的模块变量跨会话共享；原生另有按真实会话隔离的 session 域，不复刻 ST 的 local/global 表，详见[持久变量事务](subsystems/variables.md#持久变量事务)。
 
-一张模板可读两域、只写一域；解析/循环/保留名/预算/双域写失败零提交。模板读取/写入、CAS、执行去重和发布失败边界见 [变量事务](architecture-params.md#规则与变量事务)。
+转换器将 ST 变量操作映射到 module 或 global 域。运行时的读取顺序、单域提交、失败回滚和执行去重见[模板求值](subsystems/variables.md#模板求值)。
 
 ## 不支持能力的处理
 
