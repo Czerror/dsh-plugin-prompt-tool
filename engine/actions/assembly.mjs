@@ -169,7 +169,7 @@ export function prepareAssembly(action, plugin) {
   if (sectionsKeep !== undefined && sectionsRemove !== undefined) {
     throw new TypeError(`${plugin}: assembly.sections cannot combine keep with remove — 一种是白名单、一种是黑名单，同时声明语义不明`)
   }
-  return (_ctx, { warnOnce, on, collect, take }) => collect(on('system-prompt/assemble', async (assembly, context, next, _frame, replacementFrame) => {
+  return (_ctx, { warnOnce, on, collect }) => collect(on('system-prompt/assemble', async (assembly, context, next, _frame, replacementFrame) => {
     const assembled = await next()
     try {
       let result = assembled
