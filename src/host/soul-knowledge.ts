@@ -89,7 +89,10 @@ async function asyncIdentity(path: string, check: () => void): Promise<string> {
   if (!stat.isDirectory()) throw new Error('知识库根不是目录')
   const physical = await realpath(absolute)
   check()
-  if (directoryKey(physical) !== directoryKey(absolute)) throw new Error('知识库实际路径已变化，请重新预览')
+  // 短名、挂载点等别名会让字面路径与 realpath 不同却指向同一目录，只能按对象身份判断变化。
+  const resolved = await lstat(physical)
+  check()
+  if (!resolved.isDirectory() || resolved.dev !== stat.dev || resolved.ino !== stat.ino) throw new Error('知识库实际路径已变化，请重新预览')
   return revisionOf(JSON.stringify([physical, stat.dev, stat.ino, stat.birthtimeMs]))
 }
 async function selectedFileDigest(path: string, version: string, buffer: Buffer, check: () => void) {
