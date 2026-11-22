@@ -11,8 +11,9 @@ runs:
       shell: pwsh
       run: |
         $prefix = Join-Path $env:RUNNER_TEMP 'project-pnpm'
-        $packageManager = node -p "require('./package.json').packageManager"
+        $declaration = node -p "JSON.stringify(require('./package.json').packageManager ?? null)"
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $packageManager = ConvertFrom-Json -InputObject $declaration -NoEnumerate -ErrorAction Stop
         $version = $null
         if ($packageManager -isnot [string] -or $packageManager -cnotmatch '\Apnpm@(.+)\z' -or
             -not [semver]::TryParse($Matches[1], [ref]$version) -or
