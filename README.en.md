@@ -63,7 +63,7 @@ Module definitions live in `$DSH_HOME/.prompt-tool/modules/<id>/module.yml`. Dis
 
 After upgrading the plugin, restart the corresponding DSH application or service to load the new code. Upgrades preserve existing module definitions and private data. Update user copies explicitly to adopt newer built-in module settings. Old content modules remain installed, so review your enabled modules after upgrading.
 
-For old module formats and data migration, see [format conversion](docs/architecture-params.md#旧格式与显式转换) and [asset transfer](docs/asset-transfer.md).
+For old module formats and data migration, see [format conversion](docs/subsystems/params-migration.md#旧格式与显式转换) and [asset transfer](docs/asset-transfer.md).
 
 ## Configure further
 
@@ -72,7 +72,7 @@ These reference documents are in Chinese:
 | Task | Documentation |
 | --- | --- |
 | Write modules and find YAML examples | [Module authoring guide](skills/dsh-module/SKILL.md) · [Field reference](module.yml) |
-| Configure variables, personas, and instruction policies | [Parameters and storage](docs/architecture-params.md) |
+| Configure variables, personas, and instruction policies | [Variables and templates](docs/subsystems/variables.md) · [Personas and instruction policies](docs/subsystems/params-editors.md) |
 | Configure injection points, tools, and advanced actions | [Engine guide](docs/engine-reuse.md) · [Injection point contracts](docs/injection-point-contracts.md) |
 | Import character cards and world books, or share modules | [SillyTavern conversion](docs/SillyTavern.md) · [Asset transfer](docs/asset-transfer.md) |
 
