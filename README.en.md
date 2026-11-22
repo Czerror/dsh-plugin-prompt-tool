@@ -89,18 +89,17 @@ Enable, disable, or replace these modules as needed:
 
 ## Develop locally
 
-Install dependencies and run checks from the repository directory. See [package.json](package.json) for Node.js and pnpm versions:
+To reproduce the release checks, use a clean Windows checkout with the Node.js version from [GitHub Actions](.github/actions/setup/action.yml) and the pnpm version in the `packageManager` field of [package.json](package.json).
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm build
+pnpm run verify:ci
 git diff --check
 ```
 
-For host integration or package changes, also run `pnpm verify:host` and `pnpm verify:pack`. After building, install locally through the DSH plugin manager using `link:` followed by the repository’s absolute path. Restart the host after code changes.
+`verify:ci` runs type checking, lint, the build and full test suite, host contract checks, and a package installation smoke test. Pull requests targeting `dev` or `main` run the same command on a Windows runner. Release tags run it again before publishing to npm.
+
+After building, install locally through the DSH plugin manager using `link:` followed by the repository’s absolute path. Restart the host after code changes.
 
 ## Project status
 

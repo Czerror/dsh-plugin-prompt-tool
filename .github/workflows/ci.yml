@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    env:
+      NODE_TLS_REJECT_UNAUTHORIZED: '1'
+      NO_PROXY: localhost,127.0.0.1,::1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm run verify:ci
