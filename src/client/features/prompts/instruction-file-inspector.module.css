@@ -22,11 +22,11 @@
 .identity { flex: 1; min-inline-size: 0; }
 .identity h3 { margin: 0; font-size: 17px; line-height: 23px; overflow-wrap: anywhere; }
 .identity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #b5c2d4; }
-.body { display: flex; flex-direction: column; gap: 12px; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 14px; }
+.body { display: flex; flex: 1; flex-direction: column; gap: 12px; min-block-size: 0; overflow: auto; overscroll-behavior: contain; padding: 14px; }
 .body p { margin: 0; overflow-wrap: anywhere; }
 .policy { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
 .textLabel { margin-block-end: -6px; font-weight: 600; }
-.text { box-sizing: border-box; inline-size: 100%; min-block-size: 10rem; block-size: clamp(10rem, 34dvh, 25rem); flex: none; resize: vertical; padding: 10px 12px; border: 1px solid #435268; border-radius: 7px; background: #202936; color: #e7edf6; font: 13px/1.55 ui-monospace, monospace; }
+.text { box-sizing: border-box; inline-size: 100%; min-block-size: 4lh; flex: 1 0 auto; resize: vertical; overflow: auto; padding: 10px 12px; border: 1px solid #435268; border-radius: 7px; background: #202936; color: #e7edf6; font: 13px/1.55 ui-monospace, monospace; }
 .text:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 1px; }
 .fileActions { display: grid; grid-template-columns: minmax(0, auto) minmax(44px, 1fr) auto; align-items: center; gap: 6px 8px; color: #b5c2d4; font-size: 12px; }
 .fileActions > [data-param-key="instructionHint"] { display: contents; }
@@ -36,7 +36,4 @@
 .fileActions > [data-param-key="instructionHint"] > [role="alert"], .fileStatus { grid-column: 1 / -1; overflow-wrap: anywhere; }
 .fileStatus { order: -1; }
 .fileStatus:empty { position: absolute; }
-@container (width < 30rem) {
-  .text { min-block-size: 7rem; block-size: clamp(7rem, 22dvh, 10rem); }
-}
 @media (pointer: coarse) { .policy, .header button, .fileActions button { min-block-size: 44px; } }

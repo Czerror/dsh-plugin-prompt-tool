@@ -1,7 +1,8 @@
-.collection, .cards { display: grid; gap: 8px; min-inline-size: 0; }
-.toolbar, .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
-.filters button[aria-pressed="true"] { border-color: #6688ae; background: #25344a; color: #e7f1ff; }
-.globalSwitch { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-block-size: 32px; cursor: pointer; }
+.collection, .cards { display: grid; gap: 6px; min-inline-size: 0; }
+.header, .filterRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.header h2 { flex: 1; margin: 0; font: 600 14px/20px system-ui, sans-serif; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.globalSwitch { display: flex; align-items: center; gap: 5px; font: 500 12px/18px system-ui, sans-serif; }
 .card { display: grid; gap: 6px; min-inline-size: 0; padding: 6px; border: 1px solid #364251; border-radius: 8px; background: #181f2a; color: #e7edf6; }
 .card[data-active] { border-color: #6688ae; }
 .row { display: flex; align-items: center; gap: 6px; min-inline-size: 0; }
@@ -30,6 +31,6 @@
 .commands ul { display: grid; gap: 4px; inline-size: 100%; margin: 0; padding: 0; list-style: none; }
 .commands li button { inline-size: 100%; justify-content: flex-start; text-align: start; white-space: normal; overflow-wrap: anywhere; }
 @media (forced-colors: active) {
-  .card[data-active], .filters button[aria-pressed="true"] { border-color: Highlight; }
+  .card[data-active] { border-color: Highlight; }
   .name:focus-visible { outline-color: Highlight; }
 }
