@@ -59,6 +59,8 @@ const client: UserConfig = {
   entry: { client: 'src/client/index.ts' },
   outDir: 'lib',
   format: 'cjs',
+  // 宿主的 ModuleLoader 用 require 调用客户端 factory，并读取 module.exports。
+  checks: { legacyCjs: false },
   platform: 'browser',
   dts: false,
   sourcemap: true,

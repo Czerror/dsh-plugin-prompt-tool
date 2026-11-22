@@ -3,10 +3,25 @@ description: Install the shared Node.js and pnpm toolchain and locked dependenci
 runs:
   using: composite
   steps:
-    - uses: pnpm/action-setup@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v6
       with:
         node-version: 26.13.0
         registry-url: https://registry.npmjs.org
+    - name: Install project pnpm
+      shell: pwsh
+      run: |
+        $prefix = Join-Path $env:RUNNER_TEMP 'project-pnpm'
+        $declaration = node -p "JSON.stringify(require('./package.json').packageManager ?? null)"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $packageManager = ConvertFrom-Json -InputObject $declaration -NoEnumerate -ErrorAction Stop
+        $version = $null
+        if ($packageManager -isnot [string] -or $packageManager -cnotmatch '\Apnpm@(.+)\z' -or
+            -not [semver]::TryParse($Matches[1], [ref]$version) -or
+            $packageManager -cne "pnpm@$version") {
+          throw 'package.json must declare packageManager as pnpm@<exact-version>.'
+        }
+        npm install --global --prefix $prefix $packageManager
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Add-Content -LiteralPath $env:GITHUB_PATH -Value $prefix
     - run: pnpm install --frozen-lockfile
       shell: pwsh

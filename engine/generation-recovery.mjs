@@ -38,7 +38,8 @@ export const configContract = defineConfig({
 
 // 逐 Unicode 字符比较周期，内存只随最长周期增长，不保留整段推理。
 function repeatDetector(threshold, maxCycle) {
-  const tail = new Array(maxCycle)
+  const tail = []
+  tail.length = maxCycle
   const matches = new Float64Array(maxCycle + 1)
   let seen = 0
   return text => {

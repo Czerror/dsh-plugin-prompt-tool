@@ -139,7 +139,7 @@
     "build": "tsdown",
     "prepare": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "lint": "oxlint src test engine tsdown.config.ts --ignore-pattern 'engine/vendor/**'",
+    "lint": "oxlint src test engine tsdown.config.ts",
     "test": "node scripts/run-tests.mjs",
     "sync:yaml": "node scripts/sync-yaml-vendor.mjs",
     "rebuild:module-template": "node scripts/rebuild-module-template.mjs",

@@ -144,7 +144,7 @@ function validateJsonSchemaValue(schema, value) {
     if (type === 'object' && typeof value === 'object' && value !== null && !Array.isArray(value)) {
       if (Array.isArray(node.required)) {
         for (const key of node.required) {
-          if (!(key in value)) violations.push(path + ': missing required property \"' + key + '\"')
+          if (!(key in value)) violations.push(path + ': missing required property "' + key + '"')
         }
       }
       if (node.properties !== undefined && typeof node.properties === 'object' && !Array.isArray(node.properties)) {
@@ -154,7 +154,7 @@ function validateJsonSchemaValue(schema, value) {
       }
       if (node.additionalProperties === false && node.properties !== undefined) {
         for (const key of Object.keys(value)) {
-          if (!(key in node.properties)) violations.push(path + ': unexpected property \"' + key + '\"')
+          if (!(key in node.properties)) violations.push(path + ': unexpected property "' + key + '"')
         }
       }
     }
@@ -252,7 +252,7 @@ function createExecute(ctx, def, requireApproval) {
         : shell === 'powershell' ? ['-NoProfile', '-NonInteractive', '-Command', `${psPrefix}${command}`]
           : shell === 'cmd' ? ['/D', '/S', '/C', command]
             : ['-c', command]
-      const env = { ...Object.fromEntries(ENV_ALLOWLIST.filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]])), ...(exec.env ?? {}) }
+      const env = { ...Object.fromEntries(ENV_ALLOWLIST.filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]])), ...exec.env }
       const output = await new Promise((resolvePromise) => {
         let killTimer
         let timedOut = false

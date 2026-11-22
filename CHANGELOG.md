@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- 清理 Windows CI 的项目 lint 警告，按配置排除生成的第三方 YAML 快照。客户端构建保留宿主需要的 CommonJS 格式。
+- 更新 GitHub Actions 的运行时与安装步骤，保留固定的项目 Node、pnpm 和标签可信发布流程。
+
 ## [6.3.0] - 2026-11-22
 
 - 修复 Windows 上知识库预览正常、确认时却因路径大小写差异误报失效的问题。已有授权继续使用原来的目录身份格式。
