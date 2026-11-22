@@ -41,12 +41,12 @@ export function DiagnosticsPanel(props: {
 
   useLayoutEffect(() => {
     if (returnTarget === undefined || returnKey === undefined) return
+    if (returnButton.current) {
+      setOpen(true)
+      setOpenModules(current => new Set(current).add(returnTarget.moduleId))
+      setOpenRecords(current => new Set(current).add(returnKey))
+    }
     const frame = requestAnimationFrame(() => {
-      if (returnButton.current) {
-        setOpen(true)
-        setOpenModules(current => new Set(current).add(returnTarget.moduleId))
-        setOpenRecords(current => new Set(current).add(returnKey))
-      }
       const target = returnButton.current ?? sectionButton.current
       target?.focus()
       onReturnFocus?.()
