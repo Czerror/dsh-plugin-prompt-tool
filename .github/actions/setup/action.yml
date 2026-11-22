@@ -7,6 +7,13 @@ runs:
       with:
         node-version: 26.13.0
         registry-url: https://registry.npmjs.org
-    - uses: pnpm/action-setup@v6
+    - name: Install project pnpm
+      shell: pwsh
+      run: |
+        $prefix = Join-Path $env:RUNNER_TEMP 'project-pnpm'
+        $packageManager = node -p "require('./package.json').packageManager"
+        npm install --global --prefix $prefix $packageManager
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        Add-Content -LiteralPath $env:GITHUB_PATH -Value $prefix
     - run: pnpm install --frozen-lockfile
       shell: pwsh
