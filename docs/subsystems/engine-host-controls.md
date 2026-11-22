@@ -74,6 +74,10 @@ agent、session、loop 的实际发行物分别验证版本、指纹和唯一结
 
 `host-control/delegation-limits` 的 `value.maxDepth` 为非负安全整数，`value.askTimeout` 为1–2147483秒整数；至少声明一项。深度仅替代官方spawn工具省略的配置，显式配置与provider-managed保留；等待仅替代调用的timeout=-1，省略和有限值由官方owner处理。两个早期owner分别校验，缺失只暂停显式依赖该目标的分支。参数按当前Agent已接受步骤封存，后续重判才接受更新；关闭不改已创建子代理或在途提问，取消沿原信号。普通入口缺失早期owner时需用户重启DSH并选用early入口。
 
+### 文件策略的可用性
+
+`sandbox-file-write` 依赖 Seatbelt。Windows 不适用，macOS 当前缺少 exec 身份适配，两者均报告不可用。`filesystem-fence` 和 `filesystem-observation` 分别核对所需的早期入口，以及当前 Agent 对应的文件系统服务和已验证的策略提供方。任一依赖缺失、身份不匹配、步骤取消或服务释放时，保留宿主原有判据，依赖该能力的分支暂停，独立分支继续。两项策略分别读取已接受工具步骤的配置快照，关闭影响后续步骤。具体不可用原因见[文件策略状态判定](../../engine/filesystem-policy.mjs)。
+
 ## 已接受步骤与说明替换
 
 普通 `assembly.target.sections.replace: [{ name, text }]` 只原位替换实际装配中已存在且正文非空的具名段，保留 order、complete 等官方元数据；目标缺失或正文为空时不补段。计划模式可据此编辑 `plan:policy` 全文，真实开关、日志、审批和退出工具仍归官方 planMode，不按工具是否可见猜测计划状态。

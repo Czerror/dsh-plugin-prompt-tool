@@ -103,4 +103,4 @@
 
 每个已发现的指令文件各有独立画布卡，鼠标和键盘均可打开检查器。切换文件保留规则选择和浏览状态，无规则时仍可操作。检查器正文填满剩余高度，底部保留文件操作。写入目标与编辑权见[参数编辑器](params-editors.md)，草稿与冲突见[指令文件草稿](ui-editing.md#指令文件草稿)。
 
-层设置使用独立平面小节，委派、变量与人设复用原编辑器和共享样式。指令提示使用 `strategy: placeholder` 与 `fill: instruction-hint`，执行时机、隔离及默认值见[宿主控制](engine-host-controls.md)。
+层设置使用独立平面小节，委派、变量与人设复用原编辑器和共享样式。指令提示使用 `strategy: placeholder` 与 `fill: instruction-hint`，执行时机、模块隔离及默认值见[指令提示的晋升与重置](engine-rules.md#指令提示的晋升与重置)。
