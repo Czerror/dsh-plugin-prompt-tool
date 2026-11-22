@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [6.3.1] - 2026-11-22
 
 - 清理 Windows CI 的项目 lint 警告，按配置排除生成的第三方 YAML 快照。客户端构建保留宿主需要的 CommonJS 格式。
 - 更新 GitHub Actions 的运行时与安装步骤，保留固定的项目 Node、pnpm 和标签可信发布流程。
