@@ -1,5 +1,8 @@
 export const DIAGNOSTIC_ZH = {
   'diagnostics.title': '诊断概览',
+  'diagnostics.unknownModule': '未标明模块',
+  'diagnostics.locate': '定位',
+  'diagnostics.session': '会话',
   'diagnostics.hint': '规则记录 · 当前会话上下文',
   'diagnostics.rules': '规则与配置',
   'diagnostics.context': '上下文激活',
@@ -31,6 +34,9 @@ export const DIAGNOSTIC_ZH = {
 
 export const DIAGNOSTIC_EN: Record<keyof typeof DIAGNOSTIC_ZH, string> = {
   'diagnostics.title': 'Diagnostic overview',
+  'diagnostics.unknownModule': 'Unspecified module',
+  'diagnostics.locate': 'Locate',
+  'diagnostics.session': 'Session',
   'diagnostics.hint': 'Rule activity · Current session context',
   'diagnostics.rules': 'Rules and configuration',
   'diagnostics.context': 'Context activation',

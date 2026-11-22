@@ -1,13 +1,7 @@
 .card { display: grid; gap: 8px; min-inline-size: 0; }
-.header { display: grid; justify-items: start; gap: 8px; min-inline-size: 0; }
-.header p { margin: 0; color: var(--dsw-alias-label-secondary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
-.header .run { min-height: 36px; max-width: 100%; height: auto; white-space: normal; overflow-wrap: anywhere; }
+.header { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-inline-size: 0; }
+.header h2 { margin: 0; font: 600 14px/20px system-ui, sans-serif; }
+.header .run { min-block-size: 28px; padding-inline: 9px; font: 12px/18px system-ui, sans-serif; }
 .notice { margin: 0; min-width: 0; color: var(--dsw-alias-label-primary); font: 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; }
-.groups { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding-block-start: 8px; border-block-start: 1px solid var(--dsw-alias-border-l2); }
-.groups > section { min-width: 0; overflow-wrap: anywhere; }
-.groups > section + section { padding-block-start: 8px; border-block-start: 1px solid var(--dsw-alias-border-l2); }
-.groups h3 { margin: 0 0 8px; font: 600 13px/20px system-ui, sans-serif; }
-.groups p { margin: 6px 0; }
-.groups ul { padding-left: 18px; overflow-wrap: anywhere; }
-.groups summary { cursor: pointer; color: var(--dsw-alias-label-secondary); }
+.groups { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
 @media (pointer: coarse) { .header .run { min-width: 44px; min-height: 44px; } }

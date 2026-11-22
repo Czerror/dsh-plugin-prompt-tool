@@ -15,28 +15,26 @@ export function WorkspaceDiagnostics(props: {
   onReturnFocus?: () => void
 }): ReactNode {
   const snapshot = useSyncExternalStore(props.diagnostics.subscribe, props.diagnostics.getSnapshot, props.diagnostics.getSnapshot)
-  const { sessionId } = props
+  const { sessionId, t } = props
   const context = snapshot.context?.sessionId === sessionId ? snapshot.context : undefined
-  const showRules = snapshot.diagnosedAt !== undefined || snapshot.status === 'error'
-  const showContext = context !== undefined
-  const status = snapshot.status === 'stale' ? props.t('diagnostics.stale')
-    : snapshot.busy ? props.t('diagnostics.running')
-      : snapshot.status === 'error' ? props.t(context?.error !== undefined ? 'diagnostics.failed' : 'diagnostics.rulesFailed')
-        : context?.error !== undefined ? props.t('diagnostics.contextFailed')
-          : sessionId !== undefined && showRules && !showContext ? props.t('diagnostics.contextPending')
-            : snapshot.status === 'ready' ? props.t('diagnostics.completed') : props.t('diagnostics.never')
-  return <section className={css.card} aria-label={props.t('diagnostics.title')}>
+  const status = snapshot.status === 'stale' ? t('diagnostics.stale')
+    : snapshot.busy ? t('diagnostics.running')
+      : snapshot.status === 'error' ? t(context?.error !== undefined ? 'diagnostics.failed' : 'diagnostics.rulesFailed')
+        : context?.error !== undefined ? t('diagnostics.contextFailed')
+          : sessionId !== undefined && snapshot.diagnosedAt !== undefined && !context ? t('diagnostics.contextPending')
+            : snapshot.diagnosedAt !== undefined ? t('diagnostics.ready', { time: new Date(snapshot.diagnosedAt).toLocaleTimeString() }) : t('diagnostics.never')
+  return <section className={css.card} aria-label={t('diagnostics.title')}>
       <header className={css.header}>
-        <p>{props.t(sessionId === undefined ? 'diagnostics.noSession' : 'diagnostics.hint')}{sessionId === undefined ? '' : ` · ${sessionId}`}</p>
-        <Button className={css.run} shape="pill" variant="primary" aria-label={props.t(snapshot.busy ? 'diagnostics.running' : 'diagnostics.run')}
+        <h2>{t('rules.sidebarDiagnostics')}</h2>
+        <Button className={css.run} variant="outline" aria-label={t(snapshot.busy ? 'diagnostics.running' : 'diagnostics.run')}
           aria-busy={snapshot.busy} disabled={snapshot.busy} onClick={() => { void props.diagnostics.run(sessionId) }}>
-          {props.t(snapshot.busy ? 'diagnostics.running' : 'rules.sidebarDiagnostics')}
+          {t(snapshot.busy ? 'diagnostics.running' : 'diagnostics.run')}
         </Button>
       </header>
       <p className={css.notice} role="status" aria-atomic="true">{status}</p>
-      {(showRules || showContext) && <div className={css.groups}>
-        {showRules && <DiagnosticsPanel diagnostics={props.diagnostics} t={props.t} onLocate={props.onLocate} returnTarget={props.returnTarget} onReturnFocus={props.onReturnFocus} />}
-        {showContext && <ContextActivationDiagnosticsCard snapshot={context} sessionId={sessionId} t={props.t} />}
-      </div>}
+      <div className={css.groups}>
+        <DiagnosticsPanel snapshot={snapshot} t={t} onLocate={props.onLocate} returnTarget={props.returnTarget} onReturnFocus={props.onReturnFocus} />
+        <ContextActivationDiagnosticsCard key={sessionId} snapshot={context} sessionId={sessionId} t={t} />
+      </div>
     </section>
 }

@@ -160,7 +160,7 @@ slot 使用 ctx.slots.inject() 等待声明，再调用 ctx.slots.register()。�
           ├─ 右侧节点属性、指令文件、库条目详情或模块层设置
           └─ 按需打开完整 JSON、规则设置及模板选择
 
-模块运行总闸位于模块侧栏。诊断侧栏显示规则与当前会话的上下文诊断，定位节点后可用“诊断”返回原记录。数据 store 由 WorkspaceStoreOwner 持有，PromptWorkspace 消费其快照，WorkspaceFrame 负责入口外壳。模块内容按显式目标编辑（见 §7.1.1）。
+模块侧栏将启停状态筛选与全局运行开关分开，筛选样式与规则页共用。诊断分区默认折叠，规则记录按模块分组，当前会话的上下文记录按激活阶段分组。展开记录才挂载明细，定位节点后可用“诊断”展开并返回原记录。指令卡正文框填满检查器剩余高度，底部保留文件操作。数据 store 由 WorkspaceStoreOwner 持有，PromptWorkspace 消费其快照，WorkspaceFrame 负责入口外壳。模块内容按显式目标编辑（见 §7.1.1）。
 
 模块的目录物化、复制、删除和参数由本插件维护；模块不进入官方 `agentPresets` 注册表，编辑目标不驱动官方会话预设切换。工具预览及其专用 roster、会话预设投影已移除；默认值 `selectedDefault` / `defaultId` 不参与模块设置。
 
