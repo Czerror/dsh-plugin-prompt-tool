@@ -52,7 +52,7 @@ export function DiagnosticsPanel(props: {
       onReturnFocus?.()
     })
     return () => cancelAnimationFrame(frame)
-  }, [returnTarget, returnKey, onReturnFocus])
+  }, [returnTarget, returnKey, onReturnFocus, snapshot.records])
 
   const status = snapshot.busy ? t('diagnostics.running')
     : snapshot.status === 'idle' ? t('diagnostics.never')
