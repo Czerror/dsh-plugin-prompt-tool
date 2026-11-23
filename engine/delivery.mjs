@@ -66,11 +66,12 @@ export function actionStamp(config, session) {
   }
 }
 
-/** 官方同 order 按 name 排序，注册和投递查询共用这一份名字。 */
+/** 运行时上下文仍以序号辅助同档排序；系统段的名字同时是宿主持久投递身份。 */
 export function textRegistrationName(config, field) {
   const explicit = config.params?.[field]
   if (typeof explicit === 'string' && explicit.length > 0) return explicit
   if (config.sourceModuleId === undefined) return config.id
+  if (field === 'sectionName') return `prompt-tool:section:${config.sourceModuleId}:${config.id}`
   return `prompt-tool:${String(config.sequence).padStart(16, '0')}:${config.sourceModuleId}:${config.id}`
 }
 

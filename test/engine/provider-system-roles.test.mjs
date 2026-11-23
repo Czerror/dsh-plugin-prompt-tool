@@ -99,28 +99,28 @@ async function fixture(t, api = 'anthropic-messages', logical = 'https://anthrop
   return { root, runtime, adapter, registration, agent, send, define, requests, responses, outcomes, setKey: value => { key = value }, model }
 }
 
-test('OAuth最终HTTP仅移除自动首块，用户同句、headers、工具与日志正文保持', async t => {
+test('alpha.2 指纹失配保留 OAuth 原正文和独立插件章节', async t => {
   const world = await fixture(t), main = await world.agent('pt24-main')
   const off = await world.send(main, 'off')
   assert.equal(off.body.system[0].text, identity)
   world.define(true, 'main', 'KEEP BODY ' + identity)
   await world.runtime.refresh()
   const on = await world.send(main, 'on')
-  assert.ok(on.body.system.length === 1, JSON.stringify(world.outcomes))
-  assert.ok(on.body.system[0].text.includes('KEEP BODY ' + identity))
-  assert.ok(on.body.system[0].text.includes('QUALIFIED'))
+  assert.equal(on.body.system[0].text, identity)
+  const requestText = JSON.stringify([on.body.system, on.body.messages])
+  assert.ok(requestText.includes('KEEP BODY ' + identity))
+  assert.ok(!requestText.includes('QUALIFIED'))
   assert.deepEqual(on.body.tools, off.body.tools)
-  assert.deepEqual(on.body.system[0].cache_control, off.body.system[1].cache_control)
   for (const header of ['authorization', 'user-agent', 'x-app', 'anthropic-beta', 'anthropic-version']) assert.equal(on.headers[header], off.headers[header], header)
   const system = main.session.snapshotEvents().findLast(event => event.type === 'system/message')
-  assert.equal(on.body.system[0].text, textOf(system.data.message.content))
+  assert.ok(textOf(system.data.message.content).includes('KEEP BODY ' + identity))
   const step = main.session.snapshotEvents().findLast(event => event.type === 'step/start')
   assert.deepEqual({ turn: system.data.turn, step: system.data.step }, step.data)
   await world.root.sessions.flush(main.session)
   const persisted = await world.root.sessionPersistence.open(main.id, 'read')
   try { assert.deepEqual((await persisted.read()).events.find(event => event.seq === system.seq), system) }
   finally { await persisted.close() }
-  assert.equal(providerSystemRolesStatus(main, 'oauth-identity-prefix', main.model.current()).available, true)
+  assert.equal(providerSystemRolesStatus(main, 'oauth-identity-prefix', main.model.current()).available, false)
 })
 
 test('固定PI缓存与完整Messages请求在身份与角色映射开关后保持官方行为', async t => {
@@ -131,7 +131,7 @@ test('固定PI缓存与完整Messages请求在身份与角色映射开关后保�
     await world.runtime.refresh()
     const on = await world.send(agent, 'cache-on')
     assert.equal(off.body.messages[0].role, 'developer')
-    assert.equal(on.body.messages[0].role, 'system')
+    assert.equal(on.body.messages[0].role, off.body.messages[0].role)
     assert.equal(off.body.prompt_cache_key, undefined)
     assert.equal(on.body.prompt_cache_key, off.body.prompt_cache_key)
   })
@@ -141,7 +141,7 @@ test('固定PI缓存与完整Messages请求在身份与角色映射开关后保�
     await world.runtime.refresh()
     const on = await world.send(agent, 'thread-on')
     assert.equal(on.body.thread, undefined)
-    assert.equal(on.body.system.length, 1)
+    assert.equal(on.body.system[0].text, identity)
     world.define(false)
     await world.runtime.refresh()
     const off = await world.send(agent, 'thread-off')

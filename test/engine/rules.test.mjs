@@ -3,9 +3,20 @@ import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { compileRules, getRuleEditorMeta } from '../../engine/rule-spec.mjs'
-import { mountRuleSources } from '../../engine/rule-runtime.mjs'
+import { registerAction } from '../../engine/actions/index.mjs'
+import { createRuleRuntime, mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { ruleFrame, ruleMatches } from '../../engine/conditions/evaluation.mjs'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const require = createRequire(import.meta.url)
+const systemPromptRequire = createRequire(require.resolve('@deepseek-ai/dsh-system-prompt'))
+const hostPlugin = async name => (await import(pathToFileURL(systemPromptRequire.resolve(name)).href)).default
 
 function harness(services = {}) {
   const events = new Map()
@@ -88,6 +99,8 @@ test('统一规则：编译拒绝多启用互斥组、重复身份与动态 regi
 
 test('统一规则：真实 SystemPrompt 的条件段共享判定，主子受众隔离且卸载移除注册', async () => {
   const root = new Context()
+  await root.plugin(await hostPlugin('@deepseek-ai/dsh-session'))
+  await root.plugin(SessionProjections)
   await root.plugin(SystemPrompt)
   const main = actor()
   const child = { ...actor(), session: { ...actor().session, id: 'child', header: { delegationDepth: 1 } } }
@@ -117,6 +130,160 @@ test('统一规则：真实 SystemPrompt 的条件段共享判定，主子受众
   assert.deepEqual(owned(released.sections), [])
   assert.deepEqual(owned(released.contexts), [])
   assert.equal(reads, 3)
+})
+
+test('章节按画布跨档排序，同名贡献独立投递且规则按原名匹配', async t => {
+  const root = new Context()
+  await root.plugin(await hostPlugin('@deepseek-ai/dsh-session'))
+  await root.plugin(SessionProjections)
+  await root.plugin(SystemPrompt, { includeHarnessIdentity: false })
+  t.after(() => root.fiber.dispose())
+  const outside = [{ name: 'external', order: 10, text: 'EXTERNAL' },
+    { name: 'same', order: 20, text: 'ORIGINAL' }, { name: 'remove-me', order: 30, text: 'OLD' }]
+  for (const section of outside) root.systemPrompt.section(section)
+  const inject = (id, order) => ({ id, kind: 'inject-text', config: { layer: 'system-section', order, text: id } })
+  const assembly = (id, sections) => ({ id, kind: 'assembly', target: { sections } })
+  const rules = (duplicates, order = { late: 0, early: 10, add: 20, edit: 30 }) => compileRules([
+    { id: 'late', then: [inject('LATE', 30)] },
+    { id: 'early', then: [inject('EARLY', 0)] },
+    { id: 'add', then: [assembly('add', { remove: ['remove-me'], add: [...duplicates, { name: 'remove-me', text: 'NEW', id: 'replacement' }] })] },
+    { id: 'edit', then: [assembly('edit', { replace: [{ name: 'same', text: 'REPLACED' }], add: [{ name: 'same', text: 'SECOND' }], append: [{ name: 'same', text: 'APPENDED' }] })] },
+  ], { configOrder: order })
+  const runtime = createRuleRuntime(root)
+  t.after(() => runtime.dispose())
+  const first = { name: 'same', text: 'FIRST' }, automatic = { name: 'same', text: 'AUTO' }
+  runtime.replace([{ moduleId: 'sections', rules: rules([first, automatic]) }])
+  const { sections } = await root.systemPrompt.assemble({})
+  assert.deepEqual(sections.filter(section => section.text).map(section => section.text),
+    ['LATE', 'EXTERNAL', 'REPLACED\nAPPENDED', 'EARLY', 'FIRST', 'AUTO', 'NEW', 'SECOND'])
+  assert.equal(sections.find(section => section.text.includes('REPLACED')).name, 'same')
+  assert.equal(new Set(sections.map(section => section.name)).size, sections.length)
+  assert.deepEqual(outside.map(section => section.order), [10, 20, 30])
+  const nameOf = (list, text) => list.find(section => section.text === text).name
+  runtime.replace([{ moduleId: 'sections', rules: rules([automatic, { ...first, text: 'UPDATED' }], { early: 0, late: 10, add: 20, edit: 30 }) }])
+  const updated = (await root.systemPrompt.assemble({})).sections
+  assert.equal(nameOf(updated, 'AUTO'), nameOf(sections, 'AUTO'))
+  assert.equal(nameOf(updated, 'UPDATED'), nameOf(sections, 'FIRST'))
+  assert.equal(nameOf(updated, 'LATE'), nameOf(sections, 'LATE'), '画布移位保留投递身份')
+  runtime.replace([{ moduleId: 'sections', rules: rules([automatic]) }])
+  assert.equal(nameOf((await root.systemPrompt.assemble({})).sections, 'AUTO'), nameOf(sections, 'AUTO'))
+  const taken = nameOf(sections, 'NEW')
+  const release = root.systemPrompt.section({ name: taken, text: 'THIRD-PARTY', order: 0 })
+  const collision = (await root.systemPrompt.assemble({})).sections
+  assert.equal(nameOf(collision, 'THIRD-PARTY'), taken)
+  assert.notEqual(nameOf(collision, 'NEW'), taken)
+  release()
+  assert.equal(nameOf((await root.systemPrompt.assemble({})).sections, 'NEW'), nameOf(collision, 'NEW'))
+  assert.throws(() => rules([{ ...first, id: 'duplicate' }, { ...automatic, id: 'duplicate' }]), /duplicate assembly.sections.add id/)
+})
+
+test('独立装配动作按原名组合并在解除后撤回', async t => {
+  const root = new Context()
+  await root.plugin(SessionProjections)
+  await root.plugin(SystemPrompt, { includeHarnessIdentity: false })
+  t.after(() => root.fiber.dispose())
+  const { Session } = await import(pathToFileURL(systemPromptRequire.resolve('@deepseek-ai/dsh-session')).href)
+  const session = Session.create('standalone-sections')
+  session.append('turn/start', { turn: 1 })
+  session.append('step/start', { turn: 1, step: 1 })
+  registerAction(root, { kind: 'assembly', id: 'append', target: { sections: { append: [{ name: 'brief', text: 'APPEND' }] } } })
+  const off = registerAction(root, { kind: 'assembly', id: 'add', target: { sections: { add: [{ name: 'brief', text: 'BODY' }] } } })
+  const assembly = await root.systemPrompt.assemble({ session })
+  const section = assembly.sections.find(entry => entry.text.startsWith('BODY'))
+  assert.equal(section.text, 'BODY\nAPPEND')
+  for (const { message, intent } of assembly.systemUpdates(false)) session.append('system/message', { turn: 1, step: 1, message }, intent)
+  off()
+  const closed = await root.systemPrompt.assemble({ session })
+  assert.ok(closed.systemUpdates(false).some(({ message }) => message.source.sections.some(entry => entry.name === section.name)))
+  for (const [removed, actionId] of [['ONE', undefined], ['TWO', undefined], ['ONE', 'same-action'], ['TWO', 'same-action']]) {
+    const target = Session.create((actionId ?? 'anonymous') + '-' + removed)
+    target.append('turn/start', { turn: 1 })
+    target.append('step/start', { turn: 1, step: 1 })
+    const offs = new Map(['ONE', 'TWO'].map(text => [text, registerAction(root,
+      { kind: 'assembly', id: actionId, target: { sections: { add: [{ name: 'same', text, id: 'local' }] } } })]))
+    const assemble = () => root.systemPrompt.assemble({ session: target })
+    const first = await assemble()
+    const names = new Map(first.sections.filter(entry => offs.has(entry.text)).map(entry => [entry.text, entry.name]))
+    assert.equal(new Set(names.values()).size, 2)
+    for (const { message, intent } of first.systemUpdates(false)) target.append('system/message', { turn: 1, step: 1, message }, intent)
+    for (let round = 0; round < 3; round++) assert.deepEqual((await assemble()).systemUpdates(false), [])
+    offs.get(removed)()
+    const survivor = removed === 'ONE' ? 'TWO' : 'ONE'
+    const next = await assemble()
+    assert.equal(next.sections.find(entry => entry.text === survivor).name, names.get(survivor))
+    assert.ok(next.systemUpdates(false).some(({ message }) => message.source.sections.some(entry =>
+      entry.name === names.get(removed) && message.content[entry.contentIndex].text === '')))
+    offs.get(survivor)()
+  }
+  const anonymous = entries => registerAction(root, { kind: 'assembly', target: { sections: { add: entries } } })
+  const entry = (id, text) => ({ id, name: 'anonymous-brief', text })
+  const releaseFirst = anonymous([entry('left', 'old left'), entry('right', 'old right')])
+  const prior = (await root.systemPrompt.assemble({ session })).sections
+  releaseFirst()
+  const releaseSecond = anonymous([entry('right', 'new right'), entry('left', 'new left')])
+  const updated = (await root.systemPrompt.assemble({ session })).sections
+  for (const id of ['left', 'right']) {
+    assert.equal(updated.find(s => s.text === 'new ' + id).name, prior.find(s => s.text === 'old ' + id).name)
+  }
+  releaseSecond()
+  for (const standaloneAdds of [true, false]) {
+    const compiled = createRuleRuntime(root)
+    const add = { id: 'mix-add', kind: 'assembly', target: { sections: { add: [{ name: 'mixed', text: 'MIXED' }] } } }
+    const append = { id: 'mix-tail', kind: 'assembly', target: { sections: { append: [{ name: 'mixed', text: 'TAIL' }] } } }
+    compiled.replace([{ moduleId: 'mixed', rules: compileRules([{ id: 'mixed', then: [standaloneAdds ? { ...append, waterfallPosition: 'outermost' } : add] }]) }])
+    const release = registerAction(root, standaloneAdds ? add : append, { prepend: !standaloneAdds })
+    try { assert.ok((await root.systemPrompt.assemble({})).sections.some(entry => entry.text === 'MIXED\nTAIL')) }
+    finally { release(); compiled.dispose() }
+  }
+})
+
+test('冷恢复以原声明识别经宿主插值的同名章节', async t => {
+  const previousHome = process.env.DSH_HOME
+  const home = mkdtempSync(join(tmpdir(), 'pt-section-'))
+  process.env.DSH_HOME = home
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  })
+  const runtime = async () => {
+    const root = new Context()
+    await root.plugin(await hostPlugin('@deepseek-ai/dsh-session'))
+    await root.plugin(SessionProjections)
+    await root.plugin(SystemPrompt, { includeHarnessIdentity: false })
+    const rules = createRuleRuntime(root)
+    t.after(async () => { rules.dispose(); await root.fiber.dispose() })
+    return { root, rules }
+  }
+  const source = texts => [{ moduleId: 'authored', rules: compileRules([{ id: 'added', then: [
+    { kind: 'assembly', id: 'add', target: { sections: { add: texts.map(text => ({ name: 'brief', text })) } } },
+    { kind: 'assembly', id: 'append', target: { sections: { append: [{ name: 'brief', text: 'APPEND' }] } } },
+  ] }]) }]
+  const first = await runtime()
+  const session = first.root.sessions.create('cold-sections')
+  session.append('turn/start', { turn: 1 })
+  session.append('step/start', { turn: 1, step: 1 })
+  first.root.systemPrompt.variable('model', () => 'FIRST')
+  first.rules.replace(source(['A {{model}}', 'B {{model}}']))
+  const admitted = await first.root.systemPrompt.assemble({ session })
+  const original = admitted.sections.find(entry => entry.text.startsWith('B ')).name
+  const directory = join(home, '.prompt-tool', 'section-admissions')
+  const updates = admitted.systemUpdates(false)
+  assert.equal(existsSync(directory), false, '未提交的装配不写身份映射')
+  for (const { message, intent } of updates) session.append('system/message', { turn: 1, step: 1, message }, intent)
+  assert.equal(readdirSync(directory).length, 1)
+  assert.deepEqual((await first.root.systemPrompt.assemble({ session })).systemUpdates(false), [])
+  assert.equal(readdirSync(directory).length, 1)
+  const second = await runtime()
+  second.root.systemPrompt.variable('model', () => 'SECOND')
+  second.rules.replace(source(['B {{model}}']))
+  const { Session } = await import(pathToFileURL(systemPromptRequire.resolve('@deepseek-ai/dsh-session')).href)
+  const restored = Session.create(session.id, session.snapshotEvents(), session.header, session.inheritedEventCount)
+  const assembled = await second.root.systemPrompt.assemble({ session: restored })
+  assert.equal(assembled.sections.find(entry => entry.text.startsWith('B ')).name, original)
+  const fork = first.root.sessions.fork(session.id, undefined, 'cold-fork')
+  const forked = await second.root.systemPrompt.assemble({ session: fork })
+  assert.equal(forked.sections.find(entry => entry.text.startsWith('B ')).name, original)
 })
 
 test('统一规则：缺失真实会话的 not 保持未知，any 中已知 true 分支仍能执行', async () => {

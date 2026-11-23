@@ -858,7 +858,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   assert.equal((await call()).isError, true)
 })
 
-test('rc2具名spawn沿真实Agent血缘执行已接受深度，取消后释放子Agent', { timeout: 10000 }, async t => {
+test('alpha.2 保留宿主委派上限与真实 Agent 血缘、取消与释放', { timeout: 10000 }, async t => {
   const root = new Context(), home = mkdtempSync(join(tmpdir(), 'pt36-lineage-'))
   const runtimes = [], handles = [], entered = new Map(), starts = [], ends = []
   t.after(async () => {
@@ -884,7 +884,7 @@ test('rc2具名spawn沿真实Agent血缘执行已接受深度，取消后释放�
   root.provide('workingDirectory', { get: session => session.header.cwd ?? home, ensure: async () => home, set: async () => home })
   await root.plugin(Subagents)
   await root.plugin(Spawn, { providerName: 'spawn' })
-  const toolOwner = await root.plugin(Tool, { provider: 'spawn' })
+  const toolOwner = await root.plugin(Tool, { provider: 'spawn', maxDepth: 1 })
   root.llm.registerAdapter(['memory'], new HeldModel())
   root.on('subagent/start', info => {
     starts.push(info)
@@ -911,13 +911,9 @@ test('rc2具名spawn沿真实Agent血缘执行已接受深度，取消后释放�
     { type: 'tool-call', id: name, name: 'subagent', arguments: JSON.stringify({ name, description: 'lineage fixture', prompt: 'Wait for cancellation' }) },
   ] })).results[0].result
   const accepted = await prepare(parent)
-  assert.equal(delegationLimitsStatus(parent, accepted, 'maxDepth').available, true)
+  assert.equal(delegationLimitsStatus(parent, accepted, 'maxDepth').available, false)
   parentRuntime.replace(rules(0))
-  const denied = await call(await prepare(parent), 'blocked')
-  assert.equal(denied.isError, true)
-  assert.match(denied.error.message, /depth 1 exceeds maxDepth 0/)
-  assert.equal(starts.length, 0)
-  const spawned = await call(accepted, 'reviewer')
+  const spawned = await call(await prepare(parent), 'reviewer')
   assert.equal(spawned.isError, false, JSON.stringify(spawned))
   assert.deepEqual(spawned.value, { kind: 'activation', name: 'reviewer' })
   const childId = root.sessionProjections.snapshot(parent.session).values.subagentCatalog.find(entry => entry.name === 'reviewer').id
@@ -937,7 +933,7 @@ test('rc2具名spawn沿真实Agent血缘执行已接受深度，取消后释放�
   const childDenied = await call(await prepare(child), 'nested')
   assert.equal(childDenied.isError, true)
   assert.match(childDenied.error.message, /depth 2 exceeds maxDepth 1/)
-  assert.equal(starts.length, 1, 'child cannot borrow parent accepted depth 2')
+  assert.equal(starts.length, 1, 'child observes the official one-level limit')
   await root.subagents.drainDescendants([parent])
   assert.equal(root.agents.get(childId), undefined)
   assert.equal(ends.length, 1)

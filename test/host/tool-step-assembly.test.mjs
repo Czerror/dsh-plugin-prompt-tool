@@ -1,21 +1,30 @@
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import Agents from '@deepseek-ai/dsh-agent'
+import Loop from '@deepseek-ai/dsh-agent-loop'
+import Llm, { LlmAdapter, createUserMessage } from '@deepseek-ai/dsh-llm'
 import Tools from '@deepseek-ai/dsh-tools'
 import * as native from '@deepseek-ai/dsh-tool-executor-native'
+import * as ptc from '@deepseek-ai/dsh-tool-executor-ptc'
 import { createDiscoveryRegistry } from '../../engine/discovery.mjs'
+import { registerAction } from '../../engine/actions/index.mjs'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
-const { moduleRoot } = isolatedHome('pt-tool-step-')
+const { home, moduleRoot } = isolatedHome('pt-tool-step-')
 const { createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-coordinator.ts')
 
 async function harness(t, rules = [{ id: 'narrow', then: [{ id: 'allow', kind: 'tool-visibility', allow: ['keep'] }] }], modules = ['rule-engine']) {
   const root = new Context()
+  await root.plugin(SessionProjections)
   await root.plugin(SystemPrompt)
   await root.plugin(Tools)
   await root.plugin(native)
@@ -78,6 +87,84 @@ test('公开 resolve/assemble 后置收窄最终声明与实际执行，官方 w
   assert.equal((await h.execute(toolSet)).results[0].result.isError, true)
   assert.equal(h.counts().calls, 1)
   toolSet.dispose()
+})
+
+test('独立动作收窄原服务的作用域预览与实际执行', async t => {
+  const h = await harness(t, [])
+  const service = h.root.get('systemPrompt')
+  let enabled = true
+  const release = registerAction(h.agent.ctx, { kind: 'tool-visibility', deny: ['hidden'] }, { when: () => enabled })
+  const names = async context => (await service.assemble(context)).tools.map(tool => tool.name)
+  assert.ok((await names({ scope: h.agent })).includes('keep'))
+  assert.ok(!(await names({ scope: h.agent })).includes('hidden'))
+  assert.ok((await names({ scope: {} })).includes('hidden'))
+  assert.equal(h.counts().conditions, 0, '无步骤装配保持预览，不预先执行工具准入')
+  const rawSet = await h.rawTools.resolve(h.context)
+  t.after(() => rawSet.dispose())
+  await names({ scope: h.agent, agent: h.agent })
+  assert.match((await h.execute(rawSet, 'hidden', h.rawTools)).results[0].result.error.message, /denied by tool-visibility/)
+  enabled = false
+  assert.ok((await names({ scope: h.agent, session: h.agent.session })).includes('hidden'))
+  assert.match((await h.execute(rawSet, 'hidden', h.rawTools)).results[0].result.error.message, /denied by tool-visibility/)
+  await names({ scope: h.agent, agent: h.agent })
+  assert.deepEqual((await h.execute(rawSet, 'hidden', h.rawTools)).results[0].result.value, { name: 'hidden' })
+  assert.equal(h.counts().conditions, 3, '只有显式 resolve 执行准入')
+  enabled = true
+  release()
+  assert.ok((await names({ scope: h.agent })).includes('hidden'))
+})
+
+test('官方会话提交的身份、PTC 声明及工具目录使用同一步已接受的投影', async t => {
+  const require = createRequire(import.meta.url)
+  const peer = createRequire(require.resolve('@deepseek-ai/dsh-agent-loop'))
+  const { default: Sessions } = await import(pathToFileURL(peer.resolve('@deepseek-ai/dsh-session')).href)
+  const id = 'step-projection'
+  mkdirSync(join(moduleRoot, id), { recursive: true })
+  writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, modules: ['rule-engine'], rules: [
+    { id: 'strip', then: [{ id: 'identity', kind: 'persona', stripDefaultIdentity: 'harness' }] },
+    { id: 'tools', then: [
+      { id: 'narrow', kind: 'tool-visibility', allow: ['fixture_keep', 'fixture_absent'] },
+      { id: 'catalog', kind: 'inject-text', config: { layer: 'runtime-context', strategy: 'placeholder',
+        fill: 'tool-catalog', params: { action: 'narrow' }, text: 'CATALOG {{RESIDENT_TOOLS}}' } },
+    ] },
+  ] }))
+  const root = new Context()
+  let runtime, handle
+  t.after(async () => { await runtime?.dispose(); await handle?.dispose(); await root.fiber.dispose() })
+  for (const plugin of [Llm, Sessions, SessionProjections, SystemPrompt, Tools, Agents]) await root.plugin(plugin)
+  root.provide('ptcRuntime', { language: 'typescript' })
+  await root.plugin(ptc)
+  await root.plugin(Loop, { agents: [] })
+  root.provide('workingDirectory', { get: () => home, ensure: async () => home, set: async () => home })
+  const requests = []
+  class Model extends LlmAdapter {
+    async resolveModel(provider, id) { return { provider, id, name: id } }
+    async *stream(request) {
+      requests.push(request)
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: 'ok' } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+  }
+  root.llm.registerAdapter(['fixture'], new Model())
+  let whenCalls = 0
+  for (const name of ['fixture_keep', 'fixture_hidden']) root.tools.register({ name, description: name,
+    parameters: { type: 'object', properties: {} }, output: { schema: { type: 'object' }, render: () => [] }, execute: () => ({}),
+  }, { when: () => { whenCalls++; return true } })
+  runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => [id] })
+  handle = await root.agents.create({ sessionId: id, agentOptions: { provider: 'fixture', model: 'fixture' }, meta: { cwd: home } })
+  handle.agent.followup(createUserMessage({ content: [{ type: 'text', text: 'Present tools.' }], source: { kind: 'user' } }))
+  await handle.agent.whenIdle()
+  assert.equal(requests.length, 1)
+  const text = messages => messages.flatMap(message => message.content.filter(block => block.type === 'text').map(block => block.text)).join('\n')
+  const committed = handle.agent.session.snapshotEvents().filter(event => event.type === 'system/message').map(event => event.data.message)
+  for (const system of [text(committed), text(requests[0].messages.filter(message => message.role === 'system'))]) {
+    assert.match(system, /fixture_keep/)
+    assert.doesNotMatch(system, /fixture_hidden|You are an AI agent powered by DeepSeek Harness\./)
+  }
+  assert.match(text(requests[0].messages), /CATALOG fixture_keep\n/)
+  assert.deepEqual(requests[0].tools.map(tool => tool.name), ['run_code'])
+  assert.equal(whenCalls, 2)
 })
 
 test('pre-step 工具条件遵守封存后的工具面，只读裁剪保留真实用户问句', async t => {

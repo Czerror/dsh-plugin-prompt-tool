@@ -6,17 +6,7 @@
 
 ### 工具结果裁剪
 
-`compaction-tool-result-pruner` 按宿主解析的官方构造器身份发现全部存活 Fiber，并在各 owner 自己的 Context 等待、门控原 Pruner；正式 standard 组合内层 isolate 不影响发现。就绪与停用资格按当前 Agent 的官方 scope 和真实 session 身份核对，其他 Agent 的 owner 不提供就绪。晚到或重挂后在后续正常装配重判，释放立即使旧门控失活；关闭规则恢复官方裁剪，第三方外层包装保留。不复制裁剪算法，也不修改预设。
-
-### 会话回退与待办
-
-`host-control / session-rewind-todos` 独立控制待办回退，按提交时真实 Agent 的规则判定。开启时预览及历史标记提交前核对当前作用域的官方 `todos` 投影；owner 未注册或释放时明确拒绝，正常暂无清单（null）允许，恢复后在下次正常请求重判，关闭时不依赖 todo owner。历史标记提交后，读取官方 `todos` standing-plan 投影（`turn/start` 后无清单即不写），仅将 completed 改为 pending，保持 in_progress、pending、正文与顺序；沿官方 Session 的 `todo/write` 全量事件持久化并更新同一投影，不建立第二状态库。历史重放只解释，不补写待办。标记已提交而待办写入失败时返回带 markerId 的失败目标，明确历史已提交；原边界重试只补待办，不重复回退，已进入新轮则拒绝。关闭、释放不逆转已写结果，后续不再更新。
-
-`host-control / session-rewind` 控制会话回退资格。producer 固定实际 Agent、所属轮及已接受输入身份，经公开 `cancel(..., { keepInbox: true })` 与有界静止等待后，在 `runMaintenance` 内再次核边界，期间开始的新轮不能被迟到取消或重新选中。回退按当前 surface 的连续输入后缀写空用户 replacement，准确记录来源节点；durable 不改写，重复网络提交不多退一轮，新的明确点击可继续退更早输入。整轮包含本轮真实子代理完成后的已结束官方通知轮；已释放的子会话经官方恢复，在启动屏障内核验父身份、持久边界与空 inbox 后才维护，成功后释放临时驻留；未知通知来源或预览后新轮拒绝。
-
-上一轮从该轮当前可见的第一条已接受用户输入开始撤回相关 surface 后缀；同轮后续接受的输入一并撤回，一次回退仍从最后一条输入开始。整轮将各目标本轮当前可见的真实用户输入按 surface 顺序回填，输入原文间以空行分隔，仅取文本块并保留原文空白；一次回退仍只回填末条输入，保护新草稿且不自动发送。预览同时固定末条输入身份，后来接受新输入时拒绝陈旧提交。上一轮以官方 `subagent/start` 发生时的父轮与子实例为关联证据，同时核对目录事实、持久父身份和本次子执行的输入起点；不按显示名、相同轮号或全部后代猜目标。缺少启动期事实、远程对象、owner 变更或陈旧输入明确拒绝。跨会话逐目标返回结果，失败重试保留同边界，重新授权且只执行未提交目标；去重记录有期限与数量限制，不落第二份持久账本。页面凭据绑定官方 principal，每次向 `remoteAccess.decide` 重核实际目标 `session/prompt` 权限。
-
-Session 解释器在 Agent 创建及插件挂载已有 Agent 时安装，公开派生出口排除确认的空标记并保留原派生缓存与其他消息贡献。规则关闭不恢复被撤内容；重放不补写或重发。释放恢复仍归本来源所有的方法，使保留在第三方包装内的旧贡献失活。卸载后的环境不支持回退历史的完整展示，需恢复插件解释器；不为卸载改写日志。Web 装配与真实三端运行须分别验收，Node 行为回归不能替代浏览器或桌面证据。
+`compaction-tool-result-pruner` 按宿主解析的官方构造器身份发现全部存活 Fiber，并在各 owner 自己的 Context 等待、门控原 Pruner；正式 standard 组合内层 isolate 不影响发现。就绪与停用资格按当前 Agent 的官方 scope 和真实 session 身份核对，其他 Agent 的 owner 不提供就绪。晚到或重挂后在后续正常装配重判，释放立即使旧门控失活。规则解除后下一次官方扫描恢复裁剪，仍在当前上下文里的旧工具结果也会被扫描。第三方外层包装保留。
 
 ### Messages 当前系统正文
 
@@ -80,9 +70,9 @@ agent、session、loop 的实际发行物分别验证版本、指纹和唯一结
 
 ## 已接受步骤与说明替换
 
-普通 `assembly.target.sections.replace: [{ name, text }]` 只原位替换实际装配中已存在且正文非空的具名段，保留 order、complete 等官方元数据；目标缺失或正文为空时不补段。计划模式可据此编辑 `plan:policy` 全文，真实开关、日志、审批和退出工具仍归官方 planMode，不按工具是否可见猜测计划状态。
+普通 `assembly.target.sections.replace: [{ name, text }]` 原位替换第一个作者名称相同且正文非空的段，保留 order、complete 等官方元数据。目标缺失或没有非空正文时跳过。计划模式可据此编辑 `plan:policy` 全文，真实开关、日志、审批和退出工具仍归官方 planMode。
 
-`sections.replace` 与 `contexts.replace` 都支持非空字面 `match`，唯一具名条目必须唯一匹配，歧义或原文缺失时透传并告警。省略匹配使用非空条目全文，`contexts.clear` 与上下文替换互斥。官方 `refreshContext` 调用原 provider 后复用该工具步骤已接受的替换，规则热更新只影响后续步骤。审批和沙箱说明属于运行上下文，计划说明属于系统段。文字说明沿原权限所有者执行。
+`sections.replace` 与 `contexts.replace` 都支持非空字面 `match`，要求名称和原文各自唯一匹配，歧义或原文缺失时透传并告警。`sections.keep/remove` 选择所有原名匹配的段，`sections.append` 命中首个原名匹配的段。`contexts.clear` 与上下文替换互斥。官方 `refreshContext` 调用原 provider 后复用该工具步骤已接受的替换，规则热更新只影响后续步骤。审批和沙箱说明属于运行上下文，计划说明属于系统段。文字说明沿原权限所有者执行。
 
 普通 `request-params.maxTokens` 是正安全整数的瞬时额度贡献，不能与本动作的 `patch/unset.maxTokens` 或 `replace:true` 混用。原 `patch/unset` 的有序组合语义保持。当前真实Agent和请求目标上有效的显式额度同值共存、异值拒绝完整候选并保旧；运行事实翻转形成冲突时，全部冲突额度及其分支后代正文暂停，后续正常重判恢复。只有实际参与同一额度目标的正向phase条件才比较 `maxPromoteSteps`，不同值同样冲突；独立phase追踪器不建立全局互斥。
 

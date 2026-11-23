@@ -3,13 +3,13 @@ import test from 'node:test'
 import * as contracts from '../../scripts/host-contracts-lib.mjs'
 
 const name = '@deepseek-ai/dsh-agent'
-const version = '0.2.2-rc.2'
+const version = '0.2.3-alpha.2'
 const manifest = { devDependencies: { [name]: version } }
 const locked = { specifier: version, version }
 
 test('registry 锁定版本与安装版本一致时通过，漂移时失败', () => {
   assert.deepEqual(contracts.dependencyVersionProblems(name, 'devDependencies', version, manifest, locked), [])
-  assert.ok(contracts.dependencyVersionProblems(name, 'devDependencies', '0.2.2-rc.3', manifest, locked).length > 0)
+  assert.ok(contracts.dependencyVersionProblems(name, 'devDependencies', '0.2.3-alpha.3', manifest, locked).length > 0)
 })
 
 test('file 源码 hook 不能替代 registry 锁定输入', () => {

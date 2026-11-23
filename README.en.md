@@ -36,7 +36,7 @@ All three workspace entry points share browsing position and rule drafts in one 
 
 ## Install the plugin
 
-Requires DSH `0.2.2-rc.2` or later. For the command-line interface (CLI), you also need Node.js `24.9.0+` and pnpm on your PATH. See [package.json](package.json) for all requirements.
+Requires DSH `0.2.3-alpha.2` or later. The CLI requires Node.js `^24.22.3 || >=26.13.1` and pnpm on your PATH. Keep plugin `6.3.1` on DSH `0.2.2-rc.2`. Check custom modules for retired capabilities before upgrading. [Requirements](package.json) · [Upgrade notes](CHANGELOG.md)
 
 ### Desktop or Web
 

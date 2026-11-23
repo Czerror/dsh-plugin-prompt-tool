@@ -56,7 +56,7 @@
 |---|---|
 | `inject-text` | 在六个注入层投递正文；config.layer 决定位置，空正文不投递 |
 | `persona` | 原官方 assemble 前准备人设与选项；见人设与变量 |
-| `assembly` | assemble 下游调整 sections/contexts；tools 改用 tool-visibility；keep 与 add/remove、clear 与 add/remove 各自互斥 |
+| `assembly` | 调整 sections/contexts；工具可见面用 tool-visibility。sections 的 keep/remove 互斥，按作者原名选中全部同名段；单动作依次 replace、keep/remove、add、append。contexts 的 clear 与 add/remove/replace 互斥 |
 | `tool-visibility` | 同时控制工具呈现和执行面；allow 后再 deny，允许同时声明 |
 | `tool-gate` | tools/pre-execute 的 allow/deny/ask；reason 属于此动作；工具名用 names 条件 |
 | `tool-result` | tools/post-execute 的 accept/replace/block；另有 edits，具体结构读实现 |
@@ -115,6 +115,8 @@ then:
 | subagent-end | subagent/end：static；params.action 为 observe/inject-main |
 
 position/role/promotion 属 pre-step；dedupe 另支持 turn-stop 的 none/session。普通 system-section/runtime-context 文本可动态判条件；inject-text 的 complete/suppressRuntimeContext 是固定注册效果，动态分支仍拒绝，动态人设选项用 persona。
+
+`assembly.target.sections.add` 支持 `{ name: brief, text: 正文 }`。可加有限数字 `order`，省略时按声明顺序追加尾部。同一动作内的同名贡献可分别指定唯一 `id`，例如 `{ id: task-brief, name: brief, text: 正文 }`。规则继续按 `name` 匹配。省略 `id` 时同一动作内先按正文配对，再按同名次序。append 命中首段，省略 `match` 的 replace 命中首个非空段，带 `match` 的 replace 要求原名和原文均唯一命中。
 
 ### 确认后注入
 

@@ -161,19 +161,89 @@ export function InstructionCanvas({ t, files, activeId, onSelect, onPaneClick }:
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const EMPTY_NODES: readonly RuleCanvasNode[] = []
-const roundedRoute = (points: Array<[number, number]>): string => {
-  let path = `M ${points[0]![0]} ${points[0]![1]}`
+type RoutePoint = [number, number]
+type RouteSegment = [RoutePoint, RoutePoint]
+
+const roundedRoute = (points: RoutePoint[]) => {
+  const segments: RouteSegment[] = []
+  let start = points[0]!
+  let path = `M ${start[0]} ${start[1]}`
   for (let i = 1; i < points.length - 1; i++) {
     const a = points[i - 1]!, b = points[i]!, c = points[i + 1]!
     const incoming = Math.hypot(b[0] - a[0], b[1] - a[1]), outgoing = Math.hypot(c[0] - b[0], c[1] - b[1])
     if (!incoming || !outgoing) continue
     const radius = Math.min(12, incoming / 2, outgoing / 2)
-    const before: [number, number] = [b[0] - (b[0] - a[0]) * radius / incoming, b[1] - (b[1] - a[1]) * radius / incoming]
-    const after: [number, number] = [b[0] + (c[0] - b[0]) * radius / outgoing, b[1] + (c[1] - b[1]) * radius / outgoing]
+    const before: RoutePoint = [b[0] - (b[0] - a[0]) * radius / incoming, b[1] - (b[1] - a[1]) * radius / incoming]
+    const after: RoutePoint = [b[0] + (c[0] - b[0]) * radius / outgoing, b[1] + (c[1] - b[1]) * radius / outgoing]
+    segments.push([start, before])
+    start = after
     path += ` L ${before[0]} ${before[1]} Q ${b[0]} ${b[1]} ${after[0]} ${after[1]}`
   }
   const last = points.at(-1)!
-  return path + ` L ${last[0]} ${last[1]}`
+  segments.push([start, last])
+  return { path: path + ` L ${last[0]} ${last[1]}`, segments }
+}
+
+const LABEL_CELL = 64
+
+function labelCells(box: CanvasRect): string[] {
+  const cells: string[] = []
+  for (let x = Math.floor(box.left / LABEL_CELL); x <= Math.floor(box.right / LABEL_CELL); x++) {
+    for (let y = Math.floor(box.top / LABEL_CELL); y <= Math.floor(box.bottom / LABEL_CELL); y++) cells.push(`${x},${y}`)
+  }
+  return cells
+}
+
+function placeEdgeLabel(segments: RouteSegment[], width: number, occupied: Map<string, CanvasRect[]>): RoutePoint {
+  const ranked = segments.slice().reverse().map(([from, to]) => {
+    const axis = from[1] === to[1] ? 0 : 1
+    const low = Math.min(from[axis], to[axis]), high = Math.max(from[axis], to[axis])
+    return { axis, low, high, cross: from[1 - axis]!, length: high - low }
+  })
+  const halfWidth = width / 2
+  const halfHeight = 10
+  let point: RoutePoint | undefined
+  // Prefer the target side of the line, where separate branches have already diverged.
+  for (const { axis, low, high, cross, length } of ranked) {
+    const alongInset = (axis === 0 ? halfWidth : halfHeight) + 3
+    const acrossInset = (axis === 0 ? halfHeight : halfWidth) + 3
+    if (length < alongInset * 2) continue
+    let space = [{ low: low + alongInset, high: high - alongInset }]
+    const bounds = axis === 0 ? { left: low, right: high, top: cross - acrossInset, bottom: cross + acrossInset }
+      : { left: cross - acrossInset, right: cross + acrossInset, top: low, bottom: high }
+    const nearby = new Set(labelCells(bounds).flatMap(cell => occupied.get(cell) ?? []))
+    for (const box of nearby) {
+      const crossLow = axis === 0 ? box.top : box.left, crossHigh = axis === 0 ? box.bottom : box.right
+      if (cross + acrossInset <= crossLow || cross - acrossInset >= crossHigh) continue
+      const blockLow = (axis === 0 ? box.left : box.top) - alongInset
+      const blockHigh = (axis === 0 ? box.right : box.bottom) + alongInset
+      space = space.flatMap(span => blockHigh <= span.low || blockLow >= span.high ? [span] : [
+        { low: span.low, high: Math.min(span.high, blockLow) },
+        { low: Math.max(span.low, blockHigh), high: span.high },
+      ].filter(part => part.low <= part.high))
+    }
+    const center = (low + high) / 2
+    const offsets = space.map(span => clamp(center, span.low, span.high))
+    const along = offsets.reduce<number | undefined>((best, offset) =>
+      best === undefined || Math.abs(center - offset) < Math.abs(center - best) ? offset : best, undefined)
+    if (along !== undefined) {
+      point = axis === 0 ? [along, cross] : [cross, along]
+      break
+    }
+  }
+  if (point === undefined) {
+    const { axis, low, high, cross } = ranked.reduce((best, segment) => segment.length > best.length ? segment : best, ranked[0]!)
+    const middle = (low + high) / 2
+    point = axis === 0 ? [middle, cross] : [cross, middle]
+  }
+  const [x, y] = point
+  const box = { left: x - halfWidth, right: x + halfWidth, top: y - halfHeight, bottom: y + halfHeight }
+  for (const cell of labelCells(box)) {
+    const entries = occupied.get(cell)
+    if (entries) entries.push(box)
+    else occupied.set(cell, [box])
+  }
+  return point
 }
 
 export function RuleCanvas(props: RuleCanvasProps) {
@@ -359,23 +429,35 @@ export function RuleCanvas(props: RuleCanvasProps) {
     if (!props.edges?.length) return null
     const hasSelection = !inspectingInstruction && props.nodes.some(node => node.selected)
     let flowCount = 0
-    return <svg className={css.edges} aria-hidden="true">{props.edges.map(edge => {
+    const occupiedLabels = new Map<string, CanvasRect[]>()
+    const labels: ReactNode[] = []
+    const routes = props.edges.map(edge => {
       const from = byId.get(edge.from), to = byId.get(edge.to)
       if (!from || !to) return null
       const x1 = from.x + 216, y1 = from.y + 50, x2 = to.x, y2 = to.y + 50
-      const path = x2 > x1 ? roundedRoute([[x1, y1], [(x1 + x2) / 2, y1], [(x1 + x2) / 2, y2], [x2, y2]])
+      const { path, segments } = x2 > x1 ? roundedRoute([[x1, y1], [(x1 + x2) / 2, y1], [(x1 + x2) / 2, y2], [x2, y2]])
         : roundedRoute([[x1, y1], [x1 + 24, y1], [x1 + 24, Math.min(y1, y2) - 24], [x2 - 24, Math.min(y1, y2) - 24], [x2 - 24, y2], [x2, y2]])
       const active = hasSelection && (from.selected || to.selected)
       const showFlow = active && flowCount < MAX_FLOW_EDGES
       if (showFlow) flowCount++
-      const labelX = (x1 + x2) / 2, labelY = (y1 + y2) / 2
-      return <g key={`${edge.from}-${edge.to}`} className={edge.kind ? css[edge.kind] : undefined} data-emphasis={active ? 'active' : hasSelection ? 'inactive' : undefined}>
+      const labelWidth = edge.label ? [...edge.label].reduce((width, char) => width + (char.charCodeAt(0) > 127 ? 11 : 7), 16) : 0
+      const labelPoint = edge.label ? placeEdgeLabel(segments, labelWidth, occupiedLabels) : undefined
+      const key = `${edge.from}-${edge.to}`
+      const emphasis = active ? 'active' : hasSelection ? 'inactive' : undefined
+      if (labelPoint) {
+        const [x, y] = labelPoint
+        labels.push(<g key={key} className={css.edgeLabel} data-edge-label={key} data-emphasis={emphasis}>
+          <rect x={x - labelWidth / 2} y={y - 10} width={labelWidth} height="20" rx="10" />
+          <text x={x} y={y}>{edge.label}</text>
+        </g>)
+      }
+      return <g key={key} className={edge.kind ? css[edge.kind] : undefined} data-edge-route={key} data-emphasis={emphasis}>
         <path d={path} />
         {showFlow && <EdgeFlow key={from.selected ? from.id : to.id} path={path} />}
         <circle className={css.outPort} cx={x1} cy={y1} r="5" /><circle className={css.inPort} cx={x2} cy={y2} r="5" />
-        {edge.label && <g className={css.edgeLabel}><rect x={labelX - edge.label.length * 3.5 - 8} y={labelY - 10} width={edge.label.length * 7 + 16} height="20" rx="10" /><text x={labelX} y={labelY}>{edge.label}</text></g>}
       </g>
-    })}</svg>
+    })
+    return <svg className={css.edges} aria-hidden="true"><g>{routes}</g><g>{labels}</g></svg>
   }, [props.edges, props.nodes, byId, inspectingInstruction])
   const begin = (event: ReactPointerEvent<HTMLElement>, node?: RuleCanvasNode) => {
     if (event.button !== 0) return

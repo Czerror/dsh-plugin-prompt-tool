@@ -122,7 +122,6 @@ export function createTurnBudget(max) {
  */
 export function withWhen(on, when, warnOnce, phase, onMiss) {
   if (typeof when !== 'function') return on
-  const miss = () => { if (typeof onMiss === 'function') onMiss() }
   // 注意参数个数：`on` 的签名是 `(event, handler, options)`——包装后的处理器必须占据
   // **第二个**位置，多传一个参数会把 options 挤到错位（首版就踩了这个，被测试抓出）。
   return (event, handler, options) => on(event, (...args) => {
@@ -136,7 +135,7 @@ export function withWhen(on, when, warnOnce, phase, onMiss) {
       const decide = (decided) => {
         if (decided === true) return invoke()
         // 动作级 when 为假也是「本轮没命中」：撤销型动作要在这里收手，不能留下上一轮的闸。
-        miss()
+        onMiss?.({ args: payload })
         return fallback()
       }
       const failed = (error) => {

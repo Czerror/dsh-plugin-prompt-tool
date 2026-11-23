@@ -5,7 +5,7 @@ id: soul
 name: 灵魂架构（判据与推送）
 version: 1.0.0
 engineCompat: ">=0.7.2"
-description: 灵魂架构完整核心：判据、结构化账本、授权检索、动态 SELF、上下文溯源、生成恢复与默认不唤醒的维护心跳；能力按 Agent
+description: 灵魂架构完整核心：判据、结构化账本、授权检索、动态 SELF、生成恢复与默认不唤醒的维护心跳；能力按 Agent
   运行时装配，不依赖预设改装。原项目：https://github.com/cyanwell/dsh-agent-soul
 meta:
   source: manual
@@ -16,7 +16,6 @@ modules:
   - module-variable-tools
   - soul-ledger
   - retrieval
-  - context-provenance
   - generation-recovery
   - soul-maintenance
 moduleConfigs:
@@ -39,13 +38,6 @@ moduleConfigs:
       - data/90-历代根会话/
     sessions: []
     synonymsFile: assets/retrieval-synonyms.json
-  context-provenance:
-    enabled: true
-    audience: all
-    auto: true
-    modelSwitch: true
-    prune: true
-    basic: {}
   generation-recovery:
     enabled: true
     audience: all
@@ -54,7 +46,6 @@ moduleConfigs:
     mainRecoveryLimit: 3
     subagentRecoveryLimit: 1
     maintenanceCompression: false
-    allowFullFallback: false
     lineRepeatChars: 2048
     crossCallRepeatChars: 2048
     maxCycleChars: 512

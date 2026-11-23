@@ -20,15 +20,6 @@ import { PROMPT_TOOL_NS } from '../shared/namespace.ts'
 export { PROMPT_TOOL_NS }
 
 const ZH_CORE = {
-  'rewind.label': '回退已发送内容',
-  'rewind.once': '回退一次',
-  'rewind.round': '回退上一轮',
-  'rewind.done': '回退已提交。',
-  'rewind.retry': '仅重试失败目标',
-  'rewind.retryRequest': '重试原提交（结果尚未确认）',
-  'rewind.restoreFailed': '回退已提交，但回填未完成；可取回原输入。',
-  'rewind.recover': '取回回退文本（当前草稿已保留）',
-  'rewind.unavailable': '当前页面不支持安全回退，请刷新页面。',
   'app.title': '提示词工具',
   'app.loading': '读取中',
   'app.statusRules': '{enabled}/{total} 规则',
@@ -153,15 +144,6 @@ export type PromptToolLocaleKey =
   | keyof typeof DIAGNOSTIC_ZH
 
 const EN_CORE: Record<keyof typeof ZH_CORE, string> = {
-  'rewind.label': 'Rewind sent messages',
-  'rewind.once': 'Rewind once',
-  'rewind.round': 'Rewind previous round',
-  'rewind.done': 'Rewind committed.',
-  'rewind.retry': 'Retry failed targets only',
-  'rewind.retryRequest': 'Retry original submission (result unconfirmed)',
-  'rewind.restoreFailed': 'Rewind committed, but draft restoration failed. Recover the original input below.',
-  'rewind.recover': 'Recover withdrawn text (current draft preserved)',
-  'rewind.unavailable': 'Safe rewind is unavailable on this page. Refresh the page.',
   'app.title': 'Prompt Tool',
   'app.loading': 'Loading',
   'app.statusRules': '{enabled}/{total} rules',

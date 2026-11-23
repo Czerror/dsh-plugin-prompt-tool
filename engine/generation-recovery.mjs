@@ -3,7 +3,7 @@ import { bool, defineConfig, enumOf, int, passthrough } from './fields.mjs'
 import { capabilityAudience } from './agent-capability.mjs'
 import { recoveryCoordinator } from './generation-recovery-coordinator.mjs'
 import { pluginMessage } from './layers.mjs'
-import { recoveryMaintenance } from './generation-recovery-maintenance.mjs'
+import { recoveryCompactionOf } from './generation-recovery-maintenance.mjs'
 
 export const name = 'generation-recovery'
 export const inject = ['llm']
@@ -28,7 +28,6 @@ export const configContract = defineConfig({
   mainRecoveryLimit: recoveryLimit,
   subagentRecoveryLimit: recoveryLimit,
   maintenanceCompression: bool({ default: false }),
-  allowFullFallback: bool({ default: false }),
   maxCycleChars: passthrough((value, plugin, field) => {
     if (value === undefined) return 256
     if (!Number.isSafeInteger(value) || value < 1 || value > 1024) throw new TypeError(`${plugin}: ${field} must be an integer from 1 to 1024`)
@@ -94,6 +93,7 @@ export function apply(ctx, raw, options = {}) {
   if (!config.enabled || typeof agent?.session?.id !== 'string') return
   if (config.audience !== 'all' && config.audience !== capabilityAudience(agent)) return
   let active = true
+  const lifetime = config.maintenanceCompression ? new AbortController() : undefined
   const samples = { text: [], reasoning: [] }
   const clearSamples = () => { samples.text.length = 0; samples.reasoning.length = 0 }
   const observe = state => observations.set(agent, { state, observedAt: new Date().toISOString() })
@@ -112,21 +112,26 @@ export function apply(ctx, raw, options = {}) {
           await agent.whenIdle()
           const valid = () => active && !candidate.signal?.aborted && coordinator.unchanged(candidate)
           if (!valid()) return
-          let maintenance
-          if (config.maintenanceCompression) {
-            maintenance = await recoveryMaintenance(options.contextRuntimeOf?.(agent), candidate.signal, config.allowFullFallback, valid, report)
-            if (!maintenance) return
+          if (lifetime) {
+            const compaction = await recoveryCompactionOf(agent)
+            if (!valid()) return
+            if (!compaction) { report('official compaction unavailable; recovery stopped'); return }
+            const signal = candidate.signal ? AbortSignal.any([candidate.signal, lifetime.signal]) : lifetime.signal
+            if (await compaction.compactNow(agent, signal) === null) {
+              if (valid()) report('maintenance no-op; recovery stopped')
+              return
+            }
           }
           if (!valid()) return
           const text = '上一轮输出因异常重复或仅有推理而未完成。请停止重复，检查已完成的工作，并给出有效结果或明确说明阻塞原因。'
-            + (maintenance ? `\n维护压缩已完成，实际来源事件：${maintenance.shadowedSeqs.join(',')}。` : '')
+            + (lifetime ? '\n维护压缩已完成。' : '')
           agent.followup(pluginMessage('generation-recovery', text, '恢复异常生成'))
           observe('enqueued')
-        } catch (error) { report(String(error?.message ?? error)) }
+        } catch (error) { if (active && !candidate.signal?.aborted) report(String(error?.message ?? error)) }
       })()
     } catch (error) { report(String(error?.message ?? error)) }
   } }, () => active)
-  const stop = ctx.effect(() => () => { active = false; clearSamples() })
+  const stop = ctx.effect(() => () => { active = false; lifetime?.abort(); clearSamples() })
   const off = ctx.on('llm/stream', (options, next) => {
     if (options.sessionId === agent.session.id && options.signal?.aborted) clearSamples()
     if (!active || options.signal?.aborted || options.purpose !== undefined || options.sessionId !== agent.session.id) return next()

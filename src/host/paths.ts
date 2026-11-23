@@ -1,22 +1,8 @@
 /** host 数据层的部署路径与序数常量（settings 层与运行时共用，避免 host→config 反向依赖）。 */
-import { join, resolve } from 'node:path'
-import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { resolveDshHome } from '../../engine/dsh-home.mjs'
 
-/**
- * 解析部署根。与官方 dsh-home-paths.resolveDshHome 语义对齐：
- * 未设置 / 空串 / 纯空白回退 OS home 下的 .dsh；支持 ~、~/、~\；
- * 相对路径按进程 cwd 解析为绝对路径，避免生成目录随运行目录漂移。
- */
-export function resolveDshHome(): string {
-  const ambient = process.env.DSH_HOME
-  if (typeof ambient !== 'string' || ambient.trim().length === 0) return join(homedir(), '.dsh')
-  const expanded = ambient === '~'
-    ? homedir()
-    : ambient.startsWith('~/') || ambient.startsWith('~\\')
-      ? join(homedir(), ambient.slice(2))
-      : ambient
-  return resolve(expanded)
-}
+export { resolveDshHome }
 
 /**
  * 部署根：**每次调用按当前环境求值**，不在 import 时冻结。

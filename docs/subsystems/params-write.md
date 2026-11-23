@@ -4,10 +4,6 @@
 
 ## 规则动作的持久化约束
 
-回退待办使用 `host-control/session-rewind-todos`，仅接受 `value: true` 且无次数预算。它不隐式启用会话回退；按当前目标 Agent 规则条件生效，复用 rewind bridge 的逐目标失败与重试载荷。待办正文仍归官方 Session 的 `todo/write`，不进入 module.yml 或 settings。
-
-会话回退使用 `host-control/session-rewind`，仅接受 `value: true` 且无次数预算。资格沿当前 Agent 规则受众和条件求值；关闭只阻止后续回退，已提交标记仍有效。bridge `rewind` 的 phase 为 `preview` / `commit` / `retry`，只接会话身份、模式、去重身份、页面凭据及固定边界，不接受模块主语、任意事件范围或子目标列表。
-
 Messages 当前系统正文使用 `host-control/messages-current-system`，仅接受 `value: true`，不接受次数预算或非默认时机。不保存正文副本，不隐式开启 `current-system-snapshot`；依赖诊断为 `host:messages-current-system`。实际接入范围见[宿主控制动作](engine-host-controls.md)。
 
 请求身份首段与系统角色分别使用 `host-control/oauth-identity-prefix`、`host-control/provider-system-role`，唯一值为 `value: true`。两卡独立启停与受众判定，不接受次数预算或 outermost 排序。不保存正文、认证或请求头副本，运行身份只来自已接受工具步骤与实际 prepared adapter call；缺目标诊断分别为 `host:oauth-identity-prefix`、`host:provider-system-role`。

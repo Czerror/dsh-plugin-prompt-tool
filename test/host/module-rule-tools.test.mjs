@@ -1,3 +1,4 @@
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -35,6 +36,7 @@ async function setup(t, id, { late = false, rebuild = async () => {} } = {}) {
   const { registerModuleRuleTools } = await import('../../src/runtime/module-rule-tools.ts')
   const shell = await import('../../engine/module-rule-tools.mjs')
   const root = new Context()
+  await root.plugin(SessionProjections)
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
   await root.plugin(NativeExecutor)

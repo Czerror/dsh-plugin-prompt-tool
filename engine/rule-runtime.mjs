@@ -18,6 +18,7 @@ import { requestBudgetStatus } from './request-budget-bridge.mjs'
 import { compileWhen } from './conditions/index.mjs'
 import { createHostControlAgent } from './host-control-agent.mjs'
 import { applyToolDescriptions } from './actions/assembly.mjs'
+import { createSectionPresentation } from './sections.mjs'
 import { applyTransportDescriptions, toolDescriptionObservation, settleSkillDescriptions, skillDescriptionObservation } from './tool-metadata.mjs'
 import { resultTextOwners } from './result-text-owners.mjs'
 import { bindResultTextDependencies } from './result-text.mjs'
@@ -96,6 +97,7 @@ function mountSources(ctx, sources, options = {}) {
   // 动作级分支条件（actionWhen）也要喂 session/event：否则 else / 嵌套 if 里的 phase / count
   // 谓词永远收不到事件，状态停在冷扫那一刻（规则级 when 已由 rules 覆盖，动作级单独补齐）。
   const bind = (item, on) => prepareAction(item.action, { plugin: options.plugin, warnOnce, promptConfigOptions: item.rule.promptConfigOptions, on,
+    sectionOwner: [item.moduleId, item.rule.id, item.action.id],
     requestBudgetOutcome: (agent, matched) => options.onOutcome?.({ moduleId: item.moduleId, ruleId: item.rule.id, channel: 'request:budget',
       outcome: matched ? 'hit' : 'unavailable', identityOutcome: matched ? 'matched' : 'target-mismatch', actionId: item.action.id,
       definitionRevision: item.rule.definitionRevision, agentId: agent?.id, ...(matched ? {} : { reason: 'maxTokens changed by another request owner' }) }) })(ctx)
@@ -226,6 +228,7 @@ export function createRuleRuntime(ctx, options = {}) {
   let active = true
   let records = new Map()
   let points = new Map()
+  const sectionPresentation = createSectionPresentation(ctx, () => layers?.sectionNames() ?? [])
   const listeners = new Map()
   const ruleOwners = new WeakMap()
   const resultTextOwner = {}
@@ -343,6 +346,7 @@ export function createRuleRuntime(ctx, options = {}) {
   }
   const publishPoints = () => {
     const next = new Map()
+    let rebindSections = false
     const add = (point, entry) => {
       const key = pointKey(point)
       const value = next.get(key) ?? { point, handlers: [] }
@@ -356,12 +360,16 @@ export function createRuleRuntime(ctx, options = {}) {
     }
     for (const [key, value] of next) {
       value.handlers.sort(compareEntries)
-      if (value.handlers.some(entry => !entry.toolSurface) && !listeners.has(key)) listeners.set(key, ctx.on(value.point.channel,
-        pointHandler(ctx, value.point, () => (points.get(key)?.handlers ?? []).filter(entry => !entry.toolSurface), warnOnce, report, () => active,
-          (context, assembly) => options.externalAssembly === true || releaseAssembly !== undefined
-            ? assemblyFrame(context, assembly) : ruleFrame('system-prompt/assemble', [assembly, context], warnOnce, ctx, report)),
-        value.point.waterfallPosition === 'outermost' ? { prepend: true } : undefined))
+      if (value.handlers.some(entry => !entry.toolSurface) && !listeners.has(key)) {
+        if (value.point.channel === 'system-prompt/assemble' && value.point.waterfallPosition === 'outermost') rebindSections = true
+        listeners.set(key, ctx.on(value.point.channel,
+          pointHandler(ctx, value.point, () => (points.get(key)?.handlers ?? []).filter(entry => !entry.toolSurface), warnOnce, report, () => active,
+            (context, assembly) => options.externalAssembly === true || releaseAssembly !== undefined
+              ? assemblyFrame(context, assembly) : ruleFrame('system-prompt/assemble', [assembly, context], warnOnce, ctx, report)),
+          value.point.waterfallPosition === 'outermost' ? { prepend: true } : undefined))
+      }
     }
+    if (rebindSections) sectionPresentation.bind()
     points = next
   }
   let persona
@@ -556,6 +564,7 @@ export function createRuleRuntime(ctx, options = {}) {
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
+            settlePresentation: (assembly, context) => runtime.settlePresentation(assembly, context),
             settle: (assembly, context) => runtime.settleToolSurface(assembly, context),
           })
         }
@@ -653,16 +662,20 @@ export function createRuleRuntime(ctx, options = {}) {
       if (modelSelection !== undefined && (step == null || step.status !== 'sealed')) return undefined
       return (modelSelection === undefined ? persona?.plan : step.instructionsPlan)?.instructionsMaxBytes
     },
-    async settleToolSurface(assembly, context) {
+    async settlePresentation(assembly, context) {
       const frame = assemblyFrame(context, assembly)
-      let result = applyTransportDescriptions(assembly, toolStepFor(context))
-      await settleSkillDescriptions(ctx, context)
+      let result = assembly
       const handlers = [...points.values()].flatMap(point => point.handlers.filter(entry => entry.toolSurface)).sort(compareEntries)
       for (const entry of handlers) {
         if (!active) break
         if (!actionMatches(entry, frame)) { entry.miss?.(frame); continue }
         result = await entry.handler(result, context, () => result, frame)
       }
+      return stripPersonaIdentity(result, assemblyPersonaPlans.get(context), options.onOutcome, context.agent?.id)
+    },
+    async settleToolSurface(assembly, context) {
+      const result = applyTransportDescriptions(assembly, toolStepFor(context))
+      await settleSkillDescriptions(ctx, context)
       for (const observation of assemblyPersonaPlans.get(context)?.instructionsObservations ?? []) {
         try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
       }
@@ -676,11 +689,12 @@ export function createRuleRuntime(ctx, options = {}) {
       for (const plan of toolStepFor(context)?.skillDescriptions ?? []) if (plan.owner === ctx) {
         try { options.onOutcome?.(skillDescriptionObservation(plan, toolStepFor(context))) } catch { /* 只读诊断不改变已接受装配 */ }
       }
-      return stripPersonaIdentity(result, assemblyPersonaPlans.get(context), options.onOutcome, context.agent?.id)
+      return result
     },
     dispose() {
       if (!active) return
       active = false
+      sectionPresentation.dispose()
       releaseAssembly?.()
       releasePersona(persona)
       persona = undefined
@@ -696,6 +710,7 @@ export function createRuleRuntime(ctx, options = {}) {
       if (ownsPool) pool.dispose()
     },
   }
+  sectionPresentation.bind()
   return runtime
 }
 

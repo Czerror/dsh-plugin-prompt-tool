@@ -11,6 +11,7 @@
 import { NAME_LIST, requireString } from './shared.mjs'
 import { interpolateVariables } from '../interpolate.mjs'
 import { toolStepFor } from '../tool-scope.mjs'
+import { addedSection, authorSectionName, bindStandaloneSections, filteredSections, isAddedSection } from '../sections.mjs'
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -51,11 +52,12 @@ function replaceEntries(list, entries, target, plugin, warnOnce, evidence = new 
   for (const entry of entries) {
     const candidates = entry.match === undefined ? undefined : Array.isArray(entry.match) ? entry.match : [entry.match]
     const key = JSON.stringify([entry.name, candidates?.toSorted(), entry.text])
-    const targets = result.filter(value => value?.name === entry.name)
+    const targets = result.filter(value => !value?.retire && authorSectionName(value) === entry.name)
     const previous = targets.length === 1 ? evidence.get(targets[0]) : undefined
     if (previous?.key === key && previous.text === targets[0].text) continue
-    const index = result.findIndex(value => value?.name === entry.name && typeof value.text === 'string' && value.text.trim().length > 0)
-    if (entry.match !== undefined && (index < 0 || result.filter(value => value?.name === entry.name).length !== 1)) {
+    const found = targets.find(value => typeof value.text === 'string' && value.text.trim().length > 0)
+    const index = found === undefined ? -1 : result.indexOf(found)
+    if (entry.match !== undefined && (index < 0 || targets.length !== 1)) {
       warnOnce(`${plugin}: assembly.${target}.replace target ${JSON.stringify(entry.name)} missing or ambiguous; skipped`)
       continue
     }
@@ -87,7 +89,7 @@ export function applyAcceptedContextReplacements(assembly, step) {
   return contexts === assembly.contexts ? assembly : { ...assembly, contexts }
 }
 
-export function prepareAssembly(action, plugin) {
+export function prepareAssembly(action, plugin, _promptConfigOptions, sectionOwner) {
   const target = action.target
   if (!record(target)) {
     throw new TypeError(`${plugin}: assembly requires a target object — { sections } / { contexts } / { toolDescriptions }`)
@@ -146,7 +148,9 @@ export function prepareAssembly(action, plugin) {
       requireString(entry.name, 'assembly.sections.append[].name', plugin)
       requireString(entry.text, 'assembly.sections.append[].text', plugin)
       if (entry.once !== undefined && typeof entry.once !== 'boolean') throw new TypeError(`${plugin}: assembly.sections.append[].once must be boolean`)
-      if (sectionsRemove?.has(entry.name)) throw new TypeError(`${plugin}: assembly.sections.append target ${JSON.stringify(entry.name)} cannot also be removed`)
+      if (sectionsRemove?.has(entry.name) && !(Array.isArray(sectionsAdd) && sectionsAdd.some(candidate => candidate?.name === entry.name))) {
+        throw new TypeError(`${plugin}: assembly.sections.append target ${JSON.stringify(entry.name)} cannot also be removed`)
+      }
     }
   }
   const contextsAdd = target.contexts?.add
@@ -154,6 +158,7 @@ export function prepareAssembly(action, plugin) {
     throw new TypeError(`${plugin}: assembly.contexts.clear must be boolean`)
   }
   const contextsClear = target.contexts?.clear === true
+  const sectionIds = new Set()
   for (const [key, list] of [['sections.add', sectionsAdd], ['contexts.add', contextsAdd]]) {
     if (list === undefined) continue
     if (!Array.isArray(list)) throw new TypeError(`${plugin}: assembly.${key} must be an array of { name, text }`)
@@ -161,6 +166,17 @@ export function prepareAssembly(action, plugin) {
       if (!record(entry)) throw new TypeError(`${plugin}: assembly.${key} entries must be objects`)
       requireString(entry.name, `assembly.${key}[].name`, plugin)
       requireString(entry.text, `assembly.${key}[].text`, plugin)
+      if (key !== 'sections.add') continue
+      if (Object.keys(entry).some(key => !['id', 'name', 'text', 'order'].includes(key))) {
+        throw new TypeError(`${plugin}: assembly.sections.add entries must be { name, text, order?, id? }`)
+      }
+      if (entry.name.trim().length === 0) throw new TypeError(`${plugin}: assembly.sections.add[].name must be non-empty`)
+      if (entry.order !== undefined && !Number.isFinite(entry.order)) throw new TypeError(`${plugin}: assembly.sections.add[].order must be finite`)
+      if (entry.id !== undefined) {
+        if (typeof entry.id !== 'string' || entry.id.trim().length === 0) throw new TypeError(`${plugin}: assembly.sections.add[].id must be a non-empty string`)
+        if (sectionIds.has(entry.id)) throw new TypeError(`${plugin}: duplicate assembly.sections.add id ${JSON.stringify(entry.id)}`)
+        sectionIds.add(entry.id)
+      }
     }
   }
   if (contextsClear && (contextsAdd !== undefined || contextsRemove !== undefined || contextsReplace !== undefined)) {
@@ -169,7 +185,9 @@ export function prepareAssembly(action, plugin) {
   if (sectionsKeep !== undefined && sectionsRemove !== undefined) {
     throw new TypeError(`${plugin}: assembly.sections cannot combine keep with remove — 一种是白名单、一种是黑名单，同时声明语义不明`)
   }
-  return (_ctx, { warnOnce, on, collect }) => collect(on('system-prompt/assemble', async (assembly, context, next, _frame, replacementFrame) => {
+  const additions = sectionsAdd?.map(entry => addedSection(entry, sectionOwner ?? [plugin, action.id]))
+  return (ctx, { warnOnce, on, collect, standalone }) => {
+    collect(on('system-prompt/assemble', async (assembly, context, next, _frame, replacementFrame) => {
     const assembled = await next()
     try {
       let result = assembled
@@ -184,20 +202,23 @@ export function prepareAssembly(action, plugin) {
         if (contexts !== result.contexts) result = { ...result, contexts }
       }
       if (Array.isArray(result.sections) && (sectionsAdd !== undefined || sectionsRemove !== undefined || sectionsKeep !== undefined)) {
-        const kept = sectionsKeep !== undefined
-          ? result.sections.filter((section) => sectionsKeep.has(section?.name))
-          : sectionsRemove === undefined
-            ? result.sections
-            : result.sections.filter((section) => !sectionsRemove.has(section?.name))
-        if (kept.length !== result.sections.length || sectionsAdd?.length > 0) {
-          result = { ...result, sections: sectionsAdd === undefined ? kept : [...kept, ...sectionsAdd] }
+        const hidden = []
+        const kept = sectionsKeep === undefined && sectionsRemove === undefined ? result.sections : result.sections.filter(section => {
+          const author = authorSectionName(section)
+          const keep = section.retire || (sectionsKeep !== undefined ? sectionsKeep.has(author) : !sectionsRemove.has(author))
+          if (!keep && !isAddedSection(section)) hidden.push(section)
+          return keep
+        })
+        if (kept.length !== result.sections.length || additions?.length > 0) {
+          result = { ...result, sections: additions === undefined ? kept : [...kept, ...additions],
+            ...(hidden.length > 0 ? { [filteredSections]: [...(result[filteredSections] ?? []), ...hidden] } : {}) }
         }
       }
       if (Array.isArray(result.sections) && sectionsAppend !== undefined && sectionsAppend.length > 0) {
         const seen = new Set()
         let nextSections = result.sections
         for (const entry of sectionsAppend) {
-          const index = nextSections.findIndex((section) => section?.name === entry.name)
+          const index = nextSections.findIndex(section => !section?.retire && authorSectionName(section) === entry.name)
           if (index < 0) {
             warnOnce(`${plugin}: assembly.sections.append target ${JSON.stringify(entry.name)} not found; skipped`)
             continue
@@ -239,10 +260,12 @@ export function prepareAssembly(action, plugin) {
       }
       const step = toolStepFor(context)
       if (contextPlan !== undefined && step?.status === 'pending') (step.contextReplacements ??= []).push(contextPlan)
-      return result !== assembled ? result : assembled
+      return result
     } catch (error) {
       warnOnce(`${plugin}: assembly action failed, keeping the assembled sections/contexts: ${String(error?.message ?? error)}`)
       return assembled
     }
-  }))
+    }))
+    if (standalone && target.sections !== undefined) bindStandaloneSections(ctx)
+  }
 }

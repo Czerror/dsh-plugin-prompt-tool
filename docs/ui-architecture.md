@@ -4,7 +4,7 @@
 
 ## 按任务查阅
 
-- [关闭工作台会不会发请求？](subsystems/ui-lifecycle.md#入口与关闭行为) 查看 Slot、桌面接入、可见性、诊断与会话回退。
+- [关闭工作台会不会发请求？](subsystems/ui-lifecycle.md#入口与关闭行为) 查看 Slot、桌面接入、可见性与诊断。
 - [画布如何筛选、创建和排序？](subsystems/ui-workbench.md#画布导航模块与规则) 查看工作台导航、规则编辑器和模块操作。
 - [保存失败如何恢复？](subsystems/ui-editing.md#保存保护) 查看首屏、草稿、保存应答、冲突及导入确认。
 - [请求如何选择模块和验证权限？](subsystems/ui-bridge.md#模块主语策略) 查看共享载荷、传输和信任边界。

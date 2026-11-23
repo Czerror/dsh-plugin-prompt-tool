@@ -22,6 +22,7 @@ import { ruleFrame, actionMatches, actionSoulReminder, recheckSoulReminder } fro
 import { modelOf } from './conditions/subject.mjs'
 import { deferToolCatalog, toolCatalogNames, toolStepFor } from './tool-scope.mjs'
 import { textRegistrationName, identityStampOf, actionStamp, injectedMessage, findActionDelivery } from './delivery.mjs'
+import { createSectionPresentation } from './sections.mjs'
 
 const name = 'prompt-config-engine'
 // 同一宿主会话共享投递账本，避免预设作用域重挂后重投同一次结束通知。
@@ -701,8 +702,7 @@ function orderedNamesOf(entries) {
 }
 
 /**
- * 官方先按 order/段名排好投递顺序；这里按 configOrder 把本插件注册的段/上下文
- * 回填到它们原来的槽位。只换本插件段之间的位置：平台段与其他插件段占住的槽位不动。
+ * 运行时上下文按 configOrder 回填插件登记的槽位；其余上下文沿用宿主顺序。
  */
 function registerDeliveryOrder(ctx, keep, collection, names) {
   if (typeof names !== 'function' && names.length < 2) return
@@ -770,9 +770,14 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
     wireRuleTextContributions(ctx, conditional, registry, warnOnce, keep, on, ordered, options.sourceError)
     wireTurnStops(ctx, configs.filter((config) => config.layer === 'turn-stop'), warnOnce, on, options.turnStopBudgets)
     wireSubagentEvents(ctx, configs.filter((config) => config.layer === 'subagent-start' || config.layer === 'subagent-end'), warnOnce, on)
-    // 官方 order 只提供初始槽位；configOrder 覆盖段/上下文的先后（平台段与其他插件段不动）。
-    for (const collection of options.deliveryOrder === false ? [] : ['sections', 'contexts']) {
-      registerDeliveryOrder(ctx, keep, collection, orderedNamesOf(ordered[collection]))
+    if (options.deliveryOrder !== false) {
+      const names = orderedNamesOf(ordered.sections)
+      if (names.length > 1) {
+        const sections = createSectionPresentation(ctx, () => names)
+        sections.bind()
+        keep(() => sections.dispose(), `${name}: sections order`)
+      }
+      registerDeliveryOrder(ctx, keep, 'contexts', orderedNamesOf(ordered.contexts))
     }
     return dispose
   } catch (error) {
@@ -784,14 +789,13 @@ export function wireLayers(ctx, configs, warnOnce, options = {}) {
 /** 按实际文本组保留注册；共享排序投影变化不撤销未变化组的 provider。 */
 export function createLayerRuntime(ctx, warnOnce, options = {}) {
   let records = []
+  let sectionNames = []
   let active = true
   const listeners = []
   const sharedVariables = { bindings: new Map(), usedNames: new Set() }
   const keep = release => { listeners.push(release) }
   try {
-    for (const collection of ['sections', 'contexts']) {
-      registerDeliveryOrder(ctx, keep, collection, () => orderedNamesOf(records.flatMap(record => record.ordered[collection])))
-    }
+    registerDeliveryOrder(ctx, keep, 'contexts', () => orderedNamesOf(records.flatMap(record => record.ordered.contexts)))
   } catch (error) {
     for (const release of listeners.reverse()) release()
     throw error
@@ -844,6 +848,7 @@ export function createLayerRuntime(ctx, warnOnce, options = {}) {
           created.push(record)
           return record
         })
+        sectionNames = orderedNamesOf(records.flatMap(record => record.ordered.sections))
         const owners = new Set(configs.map(config => config.sourceModuleId ?? ''))
         for (const owner of options.turnStopBudgets?.keys() ?? []) if (!owners.has(owner)) options.turnStopBudgets.delete(owner)
       } catch (error) {
@@ -855,6 +860,7 @@ export function createLayerRuntime(ctx, warnOnce, options = {}) {
       }
     },
     entries: () => records.flatMap(record => record.handlers),
+    sectionNames: () => sectionNames,
     dispose() {
       if (!active) return
       active = false

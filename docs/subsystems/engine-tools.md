@@ -34,7 +34,7 @@ PTC的 `run_code` 是官方执行器生成的保留传输，不在原registry目
 
 ## 工具面收窄与按需解锁
 
-`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源。受众统一写在规则或分支的 scope 条件。宿主与独立规则入口共用 root 上的一份公开服务适配器：先等待来源准备，再调用原 `tools.resolve`；原 `systemPrompt.assemble` 完整返回后依次结算所有来源的工具面动作，最后封存步骤。allow 与 deny 都不注册额外 `restrict`，避免继承工具与本层工具口径不同，也不破坏发现候选。
+`tool-visibility` 是工具面的唯一声明：一份 allow/deny 名单同时投影到装配目录、`tools:sdk` 正文与执行闸，并可声明发现来源。受众统一写在规则或分支的 scope 条件。宿主先准备来源并调用原 `tools.resolve`，再在 `system-prompt/assemble` 内结算 SDK 正文与步骤准入。宿主返回装配后，用同一策略筛选线上的工具 schema，完成目录并封存步骤。独立动作直接使用原服务时也按指定作用域筛选 schema；无 Agent 的调用只预览。allow 与 deny 都不注册额外 `restrict`，避免继承工具与本层工具口径不同，也不破坏发现候选。
 
 包装的 `ResolvedToolSet` 只暴露 `view` 与 `dispose`；每次 view 先委托原集合，官方 scope、when、替换与移除始终是上限。状态为 pending / sealed / closed，pending 的透明 view 只供装配读取，执行入口与 guard 拒绝 pending 和 closed。原集合与包装集合按同一 Agent 关联同一步骤；native、PTC 和 delegate 都传递该集合，执行只读封存名单。失败、取消与最后一个 owner 释放都会关闭集合，原资源仅释放一次；重试复用封存装配，不重算规则或放宽准入。
 
@@ -95,7 +95,7 @@ moduleConfigs:
 
 `mainRecoveryLimit`／`subagentRecoveryLimit` 默认0，可设0–1000；非零才开启对应受众的自动恢复。额度按会话持久，重挂不清零，同一执行只能消费一次。扣额后等待 `whenIdle`，检查取消、卸载和是否已进入新turn，再发送非空纠正消息。额度耗尽或持久owner不可用明确报告，取消后迟到Promise不会唤醒。
 
-`maintenanceCompression` 默认false；开启时在同一上下文运行时做 idle 局部压缩。null表示无操作并停止此次恢复；失败默认停止，只有 `allowFullFallback: true` 才允许升级完整压缩，取消绝不升级。维护窗口只领取一次，恢复消息引用实际成功结果，失败与普通工具裁剪不推进成功压缩epoch。有意重复的文本仍可能命中检测，可调阈值或关闭。
+`maintenanceCompression` 默认为 `false`。开启后，恢复流程在 Agent 空闲时请求一次当前官方压缩服务的 `compactNow`。服务不可用、返回 `null`、失败或取消时停止此次恢复。成功后才发送恢复消息。失败和普通工具裁剪均不推进成功压缩 epoch。
 
 `lineRepeatChars/crossCallRepeatChars` 默认 0 关闭，可显式设置行重复和跨调用阈值；较长周期需同步提高 `maxCycleChars`。重复行至少6行、覆盖80%且主导行集中50%；跨调用与此前两次合格调用各达到90%行材料覆盖时才判第三次重复。每类只保128行摘要、单行1024字符，跳过引用和围栏代码，取消/卸载清理。固定校准集3类异常检出、3类正常材料无误报，不能外推生产误报率；这是有界行材料相似度，不是语义向量。仍由原coordinator去重和扣额，不补额、不增加恢复执行者。
 

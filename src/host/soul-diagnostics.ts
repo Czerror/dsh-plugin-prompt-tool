@@ -9,7 +9,6 @@ export interface SoulDiagnosticObservations {
   selfRenderedAt?: string
   selfDeliveredAt?: string
   maintenance?: SoulObservation
-  context?: SoulObservation
   recovery?: SoulObservation
 }
 export interface SoulDiagnosticCheck { name: string; state: string; observedAt?: string; reason?: string; nextAction?: string }
@@ -39,7 +38,7 @@ export function readSoulDiagnostics(moduleDir: string, observations: SoulDiagnos
   for (const [name, time] of [['self-rendered', observations.selfRenderedAt], ['self-delivered', observations.selfDeliveredAt]] as const) {
     checks.push(time ? { name, state: 'observed', observedAt: time } : { name, state: 'not-observed', nextAction: name === 'self-delivered' ? '等待实际模型投递确认' : '等待下一次真实装配' })
   }
-  for (const name of ['index', 'maintenance', 'context', 'recovery'] as const) {
+  for (const name of ['index', 'maintenance', 'recovery'] as const) {
     const observation = observations[name]
     if (!observation) checks.push({ name, state: 'not-observed', nextAction: '核对能力启用并等待运行观测' })
     else if (name !== 'index' && observation.state === 'ready' && observation.last == null && !observation.observedAt) checks.push({ name, state: 'not-observed', reason: '仅已装配，尚无执行证据' })

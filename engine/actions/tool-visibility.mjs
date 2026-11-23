@@ -1,7 +1,7 @@
 /**
  * tool-visibility —— 工具可见面：一份声明拥有「模型看得见什么、调得动什么」。
  *
- * 三面投影都在完整公开 assemble 返回后完成：
+ * SDK 与执行准入在宿主捕获正文前结算；独立的工具 schema 复用同一份策略：
  *  1. 装配目录（tools 数组）——本轮的呈现面；
  *  2. tools:sdk 段正文——模型读到的工具声明；
  *  3. 执行面：步骤集合封存名单，guard 读取同一准入；无集合调用保守判定。
@@ -22,11 +22,13 @@
  * 发现目录因此仍读取原候选，插件收窄不能变成注册目录权限。
  */
 
+import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
+import { Context } from '@deepseek-ai/cordis'
 import { RUN_CODE, createMask, labelOf, toolSurfacePlan } from './shared.mjs'
 import { createAgentCapability } from '../agent-capability.mjs'
 import { SDK_SECTION_NAME, stripSdkDeclarations, sdkToolNames } from '../sdk-strip.mjs'
 import { TOOL_INVOCATION_EVENT_TYPES, historyEvents } from '../history.mjs'
-import { hasToolStep, toolStepOf } from '../tool-scope.mjs'
+import { deferToolWire, hasToolStep, installStandaloneToolWire, toolStepOf } from '../tool-scope.mjs'
 import { DISCOVERY_SERVICE } from '../service-names.mjs'
 import { UNLOCKABLE_DISCOVERY_KINDS } from '../discovery.mjs'
 
@@ -106,10 +108,13 @@ export function prepareToolVisibility(action, plugin) {
     throw new TypeError(`${plugin}: ${label}.requireMatch only applies to allow — deny lists have no required names`)
   }
 
-  return (mountCtx, { warnOnce, on, collect, onMiss }) => {
+  return (mountCtx, { warnOnce, on, collect, onMiss, standalone }) => {
+    if (standalone) collect(installStandaloneToolWire(mountCtx))
+    const canUpdateGuard = agent => agent?.ctx != null && (!standalone || scopeTarget(agent, scopeOf(agent.ctx))[Context.filter](mountCtx))
     /** 无集合调用保守判定；有集合时只读所属步骤的封存准入。 */
     const capability = createAgentCapability((agent) => {
-      const tools = agent?.ctx?.tools
+      let tools
+      try { tools = agent.ctx.tools } catch { tools = agent.ctx.get('tools') }
       if (tools === undefined) return undefined
       // unlocked：本会话装配时冻结的解锁名快照（await next() 期间别的装配会重填共享集合）。
       const state = { failOpen: false, unlocked: undefined }
@@ -150,15 +155,23 @@ export function prepareToolVisibility(action, plugin) {
 
     collect(capability.releaseAll)
     // 条件为假时 rule-runtime 不进入 handler：未命中回调负责撤掉上一轮注册的执行闸。
-    // 动作级 when 由 withWhen 调用时没有帧，只能撤当前已登记的全部会话。
+    // 裸预览没有 Agent，不能撤已登记的会话闸。
     onMiss((frame) => {
-      const session = frame?.subject?.agent?.session ?? frame?.args?.[1]?.agent?.session
-      if (session === undefined) capability.releaseAll()
-      else capability.release(session)
+      const agent = frame?.subject?.agent ?? frame?.args?.[1]?.agent
+      if (canUpdateGuard(agent)) capability.release(agent.session)
     })
 
-    collect(on('system-prompt/assemble', async (assembly, context, next) => {
-      const assembled = await next()
+    const project = (assembled, context) => {
+      const step = toolStepOf(context?.toolSet, context?.agent)
+      const agent = context?.agent
+      const sdkSection = Array.isArray(assembled.sections)
+        ? assembled.sections.find(section => section?.name === SDK_SECTION_NAME && typeof section.text === 'string')
+        : undefined
+      if (step === undefined && !Array.isArray(assembled.tools) && sdkSection === undefined) {
+        // 无步骤的原生装配只有在宿主接回 provider 的 schema 后才知道当前工具名。
+        deferToolWire(context, wire => project(wire, context))
+        return assembled
+      }
       // 解锁名先回收，后续裁剪与执行准入共用同一快照。
       // 工具名与参数键来自发现注册表的 adapter 元数据；声明里的同名字段只作断言。
       if (allowExtra !== undefined) {
@@ -181,8 +194,9 @@ export function prepareToolVisibility(action, plugin) {
       // 冻结本会话的解锁名：之后的裁剪与执行闸都读这一份，
       // 共享的 allowExtra 可能被并发的另一次装配（别的会话 / 探针）清空重填。
       const unlocked = allowExtra === undefined ? undefined : new Set(allowExtra)
+      const updateGuard = canUpdateGuard(agent)
       try {
-        syncGate(context?.agent, unlocked)
+        if (updateGuard) syncGate(agent, unlocked)
       } catch (error) {
         // 闸注册失败必须留痕；呈现面照常结算，绝不把异常抛给装配。
         warnOnce(`${plugin}: tool-visibility action ${label} failed to sync execution gate: ${String(error?.message ?? error)}`)
@@ -190,23 +204,16 @@ export function prepareToolVisibility(action, plugin) {
       try {
         let result = assembled
         // 步骤准入直接读官方集合；裸装配只有展示信息，沿目录与 SDK 并集判定。
-        const sdkSection = Array.isArray(result.sections)
-          ? result.sections.find((section) => section?.name === SDK_SECTION_NAME && typeof section.text === 'string')
-          : undefined
         const sdkNames = sdkSection === undefined ? undefined : new Set(sdkToolNames(sdkSection.text))
-        const step = toolStepOf(context?.toolSet, context?.agent)
         const available = step === undefined ? new Set([
           ...(Array.isArray(result.tools) ? result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string') : []),
           ...(sdkNames ?? []),
         ]) : new Set(context.toolSet.view(context.agent).keys())
-        // 没有工具面可观（既无目录也无 SDK 正文）时不裁剪、不告警、不动执行闸：
-        // 空 surface 不等于「名单全缺」；空目录（tools=[]）仍是真实观测，照旧 fail-open。
-        if (!Array.isArray(result.tools) && sdkSection === undefined) return result
         // 三面（目录 / 正文 / 执行闸）共用这一份判断：名单全缺才整体放宽，呈现与执行不得两套口径。
         const plan = toolSurfacePlan(mask, available)
         const blocks = name => plan.failOpen ? mask.deny?.has(name) === true : mask.blocks(name, unlocked)
         if (step !== undefined) step.allowed = new Set([...available].filter(name => !blocks(name)))
-        const state = capability.get(context?.session ?? context?.agent?.session)
+        const state = updateGuard ? capability.get(agent.session) : undefined
         if (state !== undefined) {
           state.data.failOpen = plan.failOpen
           state.data.unlocked = unlocked
@@ -219,10 +226,13 @@ export function prepareToolVisibility(action, plugin) {
         if (!plan.failOpen && plan.missing.length > 0) {
           warnOnce(`${plugin}: tool-visibility action ${label}: resident tools absent (${plan.missing.join(', ')}) — narrowing continues; register replacement providers in the deployment allow list`, `${plugin}: tool-visibility action ${label}: resident tools absent`)
         }
-        if (Array.isArray(result.tools)) {
-          const kept = result.tools.filter((tool) => !blocks(tool?.name))
-          if (kept.length !== result.tools.length) result = { ...result, tools: kept }
+        const projectWire = wire => {
+          if (!Array.isArray(wire.tools)) return wire
+          const kept = wire.tools.filter(tool => !blocks(tool?.name))
+          return kept.length === wire.tools.length ? wire : { ...wire, tools: kept }
         }
+        if (Array.isArray(result.tools)) result = projectWire(result)
+        else deferToolWire(context, projectWire)
         if (Array.isArray(result.sections)) {
           let changed = false
           let present = sdkNames
@@ -250,6 +260,7 @@ export function prepareToolVisibility(action, plugin) {
         warnOnce(`${plugin}: tool-visibility action ${label} failed, keeping the assembled surface: ${String(error?.message ?? error)}`)
         return assembled
       }
-    }))
+    }
+    collect(on('system-prompt/assemble', async (_assembly, context, next) => project(await next(), context)))
   }
 }

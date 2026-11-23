@@ -53,9 +53,6 @@ export async function importHostPackage(id, entry, self) {
 /** 允许从宿主解析的官方能力包；版本随宿主（alpha/rc 均可），不在插件内做精确匹配。 */
 export const HOST_CAPABILITY_PACKAGES = Object.freeze([
   '@deepseek-ai/dsh-compaction-basic',
-  '@deepseek-ai/dsh-compaction-tool-result-pruner',
-  '@deepseek-ai/dsh-compaction',
-  '@deepseek-ai/dsh-llm',
 ])
 
 export async function importHostCapability(id) {

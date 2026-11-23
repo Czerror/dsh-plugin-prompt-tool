@@ -1,4 +1,4 @@
-import { associateToolStep, associateToolSelection, associateToolAssembly, beginToolCatalog, settleToolCatalog, toolAssemblyContext, hasToolStep, toolStepOf } from './tool-scope.mjs'
+import { associateToolStep, associateToolSelection, associateToolAssembly, beginToolCatalog, settleToolCatalog, settleToolWire, toolAssemblyContext, hasToolStep, toolStepOf } from './tool-scope.mjs'
 import { toolDependenciesReady } from './tool-definition.mjs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { applySubagentDepthContexts } from './subagent-params.mjs'
@@ -52,6 +52,12 @@ function createInstallation(ctx) {
   const assemblyCalls = new AsyncLocalStorage()
   let active = true
   const offExecute = ctx.on('tools/execute', (exec, next) => calls.run(exec, next), { global: true, prepend: true })
+  const offPresentation = ctx.on('system-prompt/assemble', (_assembly, context, next) => {
+    const current = assemblyCalls.getStore()
+    if (current === undefined || current.context !== context) return next()
+    // alpha.2 在 waterfall 返回后固定提交正文；线上的工具 schema 则由宿主随后接回。
+    return Promise.resolve(next()).then(current.settlePresentation)
+  }, { global: true, prepend: true })
   const selected = agent => [...owners].filter(owner => owner.knows(agent))
   const wrap = (original, context, tools) => {
     const existing = wrappers.get(original)
@@ -161,17 +167,30 @@ function createInstallation(ctx) {
             if (step === undefined) for (const owner of current) await owner.ensureFresh(agent)
             const captured = { ...context, ...(step === undefined ? {} : { toolSet: wrapped, modelSelection: step.modelSelection }) }
             const checkAbort = () => { signal?.throwIfAborted(); captured.signal?.throwIfAborted() }
+            let presentationWork
+            const settlePresentation = presentation => presentationWork ??= (async () => {
+              for (const owner of current) {
+                checkAbort()
+                if (!active || step?.status === 'closed') throw unavailable()
+                presentation = await owner.settlePresentation(presentation, captured)
+              }
+              checkAbort()
+              return presentation
+            })()
             beginToolCatalog(captured)
             const invoke = async index => {
               if (index !== current.length) return current[index].assemble(captured, () => invoke(index + 1))
               await settleSkillDescriptions(ctx, captured)
               checkAbort()
               if (!active || step?.status === 'closed') throw unavailable()
-              const forwarding = { agent, step, signal, context: captured, method: value }
+              const forwarding = { agent, step, signal, context: captured, method: value, settlePresentation }
               try { return await assemblyCalls.run(forwarding, () => Reflect.apply(value, target, [captured])) }
               finally { forwarding.context = undefined }
             }
             let final = await invoke(0)
+            if (presentationWork === undefined) final = await settlePresentation(final)
+            else await presentationWork
+            final = settleToolWire(final, captured)
             for (const owner of current) {
               checkAbort()
               final = await owner.settle(final, captured)
@@ -200,5 +219,5 @@ function createInstallation(ctx) {
       }
     } })
   }, { global: true })
-  return { owners, dispose() { active = false; off(); offExecute(); releaseSkillDescriptions(); for (const close of closes) close() } }
+  return { owners, dispose() { active = false; off(); offExecute(); offPresentation(); releaseSkillDescriptions(); for (const close of closes) close() } }
 }
