@@ -11,7 +11,7 @@
 import { NAME_LIST, requireString } from './shared.mjs'
 import { interpolateVariables } from '../interpolate.mjs'
 import { toolStepFor } from '../tool-scope.mjs'
-import { addedSection, authorSectionName, filteredSections, finalizeSections, isAddedSection } from '../sections.mjs'
+import { addedSection, authorSectionName, bindStandaloneSections, filteredSections, isAddedSection } from '../sections.mjs'
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 
@@ -186,7 +186,8 @@ export function prepareAssembly(action, plugin, _promptConfigOptions, sectionOwn
     throw new TypeError(`${plugin}: assembly.sections cannot combine keep with remove — 一种是白名单、一种是黑名单，同时声明语义不明`)
   }
   const additions = sectionsAdd?.map(entry => addedSection(entry, sectionOwner ?? [plugin, action.id]))
-  return (_ctx, { warnOnce, on, collect }) => collect(on('system-prompt/assemble', async (assembly, context, next, _frame, replacementFrame) => {
+  return (ctx, { warnOnce, on, collect, standalone }) => {
+    collect(on('system-prompt/assemble', async (assembly, context, next, _frame, replacementFrame) => {
     const assembled = await next()
     try {
       let result = assembled
@@ -259,10 +260,12 @@ export function prepareAssembly(action, plugin, _promptConfigOptions, sectionOwn
       }
       const step = toolStepFor(context)
       if (contextPlan !== undefined && step?.status === 'pending') (step.contextReplacements ??= []).push(contextPlan)
-      return sectionOwner === undefined ? finalizeSections(result, [], [], undefined, context.session !== undefined).assembly : result
+      return result
     } catch (error) {
       warnOnce(`${plugin}: assembly action failed, keeping the assembled sections/contexts: ${String(error?.message ?? error)}`)
       return assembled
     }
-  }))
+    }))
+    if (standalone && target.sections !== undefined) bindStandaloneSections(ctx)
+  }
 }

@@ -5,10 +5,14 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { compileRules, getRuleEditorMeta } from '../../engine/rule-spec.mjs'
+import { registerAction } from '../../engine/actions/index.mjs'
 import { createRuleRuntime, mountRuleSources } from '../../engine/rule-runtime.mjs'
 import { ruleFrame, ruleMatches } from '../../engine/conditions/evaluation.mjs'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const require = createRequire(import.meta.url)
 const systemPromptRequire = createRequire(require.resolve('@deepseek-ai/dsh-system-prompt'))
@@ -171,6 +175,75 @@ test('章节按画布跨档排序，同名贡献独立投递且规则按原名�
   release()
   assert.equal(nameOf((await root.systemPrompt.assemble({})).sections, 'NEW'), nameOf(collision, 'NEW'))
   assert.throws(() => rules([{ ...first, id: 'duplicate' }, { ...automatic, id: 'duplicate' }]), /duplicate assembly.sections.add id/)
+})
+
+test('独立装配动作按原名组合并在解除后撤回', async t => {
+  const root = new Context()
+  await root.plugin(SessionProjections)
+  await root.plugin(SystemPrompt, { includeHarnessIdentity: false })
+  t.after(() => root.fiber.dispose())
+  const { Session } = await import(pathToFileURL(systemPromptRequire.resolve('@deepseek-ai/dsh-session')).href)
+  const session = Session.create('standalone-sections')
+  session.append('turn/start', { turn: 1 })
+  session.append('step/start', { turn: 1, step: 1 })
+  registerAction(root, { kind: 'assembly', id: 'append', target: { sections: { append: [{ name: 'brief', text: 'APPEND' }] } } })
+  const off = registerAction(root, { kind: 'assembly', id: 'add', target: { sections: { add: [{ name: 'brief', text: 'BODY' }] } } })
+  const assembly = await root.systemPrompt.assemble({ session })
+  const section = assembly.sections.find(entry => entry.text.startsWith('BODY'))
+  assert.equal(section.text, 'BODY\nAPPEND')
+  for (const { message, intent } of assembly.systemUpdates(false)) session.append('system/message', { turn: 1, step: 1, message }, intent)
+  off()
+  const closed = await root.systemPrompt.assemble({ session })
+  assert.ok(closed.systemUpdates(false).some(({ message }) => message.source.sections.some(entry => entry.name === section.name)))
+})
+
+test('冷恢复以原声明识别经宿主插值的同名章节', async t => {
+  const previousHome = process.env.DSH_HOME
+  const home = mkdtempSync(join(tmpdir(), 'pt-section-'))
+  process.env.DSH_HOME = home
+  t.after(() => {
+    if (previousHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  })
+  const runtime = async () => {
+    const root = new Context()
+    await root.plugin(await hostPlugin('@deepseek-ai/dsh-session'))
+    await root.plugin(SessionProjections)
+    await root.plugin(SystemPrompt, { includeHarnessIdentity: false })
+    const rules = createRuleRuntime(root)
+    t.after(async () => { rules.dispose(); await root.fiber.dispose() })
+    return { root, rules }
+  }
+  const source = texts => [{ moduleId: 'authored', rules: compileRules([{ id: 'added', then: [
+    { kind: 'assembly', id: 'add', target: { sections: { add: texts.map(text => ({ name: 'brief', text })) } } },
+    { kind: 'assembly', id: 'append', target: { sections: { append: [{ name: 'brief', text: 'APPEND' }] } } },
+  ] }]) }]
+  const first = await runtime()
+  const session = first.root.sessions.create('cold-sections')
+  session.append('turn/start', { turn: 1 })
+  session.append('step/start', { turn: 1, step: 1 })
+  first.root.systemPrompt.variable('model', () => 'FIRST')
+  first.rules.replace(source(['A {{model}}', 'B {{model}}']))
+  const admitted = await first.root.systemPrompt.assemble({ session })
+  const original = admitted.sections.find(entry => entry.text.startsWith('B ')).name
+  const directory = join(home, '.prompt-tool', 'section-admissions')
+  const updates = admitted.systemUpdates(false)
+  assert.equal(existsSync(directory), false, '未提交的装配不写身份映射')
+  for (const { message, intent } of updates) session.append('system/message', { turn: 1, step: 1, message }, intent)
+  assert.equal(readdirSync(directory).length, 1)
+  assert.deepEqual((await first.root.systemPrompt.assemble({ session })).systemUpdates(false), [])
+  assert.equal(readdirSync(directory).length, 1)
+  const second = await runtime()
+  second.root.systemPrompt.variable('model', () => 'SECOND')
+  second.rules.replace(source(['B {{model}}']))
+  const { Session } = await import(pathToFileURL(systemPromptRequire.resolve('@deepseek-ai/dsh-session')).href)
+  const restored = Session.create(session.id, session.snapshotEvents(), session.header, session.inheritedEventCount)
+  const assembled = await second.root.systemPrompt.assemble({ session: restored })
+  assert.equal(assembled.sections.find(entry => entry.text.startsWith('B ')).name, original)
+  const fork = first.root.sessions.fork(session.id, undefined, 'cold-fork')
+  const forked = await second.root.systemPrompt.assemble({ session: fork })
+  assert.equal(forked.sections.find(entry => entry.text.startsWith('B ')).name, original)
 })
 
 test('统一规则：缺失真实会话的 not 保持未知，any 中已知 true 分支仍能执行', async () => {
