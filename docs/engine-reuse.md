@@ -9,7 +9,7 @@
 | 条件何时求值，插入点和同点顺序怎样决定？ | [规则条件与动作边界](subsystems/engine-rules.md#规则条件与动作边界)。官方载荷与求值窗口见[插入点契约](injection-point-contracts.md) |
 | 宿主动作由哪个作用域接收，何时生效？ | [宿主控制动作](subsystems/engine-host-controls.md) |
 | 工具怎样呈现和执行，Team 如何管理子任务？ | [工具呈现、执行与 Team 委派](subsystems/engine-tools.md) |
-| 检索如何授权，SELF 如何投递和维护？ | [授权检索、上下文溯源与 SELF](subsystems/engine-context.md) |
+| 检索如何授权，SELF 如何投递和维护？ | [授权检索、宿主压缩与 SELF](subsystems/engine-context.md) |
 
 参数定义与磁盘保存见[参数架构](architecture-params.md)。
 
@@ -39,7 +39,6 @@
 - <a id="pre-step-协调器与官方指令过滤"></a> [pre-step 协调器与官方指令过滤](subsystems/engine-rules.md#pre-step-协调器与官方指令过滤)
 - <a id="宿主控制动作"></a> [宿主控制动作](subsystems/engine-host-controls.md#宿主控制动作)
 - <a id="工具结果裁剪"></a> [工具结果裁剪](subsystems/engine-host-controls.md#工具结果裁剪)
-- <a id="会话回退与待办"></a> [会话回退与待办](subsystems/engine-host-controls.md#会话回退与待办)
 - <a id="messages-当前系统正文"></a> [Messages 当前系统正文](subsystems/engine-host-controls.md#messages-当前系统正文)
 - <a id="请求身份与系统角色"></a> [请求身份与系统角色](subsystems/engine-host-controls.md#请求身份与系统角色)
 - <a id="消息形状容错"></a> [消息形状容错](subsystems/engine-host-controls.md#消息形状容错)
@@ -63,5 +62,5 @@
 - <a id="授权与项目身份"></a> [授权与项目身份](subsystems/engine-context.md#授权与项目身份)
 - <a id="证据操作与额度"></a> [证据操作与额度](subsystems/engine-context.md#证据操作与额度)
 - <a id="授权检索与来源引用"></a> [授权检索与来源引用](subsystems/engine-context.md#授权检索与来源引用)
-- <a id="上下文运行时与溯源"></a> [上下文运行时与溯源](subsystems/engine-context.md#上下文运行时与溯源)
+- <a id="上下文运行时与溯源"></a> [宿主压缩与裁剪](subsystems/engine-context.md#宿主压缩与裁剪)
 - <a id="动态账本上下文与维护心跳"></a> <a id="self动态内容与维护心跳"></a> [动态账本上下文与维护心跳](subsystems/engine-context.md#动态账本上下文与维护心跳)

@@ -23,7 +23,6 @@ import { interpolateVariables, stripUnresolvedRefs } from '../../engine/interpol
 import { readSoulPressure } from './soul-pressure.ts'
 import type { SoulPressure } from './soul-pressure.ts'
 import { createSoulReminder } from './soul-reminder.ts'
-import { contextRuntimeOf } from '../../engine/context-provenance.mjs'
 import { recoveryObservationOf } from '../../engine/generation-recovery.mjs'
 import type { RuleSoulReminder } from '../../engine/rule-runtime.mjs'
 import { createModuleRetrievalProvider } from './module-retrieval-tools.ts'
@@ -296,7 +295,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
     if (includeUpgrade && !legacyAllowed(dir)) throw new Error('受控知识库已接入，模型不能展开完整升级正文；请使用用户升级入口')
     const diagnostics = readSoulDiagnostics(dir, { index: retrieval.status(agent, id),
       selfRenderedAt: rendered.get(key)?.at, selfDeliveredAt: delivered.get(key),
-      maintenance: maintenance.status(id), context: contextRuntimeOf(agent)?.status(), recovery: recoveryObservationOf(agent) })
+      maintenance: maintenance.status(id), recovery: recoveryObservationOf(agent) })
     const sessionId = agent.session.id
     const upgrade = includeUpgrade ? await readSoulUpgradePreview(dir) : { status: 'not-applicable' as const }
     if (includeUpgrade && !legacyAllowed(dir)) throw new Error('知识来源授权已变化，不能返回升级正文')

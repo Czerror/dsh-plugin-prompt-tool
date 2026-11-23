@@ -6,12 +6,7 @@
  *  2. 失败／取消压缩不推进 epoch，投递不被重复消费；
  *  3. 重挂与单次重试不重复投递、不重复消费晋升计数。
  *
- * 证据层级（如实）：压缩由本仓库 engine 的真实压缩实现 contextIdleCompaction.compactIdleRegion
- * 驱动 —— 真实 session.append 事务（compaction/start → summary → 带 surfaceOp.replace 的替身
- * user/message → compaction/end）、真实官方 tokenMeter、真实官方配对判据
- * @deepseek-ai/dsh-compaction、真实 surface.nodes 折叠。缺的一层是宿主
- * @deepseek-ai/dsh-compaction-basic 的摘要策略与自动触发阈值（该包在本仓库未安装，
- * 且本轮不装依赖），因此 summarize 由夹具提供实现、压缩由显式 compactRegion 触发。
+ * 使用宿主 Basic.compactNow 和实际持久会话，模型响应由夹具提供。
  * 断言全部落在 adapter 实收请求的正文与 compaction-epoch 的 boundary/promoted 上，
  * 不做源码字符串匹配。
  */
@@ -22,13 +17,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
+import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import { parse as parseYaml } from 'yaml'
 import { createAgentAssembly } from '../../src/runtime/agent-assembly.ts'
-import {
-  mountContextRuntime, contextRuntimeOf, compactableRange,
-} from '../../engine/context-provenance.mjs'
 import { createEpochPromotion } from '../../engine/compaction-epoch.mjs'
+import { recoveryCompactionOf } from '../../engine/generation-recovery-maintenance.mjs'
 
 /**
  * 夹具模块：内容模块已移出仓库（存档在本地知识库），这里只写出本票需要的四条规则与资产，
@@ -75,7 +69,6 @@ const REFUSAL_TEXT = 'I cannot help with that.'
 const require = createRequire(import.meta.url)
 const peer = createRequire(require.resolve('@deepseek-ai/dsh-agent-loop'))
 const load = name => import(pathToFileURL(peer.resolve(name)).href)
-const pairing = await import(pathToFileURL(peer.resolve('@deepseek-ai/dsh-compaction')).href)
 const [
   { default: Llm, LlmAdapter, createUserMessage }, { default: Agents }, { default: Sessions },
   { default: Projections }, { default: Prompt }, { default: Tools }, Native, { default: Loop },
@@ -154,16 +147,25 @@ async function world(t) {
 
   const calls = []
   let refusals = 0
+  let summaryMode = 'ok'
+  let controller
   class Scripted extends LlmAdapter {
     async resolveModel(provider, id) { return { provider, id, name: id } }
     async *stream(options) {
       calls.push({ purpose: options.purpose, messages: options.messages.map(message => ({ role: message.role, text: textOf(message.content) })) })
+      if (options.purpose === 'compaction') {
+        if (summaryMode === 'fail') throw new Error('epoch-fixture: summary failed')
+        if (summaryMode === 'cancel') { controller.abort(); options.signal.throwIfAborted() }
+        yield* okStream(SUMMARY_ANCHOR)
+        return
+      }
       if (refusals > 0) { refusals -= 1; yield* refusalStream() } else { yield* okStream('OK') }
     }
   }
   const root = new Context()
   for (const plugin of [Llm, Sessions, Projections, Prompt, Tools, Native, Agents]) await root.plugin(plugin)
   await root.plugin(TokenMeterModule.default)
+  await root.isolate('compaction').plugin(BasicCompactionEngine, { auto: false })
   await root.plugin(Persistence, { root: join(home, 'sessions'), compression: 'none' })
   await root.plugin(Loop, { agents: [] })
   root.provide('workingDirectory', { get: () => home, ensure: async () => home, set: async () => home })
@@ -177,30 +179,10 @@ async function world(t) {
   })
   const agent = handle.agent
 
-  // 摘要由夹具提供（宿主 compaction-basic 未安装）；压缩事务本身仍是 engine 的真实实现。
-  let summaryMode = 'ok'
-  // 每次压缩一个新 controller：取消只会结束那一次事务，不污染后续压缩。
-  let controller = new AbortController()
-  class FixtureSummary extends Service {
-    constructor(ctx) { super(ctx, 'compaction') }
-    async summarize(_input, _owner, signal) {
-      if (summaryMode === 'fail') throw new Error('epoch-fixture: summary failed')
-      if (summaryMode === 'cancel') { controller.abort(); signal.throwIfAborted() }
-      return { summary: [{ type: 'text', text: SUMMARY_ANCHOR }] }
-    }
-    async compactNow() { return null }
-    async compactIfNeeded() { return null }
-    async compactRegion() { throw new Error('epoch-fixture: host region compaction is not used here') }
-  }
-  const off = await mountContextRuntime(root, { enabled: true, prune: false, auto: false, modelSwitch: false },
-    { agent, sourceModuleId: 'unrestricted' }, { Basic: FixtureSummary, pairing })
-  const owner = contextRuntimeOf(agent)
-
   let disposed = false
   const dispose = async () => {
     if (disposed) return
     disposed = true
-    await off()
     await runtime.dispose()
     await handle.dispose()
     await root.fiber.dispose()
@@ -221,13 +203,11 @@ async function world(t) {
   const epoch = () => createEpochPromotion(['tool/call', 'assistant/message'], {}).status(agent)
   const compact = async () => {
     controller = new AbortController()
-    const meter = root.get('tokenMeter')
-    const range = compactableRange(agent.session, meter.measure(agent.session), 0, pairing)
-    assert.ok(range, '存在可压缩的平衡区间')
-    return owner.compactRegion(range.start, range.end, controller.signal)
+    const compaction = await recoveryCompactionOf(agent)
+    return compaction.compactNow(agent, controller.signal)
   }
   return {
-    root, runtime, agent, calls, send, joined, epoch, compact, owner,
+    root, runtime, agent, calls, send, joined, epoch, compact,
     refuse: () => { refusals += 1 },
     setSummaryMode: mode => { summaryMode = mode },
   }
@@ -256,6 +236,7 @@ test('成功压缩推进新 epoch：正文、协议、Boost 与角色段按既�
   const result = await w.compact()
   assert.ok(result.endSeq > result.startSeq, '真实压缩事务写出了起止事件')
   assert.ok(result.shadowedSeqs.length > 0, '压缩真实遮蔽了可见节点')
+  assert.equal(textOf(result.summary), SUMMARY_ANCHOR, '保留官方压缩返回的模型摘要')
   const after = w.epoch()
   assert.equal(after.boundary, result.endSeq, '成功压缩推进到新的 epoch 边界')
   assert.equal(after.promoted, false, '新 epoch 里不再继承压缩前的晋升相位')
@@ -283,7 +264,7 @@ test('失败与取消压缩都不推进 epoch，投递不被重复消费', async
   assert.equal(baseline.boundary, -1)
 
   w.setSummaryMode('fail')
-  await assert.rejects(w.compact(), /epoch-fixture: summary failed/)
+  await assert.rejects(w.compact(), { code: 'summary' })
   const failed = w.epoch()
   assert.equal(failed.boundary, baseline.boundary, '失败压缩不推进 epoch')
   assert.equal(failed.promoted, baseline.promoted, '失败压缩不改写晋升相位')

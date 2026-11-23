@@ -135,7 +135,13 @@ export function installPrunerGate(ctx, ownsSession) {
       prunerStates.set(owner, state)
     }
     status.wrapper = state.wrapper
-    const predicate = session => active && live(fiber) && sessionAgents.has(session) && reachable(sessionAgents.get(session), fiber) ? ownsSession(session) : undefined
+    const predicate = session => {
+      if (!active || !live(fiber)) return undefined
+      const decision = ownsSession(session)
+      if (decision === undefined) return undefined
+      const agent = sessionAgents.get(session)
+      return agent && reachable(agent, fiber) ? decision : undefined
+    }
     state.entries.add(predicate)
     return () => {
       state.entries.delete(predicate)

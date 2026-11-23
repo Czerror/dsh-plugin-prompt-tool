@@ -47,7 +47,6 @@ import type { PersonaCapture } from './persona-registration.ts'
 import { MODULE_TOOL_CAPABILITIES, OFFICIAL_RECIPE_ROWS, enabledRowIds } from '../shared/engine-capabilities.ts'
 import { enableTablePath, readGlobalLayerSettings } from '../host/config-store.ts'
 import { createGenerationRecoveryState } from '../host/generation-recovery-state.ts'
-import { contextRuntimeOf } from '../../engine/context-provenance.mjs'
 import { installToolStepAssembly } from '../../engine/tool-step-assembly.mjs'
 import { registerInstructionsBudgetReader } from '../../engine/instructions-budget-bridge.mjs'
 
@@ -148,7 +147,7 @@ function engineModuleFile(engineDir: string, id: string): string | undefined {
 
 export interface PreparedAssembly {
   rules: ReturnType<typeof compileRules>
-  modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>, options?: { agent: Agent; sourceModuleId: string; sourceModuleDir: string; recoveryState: ReturnType<typeof createGenerationRecoveryState>; contextRuntimeOf: typeof contextRuntimeOf }) => unknown; config: Record<string, unknown> }>
+  modules: Array<{ id: string; apply: (ctx: Context, config: Record<string, unknown>, options?: { agent: Agent; sourceModuleId: string; sourceModuleDir: string; recoveryState: ReturnType<typeof createGenerationRecoveryState> }) => unknown; config: Record<string, unknown> }>
   services: Set<string>
   moduleId: string
   variablesEnabled?: boolean
@@ -550,7 +549,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const disposeSlot = async (slot: Slot): Promise<void> => { slot.live = false; slot.off(); await slot.fiber.dispose() }
     const applyCapability = async (scopeCtx: Context, item: PreparedAssembly, module: PreparedAssembly['modules'][number]): Promise<void> => {
       const result = await module.apply(scopeCtx, module.config, { agent, sourceModuleId: item.moduleId,
-        sourceModuleDir: sourceInputs.get(item)!.dir, recoveryState, contextRuntimeOf })
+        sourceModuleDir: sourceInputs.get(item)!.dir, recoveryState })
       if (typeof result === 'function') scopeCtx.effect(() => result as () => void, module.id)
     }
     const createSlot = async (map: Map<string, Slot>, key: string, owners: PreparedAssembly[], apply: (scopeCtx: Context) => Promise<void>, signature?: string): Promise<void> => {

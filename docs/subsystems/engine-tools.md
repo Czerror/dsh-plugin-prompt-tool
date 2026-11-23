@@ -95,7 +95,7 @@ moduleConfigs:
 
 `mainRecoveryLimit`／`subagentRecoveryLimit` 默认0，可设0–1000；非零才开启对应受众的自动恢复。额度按会话持久，重挂不清零，同一执行只能消费一次。扣额后等待 `whenIdle`，检查取消、卸载和是否已进入新turn，再发送非空纠正消息。额度耗尽或持久owner不可用明确报告，取消后迟到Promise不会唤醒。
 
-`maintenanceCompression` 默认false；开启时在同一上下文运行时做 idle 局部压缩。null表示无操作并停止此次恢复；失败默认停止，只有 `allowFullFallback: true` 才允许升级完整压缩，取消绝不升级。维护窗口只领取一次，恢复消息引用实际成功结果，失败与普通工具裁剪不推进成功压缩epoch。有意重复的文本仍可能命中检测，可调阈值或关闭。
+`maintenanceCompression` 默认为 `false`。开启后，恢复流程在 Agent 空闲时请求一次当前官方压缩服务的 `compactNow`。服务不可用、返回 `null`、失败或取消时停止此次恢复。成功后才发送恢复消息。失败和普通工具裁剪均不推进成功压缩 epoch。
 
 `lineRepeatChars/crossCallRepeatChars` 默认 0 关闭，可显式设置行重复和跨调用阈值；较长周期需同步提高 `maxCycleChars`。重复行至少6行、覆盖80%且主导行集中50%；跨调用与此前两次合格调用各达到90%行材料覆盖时才判第三次重复。每类只保128行摘要、单行1024字符，跳过引用和围栏代码，取消/卸载清理。固定校准集3类异常检出、3类正常材料无误报，不能外推生产误报率；这是有界行材料相似度，不是语义向量。仍由原coordinator去重和扣额，不补额、不增加恢复执行者。
 
