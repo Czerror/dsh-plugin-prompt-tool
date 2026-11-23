@@ -50,6 +50,18 @@ export function toolAssemblyContext(assembly, context) {
 }
 // 目录正文只读，等所有工具面动作结算后重算；其它模板不重复求值。
 export function beginToolCatalog(context) { catalogs.set(context, { pending: [] }) }
+export function deferToolWire(context, project) {
+  const frame = catalogs.get(context)
+  if (frame !== undefined) (frame.wire ??= []).push(project)
+}
+export function settleToolWire(assembly, context) {
+  const frame = catalogs.get(context)
+  const projections = frame?.wire
+  if (projections === undefined) return assembly
+  frame.wire = undefined
+  for (const project of projections) assembly = project(assembly)
+  return assembly
+}
 export function deferToolCatalog(context, render) {
   const frame = catalogs.get(context)
   if (frame === undefined) return false

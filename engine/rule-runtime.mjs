@@ -564,6 +564,7 @@ export function createRuleRuntime(ctx, options = {}) {
               && (options.agent === undefined ? scope === undefined || scopeChainOf(agent).includes(scope) : agent === options.agent),
             ensureFresh: async () => {},
             assemble: (context, invoke) => { runtime.prepareAssembly(context); return invoke() },
+            settlePresentation: (assembly, context) => runtime.settlePresentation(assembly, context),
             settle: (assembly, context) => runtime.settleToolSurface(assembly, context),
           })
         }
@@ -661,16 +662,20 @@ export function createRuleRuntime(ctx, options = {}) {
       if (modelSelection !== undefined && (step == null || step.status !== 'sealed')) return undefined
       return (modelSelection === undefined ? persona?.plan : step.instructionsPlan)?.instructionsMaxBytes
     },
-    async settleToolSurface(assembly, context) {
+    async settlePresentation(assembly, context) {
       const frame = assemblyFrame(context, assembly)
-      let result = applyTransportDescriptions(assembly, toolStepFor(context))
-      await settleSkillDescriptions(ctx, context)
+      let result = assembly
       const handlers = [...points.values()].flatMap(point => point.handlers.filter(entry => entry.toolSurface)).sort(compareEntries)
       for (const entry of handlers) {
         if (!active) break
         if (!actionMatches(entry, frame)) { entry.miss?.(frame); continue }
         result = await entry.handler(result, context, () => result, frame)
       }
+      return stripPersonaIdentity(result, assemblyPersonaPlans.get(context), options.onOutcome, context.agent?.id)
+    },
+    async settleToolSurface(assembly, context) {
+      const result = applyTransportDescriptions(assembly, toolStepFor(context))
+      await settleSkillDescriptions(ctx, context)
       for (const observation of assemblyPersonaPlans.get(context)?.instructionsObservations ?? []) {
         try { options.onOutcome?.(observation) } catch { /* 只读诊断不改变已接受装配 */ }
       }
@@ -684,7 +689,7 @@ export function createRuleRuntime(ctx, options = {}) {
       for (const plan of toolStepFor(context)?.skillDescriptions ?? []) if (plan.owner === ctx) {
         try { options.onOutcome?.(skillDescriptionObservation(plan, toolStepFor(context))) } catch { /* 只读诊断不改变已接受装配 */ }
       }
-      return stripPersonaIdentity(result, assemblyPersonaPlans.get(context), options.onOutcome, context.agent?.id)
+      return result
     },
     dispose() {
       if (!active) return

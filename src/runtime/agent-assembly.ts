@@ -990,6 +990,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
           })
           return soul?.withEvidence ? soul.withEvidence(ids, context.agent!, context.signal, assemble) : assemble()
         },
+        settlePresentation: (assembly, context) => mounts.get(context.agent!.id)?.rules.settlePresentation(assembly, context) ?? Promise.resolve(assembly),
         settle: (assembly, context) => mounts.get(context.agent!.id)?.rules.settleToolSurface(assembly, context) ?? Promise.resolve(assembly),
       }),
       // `agent/created` 对四种来源都触发（startup / resume / clear / compact），每次都是一个新

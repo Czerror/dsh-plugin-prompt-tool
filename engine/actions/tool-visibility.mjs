@@ -1,7 +1,7 @@
 /**
  * tool-visibility —— 工具可见面：一份声明拥有「模型看得见什么、调得动什么」。
  *
- * 三面投影都在完整公开 assemble 返回后完成：
+ * SDK 与执行准入在宿主捕获正文前结算；独立的工具 schema 复用同一份策略：
  *  1. 装配目录（tools 数组）——本轮的呈现面；
  *  2. tools:sdk 段正文——模型读到的工具声明；
  *  3. 执行面：步骤集合封存名单，guard 读取同一准入；无集合调用保守判定。
@@ -26,7 +26,7 @@ import { RUN_CODE, createMask, labelOf, toolSurfacePlan } from './shared.mjs'
 import { createAgentCapability } from '../agent-capability.mjs'
 import { SDK_SECTION_NAME, stripSdkDeclarations, sdkToolNames } from '../sdk-strip.mjs'
 import { TOOL_INVOCATION_EVENT_TYPES, historyEvents } from '../history.mjs'
-import { hasToolStep, toolStepOf } from '../tool-scope.mjs'
+import { deferToolWire, hasToolStep, toolStepOf } from '../tool-scope.mjs'
 import { DISCOVERY_SERVICE } from '../service-names.mjs'
 import { UNLOCKABLE_DISCOVERY_KINDS } from '../discovery.mjs'
 
@@ -157,8 +157,16 @@ export function prepareToolVisibility(action, plugin) {
       else capability.release(session)
     })
 
-    collect(on('system-prompt/assemble', async (assembly, context, next) => {
-      const assembled = await next()
+    const project = (assembled, context) => {
+      const step = toolStepOf(context?.toolSet, context?.agent)
+      const sdkSection = Array.isArray(assembled.sections)
+        ? assembled.sections.find(section => section?.name === SDK_SECTION_NAME && typeof section.text === 'string')
+        : undefined
+      if (step === undefined && !Array.isArray(assembled.tools) && sdkSection === undefined) {
+        // 无步骤的原生装配只有在宿主接回 provider 的 schema 后才知道当前工具名。
+        deferToolWire(context, wire => project(wire, context))
+        return assembled
+      }
       // 解锁名先回收，后续裁剪与执行准入共用同一快照。
       // 工具名与参数键来自发现注册表的 adapter 元数据；声明里的同名字段只作断言。
       if (allowExtra !== undefined) {
@@ -190,18 +198,11 @@ export function prepareToolVisibility(action, plugin) {
       try {
         let result = assembled
         // 步骤准入直接读官方集合；裸装配只有展示信息，沿目录与 SDK 并集判定。
-        const sdkSection = Array.isArray(result.sections)
-          ? result.sections.find((section) => section?.name === SDK_SECTION_NAME && typeof section.text === 'string')
-          : undefined
         const sdkNames = sdkSection === undefined ? undefined : new Set(sdkToolNames(sdkSection.text))
-        const step = toolStepOf(context?.toolSet, context?.agent)
         const available = step === undefined ? new Set([
           ...(Array.isArray(result.tools) ? result.tools.map((tool) => tool?.name).filter((name) => typeof name === 'string') : []),
           ...(sdkNames ?? []),
         ]) : new Set(context.toolSet.view(context.agent).keys())
-        // 没有工具面可观（既无目录也无 SDK 正文）时不裁剪、不告警、不动执行闸：
-        // 空 surface 不等于「名单全缺」；空目录（tools=[]）仍是真实观测，照旧 fail-open。
-        if (!Array.isArray(result.tools) && sdkSection === undefined) return result
         // 三面（目录 / 正文 / 执行闸）共用这一份判断：名单全缺才整体放宽，呈现与执行不得两套口径。
         const plan = toolSurfacePlan(mask, available)
         const blocks = name => plan.failOpen ? mask.deny?.has(name) === true : mask.blocks(name, unlocked)
@@ -219,10 +220,13 @@ export function prepareToolVisibility(action, plugin) {
         if (!plan.failOpen && plan.missing.length > 0) {
           warnOnce(`${plugin}: tool-visibility action ${label}: resident tools absent (${plan.missing.join(', ')}) — narrowing continues; register replacement providers in the deployment allow list`, `${plugin}: tool-visibility action ${label}: resident tools absent`)
         }
-        if (Array.isArray(result.tools)) {
-          const kept = result.tools.filter((tool) => !blocks(tool?.name))
-          if (kept.length !== result.tools.length) result = { ...result, tools: kept }
+        const projectWire = wire => {
+          if (!Array.isArray(wire.tools)) return wire
+          const kept = wire.tools.filter(tool => !blocks(tool?.name))
+          return kept.length === wire.tools.length ? wire : { ...wire, tools: kept }
         }
+        if (Array.isArray(result.tools)) result = projectWire(result)
+        else deferToolWire(context, projectWire)
         if (Array.isArray(result.sections)) {
           let changed = false
           let present = sdkNames
@@ -250,6 +254,7 @@ export function prepareToolVisibility(action, plugin) {
         warnOnce(`${plugin}: tool-visibility action ${label} failed, keeping the assembled surface: ${String(error?.message ?? error)}`)
         return assembled
       }
-    }))
+    }
+    collect(on('system-prompt/assemble', async (_assembly, context, next) => project(await next(), context)))
   }
 }
