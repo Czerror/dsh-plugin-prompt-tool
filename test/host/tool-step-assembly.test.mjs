@@ -15,6 +15,7 @@ import Tools from '@deepseek-ai/dsh-tools'
 import * as native from '@deepseek-ai/dsh-tool-executor-native'
 import * as ptc from '@deepseek-ai/dsh-tool-executor-ptc'
 import { createDiscoveryRegistry } from '../../engine/discovery.mjs'
+import { registerAction } from '../../engine/actions/index.mjs'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { home, moduleRoot } = isolatedHome('pt-tool-step-')
@@ -86,6 +87,31 @@ test('公开 resolve/assemble 后置收窄最终声明与实际执行，官方 w
   assert.equal((await h.execute(toolSet)).results[0].result.isError, true)
   assert.equal(h.counts().calls, 1)
   toolSet.dispose()
+})
+
+test('独立动作收窄原服务的作用域预览与实际执行', async t => {
+  const h = await harness(t, [])
+  const service = h.root.get('systemPrompt')
+  let enabled = true
+  const release = registerAction(h.agent.ctx, { kind: 'tool-visibility', deny: ['hidden'] }, { when: () => enabled })
+  const names = async context => (await service.assemble(context)).tools.map(tool => tool.name)
+  assert.ok((await names({ scope: h.agent })).includes('keep'))
+  assert.ok(!(await names({ scope: h.agent })).includes('hidden'))
+  assert.ok((await names({ scope: {} })).includes('hidden'))
+  assert.equal(h.counts().conditions, 0, '无步骤装配保持预览，不预先执行工具准入')
+  const rawSet = await h.rawTools.resolve(h.context)
+  t.after(() => rawSet.dispose())
+  await names({ scope: h.agent, agent: h.agent })
+  assert.match((await h.execute(rawSet, 'hidden', h.rawTools)).results[0].result.error.message, /denied by tool-visibility/)
+  enabled = false
+  assert.ok((await names({ scope: h.agent, session: h.agent.session })).includes('hidden'))
+  assert.match((await h.execute(rawSet, 'hidden', h.rawTools)).results[0].result.error.message, /denied by tool-visibility/)
+  await names({ scope: h.agent, agent: h.agent })
+  assert.deepEqual((await h.execute(rawSet, 'hidden', h.rawTools)).results[0].result.value, { name: 'hidden' })
+  assert.equal(h.counts().conditions, 3, '只有显式 resolve 执行准入')
+  enabled = true
+  release()
+  assert.ok((await names({ scope: h.agent })).includes('hidden'))
 })
 
 test('官方会话提交的身份、PTC 声明及工具目录使用同一步已接受的投影', async t => {

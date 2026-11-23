@@ -22,11 +22,13 @@
  * 发现目录因此仍读取原候选，插件收窄不能变成注册目录权限。
  */
 
+import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
+import { Context } from '@deepseek-ai/cordis'
 import { RUN_CODE, createMask, labelOf, toolSurfacePlan } from './shared.mjs'
 import { createAgentCapability } from '../agent-capability.mjs'
 import { SDK_SECTION_NAME, stripSdkDeclarations, sdkToolNames } from '../sdk-strip.mjs'
 import { TOOL_INVOCATION_EVENT_TYPES, historyEvents } from '../history.mjs'
-import { deferToolWire, hasToolStep, toolStepOf } from '../tool-scope.mjs'
+import { deferToolWire, hasToolStep, installStandaloneToolWire, toolStepOf } from '../tool-scope.mjs'
 import { DISCOVERY_SERVICE } from '../service-names.mjs'
 import { UNLOCKABLE_DISCOVERY_KINDS } from '../discovery.mjs'
 
@@ -106,10 +108,13 @@ export function prepareToolVisibility(action, plugin) {
     throw new TypeError(`${plugin}: ${label}.requireMatch only applies to allow — deny lists have no required names`)
   }
 
-  return (mountCtx, { warnOnce, on, collect, onMiss }) => {
+  return (mountCtx, { warnOnce, on, collect, onMiss, standalone }) => {
+    if (standalone) collect(installStandaloneToolWire(mountCtx))
+    const canUpdateGuard = agent => agent?.ctx != null && (!standalone || scopeTarget(agent, scopeOf(agent.ctx))[Context.filter](mountCtx))
     /** 无集合调用保守判定；有集合时只读所属步骤的封存准入。 */
     const capability = createAgentCapability((agent) => {
-      const tools = agent?.ctx?.tools
+      let tools
+      try { tools = agent.ctx.tools } catch { tools = agent.ctx.get('tools') }
       if (tools === undefined) return undefined
       // unlocked：本会话装配时冻结的解锁名快照（await next() 期间别的装配会重填共享集合）。
       const state = { failOpen: false, unlocked: undefined }
@@ -150,15 +155,15 @@ export function prepareToolVisibility(action, plugin) {
 
     collect(capability.releaseAll)
     // 条件为假时 rule-runtime 不进入 handler：未命中回调负责撤掉上一轮注册的执行闸。
-    // 动作级 when 由 withWhen 调用时没有帧，只能撤当前已登记的全部会话。
+    // 裸预览没有 Agent，不能撤已登记的会话闸。
     onMiss((frame) => {
-      const session = frame?.subject?.agent?.session ?? frame?.args?.[1]?.agent?.session
-      if (session === undefined) capability.releaseAll()
-      else capability.release(session)
+      const agent = frame?.subject?.agent ?? frame?.args?.[1]?.agent
+      if (canUpdateGuard(agent)) capability.release(agent.session)
     })
 
     const project = (assembled, context) => {
       const step = toolStepOf(context?.toolSet, context?.agent)
+      const agent = context?.agent
       const sdkSection = Array.isArray(assembled.sections)
         ? assembled.sections.find(section => section?.name === SDK_SECTION_NAME && typeof section.text === 'string')
         : undefined
@@ -189,8 +194,9 @@ export function prepareToolVisibility(action, plugin) {
       // 冻结本会话的解锁名：之后的裁剪与执行闸都读这一份，
       // 共享的 allowExtra 可能被并发的另一次装配（别的会话 / 探针）清空重填。
       const unlocked = allowExtra === undefined ? undefined : new Set(allowExtra)
+      const updateGuard = canUpdateGuard(agent)
       try {
-        syncGate(context?.agent, unlocked)
+        if (updateGuard) syncGate(agent, unlocked)
       } catch (error) {
         // 闸注册失败必须留痕；呈现面照常结算，绝不把异常抛给装配。
         warnOnce(`${plugin}: tool-visibility action ${label} failed to sync execution gate: ${String(error?.message ?? error)}`)
@@ -207,7 +213,7 @@ export function prepareToolVisibility(action, plugin) {
         const plan = toolSurfacePlan(mask, available)
         const blocks = name => plan.failOpen ? mask.deny?.has(name) === true : mask.blocks(name, unlocked)
         if (step !== undefined) step.allowed = new Set([...available].filter(name => !blocks(name)))
-        const state = capability.get(context?.session ?? context?.agent?.session)
+        const state = updateGuard ? capability.get(agent.session) : undefined
         if (state !== undefined) {
           state.data.failOpen = plan.failOpen
           state.data.unlocked = unlocked

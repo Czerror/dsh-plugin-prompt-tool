@@ -8,6 +8,7 @@
  * 全局原始 schema 与 visible-only 差集不外露；等真实诊断消费方出现再加字段。
  */
 
+import { symbols } from '@deepseek-ai/cordis'
 import { SDK_SECTION_NAME, sdkToolNames } from './sdk-strip.mjs'
 
 const schemaList = (tools, scope) => {
@@ -21,6 +22,7 @@ const steps = new WeakMap()
 const selections = new WeakMap()
 const assemblies = new WeakMap()
 const catalogs = new WeakMap()
+const standaloneWire = new WeakMap()
 export const hasToolStep = toolSet => toolSet != null && steps.has(toolSet)
 export const toolStepOf = (toolSet, agent) => toolSet != null && agent != null ? steps.get(toolSet)?.get(agent) : undefined
 export function toolStepFor(context, agent = context?.agent) {
@@ -50,6 +52,34 @@ export function toolAssemblyContext(assembly, context) {
 }
 // 目录正文只读，等所有工具面动作结算后重算；其它模板不重复求值。
 export function beginToolCatalog(context) { catalogs.set(context, { pending: [] }) }
+/** 独立动作可从原服务装配，连同从 Cordis 属性获取的受管入口一起复用当前投影。 */
+export function installStandaloneToolWire(ctx) {
+  const dependency = ctx.inject(['systemPrompt'], child => {
+    const service = child.systemPrompt[symbols.original] ?? child.systemPrompt
+    let state = standaloneWire.get(service)
+    if (state === undefined) {
+      const original = service.assemble
+      state = { owners: 0 }
+      const current = state
+      const assemble = function (context = {}) {
+        if (current.owners === 0 || catalogs.has(context)) return Reflect.apply(original, this, [context])
+        const captured = { ...context }
+        beginToolCatalog(captured)
+        return Promise.resolve(Reflect.apply(original, this, [captured])).then(assembly => settleToolWire(assembly, captured))
+      }
+      state.release = () => { if (service.assemble === assemble) service.assemble = original }
+      service.assemble = assemble
+      standaloneWire.set(service, state)
+    }
+    state.owners++
+    return () => {
+      if (--state.owners !== 0) return
+      standaloneWire.delete(service)
+      state.release()
+    }
+  })
+  return () => dependency.dispose()
+}
 export function deferToolWire(context, project) {
   const frame = catalogs.get(context)
   if (frame !== undefined) (frame.wire ??= []).push(project)
