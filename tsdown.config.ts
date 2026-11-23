@@ -42,7 +42,7 @@ const lib: UserConfig = {
       const engineRoot = fileURLToPath(new URL('./engine/', import.meta.url))
       const target = resolvePath(dirname(importer), source)
       if (!target.startsWith(engineRoot)) return null
-      // early 入口与服务端必须加载同一份随包引擎，不能复制模块级 owner 状态。
+      // 服务端和动态装配共用同一份引擎注册状态。
       return { id: '../engine/' + relative(engineRoot, target).split(sep).join('/'), external: true }
     },
   }],

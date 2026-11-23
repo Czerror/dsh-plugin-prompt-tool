@@ -47,6 +47,7 @@ import type { ModuleToolHost } from './host/module-tool-target.ts'
 // 服务名真值源在引擎侧：引擎可单独复制，名字随 `engine/` 一起走。
 import { DISCOVERY_SERVICE, MANIFEST_CHECK_SERVICE, toolServiceName } from '../engine/service-names.mjs'
 import { createDiscoveryRegistry } from '../engine/discovery.mjs'
+import { installOfficialToolLimitOwners } from '../engine/official-tool-limit-owners.mjs'
 
 export const name = 'prompt-tool'
 // 内容走 user 层（AGENTS.md 常驻层 + skill 按需层），
@@ -66,6 +67,7 @@ function warn(ctx: Context, message: string): void {
 }
 
 export function apply(ctx: Context, configIn: Config): void {
+  ctx.effect(() => installOfficialToolLimitOwners(ctx))
   // settings 区块与命令都按 Config owner 的实际 Loader 行 id 寻址，换行 id 装配时不静默失配。
   const settingsNs = settingsNamespace(ctx)
   // 包内目录与输出目录同名；启动只复制缺失项，现有用户定义不被重新铺写。

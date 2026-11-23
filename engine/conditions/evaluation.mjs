@@ -75,11 +75,6 @@ export function actionMatches(entry, frame) {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
   })) return false
-  if (!frame.ignoreRequestBudgetDependency && entry.rule?.requestBudgetAvailable?.(entry, frame) === false) {
-    frame.actionOutcomes.set(entry, 'unavailable')
-    if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
-    return false
-  }
   if (!frame.ignoreSubagentDependency && entry.rule?.subagentAvailable?.(entry, frame) === false) {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
@@ -89,11 +84,6 @@ export function actionMatches(entry, frame) {
     frame.actionOutcomes.set(entry, 'unavailable')
     if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
   })) return false
-  if (!frame.ignoreInstructionsDependency && entry.rule?.instructionsAvailable?.(entry) === false) {
-    frame.actionOutcomes.set(entry, 'unavailable')
-    if (!frame.actionDecisions.has(entry)) { frame.actionDecisions.add(entry); report(frame, entry.rule, 'unavailable') }
-    return false
-  }
   const branched = entry.actionWhen !== undefined || entry.bypassRuleWhen === true
   if (!branched) {
     const cached = frame.decisions.has(entry.rule)

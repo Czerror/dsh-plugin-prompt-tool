@@ -126,13 +126,11 @@ export function RuleCard(props: {
   const collectTargets = (values: readonly unknown[]): void => { for (const value of values) {
     if (value === null || typeof value !== 'object') continue
     const node = value as Record<string, unknown>
-    if (node.kind === 'persona' && node.instructionsMaxBytes !== undefined) targets.add('persona:instructions')
     if (node.kind === 'subagent-params') targets.add('subagent:params')
     if (node.kind === 'host-control') {
       const channel = hostCapabilityChannel(node.capability)
       if (channel) targets.add(channel)
     }
-    if (node.kind === 'request-params' && node.maxTokens !== undefined) targets.add('request:budget')
     if (node.kind === 'assembly') {
       const target = asTriggerRecord(node.target)
       if (Array.isArray(target.toolDescriptions) && target.toolDescriptions.length > 0) targets.add('tool:descriptions')

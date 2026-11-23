@@ -38,6 +38,8 @@
 
 最低支持 DSH `0.2.3-alpha.2`。CLI 需要 Node.js `^24.22.3 || >=26.13.1` 和 PATH 中可用的 pnpm。使用 DSH `0.2.2-rc.2` 的部署请保留插件 `6.3.1`。升级前请核对自定义模块的退役能力。[完整要求](package.json) · [升级说明](CHANGELOG.md)
 
+从启用早期入口的部署升级时，请先从启动器的预加载参数中移除 `dsh-plugin-prompt-tool/early`，再按正常流程启动 DSH。插件管理器继续装配普通入口。被退役字段会在保存校验或规则诊断中指出规则与字段，按[宿主控制动作](docs/subsystems/engine-host-controls.md)核对适用行为。
+
 ### 桌面端或 Web
 
 通过宿主的插件管理页安装到当前使用的配置环境（profile）：

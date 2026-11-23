@@ -24,8 +24,8 @@ export const ACTION_KINDS = Object.freeze({
     events: ['system-prompt/assemble'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
-    timing: 'Agent 额度、文件和升级策略采用本次快照；oauth-identity-prefix 与 provider-system-role 独立固定实际 prepared call 的身份首段和系统角色；message-shape-guards 按当前步骤处理缺正文、缺 messages 与目标消息 content；escalation-criteria、escalation-grant、escalation-outcome 独立控制本次升级判据、直接授信和拒绝结果；process 软默认仅作用后续真实 owner 构造；command-confine-passthrough 作用后续 confine 调用；repeat-tool-reminder 与 compaction-tool-result-pruner 仅控制对应官方 owner。',
-    note: 'file-read-limits 配置读取额度；delegation-limits 配置委派与等待额度；approval-decisions 独立控制审批自动决定、自动审核透传和工具审批出口。current-system-snapshot: true 令首条 system 使用当前步骤完整正文，仅整理 system-prompt 来源，其他贡献与在途请求保持。process 作用域的 sandbox-soft-default、approval-composition-default、approval-config-default 分别控制后续真实构造的沙箱/审批组合/审批配置软默认，显式值保持，已构造实例不追改。',
+    timing: '按实际 Agent 的工具步骤结算能力；进程级命令策略只作用于后续调用。',
+    note: '能力缺少适用的宿主服务时，显式依赖它的规则分支报告不可用。',
   },
   'subagent-params': {
     title: '委派参数',
@@ -38,7 +38,7 @@ export const ACTION_KINDS = Object.freeze({
   },
   persona: {
     title: '人设',
-    fields: ['audience', 'prefix', 'suffix', 'complete', 'includeRuntimeContext', 'stripDefaultIdentity', 'instructionsMaxBytes'],
+    fields: ['audience', 'prefix', 'suffix', 'complete', 'includeRuntimeContext', 'stripDefaultIdentity'],
     events: ['system-prompt/assemble'],
     services: ['systemPrompt.section', 'systemPrompt.suppressRuntimeContext'],
     degrade: ACTION_DEGRADE.keep,
@@ -106,13 +106,12 @@ export const ACTION_KINDS = Object.freeze({
   },
   'request-params': {
     title: '改模型请求参数',
-    fields: ['patch', 'unset', 'replace', 'maxTokens'],
+    fields: ['patch', 'unset', 'replace'],
     events: ['agent/request'],
     services: [],
     degrade: ACTION_DEGRADE.keep,
     timing: 'agent/request 的下游结算之后（`await next()` 拿到已冻结的 LlmCallConfig 再改写）。',
-    note: '请求改写的唯一入口；删键仅删本声明指定的那个值。显式maxTokens是需已验证early接缝的瞬时额度，'
-      + '同值共存、异值冲突，不与本动作patch/unset.maxTokens或replace混用；旧patch/unset组合保持。',
+    note: '按声明修改宿主请求配置；unset 只删除与声明值匹配的字段。',
   },
   'stream-output': {
     title: '控制模型输出流',

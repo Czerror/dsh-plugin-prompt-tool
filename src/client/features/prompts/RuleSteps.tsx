@@ -216,12 +216,12 @@ function ActionFields(props: {
             cleared(context.fields, fieldKey)
             props.onChange({ ...structuredClone(next.example), id: action.id, kind } as unknown as RuleAction)
           }} /></FormField>
-        {action.kind === 'persona' ? <ModulePersonaCard t={t} action={action} disabled={context.disabled} context={{ ...context, fieldKey }} onChange={props.onChange} />
+        {action.kind === 'persona' ? <ModulePersonaCard t={t} action={action} disabled={context.disabled} onChange={props.onChange} />
           : action.kind === 'assembly' ? <AssemblyFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : action.kind === 'tool-visibility' ? <VisibilityFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : action.kind === 'pre-step-filter' ? <MessageFilterFields {...context} fieldKey={fieldKey} value={action} onChange={next => props.onChange(next as RuleAction)} />
           : <div className={css.fields}><RuleParameterFields {...context} fieldKey={fieldKey} value={action} requestPatch={action.kind === 'request-params'} example={example}
-          omit={['id', 'kind', ...(action.kind === 'request-params' ? ['audience', 'modelScope'] : [])]}
+          omit={['id', 'kind', ...(action.kind === 'request-params' ? ['audience', 'modelScope', 'maxTokens'] : [])]}
           configOmit={action.kind === 'inject-text' ? ['modelScope', 'promotion', ...staticAudience ? [] : ['audience']] : undefined}
           onChange={next => props.onChange({ ...next, id: action.id, kind: String(next.kind ?? action.kind) } as unknown as RuleAction)} /></div>}
       </>}

@@ -28,26 +28,32 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const pluginRoot = 'node_modules/dsh-plugin-prompt-tool'
-const { processDefaultsState } = await import(pathToFileURL(join(pluginRoot, 'engine/process-defaults.mjs')).href)
-// 在产物导入前发布贡献与 owner；后续导入不得重置模块私有 owner 身份。
-const owner = () => {}
-const ownerName = '@deepseek-ai/dsh-user-approval'
-const fiber = { entry: { options: { name: ownerName } }, runtime: { callback: owner } }
-const configAvailable = processDefaultsState.configAvailable
-processDefaultsState.configAvailable = true
-processDefaultsState.markOwner(ownerName, owner)
-const releaseDefault = processDefaultsState.replace('verify-pack', [{ capability: 'approval-config-default', value: 'never' }])
-assert.deepEqual(processDefaultsState.rawConfig(fiber, {}), { policy: 'never' })
-const plugin = await import('dsh-plugin-prompt-tool')
-try {
-  assert.deepEqual(processDefaultsState.rawConfig(fiber, {}), { policy: 'never' }, '服务端导入必须保留 early 引擎 owner 与贡献')
-  assert.deepEqual(processDefaultsState.rawConfig(fiber, { policy: 'ask' }), { policy: 'ask' })
-  releaseDefault()
-  assert.deepEqual(processDefaultsState.rawConfig(fiber, {}), {}, '撤回贡献恢复省略配置')
-} finally {
-  releaseDefault()
-  processDefaultsState.configAvailable = configAvailable
+const retiredPaths = [
+  './early',
+  './engine/approval-decisions-early.mjs',
+  './engine/delegation-limits-early.mjs',
+  './engine/escalation-decisions-early.mjs',
+  './engine/filesystem-policy-early.mjs',
+  './engine/fs-tool-early.mjs',
+  './engine/instructions-budget-bridge.d.mts',
+  './engine/instructions-budget-bridge.mjs',
+  './engine/instructions-budget-early.d.mts',
+  './engine/instructions-budget-early.mjs',
+  './engine/message-shape-guards-early.mjs',
+  './engine/messages-current-system-early.mjs',
+  './engine/process-defaults-early.mjs',
+  './engine/provider-hook-decisions-early.mjs',
+  './engine/provider-system-roles-early.mjs',
+  './engine/read-limits-early.mjs',
+  './engine/request-budget-bridge.mjs',
+  './engine/request-budget-early.mjs',
+  './engine/result-text-early.mjs',
+]
+for (const path of retiredPaths) {
+  const code = path === './early' ? 'ERR_PACKAGE_PATH_NOT_EXPORTED' : 'ERR_MODULE_NOT_FOUND'
+  await assert.rejects(import('dsh-plugin-prompt-tool' + path.slice(1)), { code })
 }
+const plugin = await import('dsh-plugin-prompt-tool')
 if (plugin.name !== 'prompt-tool' || typeof plugin.apply !== 'function') throw new Error('主入口导出不完整')
 if (typeof plugin.Config !== 'function') throw new Error('主入口缺少 Config（Cordis 配置 schema）')
 // 数组 inject 声明的是**必需**服务；webServer 这类可选服务只能动态等待，不能写进静态表。
@@ -63,7 +69,7 @@ const { compileRules } = await import(pathToFileURL(join(pluginRoot, 'engine/rul
 const rules = [{ id: 'smoke', then: [{ id: 's', kind: 'inject-text', config: { layer: 'pre-step', strategy: 'context-activation', text: '{{module.get::greeting}}', params: { activation: { scan: 'batch' }, keys: ['hello'], templateEvaluation: true } } }] }]
 const compiled = compileRules(rules)
 if (compiled.length !== 1 || compiled[0].actions.length !== 1) throw new Error('包内引擎编译规则失败')
-console.log('smoke: 主入口 + early/server 引擎身份 + 原生规则编译 均通过')
+console.log('smoke: 主入口、退役路径与原生规则编译均通过')
 `
 
 const failures = []

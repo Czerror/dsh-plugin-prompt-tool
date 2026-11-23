@@ -1,4 +1,3 @@
-import '../../engine/instructions-budget-early.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
@@ -11,6 +10,7 @@ import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { compileRules } from '../../engine/rule-spec.mjs'
 import { createRuleRuntime } from '../../engine/rule-runtime.mjs'
 import { delegationLimitsStatus } from '../../engine/delegation-limits.mjs'
+import { installOfficialToolLimitOwners } from '../../engine/official-tool-limit-owners.mjs'
 
 const require = createRequire(import.meta.url)
 const peerRequire = createRequire(require.resolve('@deepseek-ai/dsh-agent-loop'))
@@ -884,6 +884,8 @@ test('alpha.2 保留宿主委派上限与真实 Agent 血缘、取消与释放',
   root.provide('workingDirectory', { get: session => session.header.cwd ?? home, ensure: async () => home, set: async () => home })
   await root.plugin(Subagents)
   await root.plugin(Spawn, { providerName: 'spawn' })
+  const disposeOfficialToolOwners = installOfficialToolLimitOwners(root)
+  t.after(disposeOfficialToolOwners)
   const toolOwner = await root.plugin(Tool, { provider: 'spawn', maxDepth: 1 })
   root.llm.registerAdapter(['memory'], new HeldModel())
   root.on('subagent/start', info => {
@@ -911,7 +913,7 @@ test('alpha.2 保留宿主委派上限与真实 Agent 血缘、取消与释放',
     { type: 'tool-call', id: name, name: 'subagent', arguments: JSON.stringify({ name, description: 'lineage fixture', prompt: 'Wait for cancellation' }) },
   ] })).results[0].result
   const accepted = await prepare(parent)
-  assert.equal(delegationLimitsStatus(parent, accepted, 'maxDepth').available, false)
+  assert.equal(delegationLimitsStatus(parent, accepted, 'maxDepth').available, true)
   parentRuntime.replace(rules(0))
   const spawned = await call(await prepare(parent), 'reviewer')
   assert.equal(spawned.isError, false, JSON.stringify(spawned))

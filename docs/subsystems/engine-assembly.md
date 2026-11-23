@@ -168,6 +168,6 @@ runtime 事实授权按真实 Agent 的有效规则来源校验；persona 动作
 
 ## 重建与验证
 
-服务端构建保留对随包 `engine/` 的外部引用，与 early 入口加载同一份引擎模块；不得将其内联为第二份模块级 owner 状态。客户端仍按原客户端配置打包。`verify:pack` 验证服务端入口导入前后已发布构造默认的行为、显式配置与贡献撤回。
+服务端构建与动态装配共用随包 `engine/` 的模块状态。`verify:pack` 在从 tarball 安装的项目中核验普通入口、旧入口退役与规则编译。
 
 源文件与随包产物的生成命令见 [package.json](../../package.json) 中的 scripts。根 `module.yml` 的生成入口是 `rebuild:module-template`，示例默认关闭，普通规则变量需手动建立。交付检查遵循仓库约定，宿主与包接入另核对 `verify:host`、`verify:pack`。永久测试断言公共行为，覆盖注入、写盘、bridge 载荷、安全拒绝和 UI 入口注册，期望来自独立规格或字面样例。

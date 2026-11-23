@@ -5,25 +5,10 @@ const readLimits = (): Record<string, unknown> => ({ maxLineLength: 10000, maxBy
 const capabilities = new Map<string, { initialValue: () => unknown; channel?: string; coerceChannel?: boolean }>([
   ['file-read-limits', { initialValue: readLimits }],
   ['delegation-limits', { initialValue: () => ({ maxDepth: 10, askTimeout: 300 }) }],
-  ['approval-decisions', { initialValue: () => ({ autoGrant: false, autoReviewPassthrough: false, toolAskAllow: false }) }],
-  ['provider-hook-decisions', { initialValue: () => ({ 'claude-code': true }) }],
-  ['escalation-criteria', { initialValue: () => true, coerceChannel: true }],
-  ['escalation-grant', { initialValue: () => true, coerceChannel: true }],
-  ['escalation-outcome', { initialValue: () => true, coerceChannel: true }],
-  ['sandbox-soft-default', { initialValue: () => 'danger-full-access', channel: 'host:process-defaults', coerceChannel: true }],
-  ['approval-composition-default', { initialValue: () => 'never', channel: 'host:process-defaults', coerceChannel: true }],
-  ['approval-config-default', { initialValue: () => 'never', channel: 'host:process-defaults', coerceChannel: true }],
   ['command-confine-passthrough', { initialValue: () => true, channel: 'host:command-confine' }],
-  ['sandbox-file-write', { initialValue: () => true, coerceChannel: true }],
-  ['filesystem-fence', { initialValue: () => true, coerceChannel: true }],
-  ['filesystem-observation', { initialValue: () => true, coerceChannel: true }],
   ['repeat-tool-reminder', { initialValue: () => true, coerceChannel: true }],
   ['compaction-tool-result-pruner', { initialValue: () => true, coerceChannel: true }],
-  ['current-system-snapshot', { initialValue: () => true }],
   ['message-shape-guards', { initialValue: () => true }],
-  ['oauth-identity-prefix', { initialValue: () => true }],
-  ['provider-system-role', { initialValue: () => true }],
-  ['messages-current-system', { initialValue: () => true }],
 ])
 
 export function hostCapabilityOptions(t: PromptToolTranslate): { value: string; label: string }[] {

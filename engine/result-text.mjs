@@ -13,10 +13,10 @@ export function resultTextOwnerStatus(definition, region) {
   const owner = resultTextOwners.renderers.get(definition?.output?.render)
   const supported = region === 'web-notice' ? owner?.owner === '@deepseek-ai/dsh-tool-web'
     : region === 'sandbox' && ['@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-pwsh', '@deepseek-ai/dsh-tool-fs',
-      '@deepseek-ai/dsh-tool-str-replace-editor', '@deepseek-ai/dsh-tool-executor-ptc'].includes(owner?.owner)
-  const available = supported === true && owner.execute === definition.execute && owner.project === definition.projectContent
+      '@deepseek-ai/dsh-tool-str-replace-editor'].includes(owner?.owner)
+  const available = supported === true && owner.isActive() && owner.execute === definition.execute && owner.project === definition.projectContent
     && owner.finalize === definition.finalizeContent
-  return { available, reason: available ? '' : 'verified official result owner or early entry unavailable' }
+  return { available, reason: available ? '' : 'verified official result registration unavailable' }
 }
 
 /** 同分支声明的结果能力决定关联装配正文资格；结果条件仍只在实际结果出口求值。 */
@@ -68,7 +68,8 @@ function resultRegion(region, exec, result, definition, original) {
   if (!resultTextOwnerStatus(definition, region).available) return undefined
   if (region === 'sandbox' && result.isError === true) {
     return ['@deepseek-ai/dsh-tool-fs', '@deepseek-ai/dsh-tool-str-replace-editor'].includes(owner.owner)
-      && result.error?.info?.code === 'FS_SANDBOX_DENIED' && original === `Error: ${result.error.message}`
+      && result.error?.info?.code === 'FS_SANDBOX_DENIED' && owner.failures.get(exec) === result.error.message
+      && original === `Error: ${result.error.message}`
       ? [7, original.length] : undefined
   }
   if (result.isError) return undefined
@@ -96,11 +97,8 @@ function resultRegion(region, exec, result, definition, original) {
     return start >= 0 && original.indexOf(message, start + 1) < 0 ? [start, start + message.length] : undefined
   }
   if (value?.sandbox?.denied !== true) return undefined
-  const marker = owner.owner === '@deepseek-ai/dsh-tool-executor-ptc'
-    ? `The ${value.sandbox.mode} file sandbox denied an operation.`
-    : ['@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-pwsh'].includes(owner.owner)
-      ? `[sandbox: file access denied under ${value.sandbox.mode} mode]` : undefined
-  if (marker === undefined) return undefined
+  if (!['@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-pwsh'].includes(owner.owner)) return undefined
+  const marker = `[sandbox: file access denied under ${value.sandbox.mode} mode]`
   const start = original.lastIndexOf(marker)
   return start >= 0 && (start === 0 || original[start - 1] === '\n') ? [start, original.length] : undefined
 }
@@ -112,7 +110,6 @@ export function editResultText(exec, result, decision, plans, tools, originalDef
   const original = singleText(result.content)
   const definition = originalDefinition ?? tools?.executable?.(exec.name, exec.agent, exec.toolSet)
     ?? exec.toolSet?.view(exec.agent)?.get(exec.name) ?? tools?.get(exec.name, exec.agent, exec.toolSet)
-    ?? (exec.name === 'run_code' ? resultTextOwners.results.get(result.value)?.definition : undefined)
   let content = result.content
   let selected = new Map(), applied = new Set()
   for (const plan of plans) {
@@ -139,7 +136,9 @@ export function editResultText(exec, result, decision, plans, tools, originalDef
       const at = region?.text.indexOf(entry.match) ?? -1
       const mixed = entry.region === 'web-notice' && region?.text !== entry.match
       if (at < 0 || mixed || region.text.indexOf(entry.match, at + 1) >= 0) {
-        const reason = `${plan.plugin}: tool-result ${JSON.stringify(exec.name)} ${entry.region} owner or match missing or ambiguous; skipped`
+        const reason = exec.name === 'run_code'
+          ? `${plan.plugin}: tool-result run_code sandbox editing requires the retired early transport owner`
+          : `${plan.plugin}: tool-result ${JSON.stringify(exec.name)} ${entry.region} owner or match missing or ambiguous; skipped`
         reasons.push(reason)
         plan.warnOnce?.(reason)
         continue
@@ -178,7 +177,7 @@ resultTextOwners.project = (exec, result, definition) => {
 resultTextOwners.finalize = (exec, result) => {
   const prepared = resultTextOwners.prepared.get(exec)
   resultTextOwners.prepared.delete(exec)
-  if (prepared === undefined || result.isError !== prepared.result.isError || result.value !== prepared.result.value
+  if (prepared === undefined || exec.signal.aborted || result.isError !== prepared.result.isError || result.value !== prepared.result.value
     || !isDeepStrictEqual(result.error, prepared.result.error) || !isDeepStrictEqual(result.meta, prepared.result.meta)
     || !isDeepStrictEqual(result.content, prepared.result.content)) return undefined
   try {
