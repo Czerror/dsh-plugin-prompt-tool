@@ -73,7 +73,6 @@ export function mountRuleSources(
 export function createRuleRuntime(ctx: unknown, options?: MountRuleSourcesOptions): {
   replace(sources: ReadonlyArray<RuleSourceLike>): void
   prepareAssembly(context?: { agent?: unknown; signal?: AbortSignal; scope?: unknown }): void
-  readInstructionsBudget(modelSelection?: unknown): number | undefined
   settleToolSurface(assembly: PromptAssembly, context: AssembleContext): Promise<PromptAssembly>
   settlePresentation(assembly: PromptPresentation, context: AssembleContext): Promise<PromptPresentation>
   dispose(): void

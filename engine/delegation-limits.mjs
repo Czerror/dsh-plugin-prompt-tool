@@ -1,14 +1,8 @@
-import { AsyncLocalStorage } from 'node:async_hooks'
 import { toolStepFor } from './tool-scope.mjs'
 import { actionMatches } from './conditions/evaluation.mjs'
 import { bindHostDependency } from './conditions/host-dependencies.mjs'
+import { officialToolLimitOwner, rememberToolLimitProjection, withOfficialDepth } from './official-tool-limit-owners.mjs'
 
-const ownerKey = Symbol.for('prompt-tool:delegation-limits-owner')
-export const delegationLimitsState = globalThis[Symbol.for('prompt-tool:delegation-limits')] ??= {
-  maxDepth: { available: false, reason: 'official subagent early owner unavailable; restart DSH with early entry' },
-  askTimeout: { available: false, reason: 'official timed question early owner unavailable; restart DSH with early entry' },
-}
-const calls = new AsyncLocalStorage()
 const fields = ['maxDepth', 'askTimeout']
 
 export function validateDelegationLimits(action) {
@@ -21,54 +15,50 @@ export function validateDelegationLimits(action) {
   if (action.waterfallPosition !== undefined && action.waterfallPosition !== 'default') throw new TypeError('delegation-limits is prepared before assemble')
 }
 
-delegationLimitsState.mark = (kind, ctx, definition) => {
-  const owner = { kind, ctx, active: true }
-  ctx.effect(() => () => { owner.active = false })
-  const execute = definition.execute
-  const wrapped = { ...definition, async execute(args, exec) {
-    exec.signal.throwIfAborted()
-    const step = toolStepFor(exec)
-    let value
-    if (owner.active && step?.status === 'sealed' && exec.agent?.ctx?.get('tools')?.executable(definition.name, exec.agent, exec.toolSet)?.[ownerKey] === owner) {
-      value = step.delegationLimits?.[kind]
-    }
-    if (kind === 'askTimeout' && value !== undefined && args.timeout === -1) args = { ...args, timeout: value }
-    return calls.run({ ctx, value: kind === 'maxDepth' ? value : undefined }, () => execute.call(this, args, exec))
-  } }
-  Object.defineProperty(wrapped, ownerKey, { value: owner, enumerable: true })
-  return wrapped
-}
-
-// 配置实参未指定时才提供默认值；官方 resolver 仍拥有提供者及数值校验。
-delegationLimitsState.depth = (ctx, configured) => {
-  const call = calls.getStore()
-  return configured === undefined && call !== undefined && call.ctx === ctx && call.value !== undefined ? call.value : configured
+function delegationOwner(agent, context, field) {
+  const name = field === 'maxDepth' ? 'subagent' : 'ask_user_question'
+  const tools = agent?.ctx?.get('tools')
+  const toolSet = toolStepFor(context, agent)?.originalToolSet ?? context?.toolSet
+  const owner = officialToolLimitOwner(tools?.executable?.(name, agent, toolSet))
+  if (owner?.kind !== field) return undefined
+  if (field === 'askTimeout') return typeof owner.ctx.get('userQuestions')?.askTimed === 'function' ? owner : undefined
+  const subagents = owner.ctx.get('subagents')
+  return typeof subagents?.resolveMaxDepth === 'function' && subagents.getProvider('spawn')?.capabilities?.depthLimit === true ? owner : undefined
 }
 
 export function delegationLimitsStatus(agent, context, field) {
-  const state = delegationLimitsState[field]
-  if (!state?.available) return { available: false, reason: state?.reason ?? 'unsupported delegation limit' }
   try {
-    const tools = agent?.ctx?.get('tools')
-    const name = field === 'maxDepth' ? 'subagent' : 'ask_user_question'
-    const owner = tools?.executable?.(name, agent, context?.toolSet)?.[ownerKey]
-    const available = owner?.active === true && owner.kind === field
-      && (field !== 'maxDepth' || owner.ctx.get('subagents')?.getProvider('spawn')?.capabilities?.depthLimit === true)
-      && (field !== 'askTimeout' || typeof owner.ctx.get('userQuestions')?.askTimed === 'function')
-    return { available, reason: available ? '' : `verified official ${name} owner or runtime dependencies unavailable` }
+    const available = delegationOwner(agent, context, field) !== undefined
+    return { available, reason: available ? '' : 'official delegation registration was not observed or its runtime dependencies are unavailable' }
   } catch { return { available: false, reason: 'official delegation owner dependencies unavailable' } }
 }
 
 export const isDelegationLimitsAction = action => action.kind === 'host-control' && action.capability === 'delegation-limits'
 
 export function delegationLimitsDefinition(definition, step) {
-  const owner = definition?.[ownerKey]
-  const value = step?.delegationLimits?.[owner?.kind]
-  if (owner?.active !== true || value === undefined || typeof definition.description !== 'string') return definition
+  const owner = officialToolLimitOwner(definition)
+  if (owner === undefined || typeof definition.description !== 'string') return definition
+  const value = step?.delegationLimits?.[owner.kind]
+  if (value === undefined) return definition
   const note = owner.kind === 'maxDepth'
     ? `Current rule default depth: ${value}, only when the official spawn configuration omits maxDepth; explicit values and provider-managed remain unchanged.`
     : `Current rule wait cap: ${value} seconds for timeout=-1 only; omitted timeout and finite timeout keep their original behavior.`
-  return { ...definition, description: `${definition.description}\n\n${note}` }
+  const projection = { ...definition, description: `${definition.description}\n\n${note}`, execute(args, exec) {
+    const original = () => definition.execute(args, exec)
+    if (step.status !== 'sealed' || toolStepFor(exec) !== step || delegationOwner(exec.agent, exec, owner.kind) !== owner) return original()
+    exec.signal.throwIfAborted()
+    if (owner.kind === 'maxDepth') return withOfficialDepth(owner, value, original)
+    return args.timeout === -1 ? definition.execute({ ...args, timeout: value }, exec) : original()
+  } }
+  rememberToolLimitProjection(projection, owner)
+  return projection
+}
+
+export function withDelegationDepthContext(context, step, run) {
+  const value = step?.delegationLimits?.maxDepth
+  if (value === undefined || step.status === 'closed') return run()
+  const owner = delegationOwner(context.agent, context, 'maxDepth')
+  return owner === undefined ? run() : withOfficialDepth(owner, value, run)
 }
 
 export function planDelegationLimits(entries, frame, preview = false) {

@@ -1,13 +1,12 @@
 import { toolStepFor } from './tool-scope.mjs'
 import { actionMatches } from './conditions/evaluation.mjs'
 import { bindHostDependency } from './conditions/host-dependencies.mjs'
+import { officialToolLimitOwner, rememberToolLimitProjection } from './official-tool-limit-owners.mjs'
 
-const ownerKey = Symbol.for('prompt-tool:file-read-limits-owner')
-const key = Symbol.for('prompt-tool:file-read-limits')
 const fields = ['maxLineLength', 'maxBytes', 'limit']
-export const readLimitsState = globalThis[key] ??= {
-  available: false, reason: 'file-read-limits early entry missing or official module already cached; restart DSH with early entry',
-}
+const projections = new WeakMap()
+const configFields = { maxLineLength: 'readMaxLineLength', maxBytes: 'readMaxBytes', limit: 'readLimit' }
+const readConfigFields = [...Object.values(configFields), 'readStreamMinSize']
 
 export function validateReadLimits(action) {
   if (action.capability !== 'file-read-limits') throw new TypeError('host-control.capability must be file-read-limits')
@@ -20,30 +19,26 @@ export function validateReadLimits(action) {
   if (action.waterfallPosition !== undefined && action.waterfallPosition !== 'default') throw new TypeError('file-read-limits is prepared before assemble')
 }
 
-readLimitsState.mark = (ctx, definition) => {
-  const owner = { ctx, active: true, limitDescription: definition.parameters?.properties?.limit?.description }
-  ctx.effect(() => () => { owner.active = false })
-  Object.defineProperty(definition, ownerKey, { value: owner, enumerable: true })
-  return definition
+function readOwner(agent, context) {
+  const tools = agent?.ctx?.get('tools')
+  const toolSet = toolStepFor(context, agent)?.originalToolSet ?? context?.toolSet
+  const owner = officialToolLimitOwner(tools?.executable?.('read', agent, toolSet))
+  if (owner?.kind !== 'read' || owner.config.read !== true || typeof owner.apply !== 'function') return undefined
+  if (!readConfigFields.every(field => Number.isSafeInteger(owner.config[field]) && owner.config[field] > 0)) return undefined
+  return owner.ctx.get('fs') !== undefined && owner.ctx.get('workingDirectory') !== undefined ? owner : undefined
 }
 
-export function readLimitsStatus(agent, context) {
-  if (!readLimitsState.available) return { available: false, reason: readLimitsState.reason }
+export function readLimitsStatus(agent, context, limits) {
   try {
-    const tools = agent?.ctx?.get('tools')
-    const owner = tools?.executable?.('read', agent, context?.toolSet)?.[ownerKey]
-    const available = owner?.active === true && owner.ctx.get('fs') !== undefined && owner.ctx.get('workingDirectory') !== undefined
-    return { available, reason: available ? '' : 'verified official read owner or runtime dependencies unavailable' }
+    const owner = readOwner(agent, context)
+    if (owner === undefined) return { available: false, reason: 'official read registration was not observed or its runtime dependencies are unavailable' }
+    if (limits !== undefined && Object.keys(limits).length > 0) {
+      const step = toolStepFor(context, agent)
+      if (step == null || step.status === 'closed') return { available: false, reason: 'official read tool step is unavailable' }
+      readProjection(owner, step, limits)
+    }
+    return { available: true, reason: '' }
   } catch { return { available: false, reason: 'official read owner dependencies unavailable' } }
-}
-
-// 只读已接受步骤；不另存 Agent 参数表，关闭后下一步骤自然恢复原 owner 配置。
-readLimitsState.read = (ctx, exec, original) => {
-  exec.signal.throwIfAborted()
-  const step = toolStepFor(exec)
-  if (step?.status !== 'sealed' || step.readLimits === undefined || !readLimitsStatus(exec.agent, exec).available) return original
-  const owner = exec.agent.ctx.get('tools').executable('read', exec.agent, exec.toolSet)?.[ownerKey]
-  return owner?.ctx === ctx ? Object.freeze({ ...original, ...step.readLimits }) : original
 }
 
 /** 同字段同值共存，不同字段可组合；异值候选不挑赢家。 */
@@ -77,8 +72,8 @@ export function bindReadLimitsDependencies(rule, moduleId, entries, onOutcome) {
       if (!dependent.has(entry.ruleActionId ?? entry.id)) return true
       const context = frame.args[frame.channel === 'system-prompt/assemble' ? 1 : 0]
       const agent = frame.subject?.agent
-      const status = readLimitsStatus(agent, context)
       const plan = planReadLimits(entries(), frame)
+      const status = readLimitsStatus(agent, context, plan.values)
       const conflict = fields.some(field => plan.conflicts.has(field) && action.value[field] !== undefined)
       if (status.available && !conflict) return true
       try { onOutcome?.({ moduleId, ruleId: rule.id, channel: 'host:file-read-limits', outcome: 'unavailable',
@@ -96,7 +91,7 @@ export function prepareReadLimits(entries, frame, preview = false) {
   if (preview) return plan
   if (plan.conflicts.size > 0) throw new TypeError(`file-read-limits ${[...plan.conflicts].join(', ')} conflict`)
   const context = frame.args[1]
-  const status = readLimitsStatus(frame.subject?.agent, context)
+  const status = readLimitsStatus(frame.subject?.agent, context, plan.values)
   const observations = entries.map(entry => {
     const hit = actionMatches(entry, frame)
     const outcome = hit ? 'hit' : frame.actionOutcomes.get(entry) ?? 'miss'
@@ -110,13 +105,37 @@ export function prepareReadLimits(entries, frame, preview = false) {
 
 /** 模型工具说明和执行读取同一个已接受值；保留其它来源的描述与参数。 */
 export function readLimitsDefinition(definition, step) {
-  const limit = step?.readLimits?.limit
-  if (definition?.[ownerKey]?.active !== true || limit === undefined) return definition
-  const parameters = definition.parameters
-  const original = definition[ownerKey].limitDescription
-  const description = parameters.properties.limit.description
-  if (typeof original !== 'string' || original.length === 0 || typeof description !== 'string' || description.split(original).length !== 2) return definition
-  return { ...definition, parameters: { ...parameters, properties: { ...parameters.properties,
-    limit: { ...parameters.properties.limit, description: description.replace(original, `Maximum number of lines to return. Defaults to ${limit}.`) },
-  } } }
+  const owner = officialToolLimitOwner(definition)
+  const limits = step?.readLimits
+  if (owner?.kind !== 'read' || limits === undefined || Object.keys(limits).length === 0) return definition
+  return readProjection(owner, step, limits)
+}
+
+function readProjection(owner, step, limits) {
+  const current = projections.get(step)
+  if (current?.owner === owner && fields.every(field => current.limits[field] === limits[field])) return current.projection
+  const config = { ...owner.config, readImage: false, write: false, edit: false, applyPatch: false }
+  for (const [field, limit] of Object.entries(limits)) config[configFields[field]] = limit
+  let captured
+  const ctx = {
+    tools: { register(candidate) {
+      if (captured !== undefined || candidate.name !== 'read') throw new TypeError('official read factory registered an unexpected tool')
+      captured = candidate
+    } },
+    systemPrompt: { getSectionOrder: name => owner.ctx.systemPrompt.getSectionOrder(name), section() {} },
+    get fs() { return owner.ctx.fs },
+    get workingDirectory() { return owner.ctx.workingDirectory },
+    emit: (...args) => owner.ctx.emit(...args),
+  }
+  owner.apply(ctx, config)
+  if (captured === undefined) throw new Error('official read factory did not register a definition')
+  const projection = { ...captured, execute(args, exec) {
+    if (step.status !== 'sealed' || toolStepFor(exec) !== step || readOwner(exec.agent, exec) !== owner) {
+      throw new Error('official read step is unavailable')
+    }
+    return captured.execute(args, exec)
+  } }
+  rememberToolLimitProjection(projection, owner)
+  projections.set(step, { owner, limits, projection })
+  return projection
 }

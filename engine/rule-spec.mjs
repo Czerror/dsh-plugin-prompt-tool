@@ -286,6 +286,12 @@ export function compileRules(specs, options = {}) {
       if (actionIds.has(source.id)) throw new TypeError(`rule ${spec.id}: duplicate action id ${source.id}`)
       actionIds.add(source.id)
       if (!Object.hasOwn(ACTION_KINDS, source.kind)) throw new TypeError(`rule ${spec.id}: unknown action ${source.kind}`)
+      if (source.kind === 'host-control' && !hostControlDescriptor(source)) {
+        throw new TypeError(`rule ${spec.id}: action ${source.id}: unsupported host-control.capability ${JSON.stringify(source.capability)}`)
+      }
+      if (source.kind === 'request-params' && Object.hasOwn(source, 'maxTokens')) {
+        throw new TypeError(`rule ${spec.id}: action ${source.id}: request-params.maxTokens 已退役`)
+      }
       // 带 `kind` 的节点同时写分支键时，`expandActions` 只认无 `kind` 的分支节点——分支会被
       // 静默丢掉（条件不生效、动作照旧执行），因此点名拒绝而不是当未知键。
       const branchKeys = ['if', 'then', 'else'].filter(key => source[key] !== undefined)
@@ -300,6 +306,10 @@ export function compileRules(specs, options = {}) {
         throw new TypeError(`rule ${spec.id}: action ${source.id}.match 已取消 — 声明路径写不了函数，条件改用 rule.if`)
       }
       const action = structuredClone(source)
+      const retiredPersonaInstructions = action.kind === 'persona' && Object.hasOwn(action, 'instructionsMaxBytes')
+      if (retiredPersonaInstructions) {
+        delete action.instructionsMaxBytes
+      }
       if (action.kind === 'inject-text') {
         action.config = injectionConfigSpec(spec, action, options)
         if ((hasSoulCondition(ruleIf) || conditions.some(hasSoulCondition)) && !['pre-step', 'runtime-context'].includes(action.config.layer)) {
@@ -312,6 +322,7 @@ export function compileRules(specs, options = {}) {
       // 也不会被静默丢弃。声明式 config.subject/match 已删除，不再进入这张旧门名单。
       normalizeActionGates(action, execution)
       validateConfig(`rule ${spec.id}: action ${action.id}`, action, ACTION_FIELDS[action.kind])
+      if (retiredPersonaInstructions) Object.defineProperty(action, 'retiredFields', { value: ['instructionsMaxBytes'], enumerable: true })
       if (action.kind === 'request-params') {
         // patch / unset 的子键同属 LlmCallConfig（键集与值规则复用 schema 的 assertLlmCallPatch）：
         // 拼错的键与非法值今天会被静默忽略（补丁不生效），与动作级未知键是同一类失效。

@@ -12,7 +12,6 @@
   "main": "lib/index.mjs",
   "types": "lib/index.d.mts",
   "exports": {
-    "./early": "./engine/instructions-budget-early.mjs",
     ".": {
       "types": "./lib/index.d.mts",
       "default": "./lib/index.mjs"

@@ -4,7 +4,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { applySubagentDepthContexts } from './subagent-params.mjs'
 import { applyAcceptedContextReplacements, applyToolDescriptions } from './actions/assembly.mjs'
 import { readLimitsDefinition } from './read-limits.mjs'
-import { delegationLimitsDefinition } from './delegation-limits.mjs'
+import { delegationLimitsDefinition, withDelegationDepthContext } from './delegation-limits.mjs'
 import { installSkillDescriptionProjection, settleSkillDescriptions } from './tool-metadata.mjs'
 import { normalizeMessageShapeAssembly } from './message-shape-guards.mjs'
 import { cordisRoot } from './shared.mjs'
@@ -65,7 +65,7 @@ function createInstallation(ctx) {
       if (toolStepOf(existing, context.agent) === undefined) throw new Error('prompt-tool: tool set belongs to another Agent')
       return existing
     }
-    const step = { status: 'pending', modelSelection: context.modelSelection === undefined
+    const step = { status: 'pending', originalToolSet: original, modelSelection: context.modelSelection === undefined
       ? undefined : Object.freeze({ ...context.modelSelection }) }
     const wrapped = Object.freeze({
       view(scope) {
@@ -130,7 +130,8 @@ function createInstallation(ctx) {
         const captured = toolAssemblyContext(assembly, context)
         if (captured === undefined) throw unavailable()
         const step = toolStepOf(captured.toolSet, captured.agent)
-        const refreshed = normalizeMessageShapeAssembly(applyAcceptedContextReplacements(applySubagentDepthContexts(Reflect.apply(value, target, [assembly, captured]), captured, step), step), captured, step)
+        const original = withDelegationDepthContext(captured, step, () => Reflect.apply(value, target, [assembly, captured]))
+        const refreshed = normalizeMessageShapeAssembly(applyAcceptedContextReplacements(applySubagentDepthContexts(original, captured, step), step), captured, step)
         if (step !== undefined) associateToolAssembly(refreshed, captured.agent, step)
         return refreshed
       }
@@ -175,7 +176,7 @@ function createInstallation(ctx) {
                 presentation = await owner.settlePresentation(presentation, captured)
               }
               checkAbort()
-              return presentation
+              return normalizeMessageShapeAssembly(presentation, captured, step)
             })()
             beginToolCatalog(captured)
             const invoke = async index => {
@@ -184,7 +185,8 @@ function createInstallation(ctx) {
               checkAbort()
               if (!active || step?.status === 'closed') throw unavailable()
               const forwarding = { agent, step, signal, context: captured, method: value, settlePresentation }
-              try { return await assemblyCalls.run(forwarding, () => Reflect.apply(value, target, [captured])) }
+              try { return await assemblyCalls.run(forwarding, () =>
+                withDelegationDepthContext(captured, step, () => Reflect.apply(value, target, [captured]))) }
               finally { forwarding.context = undefined }
             }
             let final = await invoke(0)

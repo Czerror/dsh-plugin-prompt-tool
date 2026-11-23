@@ -50,7 +50,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     const readLimitField = props.readLimits === true && ['maxLineLength', 'maxBytes', 'limit'].includes(key)
     const delegationLimitField = props.delegationLimits === true && ['maxDepth', 'askTimeout'].includes(key)
     const value = readLimitField || delegationLimitField ? props.value[key] : mergedValue
-    const fieldKey = props.fieldKey + ':' + key, label = props.injectionConfig && key === 'text' ? t('form.text.label') : readLimitField ? t(key === 'maxLineLength' ? 'triggers.label.readMaxLineLength' : key === 'maxBytes' ? 'triggers.label.readMaxBytes' : 'triggers.label.readLimit') : props.value.kind === 'host-control' && key === 'value' ? t('triggers.label.readLimitsValue') : props.value.kind === 'request-params' && key === 'maxTokens' ? t('triggers.label.requestBudget') : props.value.kind === 'subagent-params' && key === 'tool' ? t('triggers.label.delegationTool') : props.value.kind === 'subagent-params' && key === 'provider' ? t('triggers.label.delegationProvider') : key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
+    const fieldKey = props.fieldKey + ':' + key, label = props.injectionConfig && key === 'text' ? t('form.text.label') : readLimitField ? t(key === 'maxLineLength' ? 'triggers.label.readMaxLineLength' : key === 'maxBytes' ? 'triggers.label.readMaxBytes' : 'triggers.label.readLimit') : props.value.kind === 'host-control' && key === 'value' ? t('triggers.label.readLimitsValue') : props.value.kind === 'subagent-params' && key === 'tool' ? t('triggers.label.delegationTool') : props.value.kind === 'subagent-params' && key === 'provider' ? t('triggers.label.delegationProvider') : key === 'action' && props.fieldKey.endsWith(':anchor:after') ? t('triggers.label.afterAction') : FIELD_LABELS[key] === undefined ? triggerLabel(t, key) : t(FIELD_LABELS[key])
     const patch = (next: unknown): void => {
       if (key === 'capability' && props.value.kind === 'host-control') {
         props.onChange(changeHostCapability(props.value, next, props))
@@ -99,7 +99,7 @@ export function RuleParameterFields(props: FieldContext & { value: Record<string
     if (typeof value === 'boolean') return <div key={key} className={css.toggle}><span>{label}</span><span className={css.switchLine}><Switch label={label} checked={value} disabled={props.disabled} onChange={patch} /></span></div>
     const fallbackNumber = key === 'fallbackAfter' && props.fieldKey.endsWith(':anchor')
     const textLength = ['minChars', 'maxChars'].includes(key) && props.fieldKey.endsWith(':text')
-    const instructionsBudget = readLimitField || ['instructionsMaxBytes', 'maxPromoteSteps'].includes(key) || key === 'maxTokens' && !requestField
+    const instructionsBudget = readLimitField || key === 'maxPromoteSteps' || key === 'maxTokens' && !requestField
     const delegationDepth = key === 'maxDepth'
     const optionalNumber = readLimitField || delegationLimitField || requestField && ['temperature', 'maxTokens'].includes(key)
     if (typeof value === 'number' || optionalNumber) {

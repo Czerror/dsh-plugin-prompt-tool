@@ -87,7 +87,7 @@
 
 宿主能力（`host-control`）的有序选项、切换初始值与诊断通道由 `data/host-control-policy.ts` 统一拥有。能力切换返回新动作并直接清理该动作的 `value` 草稿子树，保留兄弟字段与其他动作草稿；同能力重选不重置值或草稿，未知能力保留原回显与既有读取额度兜底。字段草稿清理复用数据层实现，`RuleFields` 保留既有导出。特殊额度控件和保存时机继续由字段编辑与规则编辑器负责；规则卡仍拥有动作遍历、已保存版本及主语过滤，策略不读取运行状态或触发保存。普通能力扩展只补策略与文案，不在三个消费者另加能力名单，也不将编辑初始值作为引擎运行真值。
 
-宿主能力的诊断通道是 `host:<capability>`，普通布尔动作使用 `value: true`，`provider-hook-decisions` 对象保留 `claude-code` 与 `codex`。能力开启表示配置意图；运行时机与默认值见[宿主控制](engine-host-controls.md)。
+宿主能力选择器展示当前可配置项；规则卡的诊断反映实际服务和作用域。见[宿主控制](engine-host-controls.md)。
 
 结果片段沿 `RuleParameterFields` 的 `tool-result/action: edit-text` 编辑，`edits` 使用原JSON字段；装配替句的候选数组沿 `RuleSurfaceFields` 使用JSON字段，保留逗号、换行及空替文，不转成标签列表。切到edit-text清理互斥的顶层text及草稿，初始match/text留空；切回其它模式清理edits及草稿，accept不补造text，replace/block沿原空正文编辑。非法或未完成JSON继续留在同一fields池并阻止保存，不影响读取额度的实际值、继承空值与Tooltip。 运行验证见[规则卡上的运行观测](ui-lifecycle.md#规则卡上的运行观测)。
 

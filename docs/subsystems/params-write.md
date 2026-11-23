@@ -4,27 +4,15 @@
 
 ## 规则动作的持久化约束
 
-Messages 当前系统正文使用 `host-control/messages-current-system`，仅接受 `value: true`，不接受次数预算或非默认时机。不保存正文副本，不隐式开启 `current-system-snapshot`；依赖诊断为 `host:messages-current-system`。实际接入范围见[宿主控制动作](engine-host-controls.md)。
-
-请求身份首段与系统角色分别使用 `host-control/oauth-identity-prefix`、`host-control/provider-system-role`，唯一值为 `value: true`。两卡独立启停与受众判定，不接受次数预算或 outermost 排序。不保存正文、认证或请求头副本，运行身份只来自已接受工具步骤与实际 prepared adapter call；缺目标诊断分别为 `host:oauth-identity-prefix`、`host:provider-system-role`。
-
-系统段与消息形状容错使用 `host-control/message-shape-guards`，唯一值为 `value: true`，不接受次数预算或 outermost 排序。它与上述动作共用规则启停、受众、分支、版本、复制导出与依赖诊断，不另建保存通道。
-
-每步当前系统正文使用 `host-control/current-system-snapshot`，唯一值为 `value: true`，不接受次数预算或 outermost 排序。正文仍归 inject-text / persona 声明，不复制或持久化第二份正文。
-
-process 规则另支持 `command-confine-passthrough: true`：每模块发布一次，仅影响后续命令 confine 调用，与构造软默认独立；不接受 Agent 私有条件。
-
-规则正文的 `executionScope: agent | process` 省略时为 agent，沿完整定义、切片与复制导出保存，启停投影在 `_settings.yml`。process 规则只接受支持的无条件构造软默认及上述命令穿透，不接受 Agent 私有条件；作用时机与新会话继承见[宿主控制动作](engine-host-controls.md)。
+宿主控制的声明与运行条件见[宿主控制动作](engine-host-controls.md)。规则的 `executionScope` 缺省为 `agent`，进程级命令规则使用 `process`，沿完整定义、切片与复制导出保存，启停投影在 `_settings.yml`。
 
 委派额度归 `host-control/delegation-limits` 的 `value`：可选 `maxDepth`（非负安全整数）与 `askTimeout`（1–2147483 秒），至少一项。复用规则数字草稿与版本保存；清空撤销该字段，空对象与非法数字拒绝发布。
 
 ### 动作字段与候选校验
 
-人设动作预算 `instructionsMaxBytes` 仍归module.yml普通规则，合法值为正安全整数。工作台直接复用RuleParameterFields数字原文、fields错误草稿、hasRuleFields保存阻断和原rule-drafts/CAS；切回继承清除此字段的原草稿，不创建独立预算保存。参考初值65536不限制用户采用其他合法值。
-
 委派参数保存在普通规则动作 `subagent-params`，当前只接受 `provider: spawn`、合法工具名 `tool` 与必填非负安全整数 `maxDepth`。0 表示明确禁止委派；空值、负数、小数与非数值均拒绝，撤回贡献通过关闭规则或删除动作表达。数字沿原 RuleParameterFields、fields/hasRuleFields、规则 CAS 与发布，不新增深度草稿或保存端点。`assembly.target.sections.replace` 的名称与完整正文沿原装配表单及规则事务编辑。
 
-显式瞬时额度 `request-params.maxTokens` 与 `phase.maxPromoteSteps` 沿数字原文草稿和规则事务保存，合法范围均为正安全整数。非法或未完成原文不发保存请求，折叠保留草稿。该额度与同动作的patch/unset.maxTokens及replace互斥；原有patch组合不迁移。`pre-step-filter.instructionHint` 是普通规则中的可编辑完整模板。请求额度运行接缝和指令字节预算分别取资格，详见[宿主控制动作](engine-host-controls.md)。
+阶段条件的 `maxPromoteSteps` 继续按正安全整数校验。普通 `request-params.patch/unset` 沿宿主请求配置生效。旧顶层 `request-params.maxTokens` 在候选校验中拒绝；`persona.instructionsMaxBytes` 保留为旧字段诊断，persona 的其他正文仍生效。已有用户模块保留原文件。
 
 文件读取额度归普通 `host-control/file-read-limits` 动作的 `value`，不进入部署settings或独立参数表。三个可选正安全整数复用原 `RuleParameterFields` 数字原文、错误草稿、版本保存和完整候选校验；清空只撤销该字段，三项全空仍由编译拒绝，不发布为0。标签保持简短，单位及继承说明使用原hint。实际接入边界见[文件读取上限](engine-host-controls.md#文件读取上限)。
 
