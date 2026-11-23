@@ -215,6 +215,17 @@ test('独立装配动作按原名组合并在解除后撤回', async t => {
       entry.name === names.get(removed) && message.content[entry.contentIndex].text === '')))
     offs.get(survivor)()
   }
+  const anonymous = entries => registerAction(root, { kind: 'assembly', target: { sections: { add: entries } } })
+  const entry = (id, text) => ({ id, name: 'anonymous-brief', text })
+  const releaseFirst = anonymous([entry('left', 'old left'), entry('right', 'old right')])
+  const prior = (await root.systemPrompt.assemble({ session })).sections
+  releaseFirst()
+  const releaseSecond = anonymous([entry('right', 'new right'), entry('left', 'new left')])
+  const updated = (await root.systemPrompt.assemble({ session })).sections
+  for (const id of ['left', 'right']) {
+    assert.equal(updated.find(s => s.text === 'new ' + id).name, prior.find(s => s.text === 'old ' + id).name)
+  }
+  releaseSecond()
   for (const standaloneAdds of [true, false]) {
     const compiled = createRuleRuntime(root)
     const add = { id: 'mix-add', kind: 'assembly', target: { sections: { add: [{ name: 'mixed', text: 'MIXED' }] } } }

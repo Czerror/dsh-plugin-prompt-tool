@@ -101,7 +101,7 @@ function bindAdmissionTracking(ctx) {
           const bodies = []
           for (const section of message.source.sections ?? []) {
             const author = authors.get(section.name)
-            if (!author?.matchBody || section.state !== 'active') continue
+            if (author === undefined || section.state !== 'active') continue
             const text = message.content[section.contentIndex].text
             if (text.length > 0 && author.body !== fingerprint(text)) bodies.push([section.name, author.body])
           }
@@ -132,8 +132,8 @@ function bindAdmissionTracking(ctx) {
 export const authorSectionName = section => section?.[added]?.name ?? section?.name
 export const isAddedSection = section => section?.[added] !== undefined
 
-export function addedSection(entry, owner, stableOwner = true) {
-  const identity = entry.id === undefined || !stableOwner ? undefined : explicitPrefix + encode([...owner, entry.id])
+export function addedSection(entry, owner) {
+  const identity = entry.id === undefined ? undefined : explicitPrefix + encode([...owner, entry.id])
   const group = identity === undefined ? prefix + 'auto:' + encode([...owner, entry.name]) + ':' : undefined
   return {
     name: entry.name, text: entry.text, order: entry.order,
@@ -245,7 +245,7 @@ function nameContributions(list, previous, authored, hidden, records, warnOnce) 
     const { [added]: contribution, ...rest } = section
     const body = contribution.body
     next.set(actual, { name: actual, order: next.size, body,
-      delivered: section.text === contribution.originalText ? body : fingerprint(section.text), matchBody: contribution.group !== undefined || groups.get(contribution.identity).length > 1 })
+      delivered: section.text === contribution.originalText ? body : fingerprint(section.text) })
     return { ...rest, name: actual }
   })
   return { sections, authored: next }

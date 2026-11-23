@@ -185,8 +185,7 @@ export function prepareAssembly(action, plugin, _promptConfigOptions, sectionOwn
   if (sectionsKeep !== undefined && sectionsRemove !== undefined) {
     throw new TypeError(`${plugin}: assembly.sections cannot combine keep with remove — 一种是白名单、一种是黑名单，同时声明语义不明`)
   }
-  const additions = sectionsAdd?.map(entry => addedSection(entry, sectionOwner ?? [plugin, action.id],
-    sectionOwner !== undefined || typeof action.id === 'string' && action.id.trim().length > 0))
+  const additions = sectionsAdd?.map(entry => addedSection(entry, sectionOwner ?? [plugin, action.id]))
   return (ctx, { warnOnce, on, collect, standalone }) => {
     collect(on('system-prompt/assemble', async (assembly, context, next, _frame, replacementFrame) => {
     const assembled = await next()
