@@ -195,6 +195,35 @@ test('独立装配动作按原名组合并在解除后撤回', async t => {
   off()
   const closed = await root.systemPrompt.assemble({ session })
   assert.ok(closed.systemUpdates(false).some(({ message }) => message.source.sections.some(entry => entry.name === section.name)))
+  for (const [removed, actionId] of [['ONE', undefined], ['TWO', undefined], ['ONE', 'same-action'], ['TWO', 'same-action']]) {
+    const target = Session.create((actionId ?? 'anonymous') + '-' + removed)
+    target.append('turn/start', { turn: 1 })
+    target.append('step/start', { turn: 1, step: 1 })
+    const offs = new Map(['ONE', 'TWO'].map(text => [text, registerAction(root,
+      { kind: 'assembly', id: actionId, target: { sections: { add: [{ name: 'same', text, id: 'local' }] } } })]))
+    const assemble = () => root.systemPrompt.assemble({ session: target })
+    const first = await assemble()
+    const names = new Map(first.sections.filter(entry => offs.has(entry.text)).map(entry => [entry.text, entry.name]))
+    assert.equal(new Set(names.values()).size, 2)
+    for (const { message, intent } of first.systemUpdates(false)) target.append('system/message', { turn: 1, step: 1, message }, intent)
+    for (let round = 0; round < 3; round++) assert.deepEqual((await assemble()).systemUpdates(false), [])
+    offs.get(removed)()
+    const survivor = removed === 'ONE' ? 'TWO' : 'ONE'
+    const next = await assemble()
+    assert.equal(next.sections.find(entry => entry.text === survivor).name, names.get(survivor))
+    assert.ok(next.systemUpdates(false).some(({ message }) => message.source.sections.some(entry =>
+      entry.name === names.get(removed) && message.content[entry.contentIndex].text === '')))
+    offs.get(survivor)()
+  }
+  for (const standaloneAdds of [true, false]) {
+    const compiled = createRuleRuntime(root)
+    const add = { id: 'mix-add', kind: 'assembly', target: { sections: { add: [{ name: 'mixed', text: 'MIXED' }] } } }
+    const append = { id: 'mix-tail', kind: 'assembly', target: { sections: { append: [{ name: 'mixed', text: 'TAIL' }] } } }
+    compiled.replace([{ moduleId: 'mixed', rules: compileRules([{ id: 'mixed', then: [standaloneAdds ? { ...append, waterfallPosition: 'outermost' } : add] }]) }])
+    const release = registerAction(root, standaloneAdds ? add : append, { prepend: !standaloneAdds })
+    try { assert.ok((await root.systemPrompt.assemble({})).sections.some(entry => entry.text === 'MIXED\nTAIL')) }
+    finally { release(); compiled.dispose() }
+  }
 })
 
 test('冷恢复以原声明识别经宿主插值的同名章节', async t => {

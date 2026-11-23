@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, fstatSync, mkdirSync, openSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { symbols } from '@deepseek-ai/cordis'
+import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { z } from 'zod'
 import { cordisRoot, createWarnOnce, getService } from './shared.mjs'
 import { resolveRealWithin } from './path-safety.mjs'
@@ -11,8 +12,9 @@ import { resolveDshHome } from './dsh-home.mjs'
 const prefix = 'prompt-tool:section-add:'
 const injectedPrefix = 'prompt-tool:section:'
 const explicitPrefix = prefix + 'id:'
+const maxPendingAdmissions = 32
 const added = Symbol('added section')
-const standalonePresentations = new WeakMap()
+const sectionPresentations = new WeakMap()
 const admissionServices = new WeakMap()
 const admissionRoots = new WeakMap()
 const presentationAuthors = new AsyncLocalStorage()
@@ -99,13 +101,19 @@ function bindAdmissionTracking(ctx) {
           const bodies = []
           for (const section of message.source.sections ?? []) {
             const author = authors.get(section.name)
-            if (author?.body === undefined || section.state !== 'active') continue
+            if (!author?.matchBody || section.state !== 'active') continue
             const text = message.content[section.contentIndex].text
             if (text.length > 0 && author.body !== fingerprint(text)) bodies.push([section.name, author.body])
           }
           if (bodies.length > 0) (writes ??= new Map()).set(message.id, bodies)
         }
-        if (writes !== undefined) pending.set(context.session, writes)
+        if (writes !== undefined) {
+          let queued = pending.get(context.session)
+          if (queued === undefined) pending.set(context.session, queued = new Map())
+          for (const [id, bodies] of writes) queued.set(id, bodies)
+          // The host consumes each batch synchronously; retain a bounded tail for independent callers.
+          while (queued.size > Math.max(maxPendingAdmissions, writes.size)) queued.delete(queued.keys().next().value)
+        }
         return updates
       } }
     }
@@ -124,18 +132,18 @@ function bindAdmissionTracking(ctx) {
 export const authorSectionName = section => section?.[added]?.name ?? section?.name
 export const isAddedSection = section => section?.[added] !== undefined
 
-export function addedSection(entry, owner) {
-  const identity = entry.id === undefined ? undefined : explicitPrefix + encode([...owner, entry.id])
+export function addedSection(entry, owner, stableOwner = true) {
+  const identity = entry.id === undefined || !stableOwner ? undefined : explicitPrefix + encode([...owner, entry.id])
   const group = identity === undefined ? prefix + 'auto:' + encode([...owner, entry.name]) + ':' : undefined
   return {
     name: entry.name, text: entry.text, order: entry.order,
-    [added]: { name: entry.name, identity, group, originalText: entry.text, body: group === undefined ? undefined : fingerprint(entry.text) },
+    [added]: { name: entry.name, identity, group, originalText: entry.text, body: fingerprint(entry.text) },
   }
 }
 
 const projection = {
   key: 'promptToolSections',
-  stateVersion: 2,
+  stateVersion: 3,
   stateSchema: z.array(z.object({ name: z.string(), order: z.number(), body: z.string().optional(), messageId: z.string().optional() })),
   init: () => [],
   apply(state, event) {
@@ -151,7 +159,7 @@ const projection = {
       const text = section.state === 'active' ? message.content[section.contentIndex].text : ''
       if (text.length === 0) next.delete(section.name)
       else next.set(section.name, { name: section.name, order: section.order,
-        ...(contributed && section.name.startsWith(prefix + 'auto:') ? { body: fingerprint(text), messageId: message.id } : {}) })
+        ...(contributed ? { body: fingerprint(text), messageId: message.id } : {}) })
     }
     return next === undefined ? source.reset && state.length > 0 ? [] : state : [...next.values()]
   },
@@ -162,29 +170,21 @@ function nameContributions(list, previous, authored, hidden, records, warnOnce) 
   const groups = new Map()
   const occupied = new Set(hidden?.map(section => section.name))
   for (const section of list) if (!isAddedSection(section)) occupied.add(section.name)
-  const explicitAliases = new Map()
-  for (const entry of [...previous, ...authored.values()]) {
-    const separator = entry.name.indexOf('~')
-    if (separator >= 0 && entry.name.startsWith(explicitPrefix) && !occupied.has(entry.name)) {
-      explicitAliases.set(entry.name.slice(0, separator), entry.name)
-    }
-  }
   for (const section of list) {
     const contribution = section[added]
     if (contribution === undefined) continue
-    if (contribution.identity !== undefined) {
-      assigned.set(section, explicitAliases.get(contribution.identity) ?? contribution.identity)
-      continue
-    }
-    const group = groups.get(contribution.group) ?? []
+    const key = contribution.identity ?? contribution.group
+    const group = groups.get(key) ?? []
     group.push(section)
-    groups.set(contribution.group, group)
+    groups.set(key, group)
   }
   const candidates = new Map()
   const collect = (entry, exclude) => {
-    const group = entry.name.slice(0, entry.name.lastIndexOf(':') + 1)
+    const explicit = entry.name.startsWith(explicitPrefix)
+    const group = explicit ? entry.name.split('~')[0] : entry.name.slice(0, entry.name.lastIndexOf(':') + 1)
     if (!groups.has(group) || exclude?.has(group) || occupied.has(entry.name)) return
-    if (!/^(?:0|[1-9]\d{0,9})(?:~[1-9]\d*)?$/.test(entry.name.slice(group.length))) return
+    const suffix = entry.name.slice(group.length)
+    if (explicit ? suffix !== '' && !/^~[1-9]\d{0,9}$/.test(suffix) : !/^(?:0|[1-9]\d{0,9})(?:~[1-9]\d*)?$/.test(suffix)) return
     const entries = candidates.get(group) ?? []
     entries.push(entry)
     candidates.set(group, entries)
@@ -204,14 +204,16 @@ function nameContributions(list, previous, authored, hidden, records, warnOnce) 
     return records.get(entry.messageId)?.get(entry.name) ?? entry.body
   }
   for (const [key, sections] of groups) {
+    const explicit = key.startsWith(explicitPrefix)
     const before = (candidates.get(key) ?? []).sort((a, b) =>
       (acceptedAuthor(a)?.order ?? a.order) - (acceptedAuthor(b)?.order ?? b.order) || compareName(a.name, b.name))
     const matches = new Map()
     let sequence = 0
     for (let index = before.length - 1; index >= 0; index--) {
       const entry = before[index]
-      sequence = Math.max(sequence, Number.parseInt(entry.name.slice(key.length), 10) + 1)
-      const body = originalBody(entry)
+      const ordinal = explicit ? Number(entry.name.slice(key.length + 1)) : Number.parseInt(entry.name.slice(key.length), 10)
+      sequence = Math.max(sequence, ordinal + 1)
+      const body = explicit && sections.length === 1 && before.length === 1 ? undefined : originalBody(entry)
       const bucket = matches.get(body) ?? []
       bucket.push(entry)
       matches.set(body, bucket)
@@ -226,7 +228,10 @@ function nameContributions(list, previous, authored, hidden, records, warnOnce) 
     const unclaimed = before.filter(entry => !used.has(entry.name))
     let next = 0
     for (const section of sections) {
-      if (!assigned.has(section)) assigned.set(section, unclaimed[next++]?.name ?? key + sequence++)
+      if (assigned.has(section)) continue
+      const available = unclaimed[next++]
+      assigned.set(section, available?.name ?? (explicit ? sequence === 0 ? key : key + '~' + sequence : key + sequence))
+      if (available === undefined) sequence++
     }
   }
   const next = new Map()
@@ -238,10 +243,9 @@ function nameContributions(list, previous, authored, hidden, records, warnOnce) 
     for (let suffix = 1; occupied.has(actual); suffix++) actual = canonical + '~' + suffix
     occupied.add(actual)
     const { [added]: contribution, ...rest } = section
-    if (contribution.group !== undefined) {
-      const body = contribution.body
-      next.set(actual, { name: actual, order: next.size, body, delivered: section.text === contribution.originalText ? body : fingerprint(section.text) })
-    } else if (actual !== contribution.identity) next.set(actual, { name: actual })
+    const body = contribution.body
+    next.set(actual, { name: actual, order: next.size, body,
+      delivered: section.text === contribution.originalText ? body : fingerprint(section.text), matchBody: contribution.group !== undefined || groups.get(contribution.identity).length > 1 })
     return { ...rest, name: actual }
   })
   return { sections, authored: next }
@@ -308,7 +312,8 @@ function finalizeSections(assembly, names, previous, authored = new Map(), withd
 }
 
 /** Reconcile after the rules but before the host sorts and admits the presentation. */
-export function createSectionPresentation(ctx, names) {
+function createRootSectionPresentation(ctx) {
+  const owners = new Set()
   const warnOnce = createWarnOnce(ctx, 'prompt-tool sections')
   let projectionHandle
   const authors = new WeakMap()
@@ -316,6 +321,7 @@ export function createSectionPresentation(ctx, names) {
   const coldRecords = new WeakMap()
   let off
   let active = true
+  let durable = false
   const bind = () => {
     bindAdmissionTracking(ctx)
     off?.()
@@ -330,7 +336,10 @@ export function createSectionPresentation(ctx, names) {
       const handle = session === undefined ? undefined : await projectionHandle
       if (!active) return result
       const committed = handle?.stateOf(session)
-      const ordered = names()
+      if (committed?.length) durable = true
+      const chain = context?.scope === undefined ? [] : scopeChainOf(context.scope)
+      const ordered = [...new Set([...owners].filter(owner => owner.scope === undefined || chain.includes(owner.scope))
+        .flatMap(owner => owner.names()))]
       if (result?.sections === assembly?.sections && ordered.length < 2 && (committed?.length ?? 0) === 0) return result
       const authored = session === undefined ? authoredWithoutSession : authors.get(session)
       let records
@@ -339,6 +348,7 @@ export function createSectionPresentation(ctx, names) {
         if (records === undefined) coldRecords.set(committed, records = new Map())
       }
       const final = finalizeSections(result, ordered, committed ?? [], authored, session !== undefined, records, warnOnce)
+      if (session !== undefined && final.authored.size) durable = true
       const admissionAuthors = presentationAuthors.getStore()
       if (admissionAuthors !== undefined && final.authored !== authored) {
         for (const [section, author] of final.authored) admissionAuthors.set(section, author)
@@ -348,17 +358,37 @@ export function createSectionPresentation(ctx, names) {
       return final.assembly
     }, { prepend: true })
   }
-  return { bind, dispose() { active = false; off?.(); void projectionHandle?.then(handle => handle.dispose()).catch(() => {}) } }
+  return { owners, bind,
+    remove(owner) {
+      durable ||= owner.standalone
+      owners.delete(owner)
+      if (owners.size === 0 && !durable) { off?.(); off = undefined }
+    },
+    dispose() { active = false; off?.(); void projectionHandle?.then(handle => handle.dispose()).catch(() => {}) },
+  }
 }
 
-/** Keep the reconciler alive for already-admitted sections after an action leaves. */
-export function bindStandaloneSections(ctx) {
+/** The last action to register repositions the one outer reconciler for the entire host. */
+export function createSectionPresentation(ctx, names, standalone = false) {
   const root = cordisRoot(ctx) ?? ctx
-  let presentation = standalonePresentations.get(root)
+  let presentation = sectionPresentations.get(root)
   if (presentation === undefined) {
-    presentation = createSectionPresentation(root, () => [])
-    standalonePresentations.set(root, presentation)
-    root.effect(() => () => presentation.dispose(), 'prompt-tool standalone sections')
+    presentation = createRootSectionPresentation(root)
+    sectionPresentations.set(root, presentation)
+    root.effect(() => () => { presentation.dispose(); sectionPresentations.delete(root) }, 'prompt-tool sections')
   }
-  presentation.bind()
+  const owner = { scope: scopeOf(ctx), names, standalone }
+  const release = () => presentation.remove(owner)
+  if (!standalone) ctx.effect(() => release, 'prompt-tool section order owner')
+  return {
+    bind() { presentation.owners.add(owner); presentation.bind() },
+    dispose: release,
+  }
+}
+
+/** Keep withdrawal state alive for already-admitted sections after an action leaves. */
+export function bindStandaloneSections(ctx) {
+  const listener = createSectionPresentation(ctx, () => [], true)
+  listener.bind()
+  listener.dispose()
 }
