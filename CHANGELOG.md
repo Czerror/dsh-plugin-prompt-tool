@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- 修复规则画布中“成立”“否则”和条件组标签偏离所属连线的问题。
 - 在宿主固定模型指令前结算 persona 默认身份与 PTC 工具说明，工具可见性规则同时作用于 SDK 正文和实际可调用集合。
 - 最低宿主升级到 DSH `0.2.3-alpha.2`，CLI 需要 Node.js `^24.22.3 || >=26.13.1`。继续运行 DSH `0.2.2-rc.2` 时请保留插件 `6.3.1`。工作台上下文档位包含官方 `PLUGIN_CLIS`。依赖旧发行指纹的 early 能力在指纹不符时报告不可用，独立规则继续执行。
 - 压缩、模型切换、溢出恢复与工具结果裁剪采用宿主策略和正文。移除 `context-provenance` 及其所有参数、`generation-recovery.allowFullFallback`。保留 `maintenanceCompression` 和按 Agent 暂停官方裁剪的规则。自定义模块需由作者移除退役声明，升级保留用户原文件。
