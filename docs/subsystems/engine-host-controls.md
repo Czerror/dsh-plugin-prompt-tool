@@ -70,9 +70,9 @@ agent、session、loop 的实际发行物分别验证版本、指纹和唯一结
 
 ## 已接受步骤与说明替换
 
-普通 `assembly.target.sections.replace: [{ name, text }]` 只原位替换实际装配中已存在且正文非空的具名段，保留 order、complete 等官方元数据；目标缺失或正文为空时不补段。计划模式可据此编辑 `plan:policy` 全文，真实开关、日志、审批和退出工具仍归官方 planMode，不按工具是否可见猜测计划状态。
+普通 `assembly.target.sections.replace: [{ name, text }]` 原位替换第一个作者名称相同且正文非空的段，保留 order、complete 等官方元数据。目标缺失或没有非空正文时跳过。计划模式可据此编辑 `plan:policy` 全文，真实开关、日志、审批和退出工具仍归官方 planMode。
 
-`sections.replace` 与 `contexts.replace` 都支持非空字面 `match`，唯一具名条目必须唯一匹配，歧义或原文缺失时透传并告警。省略匹配使用非空条目全文，`contexts.clear` 与上下文替换互斥。官方 `refreshContext` 调用原 provider 后复用该工具步骤已接受的替换，规则热更新只影响后续步骤。审批和沙箱说明属于运行上下文，计划说明属于系统段。文字说明沿原权限所有者执行。
+`sections.replace` 与 `contexts.replace` 都支持非空字面 `match`，要求名称和原文各自唯一匹配，歧义或原文缺失时透传并告警。`sections.keep/remove` 选择所有原名匹配的段，`sections.append` 命中首个原名匹配的段。`contexts.clear` 与上下文替换互斥。官方 `refreshContext` 调用原 provider 后复用该工具步骤已接受的替换，规则热更新只影响后续步骤。审批和沙箱说明属于运行上下文，计划说明属于系统段。文字说明沿原权限所有者执行。
 
 普通 `request-params.maxTokens` 是正安全整数的瞬时额度贡献，不能与本动作的 `patch/unset.maxTokens` 或 `replace:true` 混用。原 `patch/unset` 的有序组合语义保持。当前真实Agent和请求目标上有效的显式额度同值共存、异值拒绝完整候选并保旧；运行事实翻转形成冲突时，全部冲突额度及其分支后代正文暂停，后续正常重判恢复。只有实际参与同一额度目标的正向phase条件才比较 `maxPromoteSteps`，不同值同样冲突；独立phase追踪器不建立全局互斥。
 

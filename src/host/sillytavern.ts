@@ -54,8 +54,7 @@ const ST_ROLE_DOWNGRADE_CODE = 'assistant-role-downgrade'
  *
  * 取值依据：官方 `SECTION_ORDERS`（`@deepseek-ai/dsh-system-prompt`，经 `getSectionOrder` 求值）里
  * `DEPLOYMENT_PERSONA_PREFIX`(0) 与 `PLAN_POLICY`(500) 之间的空档，**不与任何官方档位同值**。
- * 官方按 `order` 再按名字排序，而本插件的默认段名编码了 `configOrder`（`engine/layers.mjs` 的
- * `textRegistrationName`），所以同档位内的先后由配置序号决定——卡因此可被拖拽排序。
+ * 官方按 `order` 再按名字排序。引擎按 `configOrder` 计算装配有效顺序，拖拽保留段名与注册档位。
  * 官方调整档位时按 `src/shared/official-orders.ts` 的同源纪律复核本值。
  */
 const SYSTEM_SECTION_SLOT = 100

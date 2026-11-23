@@ -89,7 +89,7 @@ export function prepareAction(action, options = {}) {
     return () => { throw new TypeError('host-control requires createRuleRuntime.prepareAssembly') }
   }
   const max = action?.maxPerTurn
-  const bind = PREPARERS[kind](action, plugin, options.promptConfigOptions)
+  const bind = PREPARERS[kind](action, plugin, options.promptConfigOptions, options.sectionOwner)
   const phase = actionSupportsWhen(kind) ? actionExecutionPoint(action).phase : undefined
   return (ctx) => {
     const warnOnce = options.warnOnce ?? createWarnOnce(ctx, plugin)
