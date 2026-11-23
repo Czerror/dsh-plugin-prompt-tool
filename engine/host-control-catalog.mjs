@@ -8,7 +8,6 @@ import { validateCommandConfine, commandConfineState, installCommandConfine } fr
 import { validateProviderHookDecisions, bindProviderHookDependencies, prepareProviderHookDecisions, registerProviderHookDecisions } from './provider-hook-decisions.mjs'
 import { validateRepeatCompactionAction, bindRepeatCompactionDependencies, registerRepeatCompaction } from './repeat-compaction-policy.mjs'
 import { validateCurrentSystemSnapshotAction, bindCurrentSystemSnapshotDependencies, registerCurrentSystemSnapshot, prepareCurrentSystemSnapshot } from './current-system-snapshot.mjs'
-import { validateRewindAction, registerRewindAgent } from './rewind-control.mjs'
 import { validateMessageShapeGuardsAction, bindMessageShapeGuardsDependencies, registerMessageShapeGuards, prepareMessageShapeGuards } from './message-shape-guards.mjs'
 import { validateProviderSystemRolesAction, bindProviderSystemRolesDependencies, registerProviderSystemRoles } from './provider-system-roles.mjs'
 
@@ -25,11 +24,10 @@ const escalation = { key: 'escalationDecisions', prepareOrder: 4, needsAssembly:
 const filesystem = { key: 'filesystemPolicy', prepareOrder: 6, needsAssembly: true,
   bind: (rule, moduleId, _entries, onOutcome) => bindFilesystemPolicyDependencies(rule, moduleId, onOutcome),
   prepare: prepareFilesystemPolicy, dependencyOrder: 6 }
-const repeatCompaction = { key: 'repeatCompaction', prepareOrder: 3, sharedFrame: true, contextOwner: true,
+const repeatCompaction = { key: 'repeatCompaction', prepareOrder: 3, sharedFrame: true, contextOwner: true, needsAssembly: true,
   create: registerRepeatCompaction, dependencyOrder: 9,
   bind: (rule, moduleId, _entries, onOutcome, owner) => bindRepeatCompactionDependencies(rule, moduleId, (action, agent) => owner.status(action, agent), onOutcome),
   prepare: (entries, frame, _preview, owner, context) => { owner.prepare(entries, frame, context) } }
-const rewind = { key: 'rewind', create: registerRewindAgent }
 const catalog = new Map([
   ...['sandbox-soft-default', 'approval-composition-default', 'approval-config-default'].map(id => [id, { scope: 'process', validate: validateProcessDefault, process: defaults }]),
   ['command-confine-passthrough', { scope: 'process', validate: validateCommandConfine, process: command }],
@@ -58,7 +56,6 @@ const catalog = new Map([
       create: registerMessageShapeGuards, prepare: prepareMessageShapeGuards,
       bind: (rule, moduleId, _entries, onOutcome) => bindMessageShapeGuardsDependencies(rule, moduleId, onOutcome) } }],
   ...['oauth-identity-prefix', 'provider-system-role', 'messages-current-system'].map(id => [id, { scope: 'agent', validate: validateProviderSystemRolesAction, agent: provider }]),
-  ...['session-rewind', 'session-rewind-todos'].map(id => [id, { scope: 'agent', validate: validateRewindAction, agent: rewind }]),
 ])
 
 export const hostControlDescriptor = action => action?.kind === 'host-control' ? catalog.get(action.capability) : undefined

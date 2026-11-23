@@ -24,8 +24,6 @@ const capabilities = new Map<string, { initialValue: () => unknown; channel?: st
   ['oauth-identity-prefix', { initialValue: () => true }],
   ['provider-system-role', { initialValue: () => true }],
   ['messages-current-system', { initialValue: () => true }],
-  ['session-rewind', { initialValue: () => true }],
-  ['session-rewind-todos', { initialValue: () => true }],
 ])
 
 export function hostCapabilityOptions(t: PromptToolTranslate): { value: string; label: string }[] {
