@@ -1,3 +1,4 @@
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -165,6 +166,7 @@ test('知识库接入：用户预览确认、部分授权和旧预览拒绝，�
     registerTuiCommand(scope, 'test', () => ({}), () => ({}), async () => ({}), id => id === 'alice' ? f.dir : '', undefined, undefined, () => owner)
   } })
   await new Promise(resolve => setImmediate(resolve))
+  await ctx.plugin(SessionProjections)
   await ctx.plugin(SystemPrompt.default)
   await ctx.plugin(ToolRuntime.default)
   await ctx.plugin(NativeExecutor)

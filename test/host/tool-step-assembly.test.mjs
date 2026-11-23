@@ -1,3 +1,4 @@
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -16,6 +17,7 @@ const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-c
 
 async function harness(t, rules = [{ id: 'narrow', then: [{ id: 'allow', kind: 'tool-visibility', allow: ['keep'] }] }], modules = ['rule-engine']) {
   const root = new Context()
+  await root.plugin(SessionProjections)
   await root.plugin(SystemPrompt)
   await root.plugin(Tools)
   await root.plugin(native)

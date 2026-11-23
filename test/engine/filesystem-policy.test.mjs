@@ -1,3 +1,4 @@
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -11,6 +12,7 @@ import { filesystemPolicyState as state, filesystemPolicyStatus } from '../../en
 
 test('文件策略缺少真实owner只暂停依赖分支，独立正文仍投递且启用意图保留', async t => {
   const root = new Context()
+  await root.plugin(SessionProjections)
   await root.plugin(SystemPrompt)
   await root.plugin(Tools)
   await root.plugin(Native)
@@ -59,6 +61,7 @@ test('真实Cordis工具策略按Agent隔离，压缩重判、取消及owner释�
     }
   }
   await root.plugin(MemoryFilesystem)
+  await root.plugin(SessionProjections)
   await root.plugin(SystemPrompt)
   await root.plugin(Tools)
   await root.plugin(Native)

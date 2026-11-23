@@ -1,7 +1,7 @@
 # 桌面版插件接口契约
 
 > 适用范围：dsh-plugin-prompt-tool 作为外部 Cordis 插件，在 Electron 桌面版（DeepSeek Harness Desktop）中的装配方式、可用宿主接口与 Web 版的行为差异。
-> 插件构建与依赖基线为已发布的 DSH `0.2.2-rc.2`；本文桌面壳行为核对自官方 `0.2.2-rc.3` 工作树，不据此承诺 rc.2 的桌面能力。升级或适配以目标版本的发布包、类型和源码为准。
+> 插件构建与依赖基线为已发布的 DSH `0.2.3-alpha.2`。本文桌面壳行为的核对版本为官方 `0.2.2-rc.3` 工作树。升级或适配以目标版本的发布包、类型和源码为准。
 > 相关代码：`cordis.patch.yml`、`package.json#dsh`、`src/index.ts`、`src/client/index.ts`、`src/shared/bridge-contract.ts`。
 > 官方依据：DeepSeek Harness 的 `apps/desktop/src/`、`apps/desktop-host/src/` 与 `packages/client/modules/src/index.ts`。行号随版本变化，核对时按符号定位。
 

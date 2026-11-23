@@ -12,7 +12,7 @@ const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.
 export const OFFICIAL_SCOPE = '@deepseek-ai/'
 
 /** 已验证的最低宿主契约；范围可以开放上界，锁文件固定本地验证输入。 */
-export const DSH_BASELINE = '0.2.2-rc.2'
+export const DSH_BASELINE = '0.2.3-alpha.2'
 
 /** 比较发布类型的档位键与插件分组；只解析声明，不执行宿主包或手抄数值。 */
 export function officialOrderContractProblems(officialSource, pluginSource) {

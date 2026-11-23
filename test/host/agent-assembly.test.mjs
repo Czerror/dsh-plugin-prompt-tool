@@ -1,3 +1,4 @@
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 // 自建模块验证真实装配的主子隔离、热更新和故障恢复，不固定内置模块内容。
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -23,6 +24,7 @@ const hasEveryService = () => true
 /** 只替代 Agent/模型驱动；注册、scope 路由与注入执行器使用真实实现。 */
 async function liveAssembly(t, enabledModules) {
   const root = new Context()
+  await root.plugin(SessionProjections)
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
   await root.plugin(nativeExecutor)

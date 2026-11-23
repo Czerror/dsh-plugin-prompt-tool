@@ -1,3 +1,4 @@
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -111,6 +112,7 @@ test('fs 执行器：越界与 junction 逃逸在 read/write/append/list/delete 
 /** 真实 Context + ToolRuntime：让 createExecute 的成功返回值经过官方 snapshot/schema 管线。 */
 async function realHarness(t, approvals = false) {
   const root = new Context()
+  await root.plugin(SessionProjections)
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
   await root.plugin(NativeExecutor)

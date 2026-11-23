@@ -36,7 +36,7 @@
 
 ## 安装
 
-需要 DSH `0.2.2-rc.2` 或更高版本。使用命令行界面（CLI）时，还需要 Node.js `24.9.0+` 和 PATH 中可用的 pnpm；完整要求见 [package.json](package.json)。
+最低支持 DSH `0.2.3-alpha.2`。CLI 需要 Node.js `^24.22.3 || >=26.13.1` 和 PATH 中可用的 pnpm。使用 DSH `0.2.2-rc.2` 的部署请保留插件 `6.3.1`。升级前请核对自定义模块的退役能力。[完整要求](package.json) · [升级说明](CHANGELOG.md)
 
 ### 桌面端或 Web
 
