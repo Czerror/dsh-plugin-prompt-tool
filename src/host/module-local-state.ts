@@ -77,9 +77,44 @@ function parseCommit(directory: string, text: string): ModuleLocalCommit {
   return value
 }
 
-const commitCache = new Map<string, { text: string; commit: ModuleLocalCommit }>()
-const MAX_CACHED_COMMITS = 8
-const MAX_CACHED_COMMIT_LENGTH = 2 * 1024 * 1024
+type Pointer = { version: 2; moduleId: string; generation: string } & (
+  { base: string } | { parent: string; id: string; hash: string }
+)
+type CommitIndex = {
+  token: string
+  base: ModuleLocalCommit
+  generation: string
+  previous?: string
+  members: Record<string, string>
+  positions: Map<string, number>
+  aliases: Set<string>
+  snapshot?: ModuleLocalCommit
+}
+const indexes = new Map<string, { identity: string; index: CommitIndex }>()
+const MAX_INDEXES = 8
+const MAX_INDEXED_RULES = 16_384
+
+function deltaGeneration(moduleId: string, parent: string, id: string, hash: string): string {
+  return revisionOf(JSON.stringify([2, moduleId, parent, id, hash]))
+}
+
+function parsePointer(dir: string, text: string): Pointer | ModuleLocalCommit {
+  let value: unknown
+  try { value = JSON.parse(text) } catch { throw invalid('JSON') }
+  if (record(value) && value.version === 2) {
+    if (value.moduleId !== basename(dir) || !digest(value.generation)) throw invalid('pointer')
+    if (Object.hasOwn(value, 'base')) {
+      if (Object.keys(value).length !== 4 || !digest(value.base)) throw invalid('baseline')
+      return value as Pointer
+    }
+    if (Object.keys(value).length !== 6 || !digest(value.parent) || typeof value.id !== 'string' || !digest(value.hash)) throw invalid('delta')
+    assertRuleId(value.id)
+    if (deltaGeneration(value.moduleId, value.parent, value.id, value.hash) !== value.generation) throw invalid('delta generation')
+    return value as Pointer
+  }
+  assertCommit(dir, value)
+  return value
+}
 
 function freezeCommit(value: object): void {
   const pending = [value]
@@ -90,9 +125,7 @@ function freezeCommit(value: object): void {
   }
 }
 
-/** 读取一次原子指针。只在尚无提交时返回 undefined，坏提交由调用方诊断。 */
-export function readModuleLocalCommit(directory: string): ModuleLocalCommit | undefined {
-  const dir = canonicalDirectory(directory)
+function readPointerText(dir: string): string | undefined {
   const rules = join(dir, RULES_DIR)
   const file = join(rules, MODULE_LOCAL_COMMIT_FILE)
   if (present(rules)) assertPlain(rules, true)
@@ -102,17 +135,142 @@ export function readModuleLocalCommit(directory: string): ModuleLocalCommit | un
     return undefined
   }
   assertPlain(file)
-  const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(readFileSync(file))
-  const cached = commitCache.get(dir)
-  if (cached?.text === text) return cached.commit
-  const commit = parseCommit(dir, text)
-  freezeCommit(commit)
-  commitCache.delete(dir)
-  if (text.length <= MAX_CACHED_COMMIT_LENGTH) {
-    if (commitCache.size >= MAX_CACHED_COMMITS) commitCache.delete(commitCache.keys().next().value!)
-    commitCache.set(dir, { text, commit })
+  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(readFileSync(file))
+}
+
+function indexAt(dir: string, text: string, cached?: CommitIndex): CommitIndex {
+  let token = revisionOf(text)
+  let pointer = parsePointer(dir, text)
+  const deltas: Array<{ token: string; delta: Pointer & { parent: string; id: string; hash: string } }> = []
+  while (cached?.token !== token && pointer.version === 2 && 'parent' in pointer) {
+    deltas.push({ token, delta: pointer })
+    token = pointer.parent
+    if (cached?.token === token) break
+    pointer = parsePointer(dir, readModuleLocalObject(dir, token))
   }
-  return commit
+  let index = cached?.token === token ? cached : undefined
+  if (index === undefined) {
+    const base = pointer.version === 1 ? pointer : 'base' in pointer
+      ? parseCommit(dir, readModuleLocalObject(dir, pointer.base))
+      : undefined
+    if (!base || base.generation !== pointer.generation) throw invalid('baseline generation')
+    freezeCommit(base)
+    index = {
+      token, base, generation: base.generation, previous: base.previous, members: { ...base.members },
+      positions: new Map(base.ruleIds.map((id, position) => [id, position])), aliases: new Set(base.aliasRuleIds),
+    }
+  }
+  for (const { delta } of deltas) if (!index.positions.has(delta.id)) throw invalid('delta rule')
+  for (let i = deltas.length - 1; i >= 0; i--) {
+    const { token: current, delta } = deltas[i]!
+    index.members[`${delta.id}.yml`] = delta.hash
+    index.token = current
+    index.generation = delta.generation
+    index.previous = delta.parent
+    index.snapshot = undefined
+  }
+  return index
+}
+
+function currentIndex(dir: string, text: string): CommitIndex {
+  const paths = [dir, join(dir, RULES_DIR), join(dir, RULES_DIR, OBJECTS_DIR)]
+  const stamps = paths.map(moduleDirectoryIdentity)
+  if (stamps.some(stamp => stamp === undefined)) throw invalid('directory changed')
+  const identity = stamps.join('|')
+  const token = revisionOf(text)
+  const entry = indexes.get(dir)
+  const cached = entry?.identity === identity ? entry.index : undefined
+  const index = cached?.token === token ? cached : indexAt(dir, text, cached)
+  if (paths.some((path, i) => moduleDirectoryIdentity(path) !== stamps[i])) throw invalid('directory changed')
+  indexes.delete(dir)
+  if (index.base.ruleIds.length <= MAX_INDEXED_RULES) indexes.set(dir, { identity, index })
+  if (indexes.size > MAX_INDEXES) indexes.delete(indexes.keys().next().value!)
+  return index
+}
+
+function snapshot(index: CommitIndex): ModuleLocalCommit {
+  return index.snapshot ??= Object.freeze({
+    ...index.base, generation: index.generation, previous: index.previous, members: Object.freeze({ ...index.members }),
+  })
+}
+
+/** 读取一次原子指针。只在尚无提交时返回 undefined，坏提交由调用方诊断。 */
+export function readModuleLocalCommit(directory: string): ModuleLocalCommit | undefined {
+  const dir = canonicalDirectory(directory)
+  const text = readPointerText(dir)
+  return text === undefined ? undefined : snapshot(currentIndex(dir, text))
+}
+
+export function readModuleLocalCommitInfo(directory: string): Pick<ModuleLocalCommit, 'generation' | 'hasProcessRules' | 'moduleId' | 'inputs' | 'declaredKeys'> | undefined {
+  const dir = canonicalDirectory(directory)
+  const text = readPointerText(dir)
+  if (text === undefined) return undefined
+  const index = currentIndex(dir, text)
+  const { moduleId, inputs, declaredKeys, hasProcessRules } = index.base
+  return { generation: index.generation, moduleId, inputs, declaredKeys, hasProcessRules }
+}
+
+export interface ModuleEditHead {
+  moduleId: string
+  generation: string
+  inputs: string
+  declaredKeys: string[]
+  settingsHash: string
+  ruleHash?: string
+  ruleIndex?: number
+  hasRuleAliases: boolean
+}
+const handles = new WeakMap<ModuleEditHead, { dir: string; identity: string; text: string; token: string; id: string }>()
+
+export function readModuleEditHead(directory: string, id: string): ModuleEditHead | undefined {
+  assertRuleId(id)
+  const dir = canonicalDirectory(directory)
+  const identity = moduleDirectoryIdentity(dir)
+  const text = readPointerText(dir)
+  if (text === undefined) return undefined
+  const index = currentIndex(dir, text)
+  if (identity === undefined || moduleDirectoryIdentity(dir) !== identity) throw invalid('directory changed')
+  const head: ModuleEditHead = Object.freeze({
+    moduleId: index.base.moduleId, generation: index.generation, inputs: index.base.inputs,
+    declaredKeys: index.base.declaredKeys, settingsHash: index.members[RULES_SETTINGS_FILE]!,
+    ruleHash: index.positions.has(id) ? index.members[`${id}.yml`] : undefined,
+    ruleIndex: index.positions.get(id),
+    hasRuleAliases: index.base.hasSourceAliases === true && (index.base.aliasRuleIds === undefined || index.aliases.has(id)),
+  })
+  handles.set(head, { dir, identity, text, token: index.token, id })
+  return head
+}
+
+/** 调用方持有模块锁并已验证目标规则及其跨规则约束。 */
+export function publishModuleRuleEdit(directory: string, head: ModuleEditHead, id: string, hash: string, beforePublish?: () => void): { generation: string } {
+  const dir = canonicalDirectory(directory)
+  const handle = handles.get(head)
+  if (handle?.dir !== dir || handle.id !== id || head.ruleHash === undefined || !digest(hash)) throw invalid('edit head')
+  const assertCurrent = () => {
+    if (readPointerText(dir) !== handle.text || moduleDirectoryIdentity(dir) !== handle.identity) {
+      throw new ModuleWriteError('写入前模块再次变化，请重新读取', 409, 'rules-conflict')
+    }
+  }
+  assertCurrent()
+  if (hash === head.ruleHash) {
+    beforePublish?.()
+    assertCurrent()
+    return { generation: head.generation }
+  }
+  readModuleLocalObject(dir, hash)
+  const parent = handle.token
+  // v1 头原本没有对象副本。首次紧凑提交把它保存为不可变基线。
+  const parentFile = objectPath(dir, parent)
+  if (present(parentFile)) assertPlain(parentFile)
+  else writeModuleLocalObject(dir, handle.text)
+  const generation = deltaGeneration(head.moduleId, parent, id, hash)
+  const text = JSON.stringify({ version: 2, moduleId: head.moduleId, generation, parent, id, hash }) + '\n'
+  writeModuleLocalObject(dir, text)
+  atomicWriteTextFile(join(dir, RULES_DIR, MODULE_LOCAL_COMMIT_FILE), text, { beforeReplace: () => {
+    beforePublish?.()
+    assertCurrent()
+  } })
+  return { generation }
 }
 
 /** 记录已完成首次提交；放在模块根，整个 rules/ 被意外删除时也能诊断。 */
@@ -139,6 +297,12 @@ export function readModuleLocalObject(directory: string, hash: string): string {
   const bytes = readFileSync(file)
   if (revisionOf(bytes) !== hash) throw invalid(`object ${hash}`)
   return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+}
+
+export function moduleLocalObjectStamp(directory: string, hash: string): string {
+  const stat = lstatSync(objectPath(directory, hash), { bigint: true })
+  if (!stat.isFile() || stat.isSymbolicLink()) throw invalid(`object path ${hash}`)
+  return `${stat.dev}:${stat.ino}:${stat.ctimeNs}:${stat.mtimeNs}:${stat.size}`
 }
 
 /** 批量打开成员，返回前复核所有祖先仍是同一个普通目录。 */
@@ -208,7 +372,8 @@ export function verifyModuleLocalGeneration(directory: string, commit: ModuleLoc
 
 export function readPreviousModuleLocalCommit(directory: string, commit: ModuleLocalCommit): ModuleLocalCommit | undefined {
   if (commit.previous === undefined) return undefined
-  return parseCommit(canonicalDirectory(directory), readModuleLocalObject(directory, commit.previous))
+  const dir = canonicalDirectory(directory)
+  return snapshot(indexAt(dir, readModuleLocalObject(dir, commit.previous)))
 }
 
 /** 写者持有模块锁或拥有私有安装候选。旧提交仍可并发读取其不可变成员。 */
@@ -229,18 +394,22 @@ export function writeModuleLocalObject(directory: string, content: string): stri
 export function publishModuleLocalCommit(directory: string, references: ModuleLocalReferences, beforePublish?: () => void): ModuleLocalCommit {
   const dir = canonicalDirectory(directory)
   const next = generation(references)
-  const previous = readModuleLocalCommit(dir)
+  const previousText = readPointerText(dir)
+  const previous = previousText === undefined ? undefined : snapshot(currentIndex(dir, previousText))
   if (previous?.generation === next) {
     verifyModuleLocalGeneration(dir, previous)
     return previous
   }
   const commit: ModuleLocalCommit = { ...references, version: VERSION, generation: next }
   assertCommit(dir, commit)
-  if (previous !== undefined) commit.previous = writeModuleLocalObject(dir, JSON.stringify(previous))
+  if (previousText !== undefined) commit.previous = writeModuleLocalObject(dir, previousText)
   const file = join(dir, RULES_DIR, MODULE_LOCAL_COMMIT_FILE)
   assertPlain(join(dir, RULES_DIR), true)
   if (present(file)) assertPlain(file)
-  atomicWriteTextFile(file, JSON.stringify(commit) + '\n', { beforeReplace: () => {
+  const base = writeModuleLocalObject(dir, JSON.stringify(commit))
+  const text = JSON.stringify({ version: 2, moduleId: commit.moduleId, generation: next, base }) + '\n'
+  writeModuleLocalObject(dir, text)
+  atomicWriteTextFile(file, text, { beforeReplace: () => {
     beforePublish?.()
     verifyModuleLocalGeneration(dir, commit)
   } })

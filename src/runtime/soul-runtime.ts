@@ -1,6 +1,6 @@
 /** Soul宿主接线：历史只读句柄、检索授权与SELF/维护共享owner。 */
 import { createSoulDelivery, proposeSoulDelivery, deliverySource, messageText, digest } from './soul-delivery.ts'
-import { readModuleLocalCommit } from '../host/module-local-state.ts'
+import { readModuleLocalCommitInfo } from '../host/module-local-state.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -86,7 +86,7 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   const readSelfBudget = (dir: string): number => {
     const hit = budgets.get(dir)
     let stamp = ''
-    try { stamp = readModuleLocalCommit(dir)?.generation ?? '' }
+    try { stamp = readModuleLocalCommitInfo(dir)?.generation ?? '' }
     catch { return hit?.value ?? validateSelfBudget() }
     if (hit !== undefined && hit.stamp === stamp && performance.now() - hit.checkedAt < 1000) return hit.value
     let value = hit?.value ?? validateSelfBudget()

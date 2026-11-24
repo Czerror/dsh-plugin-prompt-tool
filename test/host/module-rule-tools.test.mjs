@@ -160,25 +160,40 @@ test('规则工具拒绝：不存在或未声明的模块、旧版本、未知�
   const second = { id: 'second', then: [leaf('second-text', 'SECOND')] }
   const secondGeneration = editModuleRules(f.dir, { expectedRevisions: saved.revisions, edits: [{ previousId: null, rule: second }] })
   const changedSecond = { ...second, then: [leaf('second-text', 'UPDATE')] }
+  const { readModuleLocalCommit } = await import('../../src/host/module-local-state.ts')
   const commitFile = join(f.dir, 'rules', '_commit.json')
-  const untouched = join(f.dir, 'rules', '.objects', JSON.parse(readFileSync(commitFile, 'utf8')).members['mixed.yml'])
+  const baseline = readModuleLocalCommit(f.dir)
+  const untouched = join(f.dir, 'rules', '.objects', baseline.members['mixed.yml'])
+  const unrelated = readFileSync(untouched, 'utf8')
+  writeFileSync(untouched, 'unrelated changed on disk')
   const originalRead = fs.readFileSync
-  const read = t.mock.method(fs, 'readFileSync', (file, ...args) => {
-    assert.notEqual(file, untouched, '已核验的未编辑规则只检查文件身份，不重读正文')
-    return originalRead(file, ...args)
-  })
+  const originalStat = fs.lstatSync
+  const hooks = [
+    t.mock.method(fs, 'readFileSync', (file, ...args) => {
+      assert.notEqual(String(file), untouched, '局部保存不读取另一条规则')
+      return originalRead(file, ...args)
+    }),
+    t.mock.method(fs, 'lstatSync', (file, ...args) => {
+      assert.notEqual(String(file), untouched, '局部保存不检查另一条规则的文件状态')
+      return originalStat(file, ...args)
+    }),
+  ]
   syncBuiltinESMExports()
   let broken
   try { broken = editModuleRuleContent(f.dir, { previousId: second.id, rule: changedSecond }, secondGeneration.revisions) }
-  finally { read.mock.restore(); syncBuiltinESMExports() }
+  finally {
+    for (const hook of hooks) hook.mock.restore()
+    syncBuiltinESMExports()
+    writeFileSync(untouched, unrelated)
+  }
   const commitBytes = readFileSync(commitFile, 'utf8')
-  const member = join(f.dir, 'rules', '.objects', JSON.parse(commitBytes).members['second.yml'])
+  const member = join(f.dir, 'rules', '.objects', readModuleLocalCommit(f.dir).members['second.yml'])
   const originalMember = readFileSync(member, 'utf8')
   const times = statSync(member)
   writeFileSync(member, originalMember.replace('UPDATE', 'BROKEN'))
   utimesSync(member, times.atime, times.mtime)
   assert.notEqual(broken.definitionRevision, secondGeneration.definitionRevision)
-  assert.throws(() => editModuleRuleContent(f.dir, { previousId: original.id, rule: { ...original, name: 'SHOULD NOT COMMIT' } }, secondGeneration.revisions))
+  assert.throws(() => editModuleRuleContent(f.dir, { previousId: second.id, rule: changedSecond }, { rules: { second: broken.ruleRevision } }))
   assert.equal(readFileSync(commitFile, 'utf8'), commitBytes)
   assert.equal(readModuleRules(f.dir).definitionRevision, secondGeneration.definitionRevision)
 })

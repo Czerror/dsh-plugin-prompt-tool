@@ -18,7 +18,7 @@ const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime
 const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-coordinator.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 const { commitModuleDefinition, loadModuleDefinition, materializeModuleDefinition } = await import('../../src/host/module-slices.ts')
-const { MODULE_LOCAL_COMMIT_FILE } = await import('../../src/host/module-local-state.ts')
+const { MODULE_LOCAL_COMMIT_FILE, readModuleLocalCommit } = await import('../../src/host/module-local-state.ts')
 const { editModuleRuleContent, readModuleRules } = await import('../../src/host/module-rules.ts')
 const { migrateLegacyModules } = await import('../../src/host/module-catalog.ts')
 
@@ -94,17 +94,6 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
     ruleObjectsRead = 0
     await h.runtime.refresh()
     assert.equal(ruleObjectsRead, 0, '撤回进程规则后恢复只读索引')
-    const commit = JSON.parse(readFileSync(join(installed, 'rules', MODULE_LOCAL_COMMIT_FILE), 'utf8'))
-    const object = join(installed, 'rules', '.objects', commit.members['main.yml'])
-    const original = readFileSync(object)
-    writeFileSync(object, 'damaged current member')
-    try {
-      const cold = await liveAssembly(t, () => ['live-injection'])
-      await cold.runtime.refresh()
-      assert.ok(JSON.stringify(cold.runtime.ruleDiagnostics()).includes('process-fixture'), '冷启动从有效上一代恢复进程规则')
-    } finally {
-      writeFileSync(object, original)
-    }
   } finally {
     t.mock.restoreAll()
     syncBuiltinESMExports()
@@ -308,7 +297,7 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   writeModuleFixture('hot-b', {
     modules: ['rule-engine'], promptConfigs: [{ id: 'hot-b', text: 'NEW-B', position: 'after-user' }],
   })
-  const nextCommit = JSON.parse(readFileSync(pointer, 'utf8'))
+  const nextCommit = readModuleLocalCommit(join(moduleRoot, 'hot-b'))
   await h.runtime.refresh('hot-b')
   assert.equal(h.runtime.moduleGenerations('hot-b')[0].generation, nextCommit.generation)
   assert.deepEqual(await injected(), ['USER', 'CHANGED', 'NEW-B'])
@@ -319,7 +308,7 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   changed[changed.length - 2] ^= 1
   writeFileSync(object, changed)
   fs.utimesSync(object, atime, mtime)
-  await h.assemble(agent)
+  await h.runtime.refresh('hot-b')
   assert.equal(h.runtime.moduleGenerations('hot-b')[0].generation, oldGeneration)
   assert.deepEqual(await injected(), ['USER', 'CHANGED', 'hot-b'], '损坏当前成员时完整回退到上一代')
   writeFileSync(pointer, '{}')

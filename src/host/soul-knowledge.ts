@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { createTargetQueue } from '../shared/target-queue.ts'
 import { canonicalDirectory, directoryKey, revisionOf } from './module-write.ts'
 import { assertModuleSnapshotSource } from './module-install.ts'
-import { readModuleLocalCommit } from './module-local-state.ts'
+import { readModuleLocalCommitInfo } from './module-local-state.ts'
 import type { LoadRetrievalSession } from './module-retrieval.ts'
 import { createRetrievalEventProjection, retrievalEventRevision } from './module-retrieval.ts'
 import { readSoulLedgerProjection } from './soul-ledger.ts'
@@ -228,7 +228,7 @@ export async function openSoulKnowledge(facility: DomainFacility, loadSession?: 
   const key = (directory: string) => directoryKey(canonicalDirectory(directory))
   const assertActive = () => { if (!active) throw new Error('知识库持久状态已释放') }
   const moduleStamp = (directory: string) => {
-    const commit = readModuleLocalCommit(directory)
+    const commit = readModuleLocalCommitInfo(directory)
     if (commit === undefined) throw new Error('预设缺少本地提交')
     return revisionOf(JSON.stringify([identity(directory), commit.generation]))
   }

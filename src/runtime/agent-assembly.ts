@@ -31,7 +31,7 @@ import { modelRequestRules } from '../host/prompt-configs.ts'
 import { pluginKind, pluginOwner } from '../../engine/source-kind.mjs'
 import { assertModuleId } from '../host/module-install.ts'
 import { RULES_DIR } from '../host/paths.ts'
-import { MODULE_LOCAL_COMMIT_FILE, readModuleLocalCommit, verifyModuleLocalGeneration } from '../host/module-local-state.ts'
+import { MODULE_LOCAL_COMMIT_FILE, readModuleLocalCommitInfo } from '../host/module-local-state.ts'
 import { ModuleWriteError } from '../host/module-write.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-slices.ts'
@@ -647,11 +647,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       // 已挂载的进程贡献仍走完整校验与撤回路径。
       if (processOnly && id !== verifyId && !processSources.has(id)) {
         try {
-          const commit = readModuleLocalCommit(dir)
-          if (commit?.hasProcessRules === false) {
-            verifyModuleLocalGeneration(dir, commit)
-            return [id, { noProcessRules: true }]
-          }
+          if (readModuleLocalCommitInfo(dir)?.hasProcessRules === false) return [id, { noProcessRules: true }]
         } catch {
           // 完整读取负责诊断损坏和验证回退代。
         }
@@ -710,7 +706,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     }
   }
   const assertGeneration = (moduleId: string, expected: string): void => {
-    if (readModuleLocalCommit(resolveModuleDir(moduleId, options.moduleRoot))?.generation !== expected) {
+    if (readModuleLocalCommitInfo(resolveModuleDir(moduleId, options.moduleRoot))?.generation !== expected) {
       throw new ModuleWriteError('模块提交代已更新，请重新读取', 409, 'rules-conflict')
     }
   }
@@ -996,16 +992,17 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       const stamp = assemblyStamp(ids)
       const current = mounts.get(agent.id)
       const dependenciesUnchanged = current !== undefined && mountedDependenciesCurrent(current)
-      // 提交记录可能未变，成员仍须在新请求使用前通过目录及文件身份复核。
-      const definitions = dependenciesUnchanged ? readDefinitions(ids) : undefined
-      // 内容签名不变时只更新代与戳，例如纯变量值变化或有效输入等价的回退。
-      if (current !== undefined && definitions !== undefined && unchanged(definitions, current.content)) {
-        current.stamp = stamp
-        for (const item of current.prepared) {
-          const source = definitions.get(item.moduleId), input = sourceInputs.get(item)
-          if (source && 'generation' in source && input?.signature === source.signature) input.generation = source.generation
-        }
-      } else { publication.schedule(); await publication.flush(undefined, false) }
+      if (current?.stamp !== stamp || !dependenciesUnchanged) {
+        const definitions = dependenciesUnchanged ? readDefinitions(ids) : undefined
+        // 内容签名不变时只更新代与戳，例如纯变量值变化或有效输入等价的回退。
+        if (current !== undefined && definitions !== undefined && unchanged(definitions, current.content)) {
+          current.stamp = stamp
+          for (const item of current.prepared) {
+            const source = definitions.get(item.moduleId), input = sourceInputs.get(item)
+            if (source && 'generation' in source && input?.signature === source.signature) input.generation = source.generation
+          }
+        } else { publication.schedule(); await publication.flush(undefined, false) }
+      }
       lastReadError = undefined
     } catch (error) {
       const message = failureReason(error)
@@ -1107,7 +1104,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         const dir = resolveModuleDir(moduleId, options.moduleRoot)
         const file = join(dir, RULES_DIR, MODULE_LOCAL_COMMIT_FILE)
         const stamp = fileStamp(file)
-        if (readModuleLocalCommit(dir)?.generation !== generation || fileStamp(file) !== stamp) return false
+        if (readModuleLocalCommitInfo(dir)?.generation !== generation || fileStamp(file) !== stamp) return false
         if (options.enabledModules().includes(moduleId)) deferredRules.set(file, stamp)
         return true
       } catch { return false }

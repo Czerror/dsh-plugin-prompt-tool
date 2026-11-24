@@ -18,7 +18,7 @@ export function nextModuleConfigSequence(current: Record<string, number>, reserv
 }
 import { assertModuleId, assertModuleDefinitionSource, moduleDirectoryIdentity } from './module-install.ts'
 import { serializeWithoutSharedAlias, assertPlain, assertUnownedUnchanged, canonicalDirectory, ModuleWriteError, record, revisionOf, SHARED_ALIAS_CODE, withModuleLock } from './module-write.ts'
-import { markModuleLocalInitialized, readModuleLocalCommit, readModuleLocalObject, readModuleLocalObjects, readPreviousModuleLocalCommit, MODULE_LOCAL_COMMIT_FILE, publishModuleLocalCommit, writeModuleLocalObject, writeModuleLocalCommit } from './module-local-state.ts'
+import { markModuleLocalInitialized, moduleLocalObjectStamp, readModuleLocalCommit, readModuleLocalCommitInfo, readModuleLocalObject, readModuleLocalObjects, readPreviousModuleLocalCommit, MODULE_LOCAL_COMMIT_FILE, publishModuleLocalCommit, writeModuleLocalObject, writeModuleLocalCommit } from './module-local-state.ts'
 import type { ModuleLocalCommit, VerifiedModuleObjects } from './module-local-state.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
@@ -341,7 +341,8 @@ function committedSnapshot(dir: string, commit: ModuleLocalCommit, data = readMo
   const inputs = parseLocal(object(commit.inputs))
   const source = inputs.toJS()
   assertCanonicalRuleSource(source)
-  const state = parseCommittedState(object(commit.members[RULES_SETTINGS_FILE]!))
+  const settingsHash = commit.members[RULES_SETTINGS_FILE]!
+  const state = parseCommittedState(object(settingsHash))
   const variables = parseLocal(object(commit.members[RULES_VARIABLES_FILE]!)).toJS()
   if (!record(state) || !record(state.rules) || !isDeepStrictEqual(source.variables ?? {}, variables)
     || (source.variablesEnabled !== false) !== state.variablesEnabled) throw new ModuleWriteError('模块清单与状态不一致')
@@ -368,6 +369,7 @@ function committedSnapshot(dir: string, commit: ModuleLocalCommit, data = readMo
     || !isDeepStrictEqual(Object.entries(settings), Object.entries(projectedSnapshot(snapshot).settings))) {
     throw new ModuleWriteError('模块提交的规则状态或顺序无效')
   }
+  rememberRuleSettings(dir, settingsHash, data.members.get(settingsHash)!.stamp, state)
   return snapshot
 }
 
@@ -489,7 +491,8 @@ function readCommittedDefinition<T>(
   }
 }
 
-const verifiedInputs = new Map<string, Readonly<Record<string, unknown>>>()
+const verifiedInputs = new Map<string, { stamp: string; source: Readonly<Record<string, unknown>> }>()
+const verifiedRuleSettings = new Map<string, { stamp: string; state: unknown }>()
 
 export function freezeModuleValue<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -499,24 +502,27 @@ export function freezeModuleValue<T>(value: T): T {
   return value
 }
 
-export function getVerifiedModuleInputs(dir: string, commit: ModuleLocalCommit): Readonly<Record<string, unknown>> {
-  const text = readModuleLocalObject(dir, commit.inputs)
-  const key = JSON.stringify([commit.inputs, commit.moduleId, commit.declaredKeys])
+export function getVerifiedModuleInputs(dir: string, commit: Pick<ModuleLocalCommit, 'moduleId' | 'inputs' | 'declaredKeys'>): Readonly<Record<string, unknown>> {
+  const stamp = moduleLocalObjectStamp(dir, commit.inputs)
+  const key = JSON.stringify([dir, commit.inputs, commit.moduleId, commit.declaredKeys])
   const cached = verifiedInputs.get(key)
-  if (cached !== undefined) {
+  if (cached?.stamp === stamp) {
     verifiedInputs.delete(key)
     verifiedInputs.set(key, cached)
-    return cached
+    return cached.source
   }
-  const source = parseLocal(text).toJS()
+  const source = parseLocal(readModuleLocalObject(dir, commit.inputs)).toJS()
+  if (moduleLocalObjectStamp(dir, commit.inputs) !== stamp) throw sourceConflict()
   assertCanonicalRuleSource(source)
   if (source.id !== undefined && source.id !== commit.moduleId) throw new ModuleWriteError('模块身份不匹配')
   const keys = Object.keys(source)
   if (Object.hasOwn(source, 'rules') || keys.length !== commit.declaredKeys.length - Number(commit.declaredKeys.includes('rules'))
     || keys.some(key => !commit.declaredKeys.includes(key))) throw new ModuleWriteError('模块提交的声明与输入不一致')
   readModuleLayerSettings(source)
+  if (source.variables !== undefined) assertVariableValues(source.variables)
+  if (source.variablesEnabled !== undefined && typeof source.variablesEnabled !== 'boolean') throw new ModuleWriteError('variablesEnabled 必须是布尔值')
   if (verifiedInputs.size >= 32) verifiedInputs.delete(verifiedInputs.keys().next().value!)
-  verifiedInputs.set(key, freezeModuleValue(source))
+  verifiedInputs.set(key, { stamp, source: freezeModuleValue(source) })
   return source
 }
 
@@ -524,6 +530,23 @@ function parseCommittedState(text: string): unknown {
   return text.startsWith('{') ? JSON.parse(text) : parseLocal(text).toJS()
 }
 
+export function readModuleRuleEditSettings(dir: string, hash: string): unknown {
+  const key = JSON.stringify([dir, hash])
+  const stamp = moduleLocalObjectStamp(dir, hash)
+  const cached = verifiedRuleSettings.get(key)
+  if (cached?.stamp === stamp) return cached.state
+  const state = parseCommittedState(readModuleLocalObject(dir, hash))
+  if (moduleLocalObjectStamp(dir, hash) !== stamp) throw sourceConflict()
+  return rememberRuleSettings(dir, hash, stamp, state)
+}
+
+function rememberRuleSettings(dir: string, hash: string, stamp: string, state: unknown): unknown {
+  const key = JSON.stringify([dir, hash])
+  verifiedRuleSettings.delete(key)
+  if (verifiedRuleSettings.size >= 8) verifiedRuleSettings.delete(verifiedRuleSettings.keys().next().value!)
+  verifiedRuleSettings.set(key, { stamp, state: freezeModuleValue(state) })
+  return state
+}
 export function readModuleDeclaredKeys(directory: string): Set<string> {
   return readCommittedDefinition(directory, (dir, commit) => {
     getVerifiedModuleInputs(dir, commit)
@@ -555,8 +578,9 @@ export function assertModuleDefinitionFormat(directory: string, writing = false)
   }
   const dir = canonicalDirectory(directory)
   if (dirname(dir) === canonicalDirectory(packageModulesDir())) { loadModuleDefinition(dir); return }
-  const commit = installed(dir)
-  getVerifiedModuleInputs(dir, commit)
+  const head = readModuleLocalCommitInfo(dir)
+  if (!head) throw new ModuleWriteError('缺少本地模块提交；请先安装或迁移模块')
+  getVerifiedModuleInputs(dir, head)
 }
 
 export function readRulesDir(directory: string) {
