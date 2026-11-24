@@ -1,5 +1,7 @@
 # 模块自有定义与跨模块配置排序
 
+2026-11-24 状态补充：`configOrder` 现在由模块本地提交保存，完整定义继续使用原交换字段。[ADR-0016](0016-committed-local-module-state.md)
+
 状态：配置排序继续有效（`configOrder`、按模块写回、官方 `order` 语义、「轻量序号不新建集中副本」的取舍）。三处已被后续决策取代或扩展——第 3 行「编辑目标来自请求头」由 [ADR-0014](0014-module-subject-declared-per-operation.md) 扩展为读写双头定位＋写端点载荷 `expectedModuleId` 一致性校验；第 5 行「模型工具既定的首项写入目标」由同一 ADR 取代；第 5 行「无模块来源的独立引擎与触发器行为」中 `triggers` 的表示由 [ADR-0007](0007-unified-condition-action-rules.md) 取代，`order` 部分仍有效。以下保留原决策记录。
 
 模块脱离官方预设注册后，启用集合、编辑目标和配置执行顺序必须分别表达。部署 Config 用 `modulesEnabled` 作为非破坏性的运行总闸（写下本 ADR 时曾并存兼容键 `writePreset`，该键已于 2026-10-10 随命名迁移删除）；编辑目标来自请求头，配置顺序以每个 `module.yml` 的 `configOrder`（配置 ID → 序号）保存，由现有物化与装配链读取。选择轻量序号而不是新建集中配置副本，是为了让模块继续拥有正文与行为，同时允许来自不同模块的配置在同一插入点、位置内交错排序。
