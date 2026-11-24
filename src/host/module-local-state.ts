@@ -78,7 +78,7 @@ function parseCommit(directory: string, text: string): ModuleLocalCommit {
 }
 
 type Pointer = { version: 2; moduleId: string; generation: string } & (
-  { base: string } | { parent: string; id: string; hash: string }
+  { base: string; previous?: string; checksum?: string } | { parent: string; id: string; hash: string }
 )
 type CommitIndex = {
   token: string
@@ -88,6 +88,7 @@ type CommitIndex = {
   members: Record<string, string>
   positions: Map<string, number>
   aliases: Set<string>
+  baseProof?: { hash: string; stamp: string }
   snapshot?: ModuleLocalCommit
 }
 const indexes = new Map<string, { identity: string; index: CommitIndex }>()
@@ -98,13 +99,20 @@ function deltaGeneration(moduleId: string, parent: string, id: string, hash: str
   return revisionOf(JSON.stringify([2, moduleId, parent, id, hash]))
 }
 
+function baselineChecksum(pointer: { moduleId: string; generation: string; base: string; previous?: string }): string {
+  return revisionOf(JSON.stringify([2, pointer.moduleId, pointer.generation, pointer.base, pointer.previous ?? null]))
+}
+
 function parsePointer(dir: string, text: string): Pointer | ModuleLocalCommit {
   let value: unknown
   try { value = JSON.parse(text) } catch { throw invalid('JSON') }
   if (record(value) && value.version === 2) {
     if (value.moduleId !== basename(dir) || !digest(value.generation)) throw invalid('pointer')
     if (Object.hasOwn(value, 'base')) {
-      if (Object.keys(value).length !== 4 || !digest(value.base)) throw invalid('baseline')
+      if (!digest(value.base) || (value.previous !== undefined && !digest(value.previous))) throw invalid('baseline')
+      const expectedKeys = value.checksum === undefined ? 4 : value.previous === undefined ? 5 : 6
+      if (Object.keys(value).length !== expectedKeys || (value.checksum === undefined && value.previous !== undefined)
+        || (value.checksum !== undefined && value.checksum !== baselineChecksum(value as Pointer & { base: string }))) throw invalid('baseline')
       return value as Pointer
     }
     if (Object.keys(value).length !== 6 || !digest(value.parent) || typeof value.id !== 'string' || !digest(value.hash)) throw invalid('delta')
@@ -150,14 +158,20 @@ function indexAt(dir: string, text: string, cached?: CommitIndex): CommitIndex {
   }
   let index = cached?.token === token ? cached : undefined
   if (index === undefined) {
-    const base = pointer.version === 1 ? pointer : 'base' in pointer
-      ? parseCommit(dir, readModuleLocalObject(dir, pointer.base))
-      : undefined
+    let base: ModuleLocalCommit | undefined
+    let baseProof: CommitIndex['baseProof']
+    if (pointer.version === 1) base = pointer
+    else if ('base' in pointer) {
+      const stamp = moduleLocalObjectStamp(dir, pointer.base)
+      base = parseCommit(dir, readModuleLocalObject(dir, pointer.base))
+      if (moduleLocalObjectStamp(dir, pointer.base) !== stamp || (pointer.checksum !== undefined && pointer.previous !== base.previous)) throw invalid('baseline changed')
+      baseProof = { hash: pointer.base, stamp }
+    }
     if (!base || base.generation !== pointer.generation) throw invalid('baseline generation')
     freezeCommit(base)
     index = {
       token, base, generation: base.generation, previous: base.previous, members: { ...base.members },
-      positions: new Map(base.ruleIds.map((id, position) => [id, position])), aliases: new Set(base.aliasRuleIds),
+      positions: new Map(base.ruleIds.map((id, position) => [id, position])), aliases: new Set(base.aliasRuleIds), baseProof,
     }
   }
   for (const { delta } of deltas) if (!index.positions.has(delta.id)) throw invalid('delta rule')
@@ -179,7 +193,9 @@ function currentIndex(dir: string, text: string): CommitIndex {
   const identity = stamps.join('|')
   const token = revisionOf(text)
   const entry = indexes.get(dir)
-  const cached = entry?.identity === identity ? entry.index : undefined
+  let cached = entry?.identity === identity ? entry.index : undefined
+  const proof = cached?.baseProof
+  if (proof && moduleLocalObjectStamp(dir, proof.hash) !== proof.stamp) cached = undefined
   const index = cached?.token === token ? cached : indexAt(dir, text, cached)
   if (paths.some((path, i) => moduleDirectoryIdentity(path) !== stamps[i])) throw invalid('directory changed')
   indexes.delete(dir)
@@ -199,6 +215,12 @@ export function readModuleLocalCommit(directory: string): ModuleLocalCommit | un
   const dir = canonicalDirectory(directory)
   const text = readPointerText(dir)
   return text === undefined ? undefined : snapshot(currentIndex(dir, text))
+}
+
+/** 导出锁定头记录本身，避免再次解析整个运行快照。 */
+export function readModuleLocalPointerRevision(directory: string): string | undefined {
+  const text = readPointerText(canonicalDirectory(directory))
+  return text === undefined ? undefined : revisionOf(text)
 }
 
 export function readModuleLocalCommitInfo(directory: string): Pick<ModuleLocalCommit, 'generation' | 'hasProcessRules' | 'moduleId' | 'inputs' | 'declaredKeys'> | undefined {
@@ -370,10 +392,19 @@ export function verifyModuleLocalGeneration(directory: string, commit: ModuleLoc
   verifyObjects(directory, [commit.exportBase, commit.inputs, ...Object.values(commit.members)], false)
 }
 
-export function readPreviousModuleLocalCommit(directory: string, commit: ModuleLocalCommit): ModuleLocalCommit | undefined {
-  if (commit.previous === undefined) return undefined
+export function readPreviousModuleLocalCommit(directory: string, commit?: ModuleLocalCommit): ModuleLocalCommit | undefined {
   const dir = canonicalDirectory(directory)
-  return snapshot(indexAt(dir, readModuleLocalObject(dir, commit.previous)))
+  const text = readPointerText(dir)
+  if (text === undefined) return undefined
+  const pointer = parsePointer(dir, text)
+  if (commit !== undefined && pointer.generation !== commit.generation) {
+    throw new ModuleWriteError('读取期间模块再次变化，请重新读取', 409, 'rules-conflict')
+  }
+  const previous = pointer.version === 2 && 'parent' in pointer ? pointer.parent : pointer.previous ?? commit?.previous
+  if (previous === undefined) return undefined
+  const result = snapshot(indexAt(dir, readModuleLocalObject(dir, previous)))
+  if (readPointerText(dir) !== text) throw new ModuleWriteError('读取期间模块再次变化，请重新读取', 409, 'rules-conflict')
+  return result
 }
 
 /** 写者持有模块锁或拥有私有安装候选。旧提交仍可并发读取其不可变成员。 */
@@ -407,7 +438,8 @@ export function publishModuleLocalCommit(directory: string, references: ModuleLo
   assertPlain(join(dir, RULES_DIR), true)
   if (present(file)) assertPlain(file)
   const base = writeModuleLocalObject(dir, JSON.stringify(commit))
-  const text = JSON.stringify({ version: 2, moduleId: commit.moduleId, generation: next, base }) + '\n'
+  const pointer = { version: 2, moduleId: commit.moduleId, generation: next, base, previous: commit.previous }
+  const text = JSON.stringify({ ...pointer, checksum: baselineChecksum(pointer) }) + '\n'
   writeModuleLocalObject(dir, text)
   atomicWriteTextFile(file, text, { beforeReplace: () => {
     beforePublish?.()

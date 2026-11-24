@@ -163,6 +163,23 @@ test('规则工具拒绝：不存在或未声明的模块、旧版本、未知�
   const { readModuleLocalCommit } = await import('../../src/host/module-local-state.ts')
   const commitFile = join(f.dir, 'rules', '_commit.json')
   const baseline = readModuleLocalCommit(f.dir)
+  const baselinePointer = readFileSync(commitFile, 'utf8')
+  const baselineFile = join(f.dir, 'rules', '.objects', JSON.parse(baselinePointer).base)
+  const baselineText = readFileSync(baselineFile, 'utf8')
+  writeFileSync(baselineFile, 'invalid baseline')
+  try {
+    assert.equal((await f.success('module_rules_read', { moduleId: 'reject' })).definitionRevision, saved.definitionRevision)
+    assert.equal(parse(exportModuleDefinitionText(f.dir)).rules.length, 1)
+    assert.throws(() => editModuleRuleContent(f.dir, { previousId: original.id, rule: original }, saved.revisions))
+    assert.equal(readFileSync(commitFile, 'utf8'), baselinePointer)
+    const damagedHead = JSON.parse(baselinePointer)
+    damagedHead.previous = damagedHead.base
+    writeFileSync(commitFile, JSON.stringify(damagedHead))
+    assert.equal((await f.call('module_rules_read', { moduleId: 'reject' })).isError, true)
+  } finally {
+    writeFileSync(commitFile, baselinePointer)
+    writeFileSync(baselineFile, baselineText)
+  }
   const untouched = join(f.dir, 'rules', '.objects', baseline.members['mixed.yml'])
   const unrelated = readFileSync(untouched, 'utf8')
   writeFileSync(untouched, 'unrelated changed on disk')

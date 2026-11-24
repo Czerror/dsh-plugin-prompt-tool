@@ -18,7 +18,7 @@ export function nextModuleConfigSequence(current: Record<string, number>, reserv
 }
 import { assertModuleId, assertModuleDefinitionSource, moduleDirectoryIdentity } from './module-install.ts'
 import { serializeWithoutSharedAlias, assertPlain, assertUnownedUnchanged, canonicalDirectory, ModuleWriteError, record, revisionOf, SHARED_ALIAS_CODE, withModuleLock } from './module-write.ts'
-import { markModuleLocalInitialized, moduleLocalObjectStamp, readModuleLocalCommit, readModuleLocalCommitInfo, readModuleLocalObject, readModuleLocalObjects, readPreviousModuleLocalCommit, MODULE_LOCAL_COMMIT_FILE, publishModuleLocalCommit, writeModuleLocalObject, writeModuleLocalCommit } from './module-local-state.ts'
+import { markModuleLocalInitialized, moduleLocalObjectStamp, readModuleLocalCommit, readModuleLocalCommitInfo, readModuleLocalObject, readModuleLocalObjects, readModuleLocalPointerRevision, readPreviousModuleLocalCommit, MODULE_LOCAL_COMMIT_FILE, publishModuleLocalCommit, writeModuleLocalObject, writeModuleLocalCommit } from './module-local-state.ts'
 import type { ModuleLocalCommit, VerifiedModuleObjects } from './module-local-state.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
@@ -461,9 +461,10 @@ function readCommittedDefinition<T>(
   }
   const identity = moduleDirectoryIdentity(dir)
   try {
-    const commit = installed(dir)
+    let commit: ModuleLocalCommit | undefined
     let value: T
     try {
+      commit = installed(dir)
       const degraded = degradedHeads.get(dir)
       const knownDegraded = degraded?.identity === identity && degraded?.generation === commit.generation
       if (!fullRead && knownDegraded) {
@@ -474,10 +475,11 @@ function readCommittedDefinition<T>(
       degradedHeads.delete(dir)
     }
     catch (error) {
+      if (error instanceof ModuleWriteError && error.code === 'rules-conflict') throw error
       const previous = readPreviousModuleLocalCommit(dir, commit)
       if (!previous) throw error
       value = fullRead ? read(dir, previous) : fallback(committedSnapshot(dir, previous))
-      if (identity !== undefined) {
+      if (commit !== undefined && identity !== undefined) {
         if (degradedHeads.size >= 128) degradedHeads.delete(degradedHeads.keys().next().value!)
         degradedHeads.set(dir, { identity, generation: commit.generation })
       }
@@ -598,16 +600,18 @@ export function ensureModuleSlices(directory: string, _options: { writable?: boo
 /** 从保留的来源 AST 投影当前代；未编辑节点（包括 alias 和注释）逐节点保留。 */
 export function readModuleDefinitionExport(directory: string): {text: string; revision: string} {
   const identity = moduleDirectoryIdentity(directory)
+  const pointer = dirname(canonicalDirectory(directory)) === canonicalDirectory(packageModulesDir()) ? undefined : readModuleLocalPointerRevision(directory)
   const snapshot = loadModuleDefinition(directory)
   if (basename(snapshot.file) === MODULE_DEFINITION_FILE) return {text: snapshot.text, revision: snapshot.revision}
-  const head = installed(snapshot.dir)
-  const commit = head.generation === snapshot.revision ? head : readPreviousModuleLocalCommit(snapshot.dir, head)
+  let head: ModuleLocalCommit | undefined
+  try { head = installed(snapshot.dir) } catch { /* 已通过读取路径验证可用上一代。 */ }
+  const commit = head?.generation === snapshot.revision ? head : readPreviousModuleLocalCommit(snapshot.dir, head)
   if (commit?.generation !== snapshot.revision) throw sourceConflict()
   const doc = parseLocal(readModuleLocalObject(snapshot.dir, commit.exportBase))
   const original = doc.toJS()
   reconcileYaml(doc, doc.contents, original, snapshot.source)
   const text = serializeWithoutSharedAlias(doc, snapshot.source, '导出会改变 YAML 共享引用')
-  if (moduleDirectoryIdentity(snapshot.dir) !== identity || installed(snapshot.dir).generation !== head.generation) throw sourceConflict()
+  if (moduleDirectoryIdentity(snapshot.dir) !== identity || readModuleLocalPointerRevision(snapshot.dir) !== pointer) throw sourceConflict()
   return {text, revision: snapshot.revision}
 }
 
