@@ -11,11 +11,12 @@ import { assertCompositionArray } from './module-composition.ts'
 import { findModuleDir, packageModulesDir, resolveModuleDir } from './module-dirs.ts'
 import { renderComposition } from './module-params.ts'
 import type { ModuleSpec } from './module-spec.ts'
-import { ensureModuleSlices, loadModuleDefinition, materializeModuleDefinition, validateModuleDefinitionText } from './module-slices.ts'
+import { ensureModuleSlices, loadModuleDefinition, materializeModuleDefinition, readModuleDefinitionExport, validateModuleDefinitionText } from './module-slices.ts'
 import { ModuleWriteError, withModuleLock } from './module-write.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { directoryVersionOf } from './preview-revision.ts'
 import { installModuleDirectory, leftoverStageWarning } from './module-install-transaction.ts'
+import { MODULE_LOCAL_INITIALIZED_FILE } from './module-local-state.ts'
 
 export const LEGACY_ARTIFACTS = ['configs', 'rules.yml', 'agent.cordis.yml', 'custom-tools', 'subagent-tools', 'triggers.yml']
 
@@ -67,12 +68,17 @@ export function buildModuleCandidate(
 ): void {
   const builtin = findModuleDir(packageModulesDir(), basename(source))
   const definitionOnly = builtin !== undefined && resolve(source) === resolve(builtin) && targetId === basename(source)
+  const definition = readModuleDefinitionExport(source)
   if (targetId !== basename(source)) copyBuiltinModuleAssets(candidate, basename(source))
-  for (const entry of readdirSync(source, { withFileTypes: true })) {
-    if (definitionOnly && entry.name !== MODULE_DEFINITION_FILE) continue
-    if (LEGACY_ARTIFACTS.includes(entry.name) || entry.name === 'rules') continue
-    cpSync(join(source, entry.name), join(candidate, entry.name), { recursive: entry.isDirectory(), force: true })
+  if (!definitionOnly) for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const root = entry.name.toLowerCase()
+    if (root === MODULE_DEFINITION_FILE || root === 'rules' || root === MODULE_LOCAL_INITIALIZED_FILE || LEGACY_ARTIFACTS.includes(root)) continue
+    const path = join(source, entry.name)
+    assertModuleTree(path)
+    cpSync(path, join(candidate, entry.name), { recursive: entry.isDirectory(), force: true })
   }
+  if (readModuleDefinitionExport(source).revision !== definition.revision) throw new Error('复制期间模块定义发生变化')
+  atomicWriteTextFile(join(candidate, MODULE_DEFINITION_FILE), definition.text)
   finalizeModuleCandidate(candidate, targetId, agentsText, options)
 }
 

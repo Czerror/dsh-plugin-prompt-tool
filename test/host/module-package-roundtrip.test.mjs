@@ -9,7 +9,9 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { home, moduleRoot } = isolatedHome('pt-package-roundtrip-')
 const { moduleImportPreview, installModulePackage, exportModulePackage, expandModuleSource } = await import('../../src/host/module-package.ts')
-const { ensureModuleSlices, assertModuleDefinitionFormat, loadModuleDefinition, readRulesDir, validateModuleDefinitionText } = await import('../../src/host/module-slices.ts')
+const { ensureModuleSlices, materializeModuleDefinition, assertModuleDefinitionFormat, loadModuleDefinition, readRulesDir, validateModuleDefinitionText } = await import('../../src/host/module-slices.ts')
+const { editModuleRules, readModuleRules } = await import('../../src/host/module-rules.ts')
+const { duplicateUserModule } = await import('../../src/host/module-catalog.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
 const rule = (id, text, extra = {}) => ({ id, enabled: false, then: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
 const source = (id, extra = {}) => ({ id, name: id, modules: [], rules: [rule('hello', 'SOURCE')], variables: { owner: 'Mia' }, variablesEnabled: false, configOrder: { hello: 40 }, ...extra })
@@ -24,9 +26,9 @@ async function install(files, targetId) {
   const preview = moduleImportPreview(moduleRoot, files, { targetId })
   return installModulePackage(moduleRoot, files, credentials(preview))
 }
-const state = dir => ({ definition: readFileSync(join(dir, 'module.yml'), 'utf8'), files: readdirSync(dir).sort() })
+const state = dir => readdirSync(dir).sort()
 
-test('模块包往返以完整定义为准，漂移切片只在候选重建，素材和变量保持', async () => {
+test('模块包往返导出已提交规则、导入以完整定义为准，素材和变量保持', async () => {
   const id = 'roundtrip-source', dir = fixture(id)
   mkdirSync(join(dir, 'assets'))
   writeFileSync(join(dir, 'assets', 'notice.txt'), 'PACKAGED TEMPLATE')
@@ -37,8 +39,12 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
       else: [{ id: 'fallback', kind: 'inject-text', config: { templateFile: './assets/notice.txt' } }] }],
   }] })
   writeFileSync(join(dir, 'module.yml'), '# owner comment\n' + JSON.stringify(spec))
-  ensureModuleSlices(dir)
-  writeFileSync(join(dir, 'rules', 'hello.yml'), 'FORGED SLICE')
+  materializeModuleDefinition(dir)
+  const read = readModuleRules(dir)
+  spec.rules[0].then[0].config.text = 'COMMITTED'
+  editModuleRules(dir, { expectedRevisions: read.revisions, edits: [{ previousId: 'hello', rule: spec.rules[0] }] })
+  writeFileSync(join(dir, 'module.yml'), 'BROKEN EXCHANGE SOURCE')
+  writeFileSync(join(dir, 'rules', 'orphan.yml'), 'FORGED SLICE')
   writeFileSync(join(dir, 'memory.md'), 'PRIVATE MEMORY')
   const before = state(dir)
   const writes = []
@@ -49,12 +55,25 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
   finally { mock.restoreAll(); syncBuiltinESMExports() }
   assert.deepEqual(writes, [])
   assert.deepEqual(state(dir), before)
-  assert.equal(readFileSync(join(dir, 'rules', 'hello.yml'), 'utf8'), 'FORGED SLICE')
+  assert.equal(readFileSync(join(dir, 'rules', 'orphan.yml'), 'utf8'), 'FORGED SLICE')
+  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), 'BROKEN EXCHANGE SOURCE')
+  const copy = duplicateUserModule(id, moduleRoot)
+  assert.equal(copy.ok, true, JSON.stringify(copy))
+  const copiedDefinition = await exportModulePackage(moduleRoot, { id: copy.id, mode: 'definition' })
+  assert.match(copiedDefinition.content, /COMMITTED/)
+  assert.equal(readFileSync(join(moduleRoot, copy.id, 'memory.md'), 'utf8'), 'PRIVATE MEMORY')
+  writeFileSync(join(dir, 'assets', 'notice.txt'), 'NEW TEMPLATE')
+  await assert.rejects(exportModulePackage(moduleRoot, { id, mode: 'zip', expectedRevision: preview.revision }), { code: 'module-preview-stale' })
+  preview = await exportModulePackage(moduleRoot, { id, mode: 'zip', preview: true })
+  const definition = await exportModulePackage(moduleRoot, { id, mode: 'definition' })
+  assert.match(definition.content, /owner comment/)
+  assert.match(definition.content, /COMMITTED/)
+  assert.doesNotMatch(definition.content, /BROKEN EXCHANGE SOURCE|FORGED SLICE/)
   const exported = await exportModulePackage(moduleRoot, { id, mode: 'zip', expectedRevision: preview.revision })
   const files = await expandModuleSource([{ path: 'module.zip', content: exported.content, encoding: 'base64' }])
   assert.deepEqual(files.map(file => file.path).sort(), ['assets/notice.txt', 'module.yml'])
   const plain = await install(files, 'plain-copy')
-  const drifted = [...files, { path: 'rules/hello.yml', content: 'id: forged\ndo: []\n' }, { path: 'rules/_settings.yml', content: 'rules: {}\n' }, { path: 'rules/variables.yml', content: 'owner: INJECTED\n' }]
+  const drifted = [...files, { path: 'rules/hello.yml', content: 'id: forged\ndo: []\n' }, { path: 'rules/_settings.yml', content: 'rules: {}\n' }, { path: 'rules/variables.yml', content: 'owner: INJECTED\n' }, { path: 'rules/_commit.json', content: '{}' }, { path: 'rules/.objects/forged.yml', content: 'FORGED OBJECT' }]
   const beforeInput = JSON.stringify(drifted)
   const attached = await install(drifted, 'slice-copy')
   assert.equal(JSON.stringify(drifted), beforeInput, '入站切片从未反向覆盖来源定义或源对象')
@@ -68,10 +87,10 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
     assert.equal(restored.settings.hello.order, 40)
     assert.deepEqual(restored.variables, { owner: 'Mia' })
     assert.equal(restored.variablesEnabled, false)
-    assert.equal(readFileSync(join(copied, 'assets', 'notice.txt'), 'utf8'), 'PACKAGED TEMPLATE')
+    assert.equal(readFileSync(join(copied, 'assets', 'notice.txt'), 'utf8'), 'NEW TEMPLATE')
     assert.equal(existsSync(join(copied, 'memory.md')), false)
     assert.equal(existsSync(join(copied, 'agent.cordis.yml')), false)
-    assert.match(readFileSync(join(copied, 'module.yml'), 'utf8'), /owner comment/)
+    assert.match((await exportModulePackage(moduleRoot, { id, mode: 'definition' })).content, /owner comment/)
   }
   const manifest = { version: 1, definition: 'module.yml', files: Object.fromEntries(files.map(file => [file.path, createHash('sha256').update(decodeAssetFile(file)).digest('hex')])) }
   const withManifest = [...files, { path: 'prompt-tool-package.json', content: JSON.stringify(manifest) }]
@@ -173,6 +192,8 @@ test('模块私有 data/ 不随包导出；覆盖安装旧数据优先，包内�
   const id = 'data-keep', dir = fixture(id)
   mkdirSync(join(dir, 'data'))
   writeFileSync(join(dir, 'data', 'ledger.jsonl'), 'OLD LEDGER\n')
+  materializeModuleDefinition(dir)
+  writeFileSync(join(dir, 'module.yml'), 'BROKEN EXCHANGE SOURCE')
 
   const preview = await exportModulePackage(moduleRoot, { id, mode: 'zip', preview: true })
   const exported = await exportModulePackage(moduleRoot, { id, mode: 'zip', expectedRevision: preview.revision })

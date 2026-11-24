@@ -5,25 +5,14 @@
  * 含旧私有记忆标记、或无法证明来源的 `module-<id>-memory*` 规则一律拒绝导出。
  * 不提供写入、合并、迁移或新的存储位置。
  */
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parse as parseYaml, parseDocument } from 'yaml'
 import { assertModuleDirectory, assertModuleId, assertNoModuleLinks as assertNoLinks, modulePathExists } from './module-install.ts'
-import { MODULE_DEFINITION_FILE } from './paths.ts'
-import { assertCanonicalRuleSource } from './module-slices.ts'
+import { assertCanonicalRuleSource, exportModuleDefinitionText } from './module-slices.ts'
 import type { ModuleSpec } from './module-spec.ts'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function loadSpecFile(file: string): ModuleSpec | undefined {
-  assertNoLinks(file)
-  if (!modulePathExists(file)) return undefined
-  const parsed = parseYaml(readFileSync(file, 'utf8'), { logLevel: 'silent' })
-  if (!isRecord(parsed)) throw new Error(`模块定义不是对象：${file}`)
-  assertCanonicalRuleSource(parsed)
-  return parsed as unknown as ModuleSpec
 }
 
 function loadModuleSource(root: string, id: string): ModuleSpec | undefined {
@@ -31,7 +20,10 @@ function loadModuleSource(root: string, id: string): ModuleSpec | undefined {
   const dir = join(root, id)
   assertNoLinks(dir)
   if (!modulePathExists(dir)) return undefined
-  return loadSpecFile(join(assertModuleDirectory(root, id), MODULE_DEFINITION_FILE))
+  const parsed = parseYaml(exportModuleDefinitionText(assertModuleDirectory(root, id)), { logLevel: 'silent' })
+  if (!isRecord(parsed)) throw new Error(`模块定义不是对象：${dir}`)
+  assertCanonicalRuleSource(parsed)
+  return parsed as unknown as ModuleSpec
 }
 
 function importPrefixes(id: string): readonly string[] {

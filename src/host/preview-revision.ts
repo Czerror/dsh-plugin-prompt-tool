@@ -9,6 +9,8 @@
 import { createHash } from 'node:crypto'
 import { lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { MODULE_LOCAL_COMMIT_FILE, MODULE_LOCAL_INITIALIZED_FILE } from './module-local-state.ts'
+import { MODULE_DEFINITION_FILE, RULES_DIR } from './paths.ts'
 
 /** 预览协议版本：字段语义变化时递增，纳入 revision 计算。 */
 export const PREVIEW_PROTOCOL_VERSION = 'st-preview/1'
@@ -66,9 +68,14 @@ export function directoryVersionOf(dir: string): string | null {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw error
   }
+  const rules = join(dir, RULES_DIR)
+  const committed = lstatSync(join(dir, MODULE_LOCAL_INITIALIZED_FILE), { throwIfNoEntry: false }) !== undefined
+    || (lstatSync(rules, { throwIfNoEntry: false })?.isDirectory()
+      && lstatSync(join(rules, MODULE_LOCAL_COMMIT_FILE), { throwIfNoEntry: false }) !== undefined)
   const hash = createHash('sha256')
   const walk = (current: string, prefix: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (committed && prefix === '' && entry.name.toLowerCase() === MODULE_DEFINITION_FILE) continue
       if (entry.isSymbolicLink()) throw new Error(`目标包含链接：${entry.name}`)
       const rel = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`
       if (entry.isDirectory()) {
