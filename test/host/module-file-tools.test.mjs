@@ -17,6 +17,7 @@ test('用户升级：完整预览确认、目标变化拒绝、私有资产保�
   const { appendSoulLedger } = await import('../../src/host/soul-ledger.ts')
   const { registerTuiCommand } = await import('../../src/runtime/tui.ts')
   const { packageModulesDir, userModulesDir } = await import('../../src/host/module-dirs.ts')
+  const { exportModuleDefinitionText, materializeModuleDefinition } = await import('../../src/host/module-slices.ts')
   const { parse, stringify } = await import('yaml')
   const home = tempDir('pt-upgrade-'), original = process.env.DSH_HOME
   process.env.DSH_HOME = home
@@ -33,6 +34,7 @@ test('用户升级：完整预览确认、目标变化拒绝、私有资产保�
   definition.id = id
   delete definition.moduleConfigs['soul-maintenance'].assistedInputTarget
   writeFileSync(join(dir, 'module.yml'), stringify(definition))
+  materializeModuleDefinition(dir)
   mkdirSync(join(dir, 'data'), { recursive: true })
   writeFileSync(join(dir, 'data', 'SELF.src.md'), 'USER SKELETON')
   writeFileSync(join(dir, 'data', 'private.jsonl'), 'PRIVATE LEDGER')
@@ -79,13 +81,13 @@ test('用户升级：完整预览确认、目标变化拒绝、私有资产保�
   await manage({ action: 'disable' })
   assert.equal((await run({ action: 'confirm', expectedRevision: changed.expectedRevision, expectedSourceDigest: changed.expectedSourceDigest, expectedPreviewRevision: changed.expectedPreviewRevision })).kind, 'error', '预览后关闭不能沿旧授权交接')
   await manage({ action: 'enable' })
-  const preserved = owner.status(dir).binding, oldDefinition = readFileSync(join(dir, 'module.yml'), 'utf8')
+  const preserved = owner.status(dir).binding, oldDefinition = exportModuleDefinitionText(dir)
   const fresh = JSON.parse((await run({ action: 'preview' })).text)
   const failure = t.mock.method(bindingTable, 'put', async () => { throw new Error('STORAGE WRITE FAILED') })
   assert.equal((await run({ action: 'confirm', expectedRevision: fresh.expectedRevision, expectedSourceDigest: fresh.expectedSourceDigest, expectedPreviewRevision: fresh.expectedPreviewRevision })).kind, 'error')
   failure.mock.restore()
   assert.deepEqual(owner.status(dir).binding, preserved, '持久失败恢复原目录身份和完整绑定')
-  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), oldDefinition)
+  assert.equal(exportModuleDefinitionText(dir), oldDefinition)
   assert.equal((await run({ action: 'confirm', expectedRevision: fresh.expectedRevision, expectedSourceDigest: fresh.expectedSourceDigest, expectedPreviewRevision: fresh.expectedPreviewRevision })).kind, 'success')
   assert.equal(refreshes, 1)
   assert.equal(owner.status(dir).state, 'bound', '用户确认升级必须保留知识库绑定')

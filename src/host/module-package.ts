@@ -19,7 +19,8 @@ import { installModuleDirectory } from './module-install-transaction.ts'
 import { assertModuleId, assertModuleTree, assertModuleDirectory, canonicalModulesRoot, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { ruleInjections } from './rule-content.ts'
 import { createTargetQueue } from '../shared/target-queue.ts'
-import { validateModuleDefinitionText } from './module-slices.ts'
+import { assertSlicableAliases, readModuleDefinitionExport, validateModuleDefinitionText } from './module-slices.ts'
+import { MODULE_LOCAL_INITIALIZED_FILE } from './module-local-state.ts'
 
 const MANIFEST = 'prompt-tool-package.json'
 const PACKAGE_VERSION = 1
@@ -53,6 +54,11 @@ function shareableFile(path: string): boolean {
   const root = path.split('/')[0]!.toLowerCase()
   // data/ 是模块私有的用户数据（账本、SELF、AGENTS.md 等），与 memory.md 同规则：不随包分享。
   return !['rules', 'rules.yml', 'agent.cordis.yml', 'triggers.yml', 'memory.md', 'data'].includes(root) && ownedFile(path)
+}
+
+function isRuntimeArtifact(path: string): boolean {
+  const root = path.split('/')[0]!.toLowerCase()
+  return root === 'rules' || root === MODULE_LOCAL_INITIALIZED_FILE || LEGACY_ARTIFACTS.includes(root)
 }
 
 type PackageFile = { path: string; bytes: Buffer }
@@ -160,18 +166,20 @@ export function moduleImportPreview(root: string, files: AssetFile[], request: A
   sourceDigest: string
   previewRevision: string
 } | Exclude<ReturnType<typeof prepareImport>, { state: 'ready' }> {
-  const prepared = prepareImport(files, 'preset', { ...request, targetId: undefined, targetName: undefined })
+  const normalized = normalizeAssetFiles(files)
+  const prepared = prepareImport(normalized.filter(file => !isRuntimeArtifact(file.path)), 'preset', { ...request, targetId: undefined, targetName: undefined })
   if (prepared.state !== 'ready') return prepared
   const builtinFiles = builtinAssets(prepared.spec.id)
   const provided = prepared.files.map(file => ({ path: file.path, bytes: decodeAssetFile(file) }))
-  validatePackageDefinition(join(root, prepared.spec.id), prepared.yaml, withBuiltinAssets(provided, builtinFiles))
+  const definition = validatePackageDefinition(join(root, prepared.spec.id), prepared.yaml, withBuiltinAssets(provided, builtinFiles))
+  assertSlicableAliases(definition.doc)
   const id = targetId(root, request.targetId ?? prepared.spec.id, request)
   // 改名后没有同名包内回退，把缺失的资产快照纳入安装候选。
   const installedFiles = id !== prepared.spec.id ? withBuiltinAssets(provided, builtinFiles) : provided
   prepared.files = installedFiles.map(file => ({ path: file.path, content: file.bytes.toString('base64'), encoding: 'base64' }))
   const target = assertModuleDirectory(root, id, true)
   const version = directoryVersionOf(target)
-  const sourceDigest = assetSourceDigest(files)
+  const sourceDigest = assetSourceDigest(normalized)
   const previewRevision = revisionOf(sourceDigest, request, id, version, root, builtinFiles)
   return {
     prepared, sourceDigest, previewRevision,
@@ -212,7 +220,7 @@ export async function installModulePackage(root: string, files: AssetFile[], req
           // 整树保留只发生在角色来源或显式 preserveAssets；普通包覆盖只保留 data/（与 memory.md 同规则）。
           const preserveTree = options.preserveAssets || preview.prepared.kind === 'st-character' || preview.prepared.kind === 'native-character'
           for (const entry of readdirSync(target)) {
-            if (entry === MODULE_DEFINITION_FILE || entry === 'rules' || LEGACY_ARTIFACTS.includes(entry)) continue
+            if (entry.toLowerCase() === MODULE_DEFINITION_FILE || isRuntimeArtifact(entry)) continue
             if (!preserveTree && entry !== 'data') continue
             const path = join(target, entry)
             assertModuleTree(path)
@@ -220,8 +228,6 @@ export async function installModulePackage(root: string, files: AssetFile[], req
           }
         }
         for (const file of preview.prepared.files.filter((file) => file.path !== MANIFEST && file.path !== MODULE_DEFINITION_FILE)) {
-          const top = file.path.split('/')[0]!
-          if (top === 'rules' || LEGACY_ARTIFACTS.includes(top)) continue
           const path = join(candidate, assertSafeRelativePath(file.path))
           mkdirSync(dirname(path), { recursive: true })
           if (file.path === 'memory.md' && existsSync(path)) continue
@@ -253,7 +259,7 @@ function collectFiles(dir: string, assetsOnly = false): PackageFile[] {
   let total = 0
   const walk = (current: string, prefix: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (assetsOnly && prefix === '' && entry.name !== 'assets') continue
+      if (prefix === '' && (assetsOnly ? entry.name !== 'assets' : entry.name.toLowerCase() === MODULE_DEFINITION_FILE)) continue
       if (!shareableFile(prefix + entry.name)) continue
       const path = assertSafeRelativePath(prefix + entry.name)
       const key = path.normalize('NFC').toLowerCase()
@@ -334,10 +340,10 @@ function dependencyErrors(files: PackageFile[], spec: ModuleSpec): string[] {
 }
 
 function sharingSnapshot(dir: string, id: string, root: string, choices: Record<string, 'include' | 'exclude'>) {
+  const committed = readModuleDefinitionExport(dir)
+  const definition = { path: MODULE_DEFINITION_FILE, bytes: Buffer.from(committed.text) }
   const builtinFiles = builtinAssets(id)
-  const files = collectFiles(dir)
-  const definition = files.find(file => file.path === MODULE_DEFINITION_FILE)
-  if (!definition) throw new Error('缺少模块定义')
+  const files = [definition, ...collectFiles(dir)]
   const originalText = new TextDecoder('utf-8', { fatal: true }).decode(definition.bytes)
   const missing = new Set<string>()
   const original = validatePackageDefinition(dir, originalText, withBuiltinAssets(files, builtinFiles), missing).doc
@@ -349,7 +355,7 @@ function sharingSnapshot(dir: string, id: string, root: string, choices: Record<
   const effectiveFiles = withBuiltinAssets(files, builtinFiles)
   const spec = validatePackageDefinition(dir, definition.bytes.toString('utf8'), effectiveFiles, missing).source as unknown as ModuleSpec
   // 分享过滤会读取历史来源证明；投影结果也进版本，证明变化影响输出时必须重新确认。
-  const revision = sha(JSON.stringify([source, effectiveFiles.map(file => [file.path, sha(file.bytes)]), definition.bytes.toString('utf8'), projection.memoryConflicts, projection.excludedMemoryCount]))
+  const revision = sha(JSON.stringify([committed.revision, source, effectiveFiles.map(file => [file.path, sha(file.bytes)]), projection.memoryConflicts, projection.excludedMemoryCount]))
   return { files, effectiveFiles, definition, spec, projection, missing: [...missing], revision }
 }
 
@@ -360,7 +366,13 @@ export async function exportModulePackage(root: string, request: ModuleExportReq
   if (!modulePathExists(dir)) throw new Error('模块不存在')
   // 包只携带完整定义和用户资产，切片由安装方确定性重建。预览不修复源目录。
   const choices = request.memoryChoices ?? {}
-  const { files, effectiveFiles, definition, spec, projection, missing, revision: before } = sharingSnapshot(dir, request.id, root, choices)
+  const read = () => {
+    try { return sharingSnapshot(dir, request.id, root, choices) } catch (error) {
+      if (request.expectedRevision !== undefined) stale()
+      throw error
+    }
+  }
+  const { files, effectiveFiles, definition, spec, projection, missing, revision: before } = read()
   const blockers = [...new Set([...missing, ...dependencyErrors(effectiveFiles, spec)])]
   if (projection.memoryConflicts.length > 0) blockers.push('请明确选择来源不明的记忆条目是否分享')
   const mode = request.mode ?? 'definition'
@@ -375,7 +387,7 @@ export async function exportModulePackage(root: string, request: ModuleExportReq
   }
   if (mode === 'definition') result.warnings!.push(...blockers)
   if (mode === 'definition' && files.length > 1) result.warnings!.push(`仅导出定义，不包含 ${files.length - 1} 个附属文件。`)
-  const verify = (): void => { if (sharingSnapshot(dir, request.id, root, choices).revision !== before) stale() }
+  const verify = (): void => { if (read().revision !== before) stale() }
   verify()
   if (request.preview) return result
   if (request.expectedRevision !== undefined && request.expectedRevision !== revision) stale()
