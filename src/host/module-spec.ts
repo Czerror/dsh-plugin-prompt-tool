@@ -91,8 +91,8 @@ export function createRuntimeModuleReader() {
   const snapshots = createModuleRuntimeSnapshotReader()
   const views = new WeakMap<object, { spec: ModuleSpec; signature: string }>()
   return {
-    read(dir: string): { spec: ModuleSpec; generation: string; signature: string; changedRuleId?: string } {
-      const { snapshot, changedRuleId } = snapshots.read(dir)
+    read(dir: string): { spec: ModuleSpec; generation: string; signature: string } {
+      const snapshot = snapshots.read(dir)
       let view = views.get(snapshot)
       if (view === undefined) {
         const { rules: _rules, variables: _variables, ...inputs } = snapshot.source
@@ -106,8 +106,7 @@ export function createRuntimeModuleReader() {
         views.set(snapshot, view)
       }
       const spec = freezeModuleValue(withGlobalParams(view.spec, dir))
-      return { spec, generation: snapshot.revision, signature: revisionOf(view.signature + JSON.stringify(spec.globalParams ?? {})),
-        ...(changedRuleId === undefined ? {} : { changedRuleId }) }
+      return { spec, generation: snapshot.revision, signature: revisionOf(view.signature + JSON.stringify(spec.globalParams ?? {})) }
     },
     retain: snapshots.retain,
     dispose: snapshots.dispose,

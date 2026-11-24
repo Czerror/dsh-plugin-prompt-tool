@@ -10,7 +10,7 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 const { home, moduleRoot } = isolatedHome('pt-package-roundtrip-')
 const { moduleImportPreview, installModulePackage, exportModulePackage, expandModuleSource } = await import('../../src/host/module-package.ts')
 const { ensureModuleSlices, materializeModuleDefinition, assertModuleDefinitionFormat, loadModuleDefinition, readRulesDir, validateModuleDefinitionText } = await import('../../src/host/module-slices.ts')
-const { editModuleRules, readModuleRules } = await import('../../src/host/module-rules.ts')
+const { editModuleRuleContent, editModuleRules, readModuleRules } = await import('../../src/host/module-rules.ts')
 const { duplicateUserModule } = await import('../../src/host/module-catalog.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
 const rule = (id, text, extra = {}) => ({ id, enabled: false, then: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
@@ -98,36 +98,52 @@ test('模块包往返导出已提交规则、导入以完整定义为准，素�
   await assert.rejects(expandModuleSource(withManifest.map(file => file.path === 'assets/notice.txt' ? { ...file, content: 'TAMPERED', encoding: 'utf8' } : file)), /摘要/)
 })
 
-test('安装完整定义后可从提交记录读回原始声明和有序规则切片', async () => {
+test('模块包往返保留声明、同序规则与 YAML 引用，拒绝跨界引用', async () => {
   const id = 'committed-source'
   const definition = '# original comment\nid: committed-source\nname: committed-source\nmodules: []\nvariables: {}\nvariablesEnabled: false\nconfigOrder: { second: 2, first: 2, future: 9 }\nunknown: &metadata { owner: Mia }\nother: *metadata\nrules:\n  - ' + JSON.stringify(rule('second', 'SECOND')) + '\n  - ' + JSON.stringify(rule('first', 'FIRST')) + '\n'
   await install([{ path: 'module.yml', content: definition }], id)
-  const dir = join(moduleRoot, id, 'rules')
-  const commit = JSON.parse(readFileSync(join(dir, '_commit.json'), 'utf8'))
-  const readObject = (digest) => {
-    const content = readFileSync(join(dir, '.objects', digest), 'utf8')
-    assert.equal(createHash('sha256').update(content).digest('hex'), digest)
-    return content
-  }
-  assert.equal(commit.version, 1)
-  assert.equal(commit.moduleId, id)
-  assert.deepEqual(commit.declaredKeys, ['id', 'name', 'modules', 'variables', 'variablesEnabled', 'configOrder', 'unknown', 'other', 'rules'])
-  assert.deepEqual(commit.ruleIds, ['second', 'first'])
+  const dir = join(moduleRoot, id)
   const { parse } = await import('yaml')
-  assert.deepEqual(parse(readObject(commit.exportBase)), parse(definition))
-  assert.match(readObject(commit.exportBase), /original comment/)
-  assert.match(readObject(commit.exportBase), /other: \*metadata/)
-  assert.deepEqual(parse(readObject(commit.inputs)), {
-    id, name: id, modules: [], variables: {}, variablesEnabled: false, configOrder: { second: 2, first: 2, future: 9 },
-    unknown: { owner: 'Mia' }, other: { owner: 'Mia' },
-  })
-  for (const id of commit.ruleIds) assert.equal(parse(readObject(commit.members[id + '.yml'])).id, id)
+  const original = readModuleRules(dir)
+  assert.deepEqual(original.rules.map(rule => rule.id), ['second', 'first'])
+  const expected = parse(definition)
+  expected.rules[0].name = 'Renamed'
+  const saved = editModuleRuleContent(dir, { previousId: 'second', rule: expected.rules[0] }, original.revisions)
+  assert.equal(saved.rule.name, 'Renamed')
+  const exported = await exportModulePackage(moduleRoot, { id, mode: 'definition' })
+  assert.deepEqual(parse(exported.content), expected)
+  assert.match(exported.content, /original comment/)
+  assert.match(exported.content, /other: \*metadata/)
 
   const overwrite = [{ path: 'module.yml', content: definition.replace('rules:', 'metadataText: &body SECOND\nrules:').replace('"SECOND"', '*body') }]
   assert.throws(() => moduleImportPreview(moduleRoot, overwrite, { targetId: id, overwrite: true }),
     error => error.code === 'shared-alias' && /metadataText → rules/.test(error.message))
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, '_commit.json'), 'utf8')), commit)
-  for (const id of commit.ruleIds) assert.equal(parse(readObject(commit.members[id + '.yml'])).id, id)
+  assert.equal((await exportModulePackage(moduleRoot, { id, mode: 'definition' })).content, exported.content)
+
+  const aliasedId = 'aliased-rules'
+  const makeRule = (id, actions) => `  - id: ${id}\n    then: ${actions}\n`
+  const actions = '[{ id: inject, kind: inject-text, config: { text: &body ORIGINAL, summary: *body } }]'
+  const aliased = 'id: aliased-rules\nmodules: []\nrules:\n'
+    + makeRule('anchor', '&actions ' + actions) + makeRule('peer', '*actions') + makeRule('solo', actions.replaceAll('body', 'soloBody'))
+    + makeRule('unrelated', actions.replace('&body ', '').replace('*body', 'ORIGINAL'))
+  await install([{ path: 'module.yml', content: aliased }], aliasedId)
+  const aliasDir = join(moduleRoot, aliasedId)
+  const state = readModuleRules(aliasDir)
+  const unrelated = state.rules.find(rule => rule.id === 'unrelated')
+  assert.equal(editModuleRuleContent(aliasDir, { previousId: unrelated.id, rule: { ...unrelated, name: 'Edited' } }, state.revisions).rule.name, 'Edited')
+  for (const ruleId of ['anchor', 'solo']) {
+    const current = readModuleRules(aliasDir)
+    const rule = current.rules.find(rule => rule.id === ruleId)
+    const changed = structuredClone(rule)
+    changed.then[0].config.text = 'CHANGED'
+    assert.throws(() => editModuleRuleContent(aliasDir, { previousId: ruleId, rule: changed }, current.revisions), { code: 'shared-alias' }, ruleId)
+  }
+  const current = readModuleRules(aliasDir)
+  const peer = current.rules.find(rule => rule.id === 'peer')
+  assert.equal(editModuleRuleContent(aliasDir, { previousId: peer.id, rule: { ...peer, name: 'Peer' } }, current.revisions).rule.name, 'Peer')
+  const aliasExport = await exportModulePackage(moduleRoot, { id: aliasedId, mode: 'definition' })
+  assert.match(aliasExport.content, /then: \*actions/)
+  assert.match(aliasExport.content, /summary: \*soloBody/)
 })
 
 test('同名包内模板回退只接受缺失资产，用户覆盖和包内变更使缓存失效', () => {

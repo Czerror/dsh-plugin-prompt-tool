@@ -20,6 +20,7 @@ export interface ModuleLocalReferences {
   ruleIds: string[]
   members: Record<string, string>
   hasSourceAliases?: true
+  aliasRuleIds?: string[]
   hasProcessRules?: boolean
 }
 
@@ -43,8 +44,8 @@ function list(value: unknown): value is string[] {
 }
 
 function generation(references: ModuleLocalReferences): string {
-  const { moduleId, declaredKeys, exportBase, inputs, ruleIds, members, hasSourceAliases, hasProcessRules } = references
-  return revisionOf(JSON.stringify({ version: VERSION, moduleId, declaredKeys, exportBase, inputs, ruleIds, members, hasSourceAliases, hasProcessRules }))
+  const { moduleId, declaredKeys, exportBase, inputs, ruleIds, members, hasSourceAliases, hasProcessRules, aliasRuleIds } = references
+  return revisionOf(JSON.stringify({ version: VERSION, moduleId, declaredKeys, exportBase, inputs, ruleIds, members, hasSourceAliases, hasProcessRules, aliasRuleIds }))
 }
 
 function assertCommit(directory: string, value: unknown): asserts value is ModuleLocalCommit {
@@ -52,14 +53,19 @@ function assertCommit(directory: string, value: unknown): asserts value is Modul
   if (value.moduleId !== basename(directory)) throw invalid('moduleId')
   if (!list(value.declaredKeys) || !digest(value.exportBase) || !digest(value.inputs)) throw invalid('inputs')
   const members = value.members
-  if (!list(value.ruleIds) || new Set(value.ruleIds.map(id => id.toLowerCase())).size !== value.ruleIds.length
+  const ruleIds = value.ruleIds
+  if (!list(ruleIds) || new Set(ruleIds.map(id => id.toLowerCase())).size !== ruleIds.length
     || !record(members)) throw invalid('members')
-  for (const id of value.ruleIds) assertRuleId(id)
-  const files = [RULES_SETTINGS_FILE, RULES_VARIABLES_FILE, ...value.ruleIds.map(id => `${id}.yml`)]
+  for (const id of ruleIds) assertRuleId(id)
+  const files = [RULES_SETTINGS_FILE, RULES_VARIABLES_FILE, ...ruleIds.map(id => `${id}.yml`)]
   if (new Set(files).size !== files.length || Object.keys(members).length !== files.length
     || files.some(file => !Object.hasOwn(members, file) || !digest(members[file]))) throw invalid('members')
   if (value.previous !== undefined && !digest(value.previous)) throw invalid('previous')
   if (value.hasSourceAliases !== undefined && value.hasSourceAliases !== true) throw invalid('hasSourceAliases')
+  if (value.aliasRuleIds !== undefined) {
+    if (value.hasSourceAliases !== true || !list(value.aliasRuleIds)) throw invalid('aliasRuleIds')
+    for (const id of value.aliasRuleIds) assertRuleId(id)
+  }
   if (value.hasProcessRules !== undefined && typeof value.hasProcessRules !== 'boolean') throw invalid('hasProcessRules')
   if (value.generation !== generation(value as unknown as ModuleLocalReferences)) throw invalid('generation')
 }
@@ -119,17 +125,24 @@ export interface VerifiedModuleObjects {
   changed: Set<string>
 }
 
-export function readModuleLocalObjects(directory: string, hashes: readonly string[], previous?: VerifiedModuleObjects): VerifiedModuleObjects {
+/** 只保留最近核验模块的身份及成员戳，不保留正文或历史代。 */
+const objectProofs = new Map<string, { identity: string; stamps: Map<string, string> }>()
+const MAX_PROOF_MODULES = 8
+const MAX_PROOF_OBJECTS = 16_384
+
+function verifyObjects(directory: string, hashes: readonly string[], readText: boolean, previous?: VerifiedModuleObjects): VerifiedModuleObjects {
   const dir = canonicalDirectory(directory)
   const rules = join(dir, RULES_DIR), objects = join(rules, OBJECTS_DIR)
   const paths = [dirname(dir), dir, rules, objects]
   const identity = paths.map(moduleDirectoryIdentity)
   if (identity.some(value => value === undefined)) throw invalid('objects')
   const owner = identity.join('|')
+  const priorProof = objectProofs.get(dir)
+  const stamps = new Map<string, string>()
   const members: VerifiedModuleObjects['members'] = new Map()
   const changed = new Set<string>()
   for (const hash of hashes) {
-    if (members.has(hash)) continue
+    if (stamps.has(hash)) continue
     if (!digest(hash)) throw invalid('object digest')
     const file = join(objects, hash)
     const stampOf = (): string => {
@@ -138,15 +151,36 @@ export function readModuleLocalObjects(directory: string, hashes: readonly strin
       return `${stat.dev}:${stat.ino}:${stat.ctimeNs}:${stat.mtimeNs}:${stat.size}`
     }
     const stamp = stampOf()
+    stamps.set(hash, stamp)
     const cached = previous?.identity === owner ? previous.members.get(hash) : undefined
     if (cached?.stamp === stamp) { members.set(hash, cached); continue }
+    if (!readText && priorProof?.identity === owner && priorProof.stamps.get(hash) === stamp) continue
     const bytes = readFileSync(file)
     if (revisionOf(bytes) !== hash || stampOf() !== stamp) throw invalid(`object ${hash}`)
-    members.set(hash, { stamp, text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) })
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
+    if (readText) members.set(hash, { stamp, text })
     changed.add(hash)
   }
   if (paths.some((path, i) => moduleDirectoryIdentity(path) !== identity[i])) throw invalid('objects directory changed')
+  // 局部读取替换缓存证明，额外保留导出基底等未读成员。完整校验会收掉旧代。
+  if (readText && priorProof?.identity === owner) {
+    for (const [hash, stamp] of priorProof.stamps) {
+      if (stamps.size >= MAX_PROOF_OBJECTS) break
+      if (!stamps.has(hash)) stamps.set(hash, stamp)
+    }
+  }
+  objectProofs.delete(dir)
+  if (stamps.size <= MAX_PROOF_OBJECTS) objectProofs.set(dir, { identity: owner, stamps })
+  if (objectProofs.size > MAX_PROOF_MODULES) objectProofs.delete(objectProofs.keys().next().value!)
   return { identity: owner, members, changed }
+}
+
+export function readModuleLocalObjects(directory: string, hashes: readonly string[], previous?: VerifiedModuleObjects): VerifiedModuleObjects {
+  return verifyObjects(directory, hashes, true, previous)
+}
+
+export function verifyModuleLocalGeneration(directory: string, commit: ModuleLocalReferences): void {
+  verifyObjects(directory, [commit.exportBase, commit.inputs, ...Object.values(commit.members)], false)
 }
 
 export function readPreviousModuleLocalCommit(directory: string, commit: ModuleLocalCommit): ModuleLocalCommit | undefined {
@@ -173,19 +207,20 @@ export function publishModuleLocalCommit(directory: string, references: ModuleLo
   const dir = canonicalDirectory(directory)
   const next = generation(references)
   const previous = readModuleLocalCommit(dir)
-  if (previous?.generation === next) return previous
+  if (previous?.generation === next) {
+    verifyModuleLocalGeneration(dir, previous)
+    return previous
+  }
   const commit: ModuleLocalCommit = { ...references, version: VERSION, generation: next }
   assertCommit(dir, commit)
-  if (commit.exportBase !== previous?.exportBase) readModuleLocalObject(dir, commit.exportBase)
-  if (commit.inputs !== previous?.inputs) readModuleLocalObject(dir, commit.inputs)
-  for (const [name, hash] of Object.entries(commit.members)) {
-    if (hash !== previous?.members[name]) readModuleLocalObject(dir, hash)
-  }
   if (previous !== undefined) commit.previous = writeModuleLocalObject(dir, JSON.stringify(previous))
   const file = join(dir, RULES_DIR, MODULE_LOCAL_COMMIT_FILE)
   assertPlain(join(dir, RULES_DIR), true)
   if (present(file)) assertPlain(file)
-  atomicWriteTextFile(file, JSON.stringify(commit) + '\n', { beforeReplace: beforePublish })
+  atomicWriteTextFile(file, JSON.stringify(commit) + '\n', { beforeReplace: () => {
+    beforePublish?.()
+    verifyModuleLocalGeneration(dir, commit)
+  } })
   if (previous === undefined) markModuleLocalInitialized(dir)
   return commit
 }

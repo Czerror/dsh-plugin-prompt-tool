@@ -1,7 +1,8 @@
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import fs, { mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { Document, parse } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
@@ -155,6 +156,31 @@ test('规则工具拒绝：不存在或未声明的模块、旧版本、未知�
   assert.notDeepEqual(saved.revisions, before.revisions)
   assert.equal((await f.call('module_rules_edit', { moduleId: 'reject', expectedRevisions: before.revisions, edits: [{ previousId: 'mixed', rule: original }] })).isError, true)
   assert.equal(readFileSync(f.file, 'utf8'), current)
+  const { editModuleRuleContent, editModuleRules, readModuleRules } = await import('../../src/host/module-rules.ts')
+  const second = { id: 'second', then: [leaf('second-text', 'SECOND')] }
+  const secondGeneration = editModuleRules(f.dir, { expectedRevisions: saved.revisions, edits: [{ previousId: null, rule: second }] })
+  const changedSecond = { ...second, then: [leaf('second-text', 'UPDATE')] }
+  const commitFile = join(f.dir, 'rules', '_commit.json')
+  const untouched = join(f.dir, 'rules', '.objects', JSON.parse(readFileSync(commitFile, 'utf8')).members['mixed.yml'])
+  const originalRead = fs.readFileSync
+  const read = t.mock.method(fs, 'readFileSync', (file, ...args) => {
+    assert.notEqual(file, untouched, '已核验的未编辑规则只检查文件身份，不重读正文')
+    return originalRead(file, ...args)
+  })
+  syncBuiltinESMExports()
+  let broken
+  try { broken = editModuleRuleContent(f.dir, { previousId: second.id, rule: changedSecond }, secondGeneration.revisions) }
+  finally { read.mock.restore(); syncBuiltinESMExports() }
+  const commitBytes = readFileSync(commitFile, 'utf8')
+  const member = join(f.dir, 'rules', '.objects', JSON.parse(commitBytes).members['second.yml'])
+  const originalMember = readFileSync(member, 'utf8')
+  const times = statSync(member)
+  writeFileSync(member, originalMember.replace('UPDATE', 'BROKEN'))
+  utimesSync(member, times.atime, times.mtime)
+  assert.notEqual(broken.definitionRevision, secondGeneration.definitionRevision)
+  assert.throws(() => editModuleRuleContent(f.dir, { previousId: original.id, rule: { ...original, name: 'SHOULD NOT COMMIT' } }, secondGeneration.revisions))
+  assert.equal(readFileSync(commitFile, 'utf8'), commitBytes)
+  assert.equal(readModuleRules(f.dir).definitionRevision, secondGeneration.definitionRevision)
 })
 
 test('规则工具边界：晚到服务挂载，刷新失败报告已保存，重试只发布，卸载后不可调用', async t => {

@@ -992,17 +992,16 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       const stamp = assemblyStamp(ids)
       const current = mounts.get(agent.id)
       const dependenciesUnchanged = current !== undefined && mountedDependenciesCurrent(current)
-      if (current?.stamp !== stamp || !dependenciesUnchanged) {
-        // 只改变量时戳变、内容签名不变：更新戳即可，不撤装重挂。
-        const definitions = dependenciesUnchanged ? readDefinitions(ids) : undefined
-        if (current !== undefined && definitions !== undefined && unchanged(definitions, current.content)) {
-          current.stamp = stamp
-          for (const item of current.prepared) {
-            const source = definitions.get(item.moduleId), input = sourceInputs.get(item)
-            if (source && 'generation' in source && input?.signature === source.signature) input.generation = source.generation
-          }
-        } else { publication.schedule(); await publication.flush(undefined, false) }
-      }
+      // 提交记录可能未变，成员仍须在新请求使用前通过目录及文件身份复核。
+      const definitions = dependenciesUnchanged ? readDefinitions(ids) : undefined
+      // 内容签名不变时只更新代与戳，例如纯变量值变化或有效输入等价的回退。
+      if (current !== undefined && definitions !== undefined && unchanged(definitions, current.content)) {
+        current.stamp = stamp
+        for (const item of current.prepared) {
+          const source = definitions.get(item.moduleId), input = sourceInputs.get(item)
+          if (source && 'generation' in source && input?.signature === source.signature) input.generation = source.generation
+        }
+      } else { publication.schedule(); await publication.flush(undefined, false) }
       lastReadError = undefined
     } catch (error) {
       const message = failureReason(error)

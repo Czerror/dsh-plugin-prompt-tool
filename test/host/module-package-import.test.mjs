@@ -174,6 +174,12 @@ test('importPresetPackage：路径穿越条目被明确拒绝，不落盘', asyn
     assert.equal(payload.code, 'module-package-invalid')
     assert.match(payload.message, /非法|路径/)
   }
+  const definition = JSON.stringify({ id: 'self-template', modules: [], rules: [{ id: 'rule', then: [
+    { id: 'text', kind: 'inject-text', config: { templateFile: './module.yml', text: 'sample' } },
+  ] }] })
+  const self = await importPackage({ files: [{ path: 'module.yml', content: definition }] })
+  assert.equal(self.status, 400, '交换定义不能作为运行模板')
+  assert.equal(existsSync(join(PRESETS, 'self-template')), false)
   assert.ok(!existsSync(join(PRESETS, 'evil.yml')), '穿越条目不得写到预设目录之外')
   assert.ok(!existsSync(join(PRESETS, 'demo', 'evil.yml')), '穿越条目不得写入预设目录')
   assert.ok(!existsSync(join(PRESETS, 'demo', 'evil2.yml')))

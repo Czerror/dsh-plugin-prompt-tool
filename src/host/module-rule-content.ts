@@ -3,13 +3,16 @@ import { isDeepStrictEqual } from 'node:util'
 import { Document, parseDocument } from 'yaml'
 import { compileRules, ruleCrossValidation, type CompiledRule } from '../../engine/rule-spec.mjs'
 import type { RuleDefinition, RuleEdit, RuleRevisions } from '../shared/rules.ts'
-import { readModuleLocalCommit, readModuleLocalObject, publishModuleLocalCommit, writeModuleLocalObject } from './module-local-state.ts'
+import { readModuleLocalCommit, readModuleLocalObject, publishModuleLocalCommit, verifyModuleLocalGeneration, writeModuleLocalObject } from './module-local-state.ts'
+import type { ModuleLocalCommit } from './module-local-state.ts'
 import { assertRuleFileId, assertVariableValues, getVerifiedModuleInputs, rememberRuntimeRuleEdit, rulePromptConfigOptions, ruleValueRevision, templateDependencyRevision } from './module-slices.ts'
 import { canonicalDirectory, ModuleWriteError, record, withModuleLock } from './module-write.ts'
 import { RULES_SETTINGS_FILE } from './paths.ts'
 
 const version = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value)
 const conflict = (id: string): ModuleWriteError => new ModuleWriteError(`规则 ${id} 正文已变化，请重新读取`, 409, 'rules-conflict')
+const needsAliasValidation = (commit: ModuleLocalCommit, id: string): boolean =>
+  commit.hasSourceAliases === true && (commit.aliasRuleIds === undefined || commit.aliasRuleIds.includes(id))
 const preStepOnly = (rules: CompiledRule[]): boolean => rules.every(rule => rule.executionScope === 'agent' && rule.actions.every(action => {
   const execution = action.execution
   return action.kind === 'inject-text' && record(execution)
@@ -37,10 +40,10 @@ export function tryEditModuleRuleContent(directory: string, edit: RuleEdit, expe
   assertRuleFileId(id)
   const dir = canonicalDirectory(directory)
   const head = readModuleLocalCommit(dir)
-  if (!head || head.hasSourceAliases) return undefined
+  if (!head || needsAliasValidation(head, id)) return undefined
   return withModuleLock(dirname(dir), head.moduleId, () => {
     const current = readModuleLocalCommit(dir)
-    if (!current || current.hasSourceAliases) return undefined
+    if (!current || needsAliasValidation(current, id)) return undefined
     const file = id + '.yml'
     const hash = current.members[file]
     if (hash === undefined) throw conflict(id)
@@ -98,12 +101,16 @@ export function tryEditModuleRuleContent(directory: string, edit: RuleEdit, expe
     }
     verify()
     const ruleRevision = ruleValueRevision(content)
-    const committed = ruleRevision === expectedRevisions.rules![id] ? current : publishModuleLocalCommit(dir, {
-      ...current, members: { ...current.members, [file]: writeModuleLocalObject(dir, new Document(content).toString()) },
-    }, () => {
-      if (readModuleLocalCommit(dir)?.generation !== current.generation) throw conflict(id)
-      verify()
-    })
+    let committed = current
+    if (ruleRevision === expectedRevisions.rules![id]) verifyModuleLocalGeneration(dir, current)
+    else {
+      committed = publishModuleLocalCommit(dir, {
+        ...current, members: { ...current.members, [file]: writeModuleLocalObject(dir, new Document(content).toString()) },
+      }, () => {
+        if (readModuleLocalCommit(dir)?.generation !== current.generation) throw conflict(id)
+        verify()
+      })
+    }
     if (committed.generation !== current.generation) rememberRuntimeRuleEdit(dir, { previous: current.generation, generation: committed.generation, id, dependencies })
     return { rule, ruleRevision, definitionRevision: committed.generation, settingsRevision: state.settingsRevision, variablesRevision: state.variablesRevision,
       ...(deferUntilRequest && committed.generation !== current.generation ? { deferUntilRequest: true as const } : {}) }

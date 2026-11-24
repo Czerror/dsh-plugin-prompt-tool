@@ -68,9 +68,9 @@ function guardEditableModuleDir(dir: string, write: GateWrite): boolean {
 }
 
 /** 目标模块的层设置/规则形状；空目标没有形状可核。 */
-function guardModuleFormat(dir: string, write: GateWrite): boolean {
+function guardModuleFormat(dir: string, write: GateWrite, writing: boolean): boolean {
   if (dir.length === 0) return true
-  try { assertModuleDefinitionFormat(dir) } catch (error) {
+  try { assertModuleDefinitionFormat(dir, writing) } catch (error) {
     if (writeLayerSettingsError(write, error)) return false
   }
   return true
@@ -171,7 +171,7 @@ export function subjectGate(
     return undefined
   }
   if (needs.write === true && !guardEditableModuleDir(dir, tx.write)) return undefined
-  if ((needs.format ?? true) && !guardModuleFormat(dir, tx.write)) return undefined
+  if ((needs.format ?? true) && !guardModuleFormat(dir, tx.write, needs.write === true)) return undefined
   // 有主语、且这次是读，才判声明面：空目标没有可声明的东西，写会建立该节。
   const sections = needs.declaration === false ? undefined
     : needs.declaration === undefined ? DECLARED_SECTIONS[key] : [needs.declaration]

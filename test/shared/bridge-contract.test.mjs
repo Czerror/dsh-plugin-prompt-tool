@@ -292,6 +292,26 @@ test('契约：moduleName 主语安全与 rules 非正文紧凑保存的写前�
   assert.equal(failed.definitionRevision, queuedReceipt.definitionRevision)
   assert.equal(failed.publicationError, publicationFailure)
   assert.equal(failed.publicationPending, true)
+
+  const { commitModuleDefinition, loadModuleDefinition } = await import('../../src/host/module-slices.ts')
+  const { readModuleLocalCommit } = await import('../../src/host/module-local-state.ts')
+  const current = loadModuleDefinition(rulesDir)
+  current.doc.set('name', 'Updated module metadata')
+  commitModuleDefinition(current, current.doc)
+  const metadata = readModuleLocalCommit(rulesDir)
+  assert.notEqual(metadata.generation, queuedReceipt.definitionRevision)
+  writeFileSync(join(rulesDir, 'rules', '.objects', metadata.inputs), 'invalid inputs')
+  const recovered = fakeRes()
+  await rulesHandler(fakeReq({ body: { expectedModuleId: 'compact-rejection' }, headers }), recovered)
+  assert.equal(recovered.status, 200, recovered.body)
+  assert.equal(JSON.parse(recovered.body).value.definitionRevision, queuedReceipt.definitionRevision)
+  const writeThroughFallback = fakeRes()
+  await rulesHandler(fakeReq({ body: {
+    expectedModuleId: 'compact-rejection', compactEdit: true, expectedRevisions: failed.revisions,
+    edits: [{ previousId: 'keep', rule: { ...failed.rules[0], name: 'SHOULD NOT SAVE' } }],
+  }, headers }), writeThroughFallback)
+  assert.equal(writeThroughFallback.status, 400, writeThroughFallback.body)
+  assert.equal(readModuleLocalCommit(rulesDir).generation, metadata.generation)
 })
 
 test('契约：全部桥路径拒绝非 loopback，无一条绕过事务', async () => {

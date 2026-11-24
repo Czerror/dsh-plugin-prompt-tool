@@ -299,8 +299,14 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   await h.runtime.refresh('hot-b')
   assert.equal(h.runtime.moduleGenerations('hot-b')[0].generation, nextCommit.generation)
   assert.deepEqual(await injected(), ['USER', 'CHANGED', 'NEW-B'])
-  writeFileSync(join(moduleRoot, 'hot-b', 'rules', '.objects', nextCommit.members['hot-b.yml']), 'corrupt rule')
-  await h.runtime.refresh('hot-b')
+  const object = join(moduleRoot, 'hot-b', 'rules', '.objects', nextCommit.members['hot-b.yml'])
+  const original = readFileSync(object)
+  const { atime, mtime } = fs.statSync(object)
+  const changed = Buffer.from(original)
+  changed[changed.length - 2] ^= 1
+  writeFileSync(object, changed)
+  fs.utimesSync(object, atime, mtime)
+  await h.assemble(agent)
   assert.equal(h.runtime.moduleGenerations('hot-b')[0].generation, oldGeneration)
   assert.deepEqual(await injected(), ['USER', 'CHANGED', 'hot-b'], '损坏当前成员时完整回退到上一代')
   writeFileSync(pointer, '{}')
@@ -309,7 +315,7 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   writeModuleFixture('hot-a', {
     modules: ['rule-engine'], promptConfigs: [{ id: 'hot-a', text: 'HEALTHY-UPDATE', position: 'after-user' }],
   })
-  await assert.rejects(h.runtime.refresh('hot-b'), /运行时配装更新失败/)
+  await h.assemble(agent)
   assert.deepEqual(await injected(), ['USER', 'HEALTHY-UPDATE'], '损坏提交无上一代时撤回贡献，健康模块更新')
   writeModuleFixture('hot-a', {
     modules: ['rule-engine'], promptConfigs: [{ id: 'hot-a', text: 'HEALTHY-AFTER-PARSE-ERROR', position: 'after-user' }],
