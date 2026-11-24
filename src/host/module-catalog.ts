@@ -102,12 +102,12 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
 }
 /** 按包内同名定义补建缺失的内置模块；资产留在包内，已有用户目录保持原样。 */
 export function ensureModuleSeed(root = userModulesDir(), warn?: (message: string) => void): { created: string[] } {
-  recoverModuleInstallations(root, warn)
   const created: string[] = []
   try {
+    const blocked = recoverModuleInstallations(root, warn)
     mkdirSync(root, { recursive: true })
     for (const entry of readdirSync(packageModulesDir(), { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+      if (!entry.isDirectory() || entry.name.startsWith('.') || blocked.has(entry.name)) continue
       const target = join(root, entry.name)
       // 硬约束：只补缺失。目标已存在（无论用户是否改过）一律不碰，不比较内容。
       if (modulePathExists(target)) continue

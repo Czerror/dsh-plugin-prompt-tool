@@ -14,33 +14,35 @@ import { assertPlain, withModuleLock } from './module-write.ts'
 
 const installStageName = /^\.(.+)\.install-[A-Za-z0-9]{6}$/
 
-function pendingBackups(root: string, id?: string): Map<string, string[]> {
-  const backups = new Map<string, string[]>()
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    const owner = installStageName.exec(entry.name)?.[1]
-    if (!isModuleId(owner) || (id !== undefined && owner !== id) || modulePathExists(join(root, owner))) continue
-    const stage = join(root, entry.name)
+function installStages(root: string): Map<string, string[]> {
+  const stages = new Map<string, string[]>()
+  for (const name of readdirSync(root)) {
+    const id = installStageName.exec(name)?.[1]
+    if (!isModuleId(id)) continue
+    const paths = stages.get(id) ?? []
+    paths.push(join(root, name))
+    stages.set(id, paths)
+  }
+  return stages
+}
+
+/** 目标已发布时保留外部状态交接备份。 */
+function restoreMissingTarget(root: string, id: string, stages?: readonly string[]): boolean {
+  const target = join(root, id)
+  if (modulePathExists(target)) return false
+  const backups: string[] = []
+  for (const stage of stages ?? installStages(root).get(id) ?? []) {
     const stat = lstatSync(stage, { throwIfNoEntry: false })
     if (!stat) continue
     if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`模块安装暂存路径不是普通目录：${stage}`)
     const backup = join(stage, 'previous')
     // 已换入的候选不再位于 stage，残留备份不能复活后来删除的模块。
-    const candidate = join(stage, owner)
+    const candidate = join(stage, id)
     if (!modulePathExists(backup) || !modulePathExists(candidate)) continue
     assertPlain(candidate, true)
-    const paths = backups.get(owner) ?? []
-    paths.push(backup)
-    backups.set(owner, paths)
+    backups.push(backup)
   }
-  return backups
-}
-
-/** 仅在换入候选前中断且目标缺失时恢复原目录。目标已发布时保留外部状态交接备份。 */
-function restoreMissingTarget(root: string, id: string): boolean {
-  const target = join(root, id)
-  if (modulePathExists(target)) return false
-  const backups = pendingBackups(root, id).get(id)
-  if (backups === undefined) return false
+  if (backups.length === 0) return false
   if (backups.length !== 1) throw new Error(`模块 ${id} 有多个待恢复目录：${backups.join('、')}`)
   const backup = backups[0]!
   assertPlain(backup, true)
@@ -49,14 +51,22 @@ function restoreMissingTarget(root: string, id: string): boolean {
   return true
 }
 
-export function recoverModuleInstallations(root: string, warn?: (message: string) => void): void {
+export function recoverModuleInstallations(root: string, warn?: (message: string) => void): ReadonlySet<string> {
+  const blocked = new Set<string>()
   const canonical = canonicalModulesRoot(root, true)
-  if (!modulePathExists(canonical)) return
-  for (const id of pendingBackups(canonical).keys()) {
-    if (withModuleLock(canonical, id, () => restoreMissingTarget(canonical, id))) {
-      warn?.(`prompt-tool: 已恢复中断安装前的模块目录：${join(canonical, id)}`)
+  if (!modulePathExists(canonical)) return blocked
+  for (const [id, stages] of installStages(canonical)) {
+    try {
+      if (modulePathExists(join(canonical, id))) continue
+      if (withModuleLock(canonical, id, () => restoreMissingTarget(canonical, id, stages))) {
+        warn?.(`prompt-tool: 已恢复中断安装前的模块目录：${join(canonical, id)}`)
+      }
+    } catch (error) {
+      blocked.add(id)
+      warn?.(`prompt-tool: 模块 ${id} 安装恢复暂缓，保留暂存目录：${String(error)}`)
     }
   }
+  return blocked
 }
 
 export type ModuleInstallExpectation = string | null

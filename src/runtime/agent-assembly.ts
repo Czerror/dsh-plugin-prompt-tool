@@ -31,7 +31,7 @@ import { modelRequestRules } from '../host/prompt-configs.ts'
 import { pluginKind, pluginOwner } from '../../engine/source-kind.mjs'
 import { assertModuleId } from '../host/module-install.ts'
 import { RULES_DIR } from '../host/paths.ts'
-import { MODULE_LOCAL_COMMIT_FILE, readModuleLocalCommit } from '../host/module-local-state.ts'
+import { MODULE_LOCAL_COMMIT_FILE, readModuleLocalCommit, verifyModuleLocalGeneration } from '../host/module-local-state.ts'
 import { ModuleWriteError } from '../host/module-write.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-slices.ts'
@@ -647,7 +647,11 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       // 已挂载的进程贡献仍走完整校验与撤回路径。
       if (processOnly && id !== verifyId && !processSources.has(id)) {
         try {
-          if (readModuleLocalCommit(dir)?.hasProcessRules === false) return [id, { noProcessRules: true }]
+          const commit = readModuleLocalCommit(dir)
+          if (commit?.hasProcessRules === false) {
+            verifyModuleLocalGeneration(dir, commit)
+            return [id, { noProcessRules: true }]
+          }
         } catch {
           // 完整读取负责诊断损坏和验证回退代。
         }

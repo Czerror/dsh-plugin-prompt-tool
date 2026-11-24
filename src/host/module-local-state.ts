@@ -77,6 +77,19 @@ function parseCommit(directory: string, text: string): ModuleLocalCommit {
   return value
 }
 
+const commitCache = new Map<string, { text: string; commit: ModuleLocalCommit }>()
+const MAX_CACHED_COMMITS = 8
+const MAX_CACHED_COMMIT_LENGTH = 2 * 1024 * 1024
+
+function freezeCommit(value: object): void {
+  const pending = [value]
+  while (pending.length) {
+    const next = pending.pop()!
+    for (const child of Object.values(next)) if (child !== null && typeof child === 'object') pending.push(child)
+    Object.freeze(next)
+  }
+}
+
 /** 读取一次原子指针。只在尚无提交时返回 undefined，坏提交由调用方诊断。 */
 export function readModuleLocalCommit(directory: string): ModuleLocalCommit | undefined {
   const dir = canonicalDirectory(directory)
@@ -89,7 +102,17 @@ export function readModuleLocalCommit(directory: string): ModuleLocalCommit | un
     return undefined
   }
   assertPlain(file)
-  return parseCommit(dir, readFileSync(file, 'utf8'))
+  const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(readFileSync(file))
+  const cached = commitCache.get(dir)
+  if (cached?.text === text) return cached.commit
+  const commit = parseCommit(dir, text)
+  freezeCommit(commit)
+  commitCache.delete(dir)
+  if (text.length <= MAX_CACHED_COMMIT_LENGTH) {
+    if (commitCache.size >= MAX_CACHED_COMMITS) commitCache.delete(commitCache.keys().next().value!)
+    commitCache.set(dir, { text, commit })
+  }
+  return commit
 }
 
 /** 记录已完成首次提交；放在模块根，整个 rules/ 被意外删除时也能诊断。 */

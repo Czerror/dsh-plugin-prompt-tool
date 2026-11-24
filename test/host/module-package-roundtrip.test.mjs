@@ -11,7 +11,8 @@ const { home, moduleRoot } = isolatedHome('pt-package-roundtrip-')
 const { moduleImportPreview, installModulePackage, exportModulePackage, expandModuleSource } = await import('../../src/host/module-package.ts')
 const { ensureModuleSlices, materializeModuleDefinition, assertModuleDefinitionFormat, loadModuleDefinition, readRulesDir, validateModuleDefinitionText } = await import('../../src/host/module-slices.ts')
 const { editModuleRuleContent, editModuleRules, readModuleRules } = await import('../../src/host/module-rules.ts')
-const { duplicateUserModule } = await import('../../src/host/module-catalog.ts')
+const { duplicateUserModule, ensureModuleSeed } = await import('../../src/host/module-catalog.ts')
+const { packageModulesDir } = await import('../../src/host/module-dirs.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
 const rule = (id, text, extra = {}) => ({ id, enabled: false, then: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
 const source = (id, extra = {}) => ({ id, name: id, modules: [], rules: [rule('hello', 'SOURCE')], variables: { owner: 'Mia' }, variablesEnabled: false, configOrder: { hello: 40 }, ...extra })
@@ -29,6 +30,16 @@ async function install(files, targetId) {
 const state = dir => readdirSync(dir).sort()
 
 test('模块包往返导出已提交规则、导入以完整定义为准，素材和变量保持', async () => {
+  const seeds = readdirSync(packageModulesDir(), { withFileTypes: true }).filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
+  const blocked = seeds[0].name
+  const damagedStage = join(moduleRoot, `.${blocked}.install-ABC123`)
+  mkdirSync(moduleRoot, { recursive: true })
+  writeFileSync(damagedStage, 'BROKEN STAGE')
+  const warnings = []
+  const seeded = ensureModuleSeed(moduleRoot, message => warnings.push(message))
+  assert.equal(existsSync(join(moduleRoot, blocked)), false, '受阻模块不能被同名种子盖掉')
+  assert.equal(readFileSync(damagedStage, 'utf8'), 'BROKEN STAGE')
+  assert.ok(seeded.created.length > 0 && warnings.some(message => message.includes(blocked)), '健康模块继续播种，坏备份单独告警')
   const id = 'roundtrip-source', dir = fixture(id)
   mkdirSync(join(dir, 'assets'))
   writeFileSync(join(dir, 'assets', 'notice.txt'), 'PACKAGED TEMPLATE')

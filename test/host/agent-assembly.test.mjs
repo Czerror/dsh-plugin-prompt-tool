@@ -87,11 +87,24 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
     await h.runtime.refresh()
     assert.ok(ruleObjectsRead > 0, '进程规则仍走完整编译')
     assert.ok(JSON.stringify(h.runtime.ruleDiagnostics()).includes('process-fixture'), '没有 Agent 时仍发布进程规则')
-    commitModuleDefinition(loadModuleDefinition(installed), JSON.stringify(source))
+    const afterRemoval = structuredClone(source)
+    afterRemoval.rules[0].name = 'After process rule removal'
+    commitModuleDefinition(loadModuleDefinition(installed), JSON.stringify(afterRemoval))
     await h.runtime.refresh()
     ruleObjectsRead = 0
     await h.runtime.refresh()
     assert.equal(ruleObjectsRead, 0, '撤回进程规则后恢复只读索引')
+    const commit = JSON.parse(readFileSync(join(installed, 'rules', MODULE_LOCAL_COMMIT_FILE), 'utf8'))
+    const object = join(installed, 'rules', '.objects', commit.members['main.yml'])
+    const original = readFileSync(object)
+    writeFileSync(object, 'damaged current member')
+    try {
+      const cold = await liveAssembly(t, () => ['live-injection'])
+      await cold.runtime.refresh()
+      assert.ok(JSON.stringify(cold.runtime.ruleDiagnostics()).includes('process-fixture'), '冷启动从有效上一代恢复进程规则')
+    } finally {
+      writeFileSync(object, original)
+    }
   } finally {
     t.mock.restoreAll()
     syncBuiltinESMExports()
