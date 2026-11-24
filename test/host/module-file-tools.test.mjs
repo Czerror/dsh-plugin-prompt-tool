@@ -7,7 +7,7 @@ import { tempDir } from '../fixtures/host-harness.mjs'
 import { registerModuleFileTools } from '../../src/runtime/module-file-tools.ts'
 import { resolveModuleToolTarget } from '../../src/host/module-tool-target.ts'
 
-test('用户升级：完整预览确认、目标变化拒绝、私有资产保留与用户正文冲突', async t => {
+test('用户升级：完整预览确认、目标变化拒绝、私有资产保留与用户正文冲突', { timeout: 30000 }, async t => {
   const { Context } = await import('@deepseek-ai/cordis')
   const commands = await import('@deepseek-ai/dsh-commands')
   const storage = await import('@deepseek-ai/dsh-storage')
