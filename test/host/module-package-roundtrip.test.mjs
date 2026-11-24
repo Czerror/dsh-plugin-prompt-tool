@@ -79,6 +79,39 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
   await assert.rejects(expandModuleSource(withManifest.map(file => file.path === 'assets/notice.txt' ? { ...file, content: 'TAMPERED', encoding: 'utf8' } : file)), /摘要/)
 })
 
+test('安装完整定义后可从提交记录读回原始声明和有序规则切片', async () => {
+  const id = 'committed-source'
+  const definition = '# original comment\nid: committed-source\nname: committed-source\nmodules: []\nvariables: {}\nvariablesEnabled: false\nconfigOrder: { second: 2, first: 2, future: 9 }\nunknown: &metadata { owner: Mia }\nother: *metadata\nrules:\n  - ' + JSON.stringify(rule('second', 'SECOND')) + '\n  - ' + JSON.stringify(rule('first', 'FIRST')) + '\n'
+  await install([{ path: 'module.yml', content: definition }], id)
+  const dir = join(moduleRoot, id, 'rules')
+  const commit = JSON.parse(readFileSync(join(dir, '_commit.json'), 'utf8'))
+  const readObject = (digest) => {
+    const content = readFileSync(join(dir, '.objects', digest), 'utf8')
+    assert.equal(createHash('sha256').update(content).digest('hex'), digest)
+    return content
+  }
+  assert.equal(commit.version, 1)
+  assert.equal(commit.moduleId, id)
+  assert.deepEqual(commit.declaredKeys, ['id', 'name', 'modules', 'variables', 'variablesEnabled', 'configOrder', 'unknown', 'other', 'rules'])
+  assert.deepEqual(commit.ruleIds, ['second', 'first'])
+  const { parse } = await import('yaml')
+  assert.deepEqual(parse(readObject(commit.exportBase)), parse(definition))
+  assert.match(readObject(commit.exportBase), /original comment/)
+  assert.match(readObject(commit.exportBase), /other: \*metadata/)
+  assert.deepEqual(parse(readObject(commit.inputs)), {
+    id, name: id, modules: [], variables: {}, variablesEnabled: false, configOrder: { second: 2, first: 2, future: 9 },
+    unknown: { owner: 'Mia' }, other: { owner: 'Mia' },
+  })
+  for (const id of commit.ruleIds) assert.equal(parse(readObject(commit.members[id + '.yml'])).id, id)
+
+  const overwrite = [{ path: 'module.yml', content: definition.replace('rules:', 'metadataText: &body SECOND\nrules:').replace('"SECOND"', '*body') }]
+  const preview = moduleImportPreview(moduleRoot, overwrite, { targetId: id, overwrite: true })
+  await assert.rejects(installModulePackage(moduleRoot, overwrite, credentials(preview)),
+    error => error.code === 'shared-alias' && /metadataText → rules/.test(error.message))
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, '_commit.json'), 'utf8')), commit)
+  for (const id of commit.ruleIds) assert.equal(parse(readObject(commit.members[id + '.yml'])).id, id)
+})
+
 test('同名包内模板回退只接受缺失资产，用户覆盖和包内变更使缓存失效', () => {
   const packageRoot = join(home, 'packaged-modules')
   const sourcePackageRoot = resolve(fileURLToPath(new URL('../../src/modules/', import.meta.url)))

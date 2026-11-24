@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } fr
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
-import { Document, isAlias, isMap, isNode, isSeq, parseDocument, stringify, visit } from 'yaml'
+import { Document, isAlias, isMap, isNode, isPair, isScalar, isSeq, parseDocument, stringify, visit } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
 import { nextConfigSequence } from '../shared/module-config-order.ts'
 
@@ -16,7 +16,9 @@ export function nextModuleConfigSequence(current: Record<string, number>, reserv
   try { return nextConfigSequence(current, reserved) } catch (error) { throw new ModuleWriteError(error instanceof Error ? error.message : String(error)) }
 }
 import { assertModuleId } from './module-install.ts'
-import { active, assertPlain, assertUnownedUnchanged, canonicalDirectory, directoryKey, ModuleWriteError, moduleLocation, processLocks, record, revisionOf, withModuleLock } from './module-write.ts'
+import { active, assertPlain, assertUnownedUnchanged, canonicalDirectory, directoryKey, ModuleWriteError, moduleLocation, processLocks, record, revisionOf, SHARED_ALIAS_CODE, withModuleLock } from './module-write.ts'
+import { markModuleLocalInitialized, readModuleLocalCommit, writeModuleLocalCommit } from './module-local-state.ts'
+import type { ModuleLocalCommit } from './module-local-state.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
 import { atomicTemporaryTarget, atomicWriteTextFile } from './text-file.ts'
 import { replaceVersionedText } from './versioned-text.ts'
@@ -250,6 +252,43 @@ function snapshotFromDocument(dir: string, text: string, doc: ReturnType<typeof 
 /** 导入、预览与规则 validateOnly 复用同一完整定义校验，不访问或写入切片。 */
 export const validateModuleDefinitionText = (directory: string, text: string, options: ModuleDefinitionValidationOptions = {}, previous?: ModuleDefinitionSnapshot): ModuleDefinitionSnapshot => snapshotFromText(directory, text, options,
   previous?.dir === directory ? projectedSnapshot(previous) : undefined)
+
+export function assertSlicableAliases(doc: ModuleDefinitionSnapshot['doc']): void {
+  const anchors = new Map<string, string>()
+  visit(doc, (_key, node, parents) => {
+    const pair = parents[2]
+    if (!isPair(pair) || !isScalar(pair.key)) return
+    const field = String(pair.key.value)
+    if (isNode(node) && !isAlias(node) && node.anchor) anchors.set(node.anchor, field)
+    if (!isAlias(node)) return
+    const anchor = anchors.get(node.source)
+    if (anchor !== undefined && (field === 'rules') !== (anchor === 'rules')) {
+      throw new ModuleWriteError(`模块定义的 YAML 引用跨越规则与模块字段：${anchor} → ${field}`, 400, SHARED_ALIAS_CODE)
+    }
+  })
+}
+
+/** 首次迁移已验证的完整定义。已有提交的模块不再读取交换源。 */
+export function materializeModuleDefinition(directory: string): ModuleLocalCommit {
+  const dir = canonicalDirectory(directory)
+  const ensure = (): ModuleLocalCommit => {
+    const existing = readModuleLocalCommit(dir)
+    if (existing) {
+      markModuleLocalInitialized(dir)
+      return existing
+    }
+    const source = readDefinitionText(dir)
+    const snapshot = snapshotFromText(source.dir, source.text)
+    assertSlicableAliases(snapshot.doc)
+    const projected = projectedSnapshot(snapshot)
+    const inputs = snapshot.doc.clone()
+    inputs.delete('rules')
+    assertSource(snapshot)
+    return writeModuleLocalCommit(dir, { moduleId: basename(dir), declaredKeys: Object.keys(snapshot.source),
+      exportBase: snapshot.text, inputs: inputs.toString(), files: projected.files, ruleIds: projected.contents.map(rule => rule.id) })
+  }
+  return withModuleLock(dirname(dir), basename(dir), ensure)
+}
 
 /** 单条块映射替换：独立解析实际缩进片段，并证明其余原文字节和声明不变。 */
 export function validateModuleRuleText(snapshot: ModuleDefinitionSnapshot, expected: Record<string, unknown>, ruleId: string): ModuleDefinitionSnapshot | undefined {

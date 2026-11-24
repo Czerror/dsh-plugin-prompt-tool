@@ -11,7 +11,7 @@ import { assertCompositionArray } from './module-composition.ts'
 import { findModuleDir, packageModulesDir, resolveModuleDir } from './module-dirs.ts'
 import { renderComposition } from './module-params.ts'
 import type { ModuleSpec } from './module-spec.ts'
-import { ensureModuleSlices, loadModuleDefinition, validateModuleDefinitionText } from './module-slices.ts'
+import { ensureModuleSlices, loadModuleDefinition, materializeModuleDefinition, validateModuleDefinitionText } from './module-slices.ts'
 import { ModuleWriteError, withModuleLock } from './module-write.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { directoryVersionOf } from './preview-revision.ts'
@@ -107,6 +107,7 @@ export function finalizeModuleCandidate(
   // 复制现有用户模块时沿用旧语义：只保证可读与切片重建，不额外用组合/customTools 校验拒绝复制。
   if (options.validate !== false) validateModule(candidate)
   ensureModuleSlices(candidate)
+  materializeModuleDefinition(candidate)
 }
 
 /** 未知选项即抛：删掉旧选项（moduleDir / presetOrder）后，写错的名字不能再被静默忽略。
