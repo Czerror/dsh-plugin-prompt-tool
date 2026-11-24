@@ -336,20 +336,28 @@ export function StrategyParamsFields(props: { t: PromptToolTranslate; strategy: 
 }
 
 /** 模板变量键值对编辑器（替代 JSON）：每行 key + value，可增删。工作台「模板变量」卡片复用。 */
-export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<string, string> | undefined; disabled?: boolean; hideHeading?: boolean; onChange: (value: Record<string, string> | undefined) => void }): ReactNode {
+export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<string, string> | undefined; disabled?: boolean; hideHeading?: boolean; onChange: (value: Record<string, string> | undefined) => void; onRemove?: (value: Record<string, string> | undefined) => void }): ReactNode {
   const t = props.t
   const values = props.value ?? {}
+  const duplicateErrorId = useId()
+  const [duplicate, setDuplicate] = useState<{ key: string; text: string }>()
   const order = useRef(Object.keys(values))
   // 数字名称会被对象枚举移到最前；显示顺序只随本编辑器的行操作变化。
   order.current = [...order.current.filter(key => Object.hasOwn(values, key)), ...Object.keys(values).filter(key => !order.current.includes(key))]
   const entries = order.current.map((key): [string, string] => [key, values[key]!])
-  const commit = (next: Array<[string, string]>) => {
+  const commit = (next: Array<[string, string]>, update = props.onChange) => {
     // 保留空 key 行（「添加变量」新增的待编辑行）；空 key 由保存端（saveModuleParams）
     // 统一清理，避免新增行被立即过滤导致按钮失效。
     order.current = [...new Set(next.map(([key]) => key))]
-    props.onChange(next.length > 0 ? Object.fromEntries(next) : undefined)
+    update(next.length > 0 ? Object.fromEntries(next) : undefined)
   }
   const setEntry = (index: number, key: string, value: string) => {
+    const previous = entries[index]![0]
+    if (key !== previous && Object.hasOwn(values, key)) {
+      setDuplicate({ key: previous, text: key })
+      return
+    }
+    setDuplicate(undefined)
     commit(entries.map((entry, at): [string, string] => at === index ? [key, value] : entry))
   }
   return (
@@ -359,18 +367,22 @@ export function VariablesEditor(props: { t: PromptToolTranslate; value: Record<s
           {!props.hideHeading && <span className={styles.configFieldLabel}>{t('variables.title')}</span>}
           {entries.length === 0 && <span className={styles.configFieldHint}>{t('variables.empty')}</span>}
         </span>}
-        <Button shape="pill" variant="outline" size="md" disabled={props.disabled} onClick={() => commit([...entries, ['', '']])}>{t('variables.add')}</Button>
+        <Button shape="pill" variant="outline" size="md" disabled={props.disabled || entries.some(([key]) => key.trim() === '')}
+          onClick={() => commit([...entries, ['', '']])}>{t('variables.add')}</Button>
       </span>
       {entries.map(([key, value], index) => (
         <span key={index} className={styles.variableRow}>
-          <TextInput aria-label={t('variables.nameAria')} value={key} spellCheck={false} placeholder={t('variables.namePlaceholder')} readOnly={props.disabled}
+          <TextInput aria-label={t('variables.nameAria')} value={duplicate?.key === key ? duplicate.text : key} spellCheck={false} placeholder={t('variables.namePlaceholder')} readOnly={props.disabled}
+            aria-invalid={duplicate?.key === key} aria-describedby={duplicate?.key === key ? duplicateErrorId : undefined}
             onChange={(e) => setEntry(index, e.target.value, value)} />
           <TextInput aria-label={t('variables.valueAria')} value={value} spellCheck={false} placeholder={t('variables.valuePlaceholder')} readOnly={props.disabled}
-            onChange={(e) => setEntry(index, key, e.target.value)} />
+            onChange={(e) => commit(entries.map((entry, at): [string, string] => at === index ? [key, e.target.value] : entry))} />
           <Button shape="pill" variant="outline" size="md" data-danger aria-label={t('variables.removeAria', { name: key || index })} disabled={props.disabled}
-            onClick={() => commit(entries.filter((_, at) => at !== index))}>{t('variables.delete')}</Button>
+            onClick={() => { if (duplicate?.key === key) setDuplicate(undefined); commit(entries.filter((_, at) => at !== index), props.onRemove) }}>{t('variables.delete')}</Button>
         </span>
       ))}
+      {duplicate !== undefined && Object.hasOwn(values, duplicate.key) &&
+        <span id={duplicateErrorId} role="alert" className={styles.configFieldHint}>{t('variables.duplicateName')}</span>}
     </span>
   )
 }

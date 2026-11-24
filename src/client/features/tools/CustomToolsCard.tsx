@@ -1,5 +1,7 @@
 /** 工具管理（tool-pipeline 层）：自定义工具定义。 */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useAutosave } from '../../data/use-autosave.ts'
+import { deepEqual } from '../../data/dirty-state.ts'
 import { AutoSaveSelection } from '../../ui/AutoSaveSelection.ts'
 import { Button } from '../../ui/Button.tsx'
 import { bridgeCall } from '../../data/bridge-client.ts'
@@ -46,7 +48,6 @@ export function useCustomToolsEditor(props: {
   const select = (index: number | undefined): void => { editor.selected = index; renderSelected(index) }
   const toolList = useRef<HTMLUListElement>(null)
   const createButton = useRef<HTMLButtonElement>(null)
-  const [hasPersistedTools, setHasPersistedTools] = useState(editor.saved.length > 0)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(!editor.loaded)
   const [loadError, setLoadError] = useState(editor.error)
@@ -68,7 +69,6 @@ export function useCustomToolsEditor(props: {
   const refresh = useCallback((): void => {
     renderTools(editor.tools)
     renderSelected(editor.selected)
-    setHasPersistedTools(editor.saved.length > 0)
     setSaving(editor.saving)
     setLoading(!editor.loaded)
     setLoadError(editor.error)
@@ -92,7 +92,8 @@ export function useCustomToolsEditor(props: {
   /** 工具改动只在可编辑时落到草稿；owner 负责草稿与重渲染。 */
   const updateTools = (next: ToolDraft[]): void => { if (!disabled) owner.mutate(next) }
   const save = (): void => {
-    if (moduleId === undefined || disabled) return
+    if (moduleId === undefined || disabled || editor.saving || deepEqual(editor.tools, editor.saved)) return
+    if (editor.tools.some(tool => Object.keys(asRecord(tool.parameters)).some(key => key.trim() === ''))) return
     if ([...editor.fields.values()].some((field) => field.error || field.text !== field.source)) {
       props.onNotice('error', t('customTools.invalidDraft'))
       return
@@ -106,6 +107,7 @@ export function useCustomToolsEditor(props: {
       props.onNotice(editor.publicationPending ? 'error' : 'ok', editor.publicationError ?? (editor.publicationPending ? t('publication.pending') : t('customTools.saved', { count: editor.saved.length })))
     }).catch(() => { if (active.current) props.onNotice('error', t('customTools.saveFailed')) })
   }
+  const autosave = useAutosave(moduleId ?? '', save)
   const focusSelection = (): void => {
     requestAnimationFrame(() => {
       const target = toolList.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]') ?? createButton.current
@@ -143,7 +145,9 @@ export function useCustomToolsEditor(props: {
     focusSelection()
   }
   return { content: (
-    <AutoSaveSelection.Provider value={undefined}><section aria-label={t('customTools.aria')}>
+    <AutoSaveSelection.Provider value={autosave.flush}><section aria-label={t('customTools.aria')}
+      onFocus={autosave.onFocus} onBlur={autosave.onBlur}
+      onCompositionStart={autosave.onCompositionStart} onCompositionEnd={autosave.onCompositionEnd}>
       <p className={styles.configFieldHint}>{t('customTools.hint')}</p>
       {undeclared && <p className={styles.configFieldHint} role="status">{t('declare.createHint')}</p>}
       {props.disabled && <p className={styles.configFieldHint} role="status">{t('customTools.readonly')}</p>}
@@ -166,11 +170,6 @@ export function useCustomToolsEditor(props: {
           {props.onChooseTemplate !== undefined && <Button shape="pill" size="sm" variant="outline" type="button" disabled={disabled || saving}
             aria-label={t('main.addToolTemplate')} title={t('main.addToolTemplate')}
             onClick={(event) => props.onChooseTemplate?.(event.currentTarget)}>{t('main.addToolTemplateButton')}</Button>}
-          {(tools.length > 0 || hasPersistedTools) && (
-            <Button type="button" variant="primary" size="sm" disabled={disabled || saving} onClick={save}>
-              {saving ? t('customTools.saving') : t('customTools.save')}
-            </Button>
-          )}
         </div>
         {tools.length > 0 && (
           <ul ref={toolList} className={styles.customToolList}>
@@ -196,6 +195,11 @@ export function useCustomToolsEditor(props: {
           index={selectedIndex}
           disabled={disabled || saving}
           onPatch={(patch) => { if (!disabled) owner.applyPatch(selectedIndex, patch) }}
+          onRemoveParameter={(parameters) => {
+            if (disabled) return
+            owner.applyPatch(selectedIndex, { parameters })
+            autosave.flush()
+          }}
           onMoveUp={() => moveTool(selectedIndex, selectedIndex - 1)}
           onMoveDown={() => moveTool(selectedIndex, selectedIndex + 1)}
           onDuplicate={() => updateTools([...tools.slice(0, selectedIndex + 1), {
@@ -209,6 +213,7 @@ export function useCustomToolsEditor(props: {
             select(tools.length === 1 ? undefined : Math.min(selectedIndex, tools.length - 2))
             recordDeletion((count) => count + 1)
             focusSelection()
+            autosave.flush()
           }}
           canMoveUp={selectedIndex > 0}
           canMoveDown={selectedIndex < tools.length - 1}

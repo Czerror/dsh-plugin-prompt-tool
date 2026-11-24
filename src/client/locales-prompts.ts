@@ -111,7 +111,6 @@ export const PROMPTS_ZH = {
   'card.chip.fileConflict': '磁盘已变，需重新读取',
   'card.chip.fileUnavailable': '文件不可读',
   'card.fileStatusDetail': '指令文件状态：{message}',
-  'card.saveFile': '保存',
   'card.reloadFile': '重读',
 
   // 表单字段（PromptConfigForm）。
@@ -337,6 +336,7 @@ export const PROMPTS_ZH = {
   'variables.add': '添加',
   'variables.empty': '暂无变量；可使用 {{key}} 引用。',
   'variables.nameAria': '模板变量名',
+  'variables.duplicateName': '变量名已存在，请换一个名称。',
   'variables.valueAria': '模板变量值',
   'variables.namePlaceholder': '变量名',
   'variables.valuePlaceholder': '变量值',
@@ -490,7 +490,6 @@ export const PROMPTS_EN: Record<keyof typeof PROMPTS_ZH, string> = {
   'card.chip.fileConflict': 'Changed on disk — reload required',
   'card.chip.fileUnavailable': 'File unreadable',
   'card.fileStatusDetail': 'Instruction file status: {message}',
-  'card.saveFile': 'Save',
   'card.reloadFile': 'Reload',
 
   'form.section.basic': 'Basics',
@@ -709,6 +708,7 @@ export const PROMPTS_EN: Record<keyof typeof PROMPTS_ZH, string> = {
   'variables.add': 'Add',
   'variables.empty': 'No variables yet; use {{key}} to reference one.',
   'variables.nameAria': 'Template variable name',
+  'variables.duplicateName': 'That variable name already exists. Enter a different name.',
   'variables.valueAria': 'Template variable value',
   'variables.namePlaceholder': 'Name',
   'variables.valuePlaceholder': 'Value',

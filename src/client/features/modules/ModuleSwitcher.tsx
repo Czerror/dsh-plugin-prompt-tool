@@ -1,5 +1,6 @@
 /** 浏览范围的模块卡片和独立写入对话框。 */
 import { memo, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useAutosave } from '../../data/use-autosave.ts'
 import { usePromptToolFields } from '../../data/use-prompt-tool-fields.ts'
 import { IconChevronDownOutlineRegular, IconCopyOutlineRegular, IconDownloadOutlineRegular, IconFolderOpenOutlineRegular, IconTrashOutlineRegular } from '../../ui/icons.tsx'
 import type { ModuleActions, ModuleActionResult } from '../../data/module-actions.ts'
@@ -30,6 +31,7 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
   const activeRef = useRef(true)
   const baselineRef = useRef(module.name)
   const inputRef = useRef<HTMLInputElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
   const errorId = useId()
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string>()
@@ -72,10 +74,17 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
     busyRef.current = false; setBusy(false)
   }
   const close = (): void => { if (!busyRef.current) { activeRef.current = false; props.onClose() } }
-  return <DialogSurface title={t('moduleSwitcher.name.title')} closeLabel={t('moduleSwitcher.name.close')} initialFocusRef={inputRef} onClose={close}>
+  const autosave = useAutosave(module.id, () => { if (loaded && name.trim() !== baselineRef.current) void save() })
+  const finish = (): void => {
+    if (!loaded || name.trim() === baselineRef.current) close()
+    else autosave.flush()
+  }
+  return <DialogSurface title={t('moduleSwitcher.name.title')} closeLabel={t('moduleSwitcher.name.close')} initialFocusRef={inputRef} onClose={finish}>
     <div className={styles.moduleNameEditor} aria-busy={busy || !loaded}>
     <TextInput ref={inputRef} value={name} aria-label={t('moduleSwitcher.name.label')}
       aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : errorId}
+      onFocus={autosave.onFocus} onBlur={event => { if (event.relatedTarget !== cancelRef.current || event.relatedTarget === null) autosave.onBlur() }}
+      onCompositionStart={autosave.onCompositionStart} onCompositionEnd={autosave.onCompositionEnd}
       readOnly={busy || !loaded} onChange={(event) => { setName(event.target.value); if (revision !== undefined) setError(undefined) }}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== 'Escape') return
@@ -83,13 +92,12 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
         if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
         event.preventDefault()
         if (event.key === 'Escape') close()
-        else void save()
+        else finish()
       }} />
     {error !== undefined && <span id={errorId} className={styles.configFieldHint} role="alert">{error}</span>}
     <span className={styles.inlineControls}>
       {error !== undefined && revision === undefined && <Button variant="outline" shape="pill" size="sm" disabled={busy} onClick={() => void reload()}>{t('moduleSwitcher.name.reload')}</Button>}
-      <Button variant="outline" shape="pill" size="sm" disabled={busy} onClick={close}>{t('moduleSwitcher.name.cancel')}</Button>
-      <Button variant="primary" shape="pill" size="sm" disabled={busy || revision === undefined} onClick={() => void save()}>{t('moduleSwitcher.name.save')}</Button>
+      <Button ref={cancelRef} variant="outline" shape="pill" size="sm" disabled={busy} onClick={close}>{t('moduleSwitcher.name.cancel')}</Button>
     </span>
     </div>
   </DialogSurface>
