@@ -79,23 +79,20 @@ function ModuleNameEditor(props: { module: ModuleSummary; actions: ModuleActions
     if (!loaded || name.trim() === baselineRef.current) close()
     else autosave.flush()
   }
-  return <DialogSurface title={t('moduleSwitcher.name.title')} closeLabel={t('moduleSwitcher.name.close')} initialFocusRef={inputRef} onClose={finish}>
-    <div className={styles.moduleNameEditor} aria-busy={busy || !loaded} onKeyDown={event => {
-      if (event.key !== 'Escape') return
-      event.stopPropagation()
-      if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
-      event.preventDefault()
-      close()
-    }}>
+  return <DialogSurface title={t('moduleSwitcher.name.title')} closeLabel={t('moduleSwitcher.name.close')} initialFocusRef={inputRef} onClose={finish} onEscape={close}>
+    <div className={styles.moduleNameEditor} aria-busy={busy || !loaded}>
     <TextInput ref={inputRef} value={name} aria-label={t('moduleSwitcher.name.label')}
       aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : errorId}
       onFocus={autosave.onFocus} onBlur={event => { if (event.relatedTarget !== cancelRef.current || event.relatedTarget === null) autosave.onBlur() }}
       onCompositionStart={autosave.onCompositionStart} onCompositionEnd={autosave.onCompositionEnd}
       readOnly={busy || !loaded} onChange={(event) => { setName(event.target.value); if (revision !== undefined) setError(undefined) }}
       onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
+          if (event.key === 'Escape' || event.key === 'Enter') event.stopPropagation()
+          return
+        }
         if (event.key !== 'Enter') return
         event.stopPropagation()
-        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
         event.preventDefault()
         finish()
       }} />
