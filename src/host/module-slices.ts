@@ -198,6 +198,11 @@ export function templateDependencyRevision(file: string): string | undefined {
 
 // 投影仅对应不可变原文；调用方可编辑的 doc/source 不作为缓存键或缓存内容。
 const projections = new WeakMap<ModuleDefinitionSnapshot, { text: string; dir: string; projected: Projection; dependencies: Map<string, string | undefined> }>()
+function recordDependency(dependencies: Map<string, string | undefined>, file: string, revision: string | undefined): void {
+  if (dependencies.has(file) && dependencies.get(file) !== revision) throw sourceConflict()
+  dependencies.set(file, revision)
+}
+
 function projectedSnapshot(snapshot: ModuleDefinitionSnapshot): Projection {
   const cached = projections.get(snapshot)!
   for (const [file, revision] of cached.dependencies) {
@@ -220,9 +225,7 @@ function snapshotFromDocument(dir: string, raw: string | undefined, doc: ReturnT
   const revision = commit?.generation ?? revisionOf(raw!)
   const dependencies = new Map<string, string | undefined>()
   const projected = projection(source, dir, validation, file => {
-    const current = templateDependencyRevision(file)
-    if (dependencies.has(file) && dependencies.get(file) !== current) throw sourceConflict()
-    dependencies.set(file, current)
+    recordDependency(dependencies, file, templateDependencyRevision(file))
   })
   const configOrder = Object.fromEntries(Object.entries(projected.settings).map(([id, settings]) => [id, settings.order]))
   const rules = projected.contents.map(content => { const { order: _order, ...settings } = projected.settings[content.id]!; return { ...content, ...settings } }).sort((left, right) => configOrder[left.id]! - configOrder[right.id]!)
@@ -291,7 +294,7 @@ export function materializeModuleDefinition(directory: string, validate?: (snaps
     const snapshot = snapshotFromText(source.dir, source.text)
     validate?.(snapshot, (file, encoding) => {
       const bytes = readFileSync(file)
-      projections.get(snapshot)!.dependencies.set(file, revisionOf(bytes))
+      recordDependency(projections.get(snapshot)!.dependencies, file, revisionOf(bytes))
       return bytes.toString(encoding)
     })
     const aliases = assertSlicableAliases(snapshot.doc)
