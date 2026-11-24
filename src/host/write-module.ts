@@ -12,6 +12,7 @@ import { findModuleDir, packageModulesDir, resolveModuleDir } from './module-dir
 import { renderComposition } from './module-params.ts'
 import type { ModuleSpec } from './module-spec.ts'
 import { ensureModuleSlices, loadModuleDefinition, materializeModuleDefinition, readModuleDefinitionExport, validateModuleDefinitionText } from './module-slices.ts'
+import type { ModuleDefinitionSnapshot } from './module-slices.ts'
 import { ModuleWriteError, withModuleLock } from './module-write.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { directoryVersionOf } from './preview-revision.ts'
@@ -29,17 +30,24 @@ export interface WriteModuleOptions {
   warn?: (message: string) => void
 }
 
-function validateModule(directory: string, warn?: (message: string) => void): void {
-  const snapshot = loadModuleDefinition(directory)
+function validateModule(snapshot: ModuleDefinitionSnapshot, warn?: (message: string) => void, read?: (file: string, encoding: 'utf8') => string, requireComposition = true): void {
   const spec = { ...snapshot.source, id: snapshot.source.id ?? basename(snapshot.dir),
     rules: snapshot.rules, configOrder: snapshot.configOrder, variables: snapshot.variables, variablesEnabled: snapshot.variablesEnabled } as unknown as ModuleSpec
-  assertCompositionArray(renderComposition(spec, {}, directory), spec)
+  // 旧目录允许尚未声明组合的模块存在。只校验它实际声明的组合输入。
+  if (requireComposition || spec.modules !== undefined || spec.composition !== undefined) {
+    assertCompositionArray(renderComposition(spec, {}, snapshot.dir, read), spec)
+  }
   if (spec.customTools !== undefined && !Array.isArray(spec.customTools)) throw new TypeError('customTools must be an array')
   const toolErrors = validateCustomTools(spec.customTools ?? [])
   if (toolErrors.length > 0) throw new Error(`invalid customTools: ${toolErrors.join('; ')}`)
   if (Array.isArray(spec.meta?.stWarnings)) for (const warning of spec.meta.stWarnings) {
     if (typeof warning === 'string') warn?.(`prompt-tool: ST 导入兼容提示：${warning}`)
   }
+}
+
+/** 启动升级和完整安装在发布首代前校验同一份组合、工具和所读资产。 */
+export function migrateModuleDefinition(directory: string): void {
+  materializeModuleDefinition(directory, (snapshot, read) => validateModule(snapshot, undefined, read, false))
 }
 
 function removeLegacyArtifacts(directory: string): void {
@@ -124,8 +132,8 @@ export function finalizeModuleCandidate(
   }
   writeContentAssets(candidate, agentsText)
   // 复制现有用户模块时沿用旧语义：只保证可读与切片重建，不额外用组合/customTools 校验拒绝复制。
-  materializeModuleDefinition(candidate)
-  if (options.validate !== false) validateModule(candidate)
+  if (options.validate === false) materializeModuleDefinition(candidate)
+  else materializeModuleDefinition(candidate, (snapshot, read) => validateModule(snapshot, undefined, read))
 }
 
 /** 未知选项即抛：删掉旧选项（moduleDir / presetOrder）后，写错的名字不能再被静默忽略。
@@ -140,7 +148,7 @@ export function ensureModuleReady(id: string, options: { modulesRoot?: string; w
   assertKnownOptions('ensureModuleReady', options, ['modulesRoot', 'warn'])
   const root = options.modulesRoot ?? modulesDir()
   const directory = assertModuleDirectory(root, id)
-  validateModule(directory, options.warn)
+  validateModule(loadModuleDefinition(directory), options.warn)
   if (enabledModuleIds(root).includes(id)) appendModuleConfigOrder(root, id)
   ensureModuleSlices(directory)
   withModuleLock(root, id, () => {
@@ -158,7 +166,7 @@ export function writeModule(options: WriteModuleOptions): string {
   const targetId = options.targetModuleId ?? options.moduleId
   assertModuleId(targetId)
   const source = options.sourceDir ?? resolveModuleDir(options.moduleId, root)
-  validateModule(source, options.warn)
+  validateModule(loadModuleDefinition(source), options.warn)
   const target = assertModuleDirectory(root, targetId, true)
   const targetVersion = directoryVersionOf(target)
   if (resolve(source) === resolve(target)) {

@@ -279,7 +279,7 @@ export function assertSlicableAliases(doc: ModuleDefinitionSnapshot['doc']): Pic
 }
 
 /** 首次迁移已验证的完整定义。已有提交的模块不再读取交换源。 */
-export function materializeModuleDefinition(directory: string): ModuleLocalCommit {
+export function materializeModuleDefinition(directory: string, validate?: (snapshot: ModuleDefinitionSnapshot, read: (file: string, encoding: 'utf8') => string) => void): ModuleLocalCommit {
   const dir = canonicalDirectory(directory)
   const ensure = (): ModuleLocalCommit => {
     const existing = readModuleLocalCommit(dir)
@@ -289,6 +289,11 @@ export function materializeModuleDefinition(directory: string): ModuleLocalCommi
     }
     const source = readDefinitionText(dir)
     const snapshot = snapshotFromText(source.dir, source.text)
+    validate?.(snapshot, (file, encoding) => {
+      const bytes = readFileSync(file)
+      projections.get(snapshot)!.dependencies.set(file, revisionOf(bytes))
+      return bytes.toString(encoding)
+    })
     const aliases = assertSlicableAliases(snapshot.doc)
     const projected = projectedSnapshot(snapshot)
     const packageRoot = canonicalDirectory(packageModulesDir())

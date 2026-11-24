@@ -214,7 +214,8 @@ export function readModuleFacts(target: string, moduleRoot?: string): ModuleFact
  * moduleConfigs 仅补充参数桥未覆盖的行级 config(如 ST 导入的 tool-web.fetch),
  * 不再锁定覆盖 UI 可管理参数(旧作者锁定语义已移除)。
  */
-export function renderComposition(spec: ModuleSpec, runtime: Record<string, unknown>, templateDir?: string): string {
+export function renderComposition(spec: ModuleSpec, runtime: Record<string, unknown>, templateDir?: string,
+  read?: (file: string, encoding: 'utf8') => string): string {
   const params = resolveModuleParams(spec, runtime)
   const merged: Record<string, Record<string, unknown>> = buildModuleConfigsFromParams(params)
   for (const [id, cfg] of Object.entries(spec.moduleConfigs ?? {})) {
@@ -223,6 +224,6 @@ export function renderComposition(spec: ModuleSpec, runtime: Record<string, unkn
   }
   // 文本层按**声明**装配：runtime 覆盖只进参数桥，不改模块清单——所以这里显式给空 runtime 的
   // 解析结果（旧实现把 runtime 传进 loadCompositionText 但内部同样用空 runtime，行为不变）。
-  const raw = loadCompositionText(spec, resolveModuleParams(spec, {}), templateDir)
+  const raw = loadCompositionText(spec, resolveModuleParams(spec, {}), templateDir, read)
   return applyModuleConfigs(raw, merged)
 }

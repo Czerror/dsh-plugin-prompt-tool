@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs, { existsSync, mkdirSync, readFileSync, readdirSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { createHash } from 'node:crypto'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
@@ -12,7 +12,6 @@ const { moduleImportPreview, installModulePackage, exportModulePackage, expandMo
 const { ensureModuleSlices, materializeModuleDefinition, assertModuleDefinitionFormat, loadModuleDefinition, readRulesDir, validateModuleDefinitionText } = await import('../../src/host/module-slices.ts')
 const { editModuleRuleContent, editModuleRules, readModuleRules } = await import('../../src/host/module-rules.ts')
 const { duplicateUserModule, ensureModuleSeed } = await import('../../src/host/module-catalog.ts')
-const { packageModulesDir } = await import('../../src/host/module-dirs.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
 const rule = (id, text, extra = {}) => ({ id, enabled: false, then: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
 const source = (id, extra = {}) => ({ id, name: id, modules: [], rules: [rule('hello', 'SOURCE')], variables: { owner: 'Mia' }, variablesEnabled: false, configOrder: { hello: 40 }, ...extra })
@@ -30,16 +29,36 @@ async function install(files, targetId) {
 const state = dir => readdirSync(dir).sort()
 
 test('模块包往返导出已提交规则、导入以完整定义为准，素材和变量保持', async () => {
-  const seeds = readdirSync(packageModulesDir(), { withFileTypes: true }).filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
-  const blocked = seeds[0].name
+  const blocked = 'blocked-seed', healthy = 'healthy-seed'
+  const packageRoot = join(home, 'recovery-seeds')
+  const sourcePackageRoot = resolve(fileURLToPath(new URL('../../src/modules/', import.meta.url)))
+  for (const seed of [blocked, healthy]) {
+    const dir = join(packageRoot, seed)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'module.yml'), JSON.stringify(source(seed)))
+  }
   const damagedStage = join(moduleRoot, `.${blocked}.install-ABC123`)
   mkdirSync(moduleRoot, { recursive: true })
   writeFileSync(damagedStage, 'BROKEN STAGE')
   const warnings = []
-  const seeded = ensureModuleSeed(moduleRoot, message => warnings.push(message))
+  for (const name of ['existsSync', 'lstatSync', 'realpathSync', 'readdirSync', 'readFileSync']) {
+    const original = fs[name]
+    mock.method(fs, name, (path, ...args) => {
+      if (typeof path !== 'string') return original(path, ...args)
+      const absolute = resolve(path)
+      if (absolute === sourcePackageRoot) return original(packageRoot, ...args)
+      if (!absolute.startsWith(sourcePackageRoot + sep)) return original(path, ...args)
+      return original(packageRoot + absolute.slice(sourcePackageRoot.length), ...args)
+    })
+  }
+  syncBuiltinESMExports()
+  let seeded
+  try { seeded = ensureModuleSeed(moduleRoot, message => warnings.push(message)) }
+  finally { mock.restoreAll(); syncBuiltinESMExports() }
   assert.equal(existsSync(join(moduleRoot, blocked)), false, '受阻模块不能被同名种子盖掉')
   assert.equal(readFileSync(damagedStage, 'utf8'), 'BROKEN STAGE')
-  assert.ok(seeded.created.length > 0 && warnings.some(message => message.includes(blocked)), '健康模块继续播种，坏备份单独告警')
+  assert.deepEqual(seeded.created, [healthy], '健康模块继续播种')
+  assert.ok(warnings.some(message => message.includes(blocked)), '坏备份单独告警')
   const id = 'roundtrip-source', dir = fixture(id)
   mkdirSync(join(dir, 'assets'))
   writeFileSync(join(dir, 'assets', 'notice.txt'), 'PACKAGED TEMPLATE')

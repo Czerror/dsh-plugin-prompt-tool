@@ -9,12 +9,11 @@ import { Document } from 'yaml'
 import { isModuleId } from '../shared/module-ids.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { assertModuleDirectory, assertModuleId, modulePathExists } from './module-install.ts'
-import { buildModuleCandidate, finalizeModuleCandidate } from './write-module.ts'
+import { buildModuleCandidate, finalizeModuleCandidate, migrateModuleDefinition } from './write-module.ts'
 import { installModuleDirectory, leftoverStageWarning, recoverModuleInstallations, type ModuleInstallOutcome } from './module-install-transaction.ts'
 import { findModuleDir, packageModulesDir, userModulesDir } from './module-dirs.ts'
 import { loadModuleSpec } from './module-spec.ts'
 import { markModuleLocalInitialized, readModuleLocalCommit } from './module-local-state.ts'
-import { materializeModuleDefinition } from './module-slices.ts'
 
 /**
  * 内置空白模板（唯一的内存形态模板）：`moduleClone('blank')` 的源。
@@ -143,7 +142,7 @@ export function migrateLegacyModules(root = userModulesDir(), warn?: (message: s
     try {
       const dir = assertModuleDirectory(root, entry.name)
       if (readModuleLocalCommit(dir) !== undefined) markModuleLocalInitialized(dir)
-      else if (modulePathExists(join(dir, MODULE_DEFINITION_FILE))) materializeModuleDefinition(dir)
+      else if (modulePathExists(join(dir, MODULE_DEFINITION_FILE))) migrateModuleDefinition(dir)
       else warn?.(`模块 ${entry.name} 缺少本地提交`)
     } catch (error) {
       warn?.(`模块 ${entry.name} 本地状态不可用：${String((error as Error).message ?? error)}`)
