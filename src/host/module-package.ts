@@ -16,7 +16,7 @@ import { readModuleLayerSettings } from './module-layer-settings.ts'
 import { projectCharacterMemories } from './legacy-export.ts'
 import { LEGACY_ARTIFACTS, finalizeModuleCandidate } from './write-module.ts'
 import { installModuleDirectory } from './module-install-transaction.ts'
-import { assertModuleId, assertModuleTree, assertModuleDirectory, canonicalModulesRoot, modulePathExists, setModuleDefinitionId } from './module-install.ts'
+import { assertModuleId, assertModuleTree, assertModuleDirectory, canonicalModulesRoot, moduleDirectoryIdentity, modulePathExists, setModuleDefinitionId } from './module-install.ts'
 import { ruleInjections } from './rule-content.ts'
 import { createTargetQueue } from '../shared/target-queue.ts'
 import { assertSlicableAliases, readModuleDefinitionExport, validateModuleDefinitionText } from './module-slices.ts'
@@ -340,6 +340,7 @@ function dependencyErrors(files: PackageFile[], spec: ModuleSpec): string[] {
 }
 
 function sharingSnapshot(dir: string, id: string, root: string, choices: Record<string, 'include' | 'exclude'>) {
+  const identity = moduleDirectoryIdentity(dir)
   const committed = readModuleDefinitionExport(dir)
   const definition = { path: MODULE_DEFINITION_FILE, bytes: Buffer.from(committed.text) }
   const builtinFiles = builtinAssets(id)
@@ -355,7 +356,8 @@ function sharingSnapshot(dir: string, id: string, root: string, choices: Record<
   const effectiveFiles = withBuiltinAssets(files, builtinFiles)
   const spec = validatePackageDefinition(dir, definition.bytes.toString('utf8'), effectiveFiles, missing).source as unknown as ModuleSpec
   // 分享过滤会读取历史来源证明；投影结果也进版本，证明变化影响输出时必须重新确认。
-  const revision = sha(JSON.stringify([committed.revision, source, effectiveFiles.map(file => [file.path, sha(file.bytes)]), projection.memoryConflicts, projection.excludedMemoryCount]))
+  if (identity === undefined || moduleDirectoryIdentity(dir) !== identity) stale()
+  const revision = sha(JSON.stringify([identity, committed.revision, source, effectiveFiles.map(file => [file.path, sha(file.bytes)]), projection.memoryConflicts, projection.excludedMemoryCount]))
   return { files, effectiveFiles, definition, spec, projection, missing: [...missing], revision }
 }
 

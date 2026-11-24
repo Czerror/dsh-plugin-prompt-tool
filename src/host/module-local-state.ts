@@ -1,9 +1,10 @@
 import { lstatSync, mkdirSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { assertPlain, canonicalDirectory, ModuleWriteError, record, revisionOf } from './module-write.ts'
 import { RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
 import { atomicWriteTextFile } from './text-file.ts'
 import { assertRuleId } from '../../engine/rule-spec.mjs'
+import { moduleDirectoryIdentity } from './module-install.ts'
 
 export const MODULE_LOCAL_COMMIT_FILE = '_commit.json'
 export const MODULE_LOCAL_INITIALIZED_FILE = '.prompt-tool-local-v1'
@@ -18,6 +19,8 @@ export interface ModuleLocalReferences {
   inputs: string
   ruleIds: string[]
   members: Record<string, string>
+  hasSourceAliases?: true
+  hasProcessRules?: boolean
 }
 
 export interface ModuleLocalCommit extends ModuleLocalReferences {
@@ -40,8 +43,8 @@ function list(value: unknown): value is string[] {
 }
 
 function generation(references: ModuleLocalReferences): string {
-  const { moduleId, declaredKeys, exportBase, inputs, ruleIds, members } = references
-  return revisionOf(JSON.stringify({ version: VERSION, moduleId, declaredKeys, exportBase, inputs, ruleIds, members }))
+  const { moduleId, declaredKeys, exportBase, inputs, ruleIds, members, hasSourceAliases, hasProcessRules } = references
+  return revisionOf(JSON.stringify({ version: VERSION, moduleId, declaredKeys, exportBase, inputs, ruleIds, members, hasSourceAliases, hasProcessRules }))
 }
 
 function assertCommit(directory: string, value: unknown): asserts value is ModuleLocalCommit {
@@ -56,6 +59,8 @@ function assertCommit(directory: string, value: unknown): asserts value is Modul
   if (new Set(files).size !== files.length || Object.keys(members).length !== files.length
     || files.some(file => !Object.hasOwn(members, file) || !digest(members[file]))) throw invalid('members')
   if (value.previous !== undefined && !digest(value.previous)) throw invalid('previous')
+  if (value.hasSourceAliases !== undefined && value.hasSourceAliases !== true) throw invalid('hasSourceAliases')
+  if (value.hasProcessRules !== undefined && typeof value.hasProcessRules !== 'boolean') throw invalid('hasProcessRules')
   if (value.generation !== generation(value as unknown as ModuleLocalReferences)) throw invalid('generation')
 }
 
@@ -107,6 +112,43 @@ export function readModuleLocalObject(directory: string, hash: string): string {
   return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
 }
 
+/** 批量打开成员，返回前复核所有祖先仍是同一个普通目录。 */
+export interface VerifiedModuleObjects {
+  identity: string
+  members: Map<string, { stamp: string; text: string }>
+  changed: Set<string>
+}
+
+export function readModuleLocalObjects(directory: string, hashes: readonly string[], previous?: VerifiedModuleObjects): VerifiedModuleObjects {
+  const dir = canonicalDirectory(directory)
+  const rules = join(dir, RULES_DIR), objects = join(rules, OBJECTS_DIR)
+  const paths = [dirname(dir), dir, rules, objects]
+  const identity = paths.map(moduleDirectoryIdentity)
+  if (identity.some(value => value === undefined)) throw invalid('objects')
+  const owner = identity.join('|')
+  const members: VerifiedModuleObjects['members'] = new Map()
+  const changed = new Set<string>()
+  for (const hash of hashes) {
+    if (members.has(hash)) continue
+    if (!digest(hash)) throw invalid('object digest')
+    const file = join(objects, hash)
+    const stampOf = (): string => {
+      const stat = lstatSync(file, { bigint: true })
+      if (!stat.isFile() || stat.isSymbolicLink()) throw invalid(`object path ${hash}`)
+      return `${stat.dev}:${stat.ino}:${stat.ctimeNs}:${stat.mtimeNs}:${stat.size}`
+    }
+    const stamp = stampOf()
+    const cached = previous?.identity === owner ? previous.members.get(hash) : undefined
+    if (cached?.stamp === stamp) { members.set(hash, cached); continue }
+    const bytes = readFileSync(file)
+    if (revisionOf(bytes) !== hash || stampOf() !== stamp) throw invalid(`object ${hash}`)
+    members.set(hash, { stamp, text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) })
+    changed.add(hash)
+  }
+  if (paths.some((path, i) => moduleDirectoryIdentity(path) !== identity[i])) throw invalid('objects directory changed')
+  return { identity: owner, members, changed }
+}
+
 export function readPreviousModuleLocalCommit(directory: string, commit: ModuleLocalCommit): ModuleLocalCommit | undefined {
   if (commit.previous === undefined) return undefined
   return parseCommit(canonicalDirectory(directory), readModuleLocalObject(directory, commit.previous))
@@ -127,7 +169,7 @@ export function writeModuleLocalObject(directory: string, content: string): stri
 }
 
 /** 调用方先验证整份候选；通过本模块写入的所有对象落盘后才发布引用。 */
-export function publishModuleLocalCommit(directory: string, references: ModuleLocalReferences): ModuleLocalCommit {
+export function publishModuleLocalCommit(directory: string, references: ModuleLocalReferences, beforePublish?: () => void): ModuleLocalCommit {
   const dir = canonicalDirectory(directory)
   const next = generation(references)
   const previous = readModuleLocalCommit(dir)
@@ -143,14 +185,14 @@ export function publishModuleLocalCommit(directory: string, references: ModuleLo
   const file = join(dir, RULES_DIR, MODULE_LOCAL_COMMIT_FILE)
   assertPlain(join(dir, RULES_DIR), true)
   if (present(file)) assertPlain(file)
-  atomicWriteTextFile(file, JSON.stringify(commit) + '\n')
+  atomicWriteTextFile(file, JSON.stringify(commit) + '\n', { beforeReplace: beforePublish })
   if (previous === undefined) markModuleLocalInitialized(dir)
   return commit
 }
 
-export function writeModuleLocalCommit(directory: string, candidate: Omit<ModuleLocalReferences, 'members'> & { files: Record<string, string> }): ModuleLocalCommit {
+export function writeModuleLocalCommit(directory: string, candidate: Omit<ModuleLocalReferences, 'members'> & { files: Record<string, string> }, beforePublish?: () => void): ModuleLocalCommit {
   const { files, exportBase, inputs, ...metadata } = candidate
   const write = (text: string) => writeModuleLocalObject(directory, text)
   return publishModuleLocalCommit(directory, { ...metadata, exportBase: write(exportBase), inputs: write(inputs),
-    members: Object.fromEntries(Object.entries(files).map(([file, text]) => [file, write(text)])) })
+    members: Object.fromEntries(Object.entries(files).map(([file, text]) => [file, write(text)])) }, beforePublish)
 }

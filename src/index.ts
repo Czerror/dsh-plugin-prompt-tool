@@ -106,6 +106,7 @@ export function apply(ctx: Context, configIn: Config): void {
     moduleDirectory: (subject) => resolveRequestedModuleDir(modulesDir(), subject),
     overridesChanged: (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
     rulesChanged: (id, generation) => refreshModuleRuntime(id, generation),
+    scheduleRuleAdoption: (id, generation) => assembly?.adoptAtNextRequest(id, generation) ?? false,
     moduleGenerations: id => assembly?.moduleGenerations(id) ?? [],
     // host 已安装完整候选；不能二次物化覆盖导入资产。
     moduleInstalled: async (id) => {

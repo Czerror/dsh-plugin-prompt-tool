@@ -22,6 +22,7 @@ test('rules bridge: moving commits the module once, rejects incomplete input and
   const branch = { if: { scope: { audience: 'main' } }, then: [alpha.then[0]], else: [beta.then[0]] }
   const original = { ...alpha, then: [branch, beta.then[0]], else: [alpha.then[0], beta.then[0]] }
   let finish
+  const definitionRevision = 'd'.repeat(64)
   const h = harness(async body => body.edits ? new Promise(resolve => { finish = resolve })
     : { ok: true, value: body.refreshOnly ? snapshot(h.draft.saved, 'published') : snapshot([original, beta]) })
   await h.editor.load()
@@ -52,13 +53,13 @@ test('rules bridge: moving commits the module once, rejects incomplete input and
   assert.equal(h.draft.fields.has(path + ':0:then:0:alpha-text:n'), false)
   assert.equal(h.draft.fields.has(entry.key + ':else:0:alpha-text:n'), true)
   h.editor.patch(entry.key, { ...h.draft.entries[0].value, name: 'typed while saving' })
-  finish({ ok: true, value: { ...snapshot(sent.edits.map(edit => edit.rule), 'saved'), publicationPending: true, publicationError: 'publish failed' } })
+  finish({ ok: true, value: { ...snapshot(sent.edits.map(edit => edit.rule), 'saved'), definitionRevision, publicationPending: true, publicationError: 'publish failed' } })
   assert.equal(await saving, false, 'publication failure does not undo a persisted move')
   assert.equal(h.draft.entries[0].value.name, 'typed while saving')
   assert.deepEqual(h.draft.saved[0].then, [beta.then[0], branch])
   assert.equal(h.calls.length, 2, 'one move performs one module write')
   assert.equal(await h.editor.retry(), true)
-  assert.deepEqual(h.calls[2], { expectedModuleId: 'module-a', refreshOnly: true })
+  assert.deepEqual(h.calls[2], { expectedModuleId: 'module-a', refreshOnly: true, expectedDefinitionRevision: definitionRevision })
   assert.equal(h.draft.entries[0].value.name, 'typed while saving')
 })
 

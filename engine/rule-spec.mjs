@@ -99,20 +99,38 @@ function validateActionLinks(rule) {
 }
 
 /** 命名快照在整个挂载 scope 内共享，关联目标不能借别的规则的同名贡献确认。 */
+function deliveryIdentity(config, moduleId) {
+  return textRegistrationName({ ...config, sourceModuleId: moduleId }, 'contextName')
+}
+
 export function validateDeliverySources(sources) {
   const names = new Map()
   for (const source of sources) for (const rule of source.rules) {
     if (rule.enabled === false) continue
     for (const action of rule.actions) {
       if (action.compiledConfig?.layer !== 'runtime-context') continue
-      const config = { ...action.compiledConfig, sourceModuleId: source.moduleId }
-      const name = textRegistrationName(config, 'contextName')
+      const config = action.compiledConfig
+      const name = deliveryIdentity(config, source.moduleId)
       const previous = names.get(name)
       if (previous && (previous.linkedDelivery || config.linkedDelivery)) {
         throw new TypeError(`ambiguous runtime-context delivery identity ${JSON.stringify(name)}`)
       }
       names.set(name, config)
     }
+  }
+}
+
+/** 单条已编译规则对其余规则的校验约束；启停与互斥状态由状态事务拥有。 */
+export function ruleCrossValidation(rules, moduleId) {
+  return {
+    configIds: rules.flatMap(rule => rule.actions.flatMap(action => action.compiledConfig ? [action.compiledConfig.id] : [])).sort(),
+    complete: ['main', 'subagent'].map(audience => completeRuleSections(rules, audience).length),
+    delivery: rules.flatMap(rule => rule.enabled === false ? [] : rule.actions.flatMap(action => {
+      const config = action.compiledConfig
+      return config?.layer === 'runtime-context'
+        ? [[deliveryIdentity(config, moduleId), config.linkedDelivery === true]]
+        : []
+    })).sort(),
   }
 }
 

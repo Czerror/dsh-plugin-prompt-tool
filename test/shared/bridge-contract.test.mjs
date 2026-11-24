@@ -209,15 +209,22 @@ test('契约：moduleName 主语安全与 rules 非正文紧凑保存的写前�
   materializeModuleDefinition(rulesDir)
   writeFileSync(rulesFile, 'id: compact-rejection\nmodules: []\n')
   let publications = 0
-  let effectiveGeneration, failPublication = true
+  let effectiveGeneration, publicationFailure, failScheduling = true
   const rulesHandler = register({
     moduleDirectory: () => rulesDir,
+    schedulePublication: id => {
+      assert.equal(id, 'compact-rejection')
+      publications++
+      if (failScheduling) throw new Error('rules refresh unavailable')
+      publicationFailure = undefined
+    },
     rulesChanged: (id, generation) => {
       assert.equal(id, 'compact-rejection')
       publications++
-      if (failPublication) throw new Error('rules refresh unavailable')
       effectiveGeneration = generation
+      publicationFailure = undefined
     },
+    publicationFailures: () => publicationFailure === undefined ? [] : [{ moduleId: 'compact-rejection', message: publicationFailure, at: 0 }],
     moduleGenerations: () => [{ agentId: 'agent-a', generation: effectiveGeneration }],
   }).get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.rules)
   const headers = { 'x-module-id': 'compact-rejection' }
@@ -259,13 +266,32 @@ test('契约：moduleName 主语安全与 rules 非正文紧凑保存的写前�
   }
   assert.equal((await retry(initialRules.definitionRevision)).status, 409)
   assert.equal(publications, 1, '旧代凭据不能启动发布')
-  failPublication = false
   const refreshed = await retry(receipt.definitionRevision)
   assert.equal(refreshed.status, 200, refreshed.body)
   const resumed = JSON.parse(refreshed.body).value
   assert.equal(resumed.definitionRevision, receipt.definitionRevision, '重试只发布已提交代')
   assert.equal(resumed.publicationPending, false)
   assert.deepEqual(resumed.effectiveGenerations, [{ agentId: 'agent-a', generation: receipt.definitionRevision }])
+
+  failScheduling = false
+  const queued = fakeRes()
+  await rulesHandler(fakeReq({ body: {
+    expectedModuleId: 'compact-rejection', compactEdit: true,
+    expectedRevisions: resumed.revisions,
+    edits: [{ previousId: 'keep', rule: { ...resumed.rules[0], name: 'QUEUED' } }],
+  }, headers }), queued)
+  assert.equal(queued.status, 200, queued.body)
+  const queuedReceipt = JSON.parse(queued.body).value
+  assert.equal(queuedReceipt.persisted, true)
+  assert.equal(queuedReceipt.publicationPending, undefined, '已入队不等于发布失败')
+  assert.deepEqual(queuedReceipt.effectiveGenerations, resumed.effectiveGenerations, '回执先于 Agent 配装')
+  publicationFailure = '后台配装失败'
+  const failedRead = fakeRes()
+  await rulesHandler(fakeReq({ body: { expectedModuleId: 'compact-rejection' }, headers }), failedRead)
+  const failed = JSON.parse(failedRead.body).value
+  assert.equal(failed.definitionRevision, queuedReceipt.definitionRevision)
+  assert.equal(failed.publicationError, publicationFailure)
+  assert.equal(failed.publicationPending, true)
 })
 
 test('契约：全部桥路径拒绝非 loopback，无一条绕过事务', async () => {

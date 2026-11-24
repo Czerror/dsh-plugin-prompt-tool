@@ -144,6 +144,8 @@ async function world(t) {
   mkdirSync(moduleRoot, { recursive: true })
   writeModuleDefinition(moduleDir)
   patchModule(moduleDir)
+  const { materializeModuleDefinition } = await import('../../src/host/module-slices.ts')
+  materializeModuleDefinition(moduleDir)
 
   const calls = []
   let refusals = 0

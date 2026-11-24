@@ -9,7 +9,8 @@ import { RULES_DIR } from './paths.ts'
 import { MODULE_LOCAL_COMMIT_FILE } from './module-local-state.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import { enableTablePath, enabledModuleIds, readGlobalLayerSettingsSafe } from './config-store.ts'
-import { ensureModuleSlices } from './module-slices.ts'
+import { createModuleRuntimeSnapshotReader, ensureModuleSlices, freezeModuleValue } from './module-slices.ts'
+import { revisionOf } from './module-write.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 import { packageModulesDir, userModulesDir } from './module-dirs.ts'
 
@@ -84,6 +85,33 @@ function withGlobalParams(spec: ModuleSpec, dir: string): ModuleSpec {
   const { params } = readGlobalLayerSettingsSafe(userModulesDir())
   if (Object.keys(params).length === 0) return spec
   return { ...spec, globalParams: params }
+}
+
+export function createRuntimeModuleReader() {
+  const snapshots = createModuleRuntimeSnapshotReader()
+  const views = new WeakMap<object, { spec: ModuleSpec; signature: string }>()
+  return {
+    read(dir: string): { spec: ModuleSpec; generation: string; signature: string; changedRuleId?: string } {
+      const { snapshot, changedRuleId } = snapshots.read(dir)
+      let view = views.get(snapshot)
+      if (view === undefined) {
+        const { rules: _rules, variables: _variables, ...inputs } = snapshot.source
+        const spec = { ...inputs, id: inputs.id ?? basename(dir), rules: snapshot.rules,
+          ruleRevisions: Object.fromEntries(Object.entries(snapshot.revisions.rules).map(([id, revision]) => [id, `${revision}:${snapshot.revisions.settings}`])),
+          configOrder: snapshot.configOrder, variables: snapshot.variables, variablesEnabled: snapshot.variablesEnabled } as unknown as ModuleSpec
+        const params = readModuleLayerSettings(spec)
+        if (spec.layerSettings !== undefined || spec.params !== undefined) spec.params = params
+        const signature = revisionOf(JSON.stringify([dir, inputs, snapshot.revisions.settings, Object.values(snapshot.revisions.rules)]))
+        view = { spec: freezeModuleValue(spec), signature }
+        views.set(snapshot, view)
+      }
+      const spec = freezeModuleValue(withGlobalParams(view.spec, dir))
+      return { spec, generation: snapshot.revision, signature: revisionOf(view.signature + JSON.stringify(spec.globalParams ?? {})),
+        ...(changedRuleId === undefined ? {} : { changedRuleId }) }
+    },
+    retain: snapshots.retain,
+    dispose: snapshots.dispose,
+  }
 }
 
 /** 加载模块已验证的运行视图。 */

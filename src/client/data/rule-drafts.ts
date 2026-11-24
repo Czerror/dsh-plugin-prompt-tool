@@ -73,6 +73,7 @@ function acceptRules(draft: RulesDraft, snapshot: RulesSnapshot): void {
   draft.saved = structuredClone(snapshot.rules)
   draft.meta = snapshot.meta
   draft.revisions = snapshot.revisions
+  draft.definitionRevision = snapshot.definitionRevision
   draft.loaded = true
   draft.rulesDeclared = true
   draft.remote = undefined
@@ -89,8 +90,8 @@ interface RuleEditorDependencies {
 /** 读取、编辑、改名、激活和整组响应都通过这一 owner，不写旧配置段。 */
 export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: RuleEditorDependencies) {
   const changed = (): void => { draft.validated = false; deps.changed() }
-  const publication = (snapshot: RulesSnapshot): void => {
-    draft.activationPending = snapshot.activationPending
+  const publication = (snapshot: RulesSnapshot | CompactRulesSnapshot): void => {
+    draft.activationPending = 'activationPending' in snapshot ? snapshot.activationPending : undefined
     const state = readPublication(snapshot)
     draft.publicationPending = state.pending
     draft.publicationError = state.error ?? (state.pending ? 'rules-refresh-pending' : undefined)
@@ -101,7 +102,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       if (!deepEqual(snapshot.rules, draft.saved)) {
         draft.remote = snapshot; draft.retry = 'read'; draft.error = 'rules-conflict'; draft.loaded = true; return false
       }
-      draft.revisions = snapshot.revisions; draft.meta = snapshot.meta
+      draft.revisions = snapshot.revisions; draft.definitionRevision = snapshot.definitionRevision; draft.meta = snapshot.meta
     } else acceptRules(draft, snapshot)
     draft.loaded = true; draft.rulesDeclared = true; draft.remote = undefined; draft.retry = undefined; draft.error = draft.publicationError
     return true
@@ -131,6 +132,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     })
     for (const value of returned.values()) draft.entries.push({ key: `rule-${draft.nextKey++}`, previousId: value.id, value: structuredClone(value) })
     draft.saved = structuredClone(snapshot.rules); draft.revisions = snapshot.revisions; draft.meta = snapshot.meta; draft.rulesDeclared = true; draft.loaded = true
+    draft.definitionRevision = snapshot.definitionRevision
   }
   const acceptCompactSent = (entries: RuleEntry[], snapshot: CompactRulesSnapshot): void => {
     const sent = entries[0]
@@ -138,7 +140,6 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     const current = draft.entries.find(entry => entry.key === sent.key)
     if (!current) throw new Error('紧凑规则确认目标已不存在')
     if (![snapshot.ruleRevision, snapshot.definitionRevision, snapshot.settingsRevision, snapshot.variablesRevision].every(value => typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value))) throw new Error('紧凑规则确认版本不合法')
-    const isLatestBody = current.value.id === sent.value.id && deepEqual(current.value, sent.value)
     const base = sent.value
     const value = structuredClone(snapshot.rule)
     for (const key of new Set([...Object.keys(base), ...Object.keys(current.value)])) {
@@ -152,7 +153,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     draft.saved = draft.saved.map(rule => rule.id === value.id ? structuredClone(snapshot.rule) : rule)
     draft.revisions = { ...draft.revisions!, rules: { ...draft.revisions!.rules, [value.id]: snapshot.ruleRevision },
       settings: snapshot.settingsRevision, variables: snapshot.variablesRevision }
-    if (isLatestBody) draft.definitionRevision = snapshot.definitionRevision
+    draft.definitionRevision = snapshot.definitionRevision
     draft.meta = snapshot.meta
     draft.loaded = true
   }
@@ -191,7 +192,8 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
         && (rule === null || deepEqual(rule, remote.get(rule.id))))
       if (matches && pending.entries) {
         acceptSent(pending.entries, saved)
-        draft.retry = undefined; draft.error = undefined; draft.pending = undefined
+        draft.retry = undefined; draft.pending = undefined
+        publication(saved)
         return true
       }
       draft.pending = undefined
@@ -242,6 +244,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       if (!isLatest(draft, sequence)) return false
       if (!result.ok) { draft.retry = 'read'; draft.error = result.message ?? result.code ?? 'rules-read-failed'; return false }
       if (!validSnapshot(result.value)) { draft.retry = 'read'; draft.error = '规则读取应答无效'; return false }
+      publication(result.value)
       return receive(result.value)
     } catch (error) { if (isLatest(draft, sequence)) { draft.retry = 'read'; draft.error = String(error) }; return false }
     finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
@@ -267,9 +270,19 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     draft.busy = 'save'; deps.changed()
     try {
       const result = await deps.enqueue(moduleId, async () => isLatest(draft, sequence)
-        ? deps.request({ expectedModuleId: moduleId, refreshOnly: true }) : undefined)
+        ? deps.request({ expectedModuleId: moduleId, refreshOnly: true,
+          ...(draft.definitionRevision === undefined ? {} : { expectedDefinitionRevision: draft.definitionRevision }) }) : undefined)
       if (!isLatest(draft, sequence) || result === undefined) return false
-      if (result.ok) { receive(result.value); publication(result.value) }
+      if (result.ok) {
+        if (!validSnapshot(result.value)) {
+          draft.retry = 'read'; draft.error = '规则发布应答无效'; return false
+        }
+        receive(result.value); publication(result.value)
+      } else if (READ_FIRST_CODES.includes(result.code ?? '')) {
+        draft.retry = 'read'
+        draft.error = result.message ?? result.code
+        return false
+      }
       if (!result.ok || draft.publicationPending) {
         draft.publicationError = result.ok ? draft.publicationError ?? 'rules-refresh-pending' : result.message ?? result.code ?? 'rules-refresh-failed'
         draft.error = draft.publicationError
@@ -326,9 +339,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       if (options.validateOnly) draft.validated = deepEqual(draft.entries, entries) && !hasRuleFields(draft)
       else if (compactResult) acceptCompactSent(entries, compactResult)
       else acceptSent(entries, result.value as RulesSnapshot)
-      if (!options.validateOnly) {
-        if (!compactResult) publication(result.value as RulesSnapshot)
-      }
+      if (!options.validateOnly) publication(compactResult ?? result.value as RulesSnapshot)
       if (draft.publicationError) { draft.error = draft.publicationError; return false }
       return true
     } catch (error) {
@@ -375,10 +386,13 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       draft.pending = undefined
       draft.retry = 'read'
     }
-    if (draft.remote !== undefined) acceptRules(draft, draft.remote)
+    if (draft.remote !== undefined) {
+      publication(draft.remote)
+      acceptRules(draft, draft.remote)
+    }
     else if (draft.meta && draft.revisions) {
       const retry = draft.retry
-      acceptRules(draft, { rules: draft.saved, meta: draft.meta, revisions: draft.revisions })
+      acceptRules(draft, { rules: draft.saved, meta: draft.meta, revisions: draft.revisions, definitionRevision: draft.definitionRevision })
       if (retry === 'read') { draft.retry = 'read'; draft.error = 'rules-conflict' }
     }
     draft.fields.clear(); changed()

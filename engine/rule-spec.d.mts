@@ -88,6 +88,11 @@ export interface RuleEditorMeta {
 export function assertRuleId(id: unknown): void
 
 export function compileRules(specs: readonly unknown[], options?: CompileRulesOptions): CompiledRule[]
+export function ruleCrossValidation(rules: readonly CompiledRule[], moduleId: string): {
+  configIds: string[]
+  complete: number[]
+  delivery: Array<[string, boolean]>
+}
 export function instantiateCompiledRules(rules: readonly CompiledRule[]): CompiledRule[]
 
 /** 该受众下独占的 `complete` 系统段，身份是 `rule.id/action.id`。 */

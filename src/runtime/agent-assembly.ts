@@ -24,7 +24,7 @@ import { scopeChainOf, scopeOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { MANIFEST_CHECK_SERVICE, SOUL_SELF_SERVICE } from '../../engine/service-names.mjs'
 import { packageEngineDir, resolveModuleDir, userModulesDir } from '../host/module-dirs.ts'
 import { resolveModuleFacts, resolveModuleParams } from '../host/module-params.ts'
-import { loadModuleSpec, readModulesRevision } from '../host/module-spec.ts'
+import { createRuntimeModuleReader, loadModuleSpec, readModulesRevision } from '../host/module-spec.ts'
 import { createProcessHostControls } from '../../engine/host-control-process.mjs'
 import type { ModuleSpec } from '../host/module-spec.ts'
 import { modelRequestRules } from '../host/prompt-configs.ts'
@@ -32,7 +32,7 @@ import { pluginKind, pluginOwner } from '../../engine/source-kind.mjs'
 import { assertModuleId } from '../host/module-install.ts'
 import { RULES_DIR } from '../host/paths.ts'
 import { MODULE_LOCAL_COMMIT_FILE, readModuleLocalCommit } from '../host/module-local-state.ts'
-import { ModuleWriteError, revisionOf } from '../host/module-write.ts'
+import { ModuleWriteError } from '../host/module-write.ts'
 import { readConfigOrder } from '../host/module-config-order.ts'
 import { rulePromptConfigOptions } from '../host/module-slices.ts'
 import { compileCustomTool, validateCustomTools } from '../host/custom-tools.ts'
@@ -89,6 +89,7 @@ export interface AgentAssemblyRuntime {
   refresh(moduleId?: string, expectedGeneration?: string): Promise<void>
   /** 写盘后合并发布；显式 refresh 与请求前读取会消费同一队列。 */
   schedule(moduleId?: string): void
+  adoptAtNextRequest(moduleId: string, generation: string): boolean
   publicationFailures(): PublicationFailure[]
   moduleGenerations(moduleId: string): Array<{ agentId: string; generation?: string }>
   dispose(): Promise<void>
@@ -376,6 +377,8 @@ function duplicateDedupeIdentities(prepared: PreparedAssembly[]): DuplicateIdent
 }
 
 export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions): AgentAssemblyRuntime {
+  const runtimeReader = createRuntimeModuleReader()
+  const deferredRules = new Map<string, string>()
   const variableStore = createModuleVariableAdapter(options.moduleRoot, {
     sessionVariables: options.sessionVariables,
     runtimeValue: (id, key, agent, signal) => soulRuntimeValueOf(ctx, id, key, agent, signal),
@@ -634,24 +637,29 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   // 提交记录变化时再算运行输入签名；纯变量值变化不触发重挂。
   const assemblyStamp = (ids: readonly string[]): string => readModulesRevision(options.moduleRoot, ids)
   type Definition = { dir: string; spec: ModuleSpec; generation: string; signature: string }
-  const readDefinitions = (ids: readonly string[], files = new Map<string, string>()) => new Map<string, Definition | { error: unknown }>(ids.map(id => {
+  type DefinitionSource = Definition | { error: unknown } | { noProcessRules: true }
+  const readDefinitions = (ids: readonly string[], files = new Map<string, string>(), processOnly = false, verifyId?: string) => new Map<string, DefinitionSource>(ids.map(id => {
     const dependOn = (file: string): void => { if (!files.has(file)) files.set(file, fileStamp(file)) }
     try {
       assertModuleId(id)
       dependOn(join(options.moduleRoot, id, RULES_DIR, MODULE_LOCAL_COMMIT_FILE))
       const dir = resolveModuleDir(id, options.moduleRoot)
-      let generation = ''
-      const spec = loadModuleSpec(dir, revision => { generation = revision })
-      const { variables: _variables, ...definition } = spec
-      // 变量值在求值时读取；自增不能让下一步重新注册规则。
-      return [id, { dir, spec, generation, signature: revisionOf(JSON.stringify([id, dir, definition])) }]
+      // 已挂载的进程贡献仍走完整校验与撤回路径。
+      if (processOnly && id !== verifyId && !processSources.has(id)) {
+        try {
+          if (readModuleLocalCommit(dir)?.hasProcessRules === false) return [id, { noProcessRules: true }]
+        } catch {
+          // 完整读取负责诊断损坏和验证回退代。
+        }
+      }
+      return [id, { dir, ...runtimeReader.read(dir) }]
     } catch (error) {
       warnOnce(`模块 ${id} 读取失败：${failureReason(error)}`)
       return [id, { error }]
     }
   }))
-  const sourceSignature = (source: Definition | { error: unknown }): string =>
-    'signature' in source ? source.signature : `error:${failureReason(source.error)}`
+  const sourceSignature = (source: DefinitionSource): string =>
+    'signature' in source ? source.signature : 'error' in source ? `error:${failureReason(source.error)}` : 'no-process-rules'
   const unchanged = (definitions: ReturnType<typeof readDefinitions>, previous: ReadonlyMap<string, string>): boolean => {
     if (definitions.size !== previous.size) return false
     const ids = previous.keys()
@@ -668,12 +676,16 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
   const watchSources = (ids: readonly string[]): void => {
     const files = new Set([enableTablePath(options.moduleRoot), enableTablePath(userModulesDir()), ...publicationDependencies.keys(), ...ids
       .map(id => { assertModuleId(id); return join(options.moduleRoot, id, RULES_DIR, MODULE_LOCAL_COMMIT_FILE) })])
-    for (const [file, listener] of watched) if (!files.has(file)) { unwatchFile(file, listener); watched.delete(file) }
+    for (const [file, listener] of watched) if (!files.has(file)) {
+      unwatchFile(file, listener); watched.delete(file); deferredRules.delete(file)
+    }
     for (const file of files) if (!watched.has(file)) {
       const listener = (): void => {
         if (!active) return
         try {
           if (isCurrentPublication?.(file) === true) return
+          if (deferredRules.get(file) === fileStamp(file)) return
+          deferredRules.delete(file)
           const ids = options.enabledModules(), stamp = assemblyStamp(ids)
           const agents = new Set([...knownAgents, ...(ctx.get('agents')?.list() ?? [])])
           let changed = processStamp !== stamp || !dependenciesCurrent(publicationDependencies)
@@ -714,7 +726,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     const live = targets.filter(agent => active && !disposed.has(agent))
     const failures: Error[] = []
     const candidates = []
-    const definitions = readDefinitions(ids, files)
+    const definitions = readDefinitions(ids, files, live.length === 0, expected?.id)
     if (expected !== undefined) {
       assertGeneration(expected.id, expected.generation)
       const source = definitions.get(expected.id)
@@ -758,6 +770,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     for (const [id, source] of definitions) {
       try {
         if ('error' in source) throw source.error
+        if ('noProcessRules' in source) continue
         if (!source.spec.rules?.some(rule => rule.executionScope === 'process')) { processCandidates.set(id, null); continue }
         const old = processSources.get(id)
         if (old !== undefined && sourceInputs.get(old)?.signature === source.signature && currentDependencies(old)) {
@@ -786,6 +799,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       for (const [id, source] of definitions) {
         try {
           if ('error' in source) throw source.error
+          if ('noProcessRules' in source) continue
           const old = previousSources.get(id)
           const oldInputs = old === undefined ? undefined : sourceInputs.get(old)
           let item: PreparedAssembly
@@ -928,6 +942,8 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     processControls.retain(ids)
     for (const id of processSources.keys()) if (!definitions.has(id)) processSources.delete(id)
     processStamp = assemblyStamp(ids)
+    // Swap only consumes the exact commit stamps observed in this batch.
+    for (const [file, stamp] of deferredRules) if (files.get(file) === stamp) deferredRules.delete(file)
     publicationDependencies = observed
     watchSources(ids)
     for (const { agent, prepared } of candidates) {
@@ -979,7 +995,7 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
       if (current?.stamp !== stamp || !dependenciesUnchanged) {
         // 只改变量时戳变、内容签名不变：更新戳即可，不撤装重挂。
         const definitions = dependenciesUnchanged ? readDefinitions(ids) : undefined
-        if (definitions !== undefined && unchanged(definitions, current.content)) {
+        if (current !== undefined && definitions !== undefined && unchanged(definitions, current.content)) {
           current.stamp = stamp
           for (const item of current.prepared) {
             const source = definitions.get(item.moduleId), input = sourceInputs.get(item)
@@ -1015,6 +1031,10 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
         settlePresentation: (assembly, context) => mounts.get(context.agent!.id)?.rules.settlePresentation(assembly, context) ?? Promise.resolve(assembly),
         settle: (assembly, context) => mounts.get(context.agent!.id)?.rules.settleToolSurface(assembly, context) ?? Promise.resolve(assembly),
       }),
+      ctx.on('agent/pre-step', async ({ agent }, next) => {
+        if (deferredRules.size > 0) await ensureFresh(agent)
+        return next()
+      }, { prepend: true }),
       // `agent/created` 对四种来源都触发（startup / resume / clear / compact），每次都是一个新
       // Agent。**装配失败不得冒泡**：该事件的监听器被 await，抛错会让会话创建整个失败
       // （`dsh-agent` 的 runtime-types 契约），那会违背「任何一步停下插件都完整可用」。
@@ -1042,10 +1062,12 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     for (const [file, listener] of watched) unwatchFile(file, listener)
     watched.clear()
     knownAgents.clear()
+    deferredRules.clear()
     processControls.withdraw()
     processSources.clear()
     publicationDependencies = new Map()
     return publication.dispose().then(() => pending).then(async () => {
+      runtimeReader.dispose()
       await processControls.dispose()
       for (const id of mounts.keys()) await release(id)
     })
@@ -1076,12 +1098,27 @@ export function createAgentAssembly(ctx: Context, options: AgentAssemblyOptions)
     moduleIds: (sessionId) => mounts.get(sessionId)?.moduleIds ?? [],
     ruleDiagnostics: () => active ? ruleDiagnostics.snapshot() : emptyRuleDiagnostics(),
     schedule: moduleId => { if (active) publication.schedule(moduleId) },
+    adoptAtNextRequest: (moduleId, generation) => {
+      if (!active) return false
+      try {
+        const dir = resolveModuleDir(moduleId, options.moduleRoot)
+        const file = join(dir, RULES_DIR, MODULE_LOCAL_COMMIT_FILE)
+        const stamp = fileStamp(file)
+        if (readModuleLocalCommit(dir)?.generation !== generation || fileStamp(file) !== stamp) return false
+        if (options.enabledModules().includes(moduleId)) deferredRules.set(file, stamp)
+        return true
+      } catch { return false }
+    },
     publicationFailures: () => publication.failures(),
-    moduleGenerations: moduleId => activeAgents().map(agent => {
-      const item = mounts.get(agent.id)?.prepared.find(source => source.moduleId === moduleId)
-      const generation = item && sourceInputs.get(item)?.generation
-      return { agentId: agent.id, ...(generation === undefined ? {} : { generation }) }
-    }),
+    moduleGenerations: moduleId => {
+      const enabled = options.enabledModules().includes(moduleId)
+      return activeAgents().flatMap(agent => {
+        const item = mounts.get(agent.id)?.prepared.find(source => source.moduleId === moduleId)
+        if (!enabled && item === undefined) return []
+        const generation = item && sourceInputs.get(item)?.generation
+        return [{ agentId: agent.id, ...(generation === undefined ? {} : { generation }) }]
+      })
+    },
     refresh: async (moduleId, expectedGeneration) => {
       if (!active) throw new Error('运行时配装已释放')
       try {

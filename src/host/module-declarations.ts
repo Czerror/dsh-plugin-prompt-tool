@@ -9,7 +9,7 @@
  * 所以写路径不查声明面（见 `module-subject-gate.ts` 的 `subjectGate`）。
  */
 import type { BridgeEndpointKey } from '../shared/bridge-contract.ts'
-import { loadModuleDefinition } from './module-slices.ts'
+import { readModuleDeclaredKeys } from './module-slices.ts'
 
 /**
  * 声明面登记表：端点 → 该端点读写的 `module.yml` 节。数组表示「任一存在即算已声明」。
@@ -28,5 +28,5 @@ export const DECLARED_SECTIONS: Partial<Record<BridgeEndpointKey, readonly strin
 
 /** 目标模块声明的节名集合；定义不可解析时抛既有错误，绝不返回空集。 */
 export function moduleDeclarations(dir: string): Set<string> {
-  return new Set(Object.keys(loadModuleDefinition(dir).source))
+  return readModuleDeclaredKeys(dir)
 }

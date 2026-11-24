@@ -19,6 +19,7 @@ const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-c
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
 const { commitModuleDefinition, loadModuleDefinition, materializeModuleDefinition } = await import('../../src/host/module-slices.ts')
 const { MODULE_LOCAL_COMMIT_FILE } = await import('../../src/host/module-local-state.ts')
+const { editModuleRuleContent, readModuleRules } = await import('../../src/host/module-rules.ts')
 const { migrateLegacyModules } = await import('../../src/host/module-catalog.ts')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
@@ -46,7 +47,7 @@ async function liveAssembly(t, enabledModules) {
     await root.serial(scopeTarget(agent, agent), 'agent/created', { agent, source: 'startup' })
     return agent
   }
-  const inject = (agent) => root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, signal: new AbortController().signal }, async () => ({
+  const inject = (agent, wait = async () => {}) => root.waterfall(scopeTarget(agent, agent), 'agent/pre-step', { agent, signal: new AbortController().signal }, async () => (await wait(), {
     kind: 'continue', messages: [{ role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'USER' }] }],
   }))
   const assemble = async agent => {
@@ -69,6 +70,32 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
   })
   writeFileSync(join(installed, 'module.yml'), 'rules: [')
   const h = await liveAssembly(t, () => ['live-injection'])
+  const busyRead = readFileSync
+  let ruleObjectsRead = 0
+  const processRule = { id: 'process-fixture', executionScope: 'process', then: [{ id: 'control', kind: 'host-control', capability: 'command-confine-passthrough', value: true }] }
+  const source = structuredClone(loadModuleDefinition(installed).source)
+  t.mock.method(fs, 'readFileSync', (file, ...args) => {
+    if (String(file).startsWith(join(installed, 'rules', '.objects'))) ruleObjectsRead++
+    return busyRead(file, ...args)
+  })
+  syncBuiltinESMExports()
+  try {
+    await h.runtime.refresh()
+    assert.equal(ruleObjectsRead, 0, '没有 Agent 或进程贡献时只读提交索引')
+    commitModuleDefinition(loadModuleDefinition(installed), JSON.stringify({ ...source, rules: [...source.rules, processRule] }))
+    ruleObjectsRead = 0
+    await h.runtime.refresh()
+    assert.ok(ruleObjectsRead > 0, '进程规则仍走完整编译')
+    assert.ok(JSON.stringify(h.runtime.ruleDiagnostics()).includes('process-fixture'), '没有 Agent 时仍发布进程规则')
+    commitModuleDefinition(loadModuleDefinition(installed), JSON.stringify(source))
+    await h.runtime.refresh()
+    ruleObjectsRead = 0
+    await h.runtime.refresh()
+    assert.equal(ruleObjectsRead, 0, '撤回进程规则后恢复只读索引')
+  } finally {
+    t.mock.restoreAll()
+    syncBuiltinESMExports()
+  }
   h.root.systemPrompt.context({ name: 'test:context', order: 0, text: 'CONTEXT' })
   const main = await h.makeAgent('main-live')
   const child = await h.makeAgent('child-live', 1)
@@ -76,6 +103,21 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
   const texts = (result) => result.messages.flatMap((message) => message.content.map((block) => block.text))
   assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER'])
   assert.deepEqual(texts(await h.inject(child)), ['USER', 'CHILD'])
+  const entered = Promise.withResolvers(), finish = Promise.withResolvers()
+  const inFlight = h.inject(main, async () => { entered.resolve(); await finish.promise })
+  await entered.promise
+  const before = readModuleRules(installed)
+  const next = structuredClone(before.rules.find(rule => rule.id === 'main'))
+  next.then[0].config.text = 'NEXT REQUEST'
+  const edited = editModuleRuleContent(installed, { previousId: next.id, rule: next }, before.revisions)
+  assert.equal(edited.deferUntilRequest, true)
+  assert.equal(h.runtime.adoptAtNextRequest('live-injection', edited.definitionRevision), true)
+  await h.runtime.settled()
+  assert.equal(h.runtime.moduleGenerations('live-injection').find(item => item.agentId === main.id)?.generation, before.definitionRevision)
+  assert.deepEqual(texts(await h.inject(main)), ['NEXT REQUEST', 'USER'])
+  assert.equal(h.runtime.moduleGenerations('live-injection').find(item => item.agentId === main.id)?.generation, edited.definitionRevision)
+  finish.resolve()
+  assert.deepEqual(texts(await inFlight), ['MAIN', 'USER'])
   const system = await h.root.systemPrompt.assemble({ agent: main, scope: main })
   assert.ok(system.sections.some((section) => section.text === 'SYSTEM'))
   assert.ok(system.contexts.some((context) => context.text === 'CONTEXT'))
@@ -86,11 +128,11 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
     h.root.emit(scopeTarget(main.session, main), 'session/event', main.session, event)
   }
   record('assistant/message')
-  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED'])
+  assert.deepEqual(texts(await h.inject(main)), ['NEXT REQUEST', 'USER', 'PROMOTED'])
   record('compaction/end')
-  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER'])
+  assert.deepEqual(texts(await h.inject(main)), ['NEXT REQUEST', 'USER'])
   record('assistant/message')
-  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED'])
+  assert.deepEqual(texts(await h.inject(main)), ['NEXT REQUEST', 'USER', 'PROMOTED'])
   const chainDir = join(moduleRoot, 'managed-chain')
   mkdirSync(chainDir)
   installFixture('managed-chain', { id: 'managed-chain', modules: ['rule-engine'], configOrder: { chain: 1000 }, rules: [{
@@ -111,13 +153,13 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
     const evaluate = prepared.rules[0].when
     prepared.rules[0].when = Object.assign(subject => { checks[key]++; return evaluate(subject) }, evaluate)
   }
-  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED', 'CHAIN-B'], '受管批次逐动作执行 A→过滤A→B')
+  assert.deepEqual(texts(await h.inject(main)), ['NEXT REQUEST', 'USER', 'PROMOTED', 'CHAIN-B'], '受管批次逐动作执行 A→过滤A→B')
   assert.deepEqual(texts(await h.inject(child)), ['USER', 'CHILD'])
   assert.deepEqual(checks, { main: 1, child: 1 }, '同一执行帧每规则只判断一次')
   record('compaction/end')
-  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER'])
+  assert.deepEqual(texts(await h.inject(main)), ['NEXT REQUEST', 'USER'])
   record('assistant/message')
-  assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED', 'CHAIN-B'])
+  assert.deepEqual(texts(await h.inject(main)), ['NEXT REQUEST', 'USER', 'PROMOTED', 'CHAIN-B'])
   assert.equal(checks.main, 3, '压缩后同一规则重判、重晋升，仍每批一次')
   for (const release of releases) release()
   assert.deepEqual(h.warnings, [])
@@ -147,6 +189,8 @@ test('首次装配跳过坏模块，健康模块在主子会话继续注入，�
   const template = join(healthy, 'body.txt')
   const h = await liveAssembly(t, () => ['isolated-broken', 'isolated-healthy'])
   const agents = [await h.makeAgent('isolated-main'), await h.makeAgent('isolated-child', 1)]
+  assert.deepEqual(h.runtime.moduleGenerations('disabled-legacy'), [])
+  assert.deepEqual(h.runtime.moduleGenerations('isolated-broken'), agents.map(agent => ({ agentId: agent.id })))
   const texts = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
   for (const agent of agents) {
     assert.deepEqual(await texts(agent), ['USER', 'HEALTHY'])
@@ -247,6 +291,18 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   assert.deepEqual(await injected(), ['USER', 'CHANGED', 'hot-b'])
   const pointer = join(moduleRoot, 'hot-b', 'rules', MODULE_LOCAL_COMMIT_FILE)
   const savedPointer = readFileSync(pointer)
+  const oldGeneration = h.runtime.moduleGenerations('hot-b')[0].generation
+  writeModuleFixture('hot-b', {
+    modules: ['rule-engine'], promptConfigs: [{ id: 'hot-b', text: 'NEW-B', position: 'after-user' }],
+  })
+  const nextCommit = JSON.parse(readFileSync(pointer, 'utf8'))
+  await h.runtime.refresh('hot-b')
+  assert.equal(h.runtime.moduleGenerations('hot-b')[0].generation, nextCommit.generation)
+  assert.deepEqual(await injected(), ['USER', 'CHANGED', 'NEW-B'])
+  writeFileSync(join(moduleRoot, 'hot-b', 'rules', '.objects', nextCommit.members['hot-b.yml']), 'corrupt rule')
+  await h.runtime.refresh('hot-b')
+  assert.equal(h.runtime.moduleGenerations('hot-b')[0].generation, oldGeneration)
+  assert.deepEqual(await injected(), ['USER', 'CHANGED', 'hot-b'], '损坏当前成员时完整回退到上一代')
   writeFileSync(pointer, '{}')
   migrateLegacyModules(moduleRoot)
   assert.equal(readFileSync(pointer, 'utf8'), '{}', '启动不使用旧定义覆盖受损的本地代')

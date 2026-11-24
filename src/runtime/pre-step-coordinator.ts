@@ -88,7 +88,7 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
     withSubagents: promotionPool.tracker(PROMOTE_EVENTS.either, { includeSubagents: true }),
   }
   const memo = new Map<string, Set<string>>()
-  const instructionCalls = new WeakMap<object, { agent: unknown; refs: number; evaluated: boolean; snapshot?: InstructionPolicySnapshot }>()
+  const instructionCalls = new WeakMap<object, { agent: unknown; refs: number; evaluated: boolean; sources?: PreStepSource[]; snapshot?: InstructionPolicySnapshot }>()
   const withPreStep = async <T>(payload: unknown, run: () => Promise<T>): Promise<T> => {
     if (!isRecord(payload)) return run()
     const call = instructionCalls.get(payload) ?? { agent: payload.agent, refs: 0, evaluated: false }
@@ -103,11 +103,15 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
   const warnOnce = createWarnOnce(ctx, WARN_LABEL)
   const readPolicy = createPolicyReader(options.policyFile)
   let active = true
-  const instructionPolicySnapshotOf = (agent: unknown, messages: unknown[], reportOutcomes = false): InstructionPolicySnapshot | undefined => {
+  const sourcesOf = (agent: unknown): PreStepSource[] => {
+    const scope = isRecord(agent) && agent.ctx !== undefined ? scopeOf(agent.ctx as Context) : undefined
+    return [...layers.merge(scope, layer => layer.entries).values()]
+  }
+  const instructionPolicySnapshotOf = (agent: unknown, messages: unknown[], reportOutcomes = false, captured?: PreStepSource[]): InstructionPolicySnapshot | undefined => {
     try {
       const scope = isRecord(agent) && agent.ctx !== undefined ? scopeOf(agent.ctx as Context) : undefined
       if (scope === undefined) return undefined
-      const sources = [...layers.merge(scope, (layer) => layer.entries).values()]
+      const sources = captured ?? sourcesOf(agent)
       const report = reportOutcomes ? composePreStepSources(sources).report : undefined
       const frame = ruleFrame('agent/pre-step', [{ agent, messages }], warnOnce, ctx, report)
       frame.frozenActionMatches = new Map<object, boolean>()
@@ -151,7 +155,7 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
     if (call === undefined || call.agent !== agent) return instructionPolicySnapshotOf(agent, messages)
     if (!call.evaluated) {
       call.evaluated = true
-      call.snapshot = instructionPolicySnapshotOf(agent, messages, true)
+      call.snapshot = instructionPolicySnapshotOf(agent, messages, true, call.sources)
     }
     return call.snapshot
   }
@@ -203,9 +207,12 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
   // 一个 prepend 监听器显式排定「过滤官方指令 → 规则批」；官方监听器在 `await next()`
   // 之后才 append messages，所以先拿完整 decision、过滤，再交给 batch。
   ctx.on('agent/pre-step', (payload: unknown, next: () => Promise<PreStepDecision>) => withPreStep(payload, async () => {
+    const agent = isRecord(payload) ? payload.agent : undefined
+    const sources = sourcesOf(agent)
+    const call = isRecord(payload) ? instructionCalls.get(payload) : undefined
+    if (call !== undefined) call.sources = sources
     const decision = await next()
     if (!active || !isRecord(decision) || decision.kind === 'reject') return decision
-    const agent = isRecord(payload) ? payload.agent : undefined
     const session = isRecord(agent) ? agent.session : undefined
     const messages = Array.isArray(decision.messages) ? decision.messages : undefined
     const instructionSnapshot = messages === undefined ? undefined : snapshotForCall(agent, messages, payload)
@@ -220,8 +227,6 @@ export function installPreStepCoordinator(ctx: Context, options: PreStepCoordina
       : { ...decision, messages: filteredMessages as typeof decision.messages }
     if (agent === undefined || session === undefined) return filteredDecision
     try {
-      const scope = isRecord(agent) && agent.ctx !== undefined ? scopeOf(agent.ctx as Context) : undefined
-      const sources = [...layers.merge(scope, (layer) => layer.entries).values()]
       // 只按旧生成卡的 id 前缀跳过；编译后的 sourceKind 恒带 `plugin:` 前缀（见 schema.mjs），
       // 声明 `instruction-file` 的用户配置照常注入。
       const filtered = sources.map(source => ({

@@ -64,7 +64,7 @@ export type BridgeEndpoint = (typeof BRIDGE_ENDPOINTS)[keyof typeof BRIDGE_ENDPO
 export type BridgeEndpointKey = keyof typeof BRIDGE_ENDPOINTS
 
 /** 失败载荷：两端共用。 */
-export type BridgeErrorPayload = { ok: false; code?: string; message?: string; conflicts?: string[] }
+export type BridgeErrorPayload = { ok: false; code?: string; message?: string; conflicts?: string[]; definitionRevision?: string; effectiveGenerations?: RulesSnapshot['effectiveGenerations'] }
 
 /**
  * **编辑目标**只在请求头里声明：body 是各端点自己的载荷形状，不掺公共键。

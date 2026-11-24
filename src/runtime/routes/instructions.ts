@@ -1,16 +1,15 @@
 /** instructions 域端点：指令文件（AGENTS.md 等）读写、指令策略与声明规则事务。 */
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { isDeepStrictEqual } from 'node:util'
 import { isEditableModuleDir, packageEngineDir } from '../../host/module-dirs.ts'
-import { ensureModuleSlices, loadModuleDefinition } from '../../host/module-slices.ts'
+import { ensureModuleSlices } from '../../host/module-slices.ts'
 import { ModuleWriteError } from '../../host/module-write.ts'
-import { createModuleRule, editModuleRules, readModuleRules } from '../../host/module-rules.ts'
+import { createModuleRule, editModuleRuleContent, editModuleRules, readModuleRules } from '../../host/module-rules.ts'
 import { writeAgentsFileChecked } from '../../host/agents-cards.ts'
 import { instructionPolicyPath, readInstructionPolicy, writeInstructionPolicy } from '../../host/instructions-policy.ts'
 import { BRIDGE_ENDPOINTS } from '../../shared/bridge-contract.ts'
 import { published } from '../../shared/publication.ts'
-import type { CompactRulesSnapshot, RuleDefinition, RuleEdit, RuleEditorMeta, RuleRevisions } from '../../shared/rules.ts'
+import type { RulePublicationFields, RuleDefinition, RuleEdit, RuleEditorMeta, RuleRevisions } from '../../shared/rules.ts'
 import { writeLayerSettingsError } from '../module-subject-gate.ts'
 import {
   instructionOwner,
@@ -18,6 +17,7 @@ import {
   mergeInstructionCards,
   readSessionIdField,
   resolveInstructionScope,
+  SHA256_HEX_RE,
   type BridgeRuntime,
 } from '../bridge-runtime.ts'
 
@@ -160,6 +160,8 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         || (record.activateRuleId !== undefined && (typeof record.activateRuleId !== 'string' || record.activateRuleId.length === 0))
         || (record.validateOnly !== undefined && typeof record.validateOnly !== 'boolean')
         || (record.refreshOnly !== undefined && typeof record.refreshOnly !== 'boolean')
+        || (record.expectedDefinitionRevision !== undefined && (record.refreshOnly !== true
+          || typeof record.expectedDefinitionRevision !== 'string' || !SHA256_HEX_RE.test(record.expectedDefinitionRevision)))
         || (record.createRule !== undefined && !isRecord(record.createRule))
         || (record.expectedRulesAbsent !== undefined && record.expectedRulesAbsent !== true)
         || (record.refreshOnly === true && (record.edits !== undefined || record.activateRuleId !== undefined || record.validateOnly !== undefined || record.expectedRulesAbsent !== undefined || record.createRule !== undefined))
@@ -178,32 +180,61 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
         tx.write(400, { ok: false, code: 'rules-invalid', message: '紧凑保存只接受单条已存在规则正文编辑' })
         return
       }
-      if (record.refreshOnly === true) {
-        if (runtime.gate(tx, 'rules').authorize() === undefined) return
-        try { await runtime.deps.overridesChanged?.(basename(dir)) }
-        catch (error) {
-          const committed = loadModuleDefinition(dir)
-          const meta = await ruleEditorMeta()
-          tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta, ...published(`运行刷新失败：${String(error)}`) } })
-          return
-        }
-        const committed = loadModuleDefinition(dir)
-        // meta 在组装响应时才取：编译器不可用时这里的失败与其它路径一样落进本端点的
-        // `rules-failed`，而不是冒泡成 `bridge-handler-failed`（同一端点不该有两种码）。
-        const meta = await ruleEditorMeta()
-        tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta, ...published() } })
-        return
-      }
       const editing = record.edits !== undefined || record.activateRuleId !== undefined
       if (editing && !isRecord(record.expectedRevisions)) {
         tx.write(400, { ok: false, code: 'rules-invalid', message: '修改规则必须提供读取时的 expectedRevisions' })
         return
       }
       let createdRuleId: string | undefined
-      let candidateRevision: string | undefined
+      const moduleId = basename(dir)
+      const status = (generation: string): RulePublicationFields => {
+        const effectiveGenerations = runtime.deps.moduleGenerations?.(moduleId)
+        const failure = runtime.deps.publicationFailures?.().find(item => item.moduleId === moduleId
+          || (item.moduleId === undefined && effectiveGenerations?.some(agent => agent.generation !== generation)))
+        return {
+          ...(effectiveGenerations === undefined ? {} : { effectiveGenerations }),
+          ...(failure === undefined ? {} : { publicationPending: true, publicationError: failure.message }),
+        }
+      }
+      const retryPublication = async (generation: string): Promise<RulePublicationFields> => {
+        let failure: string | undefined
+        try {
+          if (runtime.deps.rulesChanged) await runtime.deps.rulesChanged(moduleId, generation)
+          else await runtime.deps.overridesChanged?.(moduleId)
+        } catch (error) {
+          if (error instanceof ModuleWriteError && error.code === 'rules-conflict') throw error
+          failure = `规则已保存，运行刷新失败：${String(error)}`
+        }
+        const effectiveGenerations = runtime.deps.moduleGenerations?.(moduleId)
+        if (failure === undefined && effectiveGenerations?.some(agent => agent.generation !== generation)) failure = '规则已保存，仍有 Agent 使用其他提交代'
+        return { ...(effectiveGenerations === undefined ? {} : { effectiveGenerations }), ...published(failure) }
+      }
+      const schedule = async (deferredGeneration?: string): Promise<RulePublicationFields> => {
+        const deferred = deferredGeneration !== undefined && runtime.deps.scheduleRuleAdoption?.(moduleId, deferredGeneration)
+        const publication = deferred ? { persisted: true as const } : await runtime.schedulePublication(moduleId)
+        const effectiveGenerations = runtime.deps.moduleGenerations?.(moduleId)
+        return { ...publication, ...(effectiveGenerations === undefined ? {} : { effectiveGenerations }) }
+      }
       try {
-        // 动态 import 之后的写前复检：可写 + 身份都在这里再判一次（豁免不适用，写端点默认核形状）。
+        const meta = await ruleEditorMeta()
         if (runtime.gate(tx, 'rules').inspect(writing) === undefined) return
+        if (record.refreshOnly === true) {
+          if (runtime.gate(tx, 'rules').authorize() === undefined) return
+          const committed = readModuleRules(dir)
+          if (record.expectedDefinitionRevision !== undefined && record.expectedDefinitionRevision !== committed.definitionRevision) {
+            tx.write(409, { ok: false, code: 'rules-conflict', message: '待发布版本已变更，请重新读取当前规则', definitionRevision: committed.definitionRevision, ...status(committed.definitionRevision) })
+            return
+          }
+          const publication = await retryPublication(committed.definitionRevision)
+          tx.write(200, { ok: true, value: { ...committed, meta, ...publication } })
+          return
+        }
+        if (record.compactEdit === true) {
+          const { deferUntilRequest, ...saved } = editModuleRuleContent(dir, (record.edits as RuleEdit[])[0]!, record.expectedRevisions as Partial<RuleRevisions>)
+          const publication = await schedule(deferUntilRequest === true ? saved.definitionRevision : undefined)
+          tx.write(200, { ok: true, value: { ...saved, meta, ...publication } })
+          return
+        }
         const candidate = record.createRule !== undefined
           ? (() => {
             const created = createModuleRule(dir, { rule: record.createRule as unknown as RuleDefinition, ...(record.expectedRulesAbsent === true ? { expectedRulesAbsent: true } : {}) })
@@ -215,44 +246,23 @@ export function registerInstructions(runtime: InstructionsRuntime): Array<() => 
           ...(record.edits === undefined ? {} : { edits: record.edits as RuleEdit[] }),
           ...(record.activateRuleId === undefined ? {} : { activateRuleId: record.activateRuleId as string }),
           ...(record.validateOnly === undefined ? {} : { validateOnly: record.validateOnly as boolean }),
-        }, revision => { candidateRevision = revision }) : isEditableModuleDir(dir) ? readModuleRules(dir) : ensureModuleSlices(dir, { writable: false })
-        const publication = writing ? await runtime.schedulePublication(basename(dir)) : undefined
-        if (publication?.publicationPending) {
-          tx.write(200, { ok: true, value: { rules: candidate.rules, revisions: candidate.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...publication } })
-          return
-        }
-        if (record.compactEdit === true) {
-          const edit = (record.edits as RuleEdit[])[0]!
-          if (candidateRevision === undefined) throw new Error('紧凑保存事务没有返回已验证版本')
-          const saved = candidate.rules.find(rule => rule.id === edit.rule!.id)
-          if (!saved) {
-            tx.write(409, { ok: false, code: 'rules-conflict', message: '目标规则保存后不存在；请重新读取，当前草稿仍保留' })
-            return
-          }
-          const compact: CompactRulesSnapshot = {
-            rule: saved,
-            ruleRevision: candidate.revisions.rules[saved.id]!,
-            definitionRevision: candidateRevision,
-            settingsRevision: candidate.revisions.settings,
-            variablesRevision: candidate.revisions.variables,
-            meta: await ruleEditorMeta(),
-            ...publication,
-          }
-          tx.write(200, { ok: true, value: compact })
-          return
-        }
-        const result = writing ? readModuleRules(dir) : candidate
-        if (writing && !isDeepStrictEqual(result.rules, candidate.rules)) {
-          tx.write(409, { ok: false, code: 'rules-conflict', message: '重建期间规则再次变化；请重新读取，当前草稿仍保留' })
-          return
-        }
-        tx.write(200, { ok: true, value: { rules: result.rules, revisions: result.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...publication } })
+        }) : isEditableModuleDir(dir) ? readModuleRules(dir) : (() => {
+          const snapshot = ensureModuleSlices(dir, { writable: false })
+          return { definitionRevision: snapshot.revision, rules: snapshot.rules, revisions: snapshot.revisions }
+        })()
+        const publication = writing ? await schedule() : status(candidate.definitionRevision)
+        tx.write(200, { ok: true, value: { ...candidate, meta, ...(createdRuleId === undefined ? {} : { createdRuleId }), ...publication } })
       } catch (error) {
         if (error instanceof ModuleWriteError) {
           createdRuleId ??= error.createdRuleId
+          if (record.refreshOnly === true && error.code === 'rules-conflict') {
+            const committed = readModuleRules(dir)
+            tx.write(409, { ok: false, code: error.code, message: error.message, definitionRevision: committed.definitionRevision, ...status(committed.definitionRevision) })
+            return
+          }
           if (error.persisted) {
-            const committed = loadModuleDefinition(dir)
-            tx.write(200, { ok: true, value: { rules: committed.rules, revisions: committed.revisions, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...(error.activationPending === undefined ? {} : { activationPending: error.activationPending }), ...published(error.message) } })
+            const committed = readModuleRules(dir)
+            tx.write(200, { ok: true, value: { ...committed, meta: await ruleEditorMeta(), ...(createdRuleId === undefined ? {} : { createdRuleId }), ...(error.activationPending === undefined ? {} : { activationPending: error.activationPending }), ...status(committed.definitionRevision), ...published(error.message) } })
             return
           }
           tx.write(error.status, { ok: false, code: error.code, message: error.message })

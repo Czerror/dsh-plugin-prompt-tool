@@ -11,6 +11,7 @@ import { lstatSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { MODULE_LOCAL_COMMIT_FILE, MODULE_LOCAL_INITIALIZED_FILE } from './module-local-state.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR } from './paths.ts'
+import { moduleDirectoryIdentity } from './module-install.ts'
 
 /** 预览协议版本：字段语义变化时递增，纳入 revision 计算。 */
 export const PREVIEW_PROTOCOL_VERSION = 'st-preview/1'
@@ -61,34 +62,37 @@ export function computePreviewRevision(input: PreviewRevisionInput): string {
  * 目录内容版本：按相对路径排序后逐个摘要文件内容，目录不存在返回 `null`。
  * 只用于目标身份的"是否被改过"判断，不持久化、不缓存。
  */
-export function directoryVersionOf(dir: string): string | null {
-  try {
-    if (!lstatSync(dir).isDirectory() || lstatSync(dir).isSymbolicLink()) throw new Error('目标不是普通目录')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
+export function directoryVersionOf(dir: string, include?: (entry: string) => boolean): string | null {
+  const identity = moduleDirectoryIdentity(dir)
+  if (identity === undefined) return null
   const rules = join(dir, RULES_DIR)
   const committed = lstatSync(join(dir, MODULE_LOCAL_INITIALIZED_FILE), { throwIfNoEntry: false }) !== undefined
     || (lstatSync(rules, { throwIfNoEntry: false })?.isDirectory()
       && lstatSync(join(rules, MODULE_LOCAL_COMMIT_FILE), { throwIfNoEntry: false }) !== undefined)
-  const hash = createHash('sha256')
+  const hash = createHash('sha256').update(identity + '\0')
   const walk = (current: string, prefix: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (committed && prefix === '' && entry.name.toLowerCase() === MODULE_DEFINITION_FILE) continue
+      if (prefix === '' && include !== undefined && !include(entry.name)) continue
       if (entry.isSymbolicLink()) throw new Error(`目标包含链接：${entry.name}`)
       const rel = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`
+      const path = join(current, entry.name)
+      if (include !== undefined) {
+        const stat = lstatSync(path, { bigint: true })
+        hash.update(`${stat.ino}:${stat.ctimeNs}:${stat.mtimeNs}\u0000`)
+      }
       if (entry.isDirectory()) {
         hash.update(`D\u0000${rel}\u0000`)
-        walk(join(current, entry.name), rel)
+        walk(path, rel)
         continue
       }
       if (!entry.isFile()) continue
       hash.update(`F\u0000${rel}\u0000`)
-      hash.update(readFileSync(join(current, entry.name)))
+      hash.update(readFileSync(path))
     }
   }
   // 读取失败不可冒充“目标不存在”，提交方必须 fail closed。
   walk(dir, '')
+  if (moduleDirectoryIdentity(dir) !== identity) throw new Error('读取期间模块目录已替换')
   return hash.digest('hex')
 }

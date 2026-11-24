@@ -26,6 +26,14 @@ export function modulePathExists(path: string): boolean {
   }
 }
 
+/** 目录被另一个同名模块替换时，即使内容相同也必须重新读取。 */
+export function moduleDirectoryIdentity(path: string): string | undefined {
+  const stat = lstatSync(path, { bigint: true, throwIfNoEntry: false })
+  if (!stat) return undefined
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error(`模块路径不是普通目录：${path}`)
+  return `${stat.dev}:${stat.ino}:${stat.birthtimeNs}`
+}
+
 /** 检查祖先和目标，拒绝经 junction 或单文件链接访问模块资产。 */
 export function assertNoModuleLinks(path: string): void {
   const absolute = resolve(path), parent = dirname(absolute)

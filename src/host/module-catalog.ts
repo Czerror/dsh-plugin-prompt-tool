@@ -9,10 +9,8 @@ import { Document } from 'yaml'
 import { isModuleId } from '../shared/module-ids.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { assertModuleDirectory, assertModuleId, modulePathExists } from './module-install.ts'
-import { ModuleLayerSettingsError } from './module-layer-settings.ts'
-import { ModuleWriteError } from './module-write.ts'
 import { buildModuleCandidate, finalizeModuleCandidate } from './write-module.ts'
-import { installModuleDirectory, leftoverStageWarning, type ModuleInstallOutcome } from './module-install-transaction.ts'
+import { installModuleDirectory, leftoverStageWarning, recoverModuleInstallations, type ModuleInstallOutcome } from './module-install-transaction.ts'
 import { findModuleDir, packageModulesDir, userModulesDir } from './module-dirs.ts'
 import { loadModuleSpec } from './module-spec.ts'
 import { markModuleLocalInitialized, readModuleLocalCommit } from './module-local-state.ts'
@@ -51,19 +49,6 @@ function blankModuleDefinitionText(targetId: string): string {
   return doc.toString()
 }
 
-/** 模块目录是否含组合源：modules、composition 或官方 agent.cordis.yml。 */
-function isRenderableModuleDir(dir: string): boolean {
-  try {
-    const spec = loadModuleSpec(dir)
-    if (Array.isArray(spec.modules)) return true
-    if (typeof spec.composition === 'string' && spec.composition.length > 0) return true
-  } catch (error) {
-    if (error instanceof ModuleLayerSettingsError || error instanceof ModuleWriteError) throw error
-    return false
-  }
-  return false
-}
-
 /** 本插件模块清单；所有目录按同一身份与组合源规则列举。 */
 export function listModules(moduleRoot = userModulesDir()): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
   const scan = (dir: string): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> => {
@@ -79,7 +64,7 @@ export function listModules(moduleRoot = userModulesDir()): Array<{ id: string; 
               id: entry.name,
               name: spec.name,
               user: true,
-              renderable: isRenderableModuleDir(join(dir, entry.name)),
+              renderable: Array.isArray(spec.modules) || (typeof spec.composition === 'string' && spec.composition.length > 0),
               ...(typeof spec.description === 'string' && spec.description.length > 0 ? { description: spec.description } : {}),
               ...(spec.meta !== undefined && spec.meta !== null ? { meta: spec.meta } : {}),
             }]
@@ -117,6 +102,7 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
 }
 /** 按包内同名定义补建缺失的内置模块；资产留在包内，已有用户目录保持原样。 */
 export function ensureModuleSeed(root = userModulesDir(), warn?: (message: string) => void): { created: string[] } {
+  recoverModuleInstallations(root, warn)
   const created: string[] = []
   try {
     mkdirSync(root, { recursive: true })

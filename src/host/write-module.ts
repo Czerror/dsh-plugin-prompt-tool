@@ -1,6 +1,6 @@
 /** 模块完整定义校验、运行切片恢复与隔离导入候选。普通重建不交换用户目录。 */
 import { cpSync, existsSync, readFileSync, readdirSync, rmSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { parseDocument } from 'yaml'
 import { MODULE_DEFINITION_FILE, modulesDir } from './paths.ts'
 import { appendModuleConfigOrder } from './module-config-order.ts'
@@ -30,7 +30,6 @@ export interface WriteModuleOptions {
 }
 
 function validateModule(directory: string, warn?: (message: string) => void): void {
-  assertModuleTree(directory)
   const snapshot = loadModuleDefinition(directory)
   const spec = { ...snapshot.source, id: snapshot.source.id ?? basename(snapshot.dir),
     rules: snapshot.rules, configOrder: snapshot.configOrder, variables: snapshot.variables, variablesEnabled: snapshot.variablesEnabled } as unknown as ModuleSpec
@@ -67,18 +66,32 @@ export function buildModuleCandidate(
   options: { validate?: boolean } = {},
 ): void {
   const builtin = findModuleDir(packageModulesDir(), basename(source))
-  const definitionOnly = builtin !== undefined && resolve(source) === resolve(builtin) && targetId === basename(source)
-  const definition = readModuleDefinitionExport(source)
-  if (targetId !== basename(source)) copyBuiltinModuleAssets(candidate, basename(source))
-  if (!definitionOnly) for (const entry of readdirSync(source, { withFileTypes: true })) {
-    const root = entry.name.toLowerCase()
-    if (root === MODULE_DEFINITION_FILE || root === 'rules' || root === MODULE_LOCAL_INITIALIZED_FILE || LEGACY_ARTIFACTS.includes(root)) continue
-    const path = join(source, entry.name)
-    assertModuleTree(path)
-    cpSync(path, join(candidate, entry.name), { recursive: entry.isDirectory(), force: true })
+  const isBuiltin = builtin !== undefined && resolve(source) === resolve(builtin)
+  const renamed = targetId !== basename(source)
+  const includesAsset = (name: string): boolean => {
+    const root = name.toLowerCase()
+    return root !== MODULE_DEFINITION_FILE && root !== 'rules' && root !== MODULE_LOCAL_INITIALIZED_FILE && !LEGACY_ARTIFACTS.includes(root)
   }
-  if (readModuleDefinitionExport(source).revision !== definition.revision) throw new Error('复制期间模块定义发生变化')
-  atomicWriteTextFile(join(candidate, MODULE_DEFINITION_FILE), definition.text)
+  const capture = (): string => {
+    const before = directoryVersionOf(source, includesAsset)
+    if (before === null) throw new Error('复制来源模块不存在')
+    const definition = readModuleDefinitionExport(source)
+    if (renamed) copyBuiltinModuleAssets(candidate, basename(source))
+    for (const entry of readdirSync(source, { withFileTypes: true })) {
+      if (!includesAsset(entry.name)) continue
+      const path = join(source, entry.name)
+      assertModuleTree(path)
+      cpSync(path, join(candidate, entry.name), { recursive: entry.isDirectory(), force: true })
+    }
+    if (directoryVersionOf(source, includesAsset) !== before || readModuleDefinitionExport(source).revision !== definition.revision) {
+      throw new Error('复制期间模块定义或附件发生变化')
+    }
+    return definition.text
+  }
+  const text = isBuiltin
+    ? renamed ? capture() : readModuleDefinitionExport(source).text
+    : withModuleLock(dirname(source), basename(source), capture)
+  atomicWriteTextFile(join(candidate, MODULE_DEFINITION_FILE), text)
   finalizeModuleCandidate(candidate, targetId, agentsText, options)
 }
 
@@ -111,9 +124,8 @@ export function finalizeModuleCandidate(
   }
   writeContentAssets(candidate, agentsText)
   // 复制现有用户模块时沿用旧语义：只保证可读与切片重建，不额外用组合/customTools 校验拒绝复制。
-  if (options.validate !== false) validateModule(candidate)
-  ensureModuleSlices(candidate)
   materializeModuleDefinition(candidate)
+  if (options.validate !== false) validateModule(candidate)
 }
 
 /** 未知选项即抛：删掉旧选项（moduleDir / presetOrder）后，写错的名字不能再被静默忽略。

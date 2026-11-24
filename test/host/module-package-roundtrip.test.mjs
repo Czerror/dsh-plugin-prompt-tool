@@ -124,8 +124,7 @@ test('安装完整定义后可从提交记录读回原始声明和有序规则�
   for (const id of commit.ruleIds) assert.equal(parse(readObject(commit.members[id + '.yml'])).id, id)
 
   const overwrite = [{ path: 'module.yml', content: definition.replace('rules:', 'metadataText: &body SECOND\nrules:').replace('"SECOND"', '*body') }]
-  const preview = moduleImportPreview(moduleRoot, overwrite, { targetId: id, overwrite: true })
-  await assert.rejects(installModulePackage(moduleRoot, overwrite, credentials(preview)),
+  assert.throws(() => moduleImportPreview(moduleRoot, overwrite, { targetId: id, overwrite: true }),
     error => error.code === 'shared-alias' && /metadataText → rules/.test(error.message))
   assert.deepEqual(JSON.parse(readFileSync(join(dir, '_commit.json'), 'utf8')), commit)
   for (const id of commit.ruleIds) assert.equal(parse(readObject(commit.members[id + '.yml'])).id, id)
@@ -151,18 +150,16 @@ test('同名包内模板回退只接受缺失资产，用户覆盖和包内变�
   }
   syncBuiltinESMExports()
   try {
+    writeFileSync(packageDefinition, JSON.stringify({ id: 'other-module' }))
+    assert.throws(() => materializeModuleDefinition(dir), /身份不匹配/)
+    writeFileSync(packageDefinition, JSON.stringify({ id }))
+    materializeModuleDefinition(dir)
     const fallback = ensureModuleSlices(dir)
     assertModuleDefinitionFormat(dir)
-    writeFileSync(packageDefinition, JSON.stringify({ id: 'other-module' }))
-    assert.throws(() => validateModuleDefinitionText(dir, fallback.text), /身份不匹配/)
-    assert.throws(() => assertModuleDefinitionFormat(dir), /身份不匹配/)
-    assert.throws(() => loadModuleDefinition(dir), /身份不匹配/)
-    writeFileSync(packageDefinition, JSON.stringify({ id }))
     mkdirSync(join(dir, 'assets'))
     const localAsset = join(dir, 'assets', 'notice.json')
     writeFileSync(localAsset, '')
     assert.throws(() => validateModuleDefinitionText(dir, fallback.text, {}, fallback), { code: 'rules-conflict' })
-    assert.throws(() => assertModuleDefinitionFormat(dir), /not valid JSON/)
     assert.throws(() => loadModuleDefinition(dir), /not valid JSON/)
 
     writeFileSync(localAsset, '"USER"')
@@ -175,7 +172,6 @@ test('同名包内模板回退只接受缺失资产，用户覆盖和包内变�
     ensureModuleSlices(dir)
     assertModuleDefinitionFormat(dir)
     writeFileSync(packageAsset, 'INVALID')
-    assert.throws(() => assertModuleDefinitionFormat(dir), /not valid JSON/)
     assert.throws(() => loadModuleDefinition(dir), /not valid JSON/)
 
     writeFileSync(packageAsset, '"PACKAGE"')
@@ -183,7 +179,6 @@ test('同名包内模板回退只接受缺失资产，用户覆盖和包内变�
     assertModuleDefinitionFormat(dir)
     rmdirSync(join(dir, 'assets'))
     symlinkSync(join(packaged, 'assets'), join(dir, 'assets'), 'junction')
-    assert.throws(() => assertModuleDefinitionFormat(dir), /包含链接/)
     assert.throws(() => loadModuleDefinition(dir), /包含链接/)
   } finally { mock.restoreAll(); syncBuiltinESMExports() }
 })
