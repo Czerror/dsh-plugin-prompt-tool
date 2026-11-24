@@ -3,7 +3,7 @@ import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -17,6 +17,9 @@ const { moduleRoot } = isolatedHome('pt-assembly-')
 const { prepareAssembly, createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-coordinator.ts')
 const { mountRuleSources } = await import('../../engine/rule-runtime.mjs')
+const { commitModuleDefinition, loadModuleDefinition, materializeModuleDefinition } = await import('../../src/host/module-slices.ts')
+const { MODULE_LOCAL_COMMIT_FILE } = await import('../../src/host/module-local-state.ts')
+const { migrateLegacyModules } = await import('../../src/host/module-catalog.ts')
 
 /** 装配能力探针：装配只问「宿主是否提供该服务」，这里全部视为提供。 */
 const hasEveryService = () => true
@@ -54,7 +57,7 @@ async function liveAssembly(t, enabledModules) {
 }
 
 test('真实注入：启用配置进入主/子会话正确位置，关闭项不注入，释放后不再贡献', async (t) => {
-  writeModuleFixture('live-injection', {
+  const installed = writeModuleFixture('live-injection', {
     modules: ['prompt-config-engine'],
     promptConfigs: [
       { id: 'main', text: 'MAIN', audience: 'main', position: 'before-all' },
@@ -64,6 +67,7 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
       { id: 'promoted', text: 'PROMOTED', promotion: 'main', audience: 'main', position: 'after-user' },
     ],
   })
+  writeFileSync(join(installed, 'module.yml'), 'rules: [')
   const h = await liveAssembly(t, () => ['live-injection'])
   h.root.systemPrompt.context({ name: 'test:context', order: 0, text: 'CONTEXT' })
   const main = await h.makeAgent('main-live')
@@ -89,14 +93,14 @@ test('真实注入：启用配置进入主/子会话正确位置，关闭项不�
   assert.deepEqual(texts(await h.inject(main)), ['MAIN', 'USER', 'PROMOTED'])
   const chainDir = join(moduleRoot, 'managed-chain')
   mkdirSync(chainDir)
-  writeFileSync(join(chainDir, 'module.yml'), JSON.stringify({ id: 'managed-chain', modules: ['rule-engine'], configOrder: { chain: 1000 }, rules: [{
+  installFixture('managed-chain', { id: 'managed-chain', modules: ['rule-engine'], configOrder: { chain: 1000 }, rules: [{
     id: 'chain', layer: 'pre-step', if: { all: [{ scope: { audience: 'main' } }, { phase: { promoted: true } }] },
     then: [
       { id: 'a', kind: 'inject-text', config: { id: 'chain-a', layer: 'pre-step', sourceKind: 'plugin', text: 'CHAIN-A', position: 'after-user' } },
       { id: 'filter', kind: 'pre-step-filter', blockPlugins: ['chain-a'] },
       { id: 'b', kind: 'inject-text', config: { id: 'chain-b', layer: 'pre-step', sourceKind: 'plugin', text: 'CHAIN-B', position: 'after-user' } },
     ],
-  }] }))
+  }] })
   const checks = { main: 0, child: 0 }
   const releases = []
   for (const [key, agent] of [['main', main], ['child', child]]) {
@@ -128,12 +132,19 @@ test('首次装配跳过坏模块，健康模块在主子会话继续注入，�
   const write = (id, text, strategy = 'static') => writeModuleFixture(id, {
     modules: ['rule-engine'], promptConfigs: [{ id, text, strategy, position: 'after-user' }],
   })
-  write('isolated-broken', 'RECOVERED', 'invalid')
+  mkdirSync(join(moduleRoot, 'isolated-broken'), { recursive: true })
   const healthy = writeModuleFixture('isolated-healthy', { modules: ['rule-engine'], promptConfigs: [
     { id: 'isolated-healthy', templateFile: 'body.txt', position: 'after-user' },
-  ] })
+  ] }, { 'body.txt': 'HEALTHY' })
+  const legacy = join(moduleRoot, 'disabled-legacy')
+  mkdirSync(legacy)
+  writeFileSync(join(legacy, 'module.yml'), 'id: disabled-legacy\nrules: []\n')
+  migrateLegacyModules(moduleRoot)
+  const legacyPointer = readFileSync(join(legacy, 'rules', MODULE_LOCAL_COMMIT_FILE))
+  writeFileSync(join(legacy, 'module.yml'), 'id: disabled-legacy\nname: stale\nrules: []\n')
+  migrateLegacyModules(moduleRoot)
+  assert.deepEqual(readFileSync(join(legacy, 'rules', MODULE_LOCAL_COMMIT_FILE)), legacyPointer)
   const template = join(healthy, 'body.txt')
-  writeFileSync(template, 'HEALTHY')
   const h = await liveAssembly(t, () => ['isolated-broken', 'isolated-healthy'])
   const agents = [await h.makeAgent('isolated-main'), await h.makeAgent('isolated-child', 1)]
   const texts = async agent => (await h.inject(agent)).messages.flatMap(message => message.content.map(block => block.text))
@@ -155,24 +166,36 @@ test('首次装配跳过坏模块，健康模块在主子会话继续注入，�
   const section = h.root.systemPrompt.section
   let rejectedMounts = 0
   t.mock.method(h.root.systemPrompt, 'section', function (config) {
-    if (config.name.includes('isolated-broken')) {
+    if (config.name.includes('isolated-broken') && rejectedMounts === 0) {
       rejectedMounts++
       throw new Error('HOST-SECTION-REJECTED')
     }
     return section.call(this, config)
   })
-  writeModuleFixture('isolated-broken', { modules: ['rule-engine'], promptConfigs: [
+  const oldGeneration = h.runtime.moduleGenerations('isolated-broken')[0].generation
+  const brokenDir = writeModuleFixture('isolated-broken', { modules: ['rule-engine'], promptConfigs: [
     { id: 'isolated-broken-section', layer: 'system-section', text: 'REJECTED' },
   ] })
+  const newGeneration = loadModuleDefinition(brokenDir).revision
   write('isolated-healthy', 'HEALTHY-AFTER-RULE-FAILURE')
   await assert.rejects(h.runtime.refresh('isolated-broken'), /HOST-SECTION-REJECTED/)
+  const generations = h.runtime.moduleGenerations('isolated-broken')
+  assert.deepEqual(new Set(generations.map(item => item.generation)), new Set([oldGeneration, newGeneration]))
   for (const agent of agents) {
-    assert.deepEqual(await texts(agent), ['USER', 'RECOVERED', 'HEALTHY-AFTER-RULE-FAILURE'], '规则注册失败也只回退所属模块')
+    const used = generations.find(item => item.agentId === agent.id).generation
+    assert.deepEqual(await texts(agent), ['USER', ...(used === oldGeneration ? ['RECOVERED'] : []), 'HEALTHY-AFTER-RULE-FAILURE'])
   }
-  assert.equal(rejectedMounts, 2)
+  assert.equal(rejectedMounts, 1)
   h.runtime.schedule('isolated-broken')
   await h.assemble(agents[0])
-  assert.equal(rejectedMounts, 2, '普通发布保留拒绝标记，避免同坏版本重新挂载')
+  assert.equal(rejectedMounts, 1, '普通发布保留拒绝标记，避免同坏版本重新挂载')
+  await assert.rejects(h.runtime.refresh('isolated-broken', oldGeneration), { code: 'rules-conflict' })
+  assert.equal(rejectedMounts, 1, '过期代不触发运行发布')
+  h.root.systemPrompt.section.mock.restore()
+  const committedPointer = readFileSync(join(brokenDir, 'rules', MODULE_LOCAL_COMMIT_FILE))
+  await h.runtime.refresh('isolated-broken', newGeneration)
+  assert.deepEqual(readFileSync(join(brokenDir, 'rules', MODULE_LOCAL_COMMIT_FILE)), committedPointer, '重试只发布')
+  assert.ok(h.runtime.moduleGenerations('isolated-broken').every(item => item.generation === newGeneration))
   await h.runtime.dispose()
   for (const agent of agents) {
     assert.deepEqual(await texts(agent), ['USER'])
@@ -196,7 +219,7 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   const count = { id: 'hot-count', if: { count: { of: 'assistant-message', min: 1 } }, then: [
     { id: 'count-text', kind: 'inject-text', config: { layer: 'pre-step', text: 'COUNT', position: 'after-user' } },
   ] }
-  writeFileSync(join(moduleRoot, 'hot-a', 'module.yml'), JSON.stringify({ id: 'hot-a', modules: ['rule-engine'], rules: [count] }))
+  installFixture('hot-a', { id: 'hot-a', modules: ['rule-engine'], rules: [count] })
   setModuleEnabled(moduleRoot, 'hot-a', true)
   await h.runtime.refresh()
   assert.deepEqual(await injected(), ['USER'])
@@ -222,22 +245,23 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
   })
   await h.runtime.refresh('hot-a')
   assert.deepEqual(await injected(), ['USER', 'CHANGED', 'hot-b'])
-  writeModuleFixture('hot-b', {
-    modules: ['prompt-config-engine'],
-    promptConfigs: [{ id: 'hot-b', strategy: 'invalid', text: 'BROKEN' }],
-  })
+  const pointer = join(moduleRoot, 'hot-b', 'rules', MODULE_LOCAL_COMMIT_FILE)
+  const savedPointer = readFileSync(pointer)
+  writeFileSync(pointer, '{}')
+  migrateLegacyModules(moduleRoot)
+  assert.equal(readFileSync(pointer, 'utf8'), '{}', '启动不使用旧定义覆盖受损的本地代')
   writeModuleFixture('hot-a', {
     modules: ['rule-engine'], promptConfigs: [{ id: 'hot-a', text: 'HEALTHY-UPDATE', position: 'after-user' }],
   })
   await assert.rejects(h.runtime.refresh('hot-b'), /运行时配装更新失败/)
-  assert.deepEqual(await injected(), ['USER', 'HEALTHY-UPDATE', 'hot-b'], '仅故障模块保旧，健康模块更新')
-  writeFileSync(join(moduleRoot, 'hot-b', 'module.yml'), 'rules: [')
+  assert.deepEqual(await injected(), ['USER', 'HEALTHY-UPDATE'], '损坏提交无上一代时撤回贡献，健康模块更新')
   writeModuleFixture('hot-a', {
     modules: ['rule-engine'], promptConfigs: [{ id: 'hot-a', text: 'HEALTHY-AFTER-PARSE-ERROR', position: 'after-user' }],
   })
   await assert.rejects(h.runtime.refresh(), /运行时配装更新失败/)
-  assert.deepEqual(await injected(), ['USER', 'HEALTHY-AFTER-PARSE-ERROR', 'hot-b'], '坏文件不通过签名读取阻止其他模块更新')
+  assert.deepEqual(await injected(), ['USER', 'HEALTHY-AFTER-PARSE-ERROR'], '坏指针不阻止其他模块更新')
   assert.ok(h.runtime.publicationFailures().some(failure => failure.moduleId === undefined), '全量失败有诊断')
+  writeFileSync(pointer, savedPointer)
   writeModuleFixture('hot-b', {
     modules: ['rule-engine'], promptConfigs: [{ id: 'hot-b', text: 'RECOVERED-B', position: 'after-user' }],
   })
@@ -256,12 +280,11 @@ test('热更新：空启用表到多模块、配置启停与拒绝后重试都�
 test('模块启用在预检后遇到另一提交时拒绝互斥集合，保留原配置', async () => {
   const { setModuleEnabled, enabledModuleIds, enableTablePath } = await import('../../src/host/config-store.ts')
   for (const id of ['race-a', 'race-b']) {
-    const dir = writeModuleFixture(id, { modules: ['rule-engine'] })
-    writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
+    installFixture(id, {
       id, modules: ['rule-engine'], rules: [{
         ...fixtureRule({ id, text: id }), group: 'race', groupScope: 'cross-module', exclusive: true,
       }],
-    })}\n`)
+    })
   }
   const config = enableTablePath(moduleRoot)
   writeFileSync(config, '# keep comment\nschemaVersion: 3\nenabled: []\ncustom: stay\n')
@@ -293,20 +316,25 @@ test('模块启用在预检后遇到另一提交时拒绝互斥集合，保留�
   assert.deepEqual(enabledModuleIds(moduleRoot), ['race-a'])
 })
 
-function writeModuleFixture(id, { modules, promptConfigs = [], variables }) {
+function installFixture(id, definition, files = {}) {
   const dir = join(moduleRoot, id)
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'module.yml'), `${JSON.stringify({
+  for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
+  const text = JSON.stringify(definition)
+  let snapshot
+  try { snapshot = loadModuleDefinition(dir) } catch { /* 尚未安装的夹具从完整定义物化。 */ }
+  if (snapshot) commitModuleDefinition(snapshot, text)
+  else {
+    writeFileSync(join(dir, 'module.yml'), text)
+    materializeModuleDefinition(dir)
+  }
+  return dir
+}
+
+function writeModuleFixture(id, { modules, promptConfigs = [], variables }, files) {
+  return installFixture(id, {
     id, name: id, modules: [...new Set(modules.map(name => ['prompt-config-engine', 'declared-triggers'].includes(name) ? 'rule-engine' : name))],
     rules: promptConfigs.map(config => fixtureRule(config)),
     ...(variables === undefined ? {} : { variables }),
-  }, null, 2)}\n`, 'utf8')
-  if (promptConfigs.length > 0) {
-    const configsDir = join(dir, 'configs')
-    mkdirSync(configsDir, { recursive: true })
-    for (const [index, config] of promptConfigs.entries()) {
-      writeFileSync(join(configsDir, `${index}-${config.id}.yml`), `${JSON.stringify(config, null, 2)}\n`, 'utf8')
-    }
-  }
-  return dir
+  }, files)
 }

@@ -3,20 +3,21 @@
  * 从原 `manifest.ts`（1106 行、34 个导出）按簇拆出——这些判据不读模块定义，
  * 与 module.yml 的解析分开后，依赖图才保持单向。
  */
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, lstatSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MODULE_DEFINITION_FILE, modulesDir } from './paths.ts'
-import { assertModuleDirectory, modulePathExists } from './module-install.ts'
+import { modulesDir } from './paths.ts'
+import { assertModuleDirectoryPath, assertModuleId, modulePathExists } from './module-install.ts'
 
 /**
  * 模块目录确实存在于本插件存储根（身份判定与官方登记状态无关）。
  *
- * 启用表过滤、工具写入目标、TUI 目标共用这一条判据：本插件管理的模块 = 存储根里含
- * `module.yml` 的目录，与「宿主有没有把它登记成官方预设」是两回事。
+ * 目录存在性与本地代完整性分别检查，受损目录仍须呈现诊断。
  */
 export function moduleDirExists(root: string, id: string): boolean {
-  return statSync(join(root, id, MODULE_DEFINITION_FILE), { throwIfNoEntry: false }) !== undefined
+  assertModuleId(id)
+  const info = lstatSync(join(root, id), { throwIfNoEntry: false })
+  return info?.isDirectory() === true && !info.isSymbolicLink()
 }
 
 /**
@@ -55,17 +56,15 @@ export function userModulesDir(): string {
 
 /** 只按合法目录身份定位；现存坏身份必须报错，不能绕到同名模板。 */
 export function findModuleDir(scanDir: string, template: string): string | undefined {
-  const exact = assertModuleDirectory(scanDir, template, true)
+  const exact = assertModuleDirectoryPath(scanDir, template, true)
   return modulePathExists(exact) ? exact : undefined
 }
 
 /**
- * 解析模块模板目录：当前模块根优先，包内模板回退；不读取其他部署根的同名模块。
- * 目录名与声明的 module.yml id 一致；不扫描其他目录的 id 别名。
+ * 解析运行模块目录：仅当前模块根，按目录身份定位。
  */
 export function resolveModuleDir(template: string, moduleRoot = userModulesDir()): string {
-  const found = findModuleDir(moduleRoot, template) ?? findModuleDir(packageModulesDir(), template)
-  return found ?? join(packageModulesDir(), template)
+  return assertModuleDirectoryPath(moduleRoot, template)
 }
 
 /**

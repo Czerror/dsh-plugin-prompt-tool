@@ -123,7 +123,7 @@ function enabledIdsFromSource(source: Record<string, unknown>): string[] {
  *
  * 这是「按请求定位编辑目标」的唯一入口——编辑器不必依赖某个全局单选：写请求带上
  * 模块 id 就写那个模块。id 形状非法（`../x`、`..`、含大写或斜杠）或目标目录不存在、
- * `<root>/<id>/module.yml` 缺失时返回空串，由调用方按「无目标」拒绝，不静默改写到
+ * 目标目录缺失时返回空串，由调用方按「无目标」拒绝，不静默改写到
  * 别的模块（尤其是启用表首项）。形状判据必须先于存在性：`join` 不拦 `..`，只查
  * 「文件在不在」会让存储根之外的同级模块被当成本插件管理的模块读写。
  */
@@ -154,8 +154,7 @@ function validateEnabledCandidate(moduleRoot: string, id: string, enabled: boole
     assertCrossModuleParticipantPaths(moduleRoot, next)
     const rules = new Map<string, readonly RuleDefinition[]>()
     for (const moduleId of next) {
-      const file = join(moduleRoot, moduleId, 'module.yml')
-      if (!modulePathExists(file)) continue
+      if (!moduleDirExists(moduleRoot, moduleId)) continue
       try { rules.set(moduleId, loadModuleDefinition(join(moduleRoot, moduleId)).rules) }
       catch { rules.set(moduleId, []) }
     }

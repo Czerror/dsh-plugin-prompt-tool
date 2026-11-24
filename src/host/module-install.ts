@@ -44,7 +44,7 @@ export function canonicalModulesRoot(root: string, allowMissing = false): string
   return realpathSync(absoluteRoot)
 }
 
-function assertModuleDirectoryPath(root: string, id: string, allowMissing = false): string {
+export function assertModuleDirectoryPath(root: string, id: string, allowMissing = false): string {
   assertModuleId(id)
   const canonicalRoot = canonicalModulesRoot(root, allowMissing)
   const target = join(canonicalRoot, id)
@@ -61,8 +61,13 @@ function assertModuleDirectoryPath(root: string, id: string, allowMissing = fals
   return target
 }
 
-/** 根与目标先解析真实路径，拒绝链接目录及定义身份不一致。 */
+/** 已安装模块的路径身份；提交内容由读取者校验。 */
 export function assertModuleDirectory(root: string, id: string, allowMissing = false): string {
+  return assertModuleDirectoryPath(root, id, allowMissing)
+}
+
+/** 完整定义的交换来源只在安装、迁移、导入等入口验证。 */
+export function assertModuleDefinitionSource(root: string, id: string, allowMissing = false): string {
   const target = assertModuleDirectoryPath(root, id, allowMissing)
   if (allowMissing && !modulePathExists(target)) return target
   const definition = join(target, MODULE_DEFINITION_FILE)
@@ -75,20 +80,9 @@ export function assertModuleDirectory(root: string, id: string, allowMissing = f
   return target
 }
 
-/** 派生快照允许定义暂时损坏；路径、文件类型与可读的声明身份仍须可信。 */
+/** 派生快照允许当前代暂时损坏；目录身份仍须可信。 */
 export function assertModuleSnapshotSource(root: string, id: string): string {
-  const target = assertModuleDirectoryPath(root, id)
-  const definition = join(target, MODULE_DEFINITION_FILE)
-  const fileStat = lstatSync(definition, { throwIfNoEntry: false })
-  if (!fileStat) return target
-  if (fileStat.isSymbolicLink() || !fileStat.isFile()) throw new Error(`预设定义不是普通文件：${id}`)
-  let doc: ReturnType<typeof parseDocument>
-  try { doc = parseDocument(readFileSync(definition, 'utf8'), { logLevel: 'silent' }) }
-  catch { return target }
-  if (doc.errors.length > 0 || !(doc.contents instanceof YAMLMap)) return target
-  const declared = doc.get('id')
-  if (declared !== undefined && declared !== id) throw new Error(`预设定义身份不匹配：${id}`)
-  return target
+  return assertModuleDirectoryPath(root, id)
 }
 
 /** 复制和物化只接受自有普通文件；不跟随任意层级链接读取根外数据。 */
