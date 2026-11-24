@@ -3,13 +3,15 @@ import assert from 'node:assert/strict'
 import fs, { existsSync, mkdirSync, readFileSync, readdirSync, rmdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { syncBuiltinESMExports } from 'node:module'
 import { createHash } from 'node:crypto'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { home, moduleRoot } = isolatedHome('pt-package-roundtrip-')
 const { moduleImportPreview, installModulePackage, exportModulePackage, expandModuleSource } = await import('../../src/host/module-package.ts')
-const { ensureModuleSlices, assertModuleDefinitionFormat, loadModuleDefinition, readRulesDir, validateModuleDefinitionText } = await import('../../src/host/module-slices.ts')
+const { ensureModuleSlices, materializeModuleDefinition, assertModuleDefinitionFormat, loadModuleDefinition, readRulesDir, validateModuleDefinitionText } = await import('../../src/host/module-slices.ts')
+const { editModuleRuleContent, editModuleRules, readModuleRules } = await import('../../src/host/module-rules.ts')
+const { duplicateUserModule, ensureModuleSeed } = await import('../../src/host/module-catalog.ts')
 const { decodeAssetFile } = await import('../../src/host/import-source.ts')
 const rule = (id, text, extra = {}) => ({ id, enabled: false, then: [{ id: 'inject', kind: 'inject-text', config: { text, ...extra } }] })
 const source = (id, extra = {}) => ({ id, name: id, modules: [], rules: [rule('hello', 'SOURCE')], variables: { owner: 'Mia' }, variablesEnabled: false, configOrder: { hello: 40 }, ...extra })
@@ -24,9 +26,39 @@ async function install(files, targetId) {
   const preview = moduleImportPreview(moduleRoot, files, { targetId })
   return installModulePackage(moduleRoot, files, credentials(preview))
 }
-const state = dir => ({ definition: readFileSync(join(dir, 'module.yml'), 'utf8'), files: readdirSync(dir).sort() })
+const state = dir => readdirSync(dir).sort()
 
-test('模块包往返以完整定义为准，漂移切片只在候选重建，素材和变量保持', async () => {
+test('模块包往返导出已提交规则、导入以完整定义为准，素材和变量保持', async () => {
+  const blocked = 'blocked-seed', healthy = 'healthy-seed'
+  const packageRoot = join(home, 'recovery-seeds')
+  const sourcePackageRoot = resolve(fileURLToPath(new URL('../../src/modules/', import.meta.url)))
+  for (const seed of [blocked, healthy]) {
+    const dir = join(packageRoot, seed)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'module.yml'), JSON.stringify(source(seed)))
+  }
+  const damagedStage = join(moduleRoot, `.${blocked}.install-ABC123`)
+  mkdirSync(moduleRoot, { recursive: true })
+  writeFileSync(damagedStage, 'BROKEN STAGE')
+  const warnings = []
+  for (const name of ['existsSync', 'lstatSync', 'realpathSync', 'readdirSync', 'readFileSync']) {
+    const original = fs[name]
+    mock.method(fs, name, (path, ...args) => {
+      if (typeof path !== 'string') return original(path, ...args)
+      const absolute = resolve(path)
+      if (absolute === sourcePackageRoot) return original(packageRoot, ...args)
+      if (!absolute.startsWith(sourcePackageRoot + sep)) return original(path, ...args)
+      return original(packageRoot + absolute.slice(sourcePackageRoot.length), ...args)
+    })
+  }
+  syncBuiltinESMExports()
+  let seeded
+  try { seeded = ensureModuleSeed(moduleRoot, message => warnings.push(message)) }
+  finally { mock.restoreAll(); syncBuiltinESMExports() }
+  assert.equal(existsSync(join(moduleRoot, blocked)), false, '受阻模块不能被同名种子盖掉')
+  assert.equal(readFileSync(damagedStage, 'utf8'), 'BROKEN STAGE')
+  assert.deepEqual(seeded.created, [healthy], '健康模块继续播种')
+  assert.ok(warnings.some(message => message.includes(blocked)), '坏备份单独告警')
   const id = 'roundtrip-source', dir = fixture(id)
   mkdirSync(join(dir, 'assets'))
   writeFileSync(join(dir, 'assets', 'notice.txt'), 'PACKAGED TEMPLATE')
@@ -37,8 +69,12 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
       else: [{ id: 'fallback', kind: 'inject-text', config: { templateFile: './assets/notice.txt' } }] }],
   }] })
   writeFileSync(join(dir, 'module.yml'), '# owner comment\n' + JSON.stringify(spec))
-  ensureModuleSlices(dir)
-  writeFileSync(join(dir, 'rules', 'hello.yml'), 'FORGED SLICE')
+  materializeModuleDefinition(dir)
+  const read = readModuleRules(dir)
+  spec.rules[0].then[0].config.text = 'COMMITTED'
+  editModuleRules(dir, { expectedRevisions: read.revisions, edits: [{ previousId: 'hello', rule: spec.rules[0] }] })
+  writeFileSync(join(dir, 'module.yml'), 'BROKEN EXCHANGE SOURCE')
+  writeFileSync(join(dir, 'rules', 'orphan.yml'), 'FORGED SLICE')
   writeFileSync(join(dir, 'memory.md'), 'PRIVATE MEMORY')
   const before = state(dir)
   const writes = []
@@ -49,12 +85,25 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
   finally { mock.restoreAll(); syncBuiltinESMExports() }
   assert.deepEqual(writes, [])
   assert.deepEqual(state(dir), before)
-  assert.equal(readFileSync(join(dir, 'rules', 'hello.yml'), 'utf8'), 'FORGED SLICE')
+  assert.equal(readFileSync(join(dir, 'rules', 'orphan.yml'), 'utf8'), 'FORGED SLICE')
+  assert.equal(readFileSync(join(dir, 'module.yml'), 'utf8'), 'BROKEN EXCHANGE SOURCE')
+  const copy = duplicateUserModule(id, moduleRoot)
+  assert.equal(copy.ok, true, JSON.stringify(copy))
+  const copiedDefinition = await exportModulePackage(moduleRoot, { id: copy.id, mode: 'definition' })
+  assert.match(copiedDefinition.content, /COMMITTED/)
+  assert.equal(readFileSync(join(moduleRoot, copy.id, 'memory.md'), 'utf8'), 'PRIVATE MEMORY')
+  writeFileSync(join(dir, 'assets', 'notice.txt'), 'NEW TEMPLATE')
+  await assert.rejects(exportModulePackage(moduleRoot, { id, mode: 'zip', expectedRevision: preview.revision }), { code: 'module-preview-stale' })
+  preview = await exportModulePackage(moduleRoot, { id, mode: 'zip', preview: true })
+  const definition = await exportModulePackage(moduleRoot, { id, mode: 'definition' })
+  assert.match(definition.content, /owner comment/)
+  assert.match(definition.content, /COMMITTED/)
+  assert.doesNotMatch(definition.content, /BROKEN EXCHANGE SOURCE|FORGED SLICE/)
   const exported = await exportModulePackage(moduleRoot, { id, mode: 'zip', expectedRevision: preview.revision })
   const files = await expandModuleSource([{ path: 'module.zip', content: exported.content, encoding: 'base64' }])
   assert.deepEqual(files.map(file => file.path).sort(), ['assets/notice.txt', 'module.yml'])
   const plain = await install(files, 'plain-copy')
-  const drifted = [...files, { path: 'rules/hello.yml', content: 'id: forged\ndo: []\n' }, { path: 'rules/_settings.yml', content: 'rules: {}\n' }, { path: 'rules/variables.yml', content: 'owner: INJECTED\n' }]
+  const drifted = [...files, { path: 'rules/hello.yml', content: 'id: forged\ndo: []\n' }, { path: 'rules/_settings.yml', content: 'rules: {}\n' }, { path: 'rules/variables.yml', content: 'owner: INJECTED\n' }, { path: 'rules/_commit.json', content: '{}' }, { path: 'rules/.objects/forged.yml', content: 'FORGED OBJECT' }]
   const beforeInput = JSON.stringify(drifted)
   const attached = await install(drifted, 'slice-copy')
   assert.equal(JSON.stringify(drifted), beforeInput, '入站切片从未反向覆盖来源定义或源对象')
@@ -68,15 +117,63 @@ test('模块包往返以完整定义为准，漂移切片只在候选重建，�
     assert.equal(restored.settings.hello.order, 40)
     assert.deepEqual(restored.variables, { owner: 'Mia' })
     assert.equal(restored.variablesEnabled, false)
-    assert.equal(readFileSync(join(copied, 'assets', 'notice.txt'), 'utf8'), 'PACKAGED TEMPLATE')
+    assert.equal(readFileSync(join(copied, 'assets', 'notice.txt'), 'utf8'), 'NEW TEMPLATE')
     assert.equal(existsSync(join(copied, 'memory.md')), false)
     assert.equal(existsSync(join(copied, 'agent.cordis.yml')), false)
-    assert.match(readFileSync(join(copied, 'module.yml'), 'utf8'), /owner comment/)
+    assert.match((await exportModulePackage(moduleRoot, { id, mode: 'definition' })).content, /owner comment/)
   }
   const manifest = { version: 1, definition: 'module.yml', files: Object.fromEntries(files.map(file => [file.path, createHash('sha256').update(decodeAssetFile(file)).digest('hex')])) }
   const withManifest = [...files, { path: 'prompt-tool-package.json', content: JSON.stringify(manifest) }]
   await assert.rejects(expandModuleSource([...withManifest, { path: 'extra.txt', content: 'undeclared' }]), /集合/)
   await assert.rejects(expandModuleSource(withManifest.map(file => file.path === 'assets/notice.txt' ? { ...file, content: 'TAMPERED', encoding: 'utf8' } : file)), /摘要/)
+})
+
+test('模块包往返保留声明、同序规则与 YAML 引用，拒绝跨界引用', async () => {
+  const id = 'committed-source'
+  const definition = '# original comment\nid: committed-source\nname: committed-source\nmodules: []\nvariables: {}\nvariablesEnabled: false\nconfigOrder: { second: 2, first: 2, future: 9 }\nunknown: &metadata { owner: Mia }\nother: *metadata\nrules:\n  - ' + JSON.stringify(rule('second', 'SECOND')) + '\n  - ' + JSON.stringify(rule('first', 'FIRST')) + '\n'
+  await install([{ path: 'module.yml', content: definition }], id)
+  const dir = join(moduleRoot, id)
+  const { parse } = await import('yaml')
+  const original = readModuleRules(dir)
+  assert.deepEqual(original.rules.map(rule => rule.id), ['second', 'first'])
+  const expected = parse(definition)
+  expected.rules[0].name = 'Renamed'
+  const saved = editModuleRuleContent(dir, { previousId: 'second', rule: expected.rules[0] }, original.revisions)
+  assert.equal(saved.rule.name, 'Renamed')
+  const exported = await exportModulePackage(moduleRoot, { id, mode: 'definition' })
+  assert.deepEqual(parse(exported.content), expected)
+  assert.match(exported.content, /original comment/)
+  assert.match(exported.content, /other: \*metadata/)
+
+  const overwrite = [{ path: 'module.yml', content: definition.replace('rules:', 'metadataText: &body SECOND\nrules:').replace('"SECOND"', '*body') }]
+  assert.throws(() => moduleImportPreview(moduleRoot, overwrite, { targetId: id, overwrite: true }),
+    error => error.code === 'shared-alias' && /metadataText → rules/.test(error.message))
+  assert.equal((await exportModulePackage(moduleRoot, { id, mode: 'definition' })).content, exported.content)
+
+  const aliasedId = 'aliased-rules'
+  const makeRule = (id, actions) => `  - id: ${id}\n    then: ${actions}\n`
+  const actions = '[{ id: inject, kind: inject-text, config: { text: &body ORIGINAL, summary: *body } }]'
+  const aliased = 'id: aliased-rules\nmodules: []\nrules:\n'
+    + makeRule('anchor', '&actions ' + actions) + makeRule('peer', '*actions') + makeRule('solo', actions.replaceAll('body', 'soloBody'))
+    + makeRule('unrelated', actions.replace('&body ', '').replace('*body', 'ORIGINAL'))
+  await install([{ path: 'module.yml', content: aliased }], aliasedId)
+  const aliasDir = join(moduleRoot, aliasedId)
+  const state = readModuleRules(aliasDir)
+  const unrelated = state.rules.find(rule => rule.id === 'unrelated')
+  assert.equal(editModuleRuleContent(aliasDir, { previousId: unrelated.id, rule: { ...unrelated, name: 'Edited' } }, state.revisions).rule.name, 'Edited')
+  for (const ruleId of ['anchor', 'solo']) {
+    const current = readModuleRules(aliasDir)
+    const rule = current.rules.find(rule => rule.id === ruleId)
+    const changed = structuredClone(rule)
+    changed.then[0].config.text = 'CHANGED'
+    assert.throws(() => editModuleRuleContent(aliasDir, { previousId: ruleId, rule: changed }, current.revisions), { code: 'shared-alias' }, ruleId)
+  }
+  const current = readModuleRules(aliasDir)
+  const peer = current.rules.find(rule => rule.id === 'peer')
+  assert.equal(editModuleRuleContent(aliasDir, { previousId: peer.id, rule: { ...peer, name: 'Peer' } }, current.revisions).rule.name, 'Peer')
+  const aliasExport = await exportModulePackage(moduleRoot, { id: aliasedId, mode: 'definition' })
+  assert.match(aliasExport.content, /then: \*actions/)
+  assert.match(aliasExport.content, /summary: \*soloBody/)
 })
 
 test('同名包内模板回退只接受缺失资产，用户覆盖和包内变更使缓存失效', () => {
@@ -99,18 +196,16 @@ test('同名包内模板回退只接受缺失资产，用户覆盖和包内变�
   }
   syncBuiltinESMExports()
   try {
+    writeFileSync(packageDefinition, JSON.stringify({ id: 'other-module' }))
+    assert.throws(() => materializeModuleDefinition(dir), /身份不匹配/)
+    writeFileSync(packageDefinition, JSON.stringify({ id }))
+    materializeModuleDefinition(dir)
     const fallback = ensureModuleSlices(dir)
     assertModuleDefinitionFormat(dir)
-    writeFileSync(packageDefinition, JSON.stringify({ id: 'other-module' }))
-    assert.throws(() => validateModuleDefinitionText(dir, fallback.text), /身份不匹配/)
-    assert.throws(() => assertModuleDefinitionFormat(dir), /身份不匹配/)
-    assert.throws(() => loadModuleDefinition(dir), /身份不匹配/)
-    writeFileSync(packageDefinition, JSON.stringify({ id }))
     mkdirSync(join(dir, 'assets'))
     const localAsset = join(dir, 'assets', 'notice.json')
     writeFileSync(localAsset, '')
     assert.throws(() => validateModuleDefinitionText(dir, fallback.text, {}, fallback), { code: 'rules-conflict' })
-    assert.throws(() => assertModuleDefinitionFormat(dir), /not valid JSON/)
     assert.throws(() => loadModuleDefinition(dir), /not valid JSON/)
 
     writeFileSync(localAsset, '"USER"')
@@ -123,7 +218,6 @@ test('同名包内模板回退只接受缺失资产，用户覆盖和包内变�
     ensureModuleSlices(dir)
     assertModuleDefinitionFormat(dir)
     writeFileSync(packageAsset, 'INVALID')
-    assert.throws(() => assertModuleDefinitionFormat(dir), /not valid JSON/)
     assert.throws(() => loadModuleDefinition(dir), /not valid JSON/)
 
     writeFileSync(packageAsset, '"PACKAGE"')
@@ -131,7 +225,6 @@ test('同名包内模板回退只接受缺失资产，用户覆盖和包内变�
     assertModuleDefinitionFormat(dir)
     rmdirSync(join(dir, 'assets'))
     symlinkSync(join(packaged, 'assets'), join(dir, 'assets'), 'junction')
-    assert.throws(() => assertModuleDefinitionFormat(dir), /包含链接/)
     assert.throws(() => loadModuleDefinition(dir), /包含链接/)
   } finally { mock.restoreAll(); syncBuiltinESMExports() }
 })
@@ -140,6 +233,8 @@ test('模块私有 data/ 不随包导出；覆盖安装旧数据优先，包内�
   const id = 'data-keep', dir = fixture(id)
   mkdirSync(join(dir, 'data'))
   writeFileSync(join(dir, 'data', 'ledger.jsonl'), 'OLD LEDGER\n')
+  materializeModuleDefinition(dir)
+  writeFileSync(join(dir, 'module.yml'), 'BROKEN EXCHANGE SOURCE')
 
   const preview = await exportModulePackage(moduleRoot, { id, mode: 'zip', preview: true })
   const exported = await exportModulePackage(moduleRoot, { id, mode: 'zip', expectedRevision: preview.revision })

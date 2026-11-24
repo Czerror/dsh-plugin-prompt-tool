@@ -1,11 +1,21 @@
 /** 模块私有文件的唯一路径语言：memory.md 根文件、assets/ 只读、data/ 只追加。 */
 import { mkdirSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, join, posix } from 'node:path'
 import { assertSafeRelativePath } from '../shared/asset-path.ts'
 import { resolveRealWithin } from '../../engine/path-safety.mjs'
 import { assertNoModuleLinks, modulePathExists } from './module-install.ts'
 import { findModuleDir, packageModulesDir } from './module-dirs.ts'
-import { MODULE_DEFINITION_FILE } from './paths.ts'
+
+import { MODULE_LOCAL_INITIALIZED_FILE } from './module-local-state.ts'
+import { MODULE_DEFINITION_FILE, RULES_DIR } from './paths.ts'
+
+/** 运行资产不能指向交换定义或插件的本地提交记录。 */
+export function assertModuleAssetReference(path: string, field: 'composition' | 'templateFile'): void {
+  const root = posix.normalize(path.replaceAll('\\', '/')).split('/')[0]!.split(':')[0]!.replace(/[. ]+$/, '').toLowerCase()
+  if (root === MODULE_DEFINITION_FILE || root === RULES_DIR || root === MODULE_LOCAL_INITIALIZED_FILE) {
+    throw new Error(field + ' 不能引用模块交换定义或本地提交文件，请使用独立资产')
+  }
+}
 
 export type ModuleFileRoot = 'assets' | 'data'
 
@@ -62,7 +72,6 @@ export function resolveModuleReadPath(
     if (builtin !== undefined) {
       const fallback = moduleFilePath(builtin, path, roots, options).file
       assertNoModuleLinks(fallback)
-      dependOn?.(join(builtin, MODULE_DEFINITION_FILE))
       dependOn?.(fallback)
       if (modulePathExists(fallback)) return resolveModuleFilePath(builtin, path, roots, options)
     }

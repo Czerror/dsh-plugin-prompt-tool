@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeHostContext } from '../fixtures/host-harness.mjs'
@@ -174,6 +174,28 @@ test('importPresetPackage：路径穿越条目被明确拒绝，不落盘', asyn
     assert.equal(payload.code, 'module-package-invalid')
     assert.match(payload.message, /非法|路径/)
   }
+  const definition = JSON.stringify({ id: 'self-template', modules: [], rules: [{ id: 'rule', then: [
+    { id: 'text', kind: 'inject-text', config: { templateFile: './module.yml', text: 'sample' } },
+  ] }] })
+  const self = await importPackage({ files: [{ path: 'module.yml', content: definition }] })
+  assert.equal(self.status, 400, '交换定义不能作为运行模板')
+  assert.equal(existsSync(join(PRESETS, 'self-template')), false)
+  const { payload: composition } = await importPackage({ files: [{ path: 'module.yml',
+    content: 'id: self-composition\ncomposition: ./module.yml\nrules: []\n' }] })
+  assert.match(composition.message, /composition.*交换定义/)
+  assert.equal(existsSync(join(PRESETS, 'self-composition')), false)
+  const { migrateLegacyModules } = await import('../../src/host/module-catalog.ts')
+  const { readModuleRules } = await import('../../src/host/module-rules.ts')
+  const legacy = join(PRESETS, 'legacy-composition')
+  mkdirSync(legacy, { recursive: true })
+  writeFileSync(join(legacy, 'module.yml'), 'id: legacy-composition\ncomposition: ./layout.yml\nrules: []\n')
+  const warnings = []
+  migrateLegacyModules(PRESETS, message => warnings.push(message))
+  assert.ok(warnings.some(message => message.includes('legacy-composition') && message.includes('layout.yml')))
+  assert.throws(() => readModuleRules(legacy))
+  writeFileSync(join(legacy, 'layout.yml'), '[]\n')
+  migrateLegacyModules(PRESETS)
+  assert.deepEqual(readModuleRules(legacy).rules, [])
   assert.ok(!existsSync(join(PRESETS, 'evil.yml')), '穿越条目不得写到预设目录之外')
   assert.ok(!existsSync(join(PRESETS, 'demo', 'evil.yml')), '穿越条目不得写入预设目录')
   assert.ok(!existsSync(join(PRESETS, 'demo', 'evil2.yml')))

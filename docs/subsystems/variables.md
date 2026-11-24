@@ -22,7 +22,7 @@ session 的唯一 owner 使用官方 `storageDomain`（`@deepseek-ai/dsh-storage
 
 `/module-variables` 接受 scope、完整 variables、enabled、expectedModuleId、expectedRevisions。工具 `module_variables` 提供 list/get/set/delete；set 必须显式字符串 value，delete 只删除指定域键。全局写同样需要实际装配工具权限和受控目标。
 
-值更新发布新快照，不重挂 Agent；新增键和不同模块同名键按来源动态读取。变量开关只控制该模块求值和模板写入，不关闭其它模块，也不删除持久值；开关变化登记后台运行发布。切片失败或显式发布重试失败时保留 `publicationPending`，重试只发 `refreshOnly`，不重放内容写入。
+模块变量随本地提交版本保存，保留独立的值与开关版本。纯值更新从来源动态读取，继续使用既有装配。开关只控制所属模块的求值和模板写入，保留持久值。开关变化登记运行发布。发布失败时保留 `publicationPending`，通过 `refreshOnly` 重试发布。
 
 bridge 的变量保存与重试由 `BridgeRuntime` 统一组织，开关变化进入装配通道的同一后台调度器；路由只负责授权、载荷校验与响应。普通读取和 bootstrap 共享变量视图，读取不触发开关重试，也不新增 `persisted`；仅值更新不顺带重试此前失败的开关发布。后台运行失败归入 `/meta` 的 `publicationFailures`，不写入变量草稿的待发布状态。
 

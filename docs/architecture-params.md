@@ -1,6 +1,6 @@
 # 后端参数框架
 
-模块的完整定义保存在 `module.yml`，运行读取经校验的规则切片。写入前确定本次操作的编辑目标。字段以 `engine/rule-spec.mjs` 和 `src/shared/engine-params.ts` 为准，bridge 载荷见 `src/shared/bridge-contract.ts`。
+模块用 `module.yml` 交换完整定义。安装后的运行输入来自经校验的本地提交。写入前确定本次操作的编辑目标。字段以 `engine/rule-spec.mjs` 和 `src/shared/engine-params.ts` 为准，bridge 载荷见 `src/shared/bridge-contract.ts`。
 
 ## 按问题查阅
 
@@ -17,17 +17,17 @@
 
 | 数据或行为 | 唯一所有者 | 派生面 |
 |---|---|---|
-| 规则、条件、动作、启停与互斥 | module.yml.rules | 经校验的规则切片 |
-| 共享引擎参数 | module.yml.layerSettings | `loadModuleSpec().params` 内部平铺适配 |
-| 模块变量 | module.yml.variables | rules/variables.yml 与运行快照 |
+| 规则、条件、动作、启停与互斥 | 本地提交的规则切片及状态 | 经校验的规则快照 |
+| 共享引擎参数 | 本地清单的 layerSettings | `loadModuleSpec().params` 内部平铺适配 |
+| 模块变量 | 本地提交的变量内容 | 运行快照 |
 | 全局变量 | `$DSH_HOME/.prompt-tool/variables.yml` 的 variables 映射 | 两级有效值快照，不随模块导出 |
 | 会话变量 | 官方 storageDomain 的 `prompt_tool_session_variables` 域 | 按来源模块目录与真实会话隔离，运行有效值优先覆盖模块与全局 |
 | 模块记忆 | 当前受控模块 memory.md | 显式工具读取，不自动注入 |
 | 模块私有数据 | 当前受控模块 data/（账本、SELF、AGENTS.md 等） | 显式工具读取/追加；不导出，覆盖安装保留 |
-| 人设正文与选项 | module.yml.rules 中的 persona 动作 | 按真实受众聚合的官方有效声明 |
+| 人设正文与选项 | 规则切片中的 persona 动作 | 按真实受众聚合的官方有效声明 |
 | 自定义工具 | customTools | 经验证的内联运行输入 |
 | 外部来源事实 | 注入动作 params.source | 导入报告与导出元数据 |
-| 模块显示名称 | module.yml.name | 模块卡与编辑目标选择；不改变模块 ID 或目录 |
+| 模块显示名称 | 本地清单的 name | 模块卡与编辑目标选择；不改变模块 ID 或目录 |
 
 当前格式的决策见 [ADR-0013](adr/0013-native-context-module-state.md)。模块不注册为官方会话预设、不保存会话绑定，不通过 settings 携带规则正文或大文本。
 
@@ -45,15 +45,9 @@
 
 ## 磁盘格式：规则与共享参数各有所有者
 
-module.yml 是完整定义、唯一提交点和恢复依据，支持直接手改。rules/ 是物化投影：
+单模块以 `rules/_commit.json` 的原子替换发布一代。安装和结构变更生成完整成员索引。单条正文编辑只登记上一代、目标规则 ID 和新正文摘要，沿用原有 `rules/.objects/`。热保存按 ID 查找目标并复核其版本与模板依赖。冷进程从完整索引重放后续变更；冷读成本随尚未重放的记录数增长。清单保留模块身份、能力及顶层键是否声明。运行时读取记录列出的成员和登记的资产，每条规则正文与共享状态分别校验版本。
 
-- `<ruleId>.yml`：id/name/layer/if/then/else 正文。
-- `_settings.yml`：规则启停、group、groupScope、exclusive、order、模块变量开关与完整性元数据；人设正文留在对应规则切片。
-- `variables.yml`：模块变量投影。
-
-读取只认清单内切片，名单外备份、同步副本等由用户拥有，不读、不改、不删。清单内缺失或失配从有效完整定义单向恢复；完整定义非法则报错，不能用切片反向修复。规则文件名拒绝保留名、大小写冲突、设备名和路径字符。
-
-普通重建在原目录恢复切片，保留记忆和未知资产；导入才在隔离候选中完整生成并交换目录。模块生产路径不生成 configs/、rules.yml、agent.cordis.yml 或第二套工具/策略目录。
+当前成员缺失或摘要错误时，可读取完整验证过的上一代。无可验证代时报告模块损坏并撤回新请求贡献。临时文件、名单外文件和链接不会成为运行输入。已有本地提交的模块忽略旧 `module.yml`；把外部完整定义应用到已装模块时使用显式导入。
 
 规则顶层 layer 是注入动作缺省层及展示归属，不建立跨层总顺序。正文和内容策略属于动作，变量属于持久存储。读取叶子可投影稳定身份；映射写入覆盖 then、else、嵌套分支，保持原始条件、未改参数与注释，不写回编译展开或默认值。
 

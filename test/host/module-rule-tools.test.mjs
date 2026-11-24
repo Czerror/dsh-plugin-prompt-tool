@@ -1,7 +1,8 @@
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import fs, { mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { join } from 'node:path'
 import { Document, parse } from 'yaml'
 import { Context } from '@deepseek-ai/cordis'
@@ -13,6 +14,7 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 
 const { moduleRoot } = isolatedHome('pt-module-rule-tools-')
 const { resolveModuleToolTarget } = await import('../../src/host/module-tool-target.ts')
+const { materializeModuleDefinition, exportModuleDefinitionText } = await import('../../src/host/module-slices.ts')
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const leaf = (id, text) => ({ id, kind: 'inject-text', config: { text } })
 const original = {
@@ -33,6 +35,7 @@ async function setup(t, id, { late = false, rebuild = async () => {} } = {}) {
   doc.commentBefore = 'module comment'
   doc.getIn(['rules', 0, 'then', 0, 'then', 0, 'config', 'text'], true).comment = 'leaf comment'
   writeFileSync(file, doc.toString())
+  materializeModuleDefinition(dir)
   const { registerModuleRuleTools } = await import('../../src/runtime/module-rule-tools.ts')
   const shell = await import('../../engine/module-rule-tools.mjs')
   const root = new Context()
@@ -66,11 +69,13 @@ test('规则工具完整往返：嵌套/else/来源参数和注释保留，开�
   assert.ok(before.meta.actions.some(action => action.kind === 'inject-text'))
   const changed = structuredClone(before.rules[0])
   changed.then[0].then[0].config.text = 'UPDATED'
+  const exchange = readFileSync(f.file, 'utf8')
   const saved = await f.success('module_rules_edit', { moduleId: before.moduleId, expectedRevisions: before.revisions, edits: [{ previousId: 'mixed', rule: changed }] })
   assert.equal(saved.persisted, true)
+  assert.equal(readFileSync(f.file, 'utf8'), exchange, '保存不能改写交换定义')
   const after = await f.success('module_rules_read', { moduleId: before.moduleId })
   assert.deepEqual(after.rules, [changed], '读取原始声明，不写回编译默认值或投影身份')
-  const text = readFileSync(f.file, 'utf8')
+  const text = exportModuleDefinitionText(f.dir)
   for (const comment of ['module comment', 'leaf comment']) assert.ok(text.includes(comment))
   assert.deepEqual(parse(text).configOrder, { mixed: 40 })
   assert.deepEqual(parse(text).variables, { owner: 'KEEP', empty: '' }, '规则保存不覆盖已有变量和空占位')
@@ -81,16 +86,20 @@ test('规则工具完整往返：嵌套/else/来源参数和注释保留，开�
   assert.equal(activated.rules[0].enabled, true)
   const deleted = await f.success('module_rules_edit', { moduleId: before.moduleId, expectedRevisions: activated.revisions, edits: [{ previousId: 'mixed', rule: null }] })
   assert.deepEqual(deleted.rules, [])
-  assert.equal(parse(readFileSync(f.file, 'utf8')).configOrder, undefined)
+  assert.equal(parse(exportModuleDefinitionText(f.dir)).configOrder, undefined)
   assert.deepEqual(rebuilt, ['roundtrip', 'roundtrip', 'roundtrip', 'roundtrip'])
   // 1.1 的 yes 是布尔字面量；局部保存必须保留字符串含义。
   const legacy = new Document({ id: 'roundtrip', modules: [], rules: [original], configOrder: { mixed: 40 } }, { version: '1.1' })
   legacy.directives.yaml.explicit = true
-  writeFileSync(f.file, legacy.toString())
-  const versioned = await f.success('module_rules_read', { moduleId: 'roundtrip' })
+  const legacyDir = join(moduleRoot, 'legacy-copy')
+  mkdirSync(legacyDir)
+  legacy.set('id', 'legacy-copy')
+  writeFileSync(join(legacyDir, 'module.yml'), legacy.toString())
+  materializeModuleDefinition(legacyDir)
+  const versioned = await f.success('module_rules_read', { moduleId: 'legacy-copy' })
   const renamed = { ...versioned.rules[0], name: 'yes' }
-  await f.success('module_rules_edit', { moduleId: 'roundtrip', expectedRevisions: versioned.revisions, edits: [{ previousId: 'mixed', rule: renamed }] })
-  assert.deepEqual(parse(readFileSync(f.file, 'utf8')).rules[0], renamed)
+  await f.success('module_rules_edit', { moduleId: 'legacy-copy', expectedRevisions: versioned.revisions, edits: [{ previousId: 'mixed', rule: renamed }] })
+  assert.deepEqual(parse(exportModuleDefinitionText(legacyDir)).rules[0], renamed)
 })
 
 test('规则工具主语来自参数：不声明拒绝且候选只作提示，声明谁就读写谁、不动别的模块', async t => {
@@ -98,6 +107,7 @@ test('规则工具主语来自参数：不声明拒绝且候选只作提示，�
   const otherDir = join(moduleRoot, 'subject-other'), otherFile = join(otherDir, 'module.yml')
   mkdirSync(otherDir, { recursive: true })
   writeFileSync(otherFile, 'id: subject-other\nmodules: []\nrules: [{ id: body, then: [{ id: text, kind: inject-text, config: { text: OTHER } }] }]\n')
+  materializeModuleDefinition(otherDir)
   const primaryBytes = readFileSync(f.file, 'utf8')
   // 装配记录里有两层：候选只进拒绝文案，首项绝不作为目标。
   f.targets.ids = ['subject', 'subject-other']
@@ -115,7 +125,7 @@ test('规则工具主语来自参数：不声明拒绝且候选只作提示，�
     moduleId: 'subject-other', expectedRevisions: declared.revisions,
     edits: [{ previousId: 'body', rule: { ...declared.rules[0], then: [{ id: 'text', kind: 'inject-text', config: { text: 'OTHER-2' } }] } }],
   })
-  assert.match(readFileSync(otherFile, 'utf8'), /OTHER-2/)
+  assert.match(exportModuleDefinitionText(otherDir), /OTHER-2/)
   assert.equal(readFileSync(f.file, 'utf8'), primaryBytes, '声明了别的模块就不写本模块')
   assert.equal((await f.call('module_rules_read', { moduleId: 'no-such-module' })).isError, true, '不存在的 id 按存在性校验拒绝')
 })
@@ -146,6 +156,63 @@ test('规则工具拒绝：不存在或未声明的模块、旧版本、未知�
   assert.notDeepEqual(saved.revisions, before.revisions)
   assert.equal((await f.call('module_rules_edit', { moduleId: 'reject', expectedRevisions: before.revisions, edits: [{ previousId: 'mixed', rule: original }] })).isError, true)
   assert.equal(readFileSync(f.file, 'utf8'), current)
+  const { editModuleRuleContent, editModuleRules, readModuleRules } = await import('../../src/host/module-rules.ts')
+  const second = { id: 'second', then: [leaf('second-text', 'SECOND')] }
+  const secondGeneration = editModuleRules(f.dir, { expectedRevisions: saved.revisions, edits: [{ previousId: null, rule: second }] })
+  const changedSecond = { ...second, then: [leaf('second-text', 'UPDATE')] }
+  const { readModuleLocalCommit } = await import('../../src/host/module-local-state.ts')
+  const commitFile = join(f.dir, 'rules', '_commit.json')
+  const baseline = readModuleLocalCommit(f.dir)
+  const baselinePointer = readFileSync(commitFile, 'utf8')
+  const baselineFile = join(f.dir, 'rules', '.objects', JSON.parse(baselinePointer).base)
+  const baselineText = readFileSync(baselineFile, 'utf8')
+  writeFileSync(baselineFile, 'invalid baseline')
+  try {
+    assert.equal((await f.success('module_rules_read', { moduleId: 'reject' })).definitionRevision, saved.definitionRevision)
+    assert.equal(parse(exportModuleDefinitionText(f.dir)).rules.length, 1)
+    assert.throws(() => editModuleRuleContent(f.dir, { previousId: original.id, rule: original }, saved.revisions))
+    assert.equal(readFileSync(commitFile, 'utf8'), baselinePointer)
+    const damagedHead = JSON.parse(baselinePointer)
+    damagedHead.previous = damagedHead.base
+    writeFileSync(commitFile, JSON.stringify(damagedHead))
+    assert.equal((await f.call('module_rules_read', { moduleId: 'reject' })).isError, true)
+  } finally {
+    writeFileSync(commitFile, baselinePointer)
+    writeFileSync(baselineFile, baselineText)
+  }
+  const untouched = join(f.dir, 'rules', '.objects', baseline.members['mixed.yml'])
+  const unrelated = readFileSync(untouched, 'utf8')
+  writeFileSync(untouched, 'unrelated changed on disk')
+  const originalRead = fs.readFileSync
+  const originalStat = fs.lstatSync
+  const hooks = [
+    t.mock.method(fs, 'readFileSync', (file, ...args) => {
+      assert.notEqual(String(file), untouched, '局部保存不读取另一条规则')
+      return originalRead(file, ...args)
+    }),
+    t.mock.method(fs, 'lstatSync', (file, ...args) => {
+      assert.notEqual(String(file), untouched, '局部保存不检查另一条规则的文件状态')
+      return originalStat(file, ...args)
+    }),
+  ]
+  syncBuiltinESMExports()
+  let broken
+  try { broken = editModuleRuleContent(f.dir, { previousId: second.id, rule: changedSecond }, secondGeneration.revisions) }
+  finally {
+    for (const hook of hooks) hook.mock.restore()
+    syncBuiltinESMExports()
+    writeFileSync(untouched, unrelated)
+  }
+  const commitBytes = readFileSync(commitFile, 'utf8')
+  const member = join(f.dir, 'rules', '.objects', readModuleLocalCommit(f.dir).members['second.yml'])
+  const originalMember = readFileSync(member, 'utf8')
+  const times = statSync(member)
+  writeFileSync(member, originalMember.replace('UPDATE', 'BROKEN'))
+  utimesSync(member, times.atime, times.mtime)
+  assert.notEqual(broken.definitionRevision, secondGeneration.definitionRevision)
+  assert.throws(() => editModuleRuleContent(f.dir, { previousId: second.id, rule: changedSecond }, { rules: { second: broken.ruleRevision } }))
+  assert.equal(readFileSync(commitFile, 'utf8'), commitBytes)
+  assert.equal(readModuleRules(f.dir).definitionRevision, secondGeneration.definitionRevision)
 })
 
 test('规则工具边界：晚到服务挂载，刷新失败报告已保存，重试只发布，卸载后不可调用', async t => {
@@ -159,7 +226,7 @@ test('规则工具边界：晚到服务挂载，刷新失败报告已保存，�
   const pending = await f.success('module_rules_edit', { moduleId: before.moduleId, expectedRevisions: before.revisions, edits: [{ previousId: 'mixed', rule: changed }] })
   assert.equal(pending.persisted, true)
   assert.equal(pending.publicationPending, true)
-  assert.equal(parse(readFileSync(f.file, 'utf8')).rules[0].name, 'COMMITTED')
+  assert.equal(parse(exportModuleDefinitionText(f.dir)).rules[0].name, 'COMMITTED')
   failures = false
   const bytes = readFileSync(f.file, 'utf8')
   const published = await f.success('module_rules_edit', { moduleId: before.moduleId, expectedRevisions: pending.revisions, refreshOnly: true })

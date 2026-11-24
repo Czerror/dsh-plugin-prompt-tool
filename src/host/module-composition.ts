@@ -7,6 +7,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { Pair, Scalar, YAMLMap, YAMLSeq, parse as parseYaml, parseDocument } from 'yaml'
 import { impliedModulesForParams } from '../shared/engine-capabilities.ts'
+import { assertModuleAssetReference } from './module-file-path.ts'
+import { assertNoModuleLinks } from './module-install.ts'
 import { packageEngineDir } from './module-dirs.ts'
 import type { ModuleSpec } from './module-spec.ts'
 
@@ -140,6 +142,7 @@ export function loadCompositionText(spec: ModuleSpec, params: Record<string, unk
       if (templateDir === undefined) {
         throw new Error(`module ${spec.id}: composition relative path needs a templateDir (${JSON.stringify(name)})`)
       }
+      assertModuleAssetReference(name, 'composition')
       // containment：解析后的组合文件必须仍位于模板目录内（防 ../../ 越界读取）。
       const file = join(templateDir, name.slice(2))
       const rootResolved = resolve(templateDir)
@@ -148,6 +151,7 @@ export function loadCompositionText(spec: ModuleSpec, params: Record<string, unk
         throw new Error(`module ${spec.id}: composition path escapes template dir (${JSON.stringify(name)})`)
       }
       try {
+        assertNoModuleLinks(file)
         raw = read(file, 'utf8')
       } catch (error) {
         throw new Error(`module ${spec.id}: composition file not found (${file}): ${String((error as Error).message ?? error)}`)

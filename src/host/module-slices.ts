@@ -1,13 +1,14 @@
 /**
- * 本文件拥有**模块定义读写与规则切片投影**：完整定义是唯一提交点；切片仅从有效定义恢复，全部校验后才发布快照。
+ * 本文件拥有**模块定义读写与规则切片投影**：已安装模块由清单与规则成员组成，读取时验证同一提交的身份和摘要。
  *
  * 写事务原语（锁、版本摘要、共享引用守卫、错误协议）来自 `module-write.ts`。
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { packageModulesDir } from './module-dirs.ts'
 import { isDeepStrictEqual } from 'node:util'
-import { Document, isAlias, isMap, isNode, isSeq, parseDocument, stringify, visit } from 'yaml'
+import { Document, isAlias, isMap, isNode, isPair, isScalar, isSeq, parseDocument, visit } from 'yaml'
 import type { RuleContent, RuleDefinition, RuleRevisions, RuleSettings } from '../shared/rules.ts'
 import { nextConfigSequence } from '../shared/module-config-order.ts'
 
@@ -15,25 +16,26 @@ import { nextConfigSequence } from '../shared/module-config-order.ts'
 export function nextModuleConfigSequence(current: Record<string, number>, reserved: readonly number[] = []): number {
   try { return nextConfigSequence(current, reserved) } catch (error) { throw new ModuleWriteError(error instanceof Error ? error.message : String(error)) }
 }
-import { assertModuleId } from './module-install.ts'
-import { active, assertPlain, assertUnownedUnchanged, canonicalDirectory, directoryKey, ModuleWriteError, moduleLocation, processLocks, record, revisionOf, withModuleLock } from './module-write.ts'
+import { assertModuleId, assertModuleDefinitionSource, moduleDirectoryIdentity } from './module-install.ts'
+import { serializeWithoutSharedAlias, assertPlain, assertUnownedUnchanged, canonicalDirectory, ModuleWriteError, record, revisionOf, SHARED_ALIAS_CODE, withModuleLock } from './module-write.ts'
+import { markModuleLocalInitialized, moduleLocalObjectStamp, readModuleLocalCommit, readModuleLocalCommitInfo, readModuleLocalObject, readModuleLocalObjects, readModuleLocalPointerRevision, readPreviousModuleLocalCommit, MODULE_LOCAL_COMMIT_FILE, publishModuleLocalCommit, writeModuleLocalObject, writeModuleLocalCommit } from './module-local-state.ts'
+import type { ModuleLocalCommit, VerifiedModuleObjects } from './module-local-state.ts'
 import { MODULE_DEFINITION_FILE, RULES_DIR, RULES_SETTINGS_FILE, RULES_VARIABLES_FILE } from './paths.ts'
-import { atomicTemporaryTarget, atomicWriteTextFile } from './text-file.ts'
-import { replaceVersionedText } from './versioned-text.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 // 引擎是规则语义的唯一校验器。
 import { assertRuleId, compileRules } from '../../engine/rule-spec.mjs'
 // 保留名由插值器的内建与动态宏目录共同定义。
 import { isReservedInterpolationName } from '../../engine/interpolate.mjs'
 import { loadTemplate } from '../../engine/schema.mjs'
-import { resolveModuleReadPath } from './module-file-path.ts'
+import { assertModuleAssetReference, resolveModuleReadPath } from './module-file-path.ts'
 import { assertNoModuleLinks } from './module-install.ts'
 
 function stable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stable)
   return record(value) ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value
 }
-const digest = (value: unknown): string => revisionOf(JSON.stringify(stable(value)))
+export const ruleValueRevision = (value: unknown): string => revisionOf(JSON.stringify(stable(value)))
+const digest = ruleValueRevision
 const yaml = (value: unknown): string => new Document(value).toString()
 
 /** 两级持久变量共用边界；错误只标识键，不输出变量内容。 */
@@ -71,20 +73,25 @@ export function assertCanonicalRuleSource(source: unknown): asserts source is Re
   if (!record(source)) throw new ModuleWriteError('module.yml 必须是对象')
   if (Object.hasOwn(source, 'persona')) throw new ModuleWriteError('顶层 persona 已退役；请手工重建为 rules 中的 persona 动作', 400, 'persona-format-retired')
   if (source.rules !== undefined && !Array.isArray(source.rules)) throw new ModuleWriteError('module.yml.rules 必须是数组')
+  if (typeof source.composition === 'string' && source.composition.startsWith('./') && !source.composition.includes('\n')) {
+    assertModuleAssetReference(source.composition, 'composition')
+  }
   const retired = ['character-tools', 'world-book-tools', 'session-var-tools']
   const names = [...(Array.isArray(source.modules) ? source.modules : []), ...Object.keys(record(source.moduleConfigs) ? source.moduleConfigs : {})]
   if (names.some(name => retired.includes(String(name)))) throw new ModuleWriteError('旧角色/世界书/会话变量能力已退役；请重新导入或显式转换为模块工具')
 }
 
-export function rulePromptConfigOptions(directory: string, strategy?: unknown, dependOn?: (file: string) => void) {
+export function rulePromptConfigOptions(directory: string, strategy?: unknown, dependOn?: (file: string) => void, fromPackage?: (file: unknown) => unknown) {
   const templateBaseUrl = pathToFileURL(join(directory, MODULE_DEFINITION_FILE))
   const strategyDir = typeof strategy !== 'string' || strategy.length === 0 ? undefined
     : isAbsolute(strategy) ? pathToFileURL(strategy).href : new URL(strategy, templateBaseUrl).href
   const templateModuleRoot = pathToFileURL(directory.replace(/[\\/]?$/, '/'))
   return { templateBaseUrl, templateModuleRoot, strategyDir, loadTemplate: (file: unknown): unknown => {
-    if (typeof file !== 'string' || file.length === 0) return undefined
+    if (typeof file !== 'string' || file.length === 0) return fromPackage?.(file)
     const target = fileURLToPath(new URL(file, templateBaseUrl))
     const path = relative(directory, target).split(sep).join('/')
+    assertModuleAssetReference(path, 'templateFile')
+    if (fromPackage) return fromPackage(file)
     if (path.startsWith('assets/')) {
       const resolved = resolveModuleReadPath(directory, path, ['assets'], {}, dependOn)
       return loadTemplate(pathToFileURL(resolved).href, templateBaseUrl, pathToFileURL(dirname(resolved) + '/'))
@@ -116,15 +123,12 @@ interface Projection {
   revisions: RuleRevisions
   files: Record<string, string>
 }
-interface ReusableRuleContent { json: string; text: string; revision: string; fileRevision: string; content: RuleContent }
-const reusableContents = new WeakMap<Projection, Map<string, ReusableRuleContent>>()
-const ownedSnapshots = new WeakSet<ModuleDefinitionSnapshot>()
 export interface ModuleDefinitionValidationOptions {
   /** 交换预览只从上传文件与可信包内资产读取模板，禁止访问真实用户目标目录。 */
   loadTemplate?: (file: unknown) => unknown
 }
 
-function projection(source: Record<string, unknown>, directory: string, sourceRevision: string, validation: ModuleDefinitionValidationOptions = {}, dependOn?: (file: string) => void, previous?: Projection, unchangedRules?: ReadonlySet<string>): Projection {
+function projection(source: Record<string, unknown>, directory: string, validation: ModuleDefinitionValidationOptions = {}, dependOn?: (file: string) => void): Projection {
   assertCanonicalRuleSource(source)
   const rules = (source.rules ?? []) as RuleDefinition[]
   const seen = new Set<string>()
@@ -151,21 +155,14 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
   const options = record(configs['rule-engine']) ? configs['rule-engine'] : {}
   try {
     compileRules(rules, { moduleId: basename(directory), configOrder: order, variables, variablesEnabled,
-      promptConfigOptions: { ...rulePromptConfigOptions(directory, options.strategyDir, dependOn), ...(validation.loadTemplate === undefined ? {} : { loadTemplate: validation.loadTemplate }) } })
+      promptConfigOptions: rulePromptConfigOptions(directory, options.strategyDir, dependOn, validation.loadTemplate) })
   } catch (error) { throw new ModuleWriteError(String((error as Error).message ?? error)) }
   const contents: RuleContent[] = []
   const settings: Record<string, RuleSettings> = Object.create(null)
-  const files: Record<string, string> = Object.create(null)
-  const fileRevisions: Record<string, string> = Object.create(null)
   const ruleRevisions: Record<string, string> = Object.create(null)
-  const previousContents = previous === undefined ? undefined : reusableContents.get(previous)
-  const reusable = new Map<string, ReusableRuleContent>()
   let tail: number | undefined
   for (const rule of rules) {
-    const previousContent = previousContents?.get(rule.id)
-    const trusted = unchangedRules?.has(rule.id) && previousContent !== undefined
-    const { enabled, group, groupScope, exclusive, ...rawContent } = rule
-    const content = trusted ? previousContent.content : structuredClone(rawContent)
+    const { enabled, group, groupScope, exclusive, ...content } = rule
     contents.push(content)
     let sequence = order[rule.id]
     if (sequence === undefined) {
@@ -176,31 +173,21 @@ function projection(source: Record<string, unknown>, directory: string, sourceRe
     }
     if (!Number.isSafeInteger(sequence)) throw new ModuleWriteError('规则顺序超出安全整数范围')
     settings[rule.id] = { order: sequence, ...(enabled === undefined ? {} : { enabled }), ...(group === undefined ? {} : { group }), ...(groupScope === undefined ? {} : { groupScope }), ...(exclusive === undefined ? {} : { exclusive }) }
-    // 只复用不可变投影的纯内容产物；全局编译、模板依赖和状态仍逐次校验。
-    const json = trusted ? previousContent.json : JSON.stringify(content)
-    let entry = previousContent
-    if (entry?.json !== json) {
-      const text = yaml(content)
-      entry = { json, text, revision: digest(content), fileRevision: revisionOf(text), content: structuredClone(content) }
-    }
-    const filename = `${rule.id}.yml`
-    files[filename] = entry.text
-    fileRevisions[filename] = entry.fileRevision
-    ruleRevisions[rule.id] = entry.revision
-    reusable.set(rule.id, entry)
+    ruleRevisions[rule.id] = digest(content)
   }
-  files[RULES_VARIABLES_FILE] = yaml(variables)
-  fileRevisions[RULES_VARIABLES_FILE] = revisionOf(files[RULES_VARIABLES_FILE])
   const state = { rules: settings, variablesEnabled }
   const revisions: RuleRevisions = { rules: ruleRevisions, settings: digest(state), variables: digest(variables) }
-  files[RULES_SETTINGS_FILE] = yaml({ ...state, _integrity: { version: 1, module: sourceRevision, files: fileRevisions, settings: revisions.settings } })
-  const projected = { contents, settings, variables, variablesEnabled, revisions, files }
-  reusableContents.set(projected, reusable)
-  return projected
+  return { contents, settings, variables, variablesEnabled, revisions, get files() {
+    const files: Record<string, string> = Object.create(null)
+    for (const content of contents) files[content.id + '.yml'] = yaml(content)
+    files[RULES_VARIABLES_FILE] = yaml(variables)
+    files[RULES_SETTINGS_FILE] = JSON.stringify({ ...state, settingsRevision: revisions.settings, variablesRevision: revisions.variables }) + '\n'
+    return files
+  } }
 }
 
 // 同名包内资产回退时，用户资产的缺失也是快照依赖。
-function templateDependencyRevision(file: string): string | undefined {
+export function templateDependencyRevision(file: string): string | undefined {
   assertNoModuleLinks(file)
   try { return revisionOf(readFileSync(file)) }
   catch (error) {
@@ -211,8 +198,11 @@ function templateDependencyRevision(file: string): string | undefined {
 
 // 投影仅对应不可变原文；调用方可编辑的 doc/source 不作为缓存键或缓存内容。
 const projections = new WeakMap<ModuleDefinitionSnapshot, { text: string; dir: string; projected: Projection; dependencies: Map<string, string | undefined> }>()
-const verifiedProjections = new WeakSet<ModuleDefinitionSnapshot>()
-const plainRuleDocuments = new WeakSet<ModuleDefinitionSnapshot>()
+function recordDependency(dependencies: Map<string, string | undefined>, file: string, revision: string | undefined): void {
+  if (dependencies.has(file) && dependencies.get(file) !== revision) throw sourceConflict()
+  dependencies.set(file, revision)
+}
+
 function projectedSnapshot(snapshot: ModuleDefinitionSnapshot): Projection {
   const cached = projections.get(snapshot)!
   for (const [file, revision] of cached.dependencies) {
@@ -221,89 +211,108 @@ function projectedSnapshot(snapshot: ModuleDefinitionSnapshot): Projection {
   return cached.projected
 }
 
-function snapshotFromText(dir: string, text: string, validation: ModuleDefinitionValidationOptions = {}, previous?: Projection): ModuleDefinitionSnapshot {
+function snapshotFromText(dir: string, text: string, validation: ModuleDefinitionValidationOptions = {}): ModuleDefinitionSnapshot {
   const doc = parseDocument(text, { logLevel: 'silent' })
   if (doc.errors.length > 0) throw new ModuleWriteError(`模块 YAML 无法解析：${doc.errors[0]!.message}`)
   const source: unknown = doc.toJS()
-  return snapshotFromDocument(dir, text, doc, source, validation, previous)
+  return snapshotFromDocument(dir, text, doc, source, validation)
 }
 
-function snapshotFromDocument(dir: string, text: string, doc: ReturnType<typeof parseDocument>, source: unknown, validation: ModuleDefinitionValidationOptions = {}, previous?: Projection, unchangedRules?: ReadonlySet<string>): ModuleDefinitionSnapshot {
+function snapshotFromDocument(dir: string, raw: string | undefined, doc: ReturnType<typeof parseDocument>, source: unknown, validation: ModuleDefinitionValidationOptions = {}, commit?: ModuleLocalCommit): ModuleDefinitionSnapshot {
   assertCanonicalRuleSource(source)
   if (source.id !== undefined && source.id !== basename(dir)) throw new ModuleWriteError('模块定义身份不匹配')
   readModuleLayerSettings(source)
-  const revision = revisionOf(text)
+  const revision = commit?.generation ?? revisionOf(raw!)
   const dependencies = new Map<string, string | undefined>()
-  const projected = projection(source, dir, revision, validation, file => {
-    const current = templateDependencyRevision(file)
-    if (dependencies.has(file) && dependencies.get(file) !== current) throw sourceConflict()
-    dependencies.set(file, current)
-  }, previous, unchangedRules)
+  const projected = projection(source, dir, validation, file => {
+    recordDependency(dependencies, file, templateDependencyRevision(file))
+  })
   const configOrder = Object.fromEntries(Object.entries(projected.settings).map(([id, settings]) => [id, settings.order]))
   const rules = projected.contents.map(content => { const { order: _order, ...settings } = projected.settings[content.id]!; return { ...content, ...settings } }).sort((left, right) => configOrder[left.id]! - configOrder[right.id]!)
-  const snapshot = { dir, file: join(dir, MODULE_DEFINITION_FILE), text, doc, source, revision, revisions: projected.revisions, rules, configOrder, variables: projected.variables, variablesEnabled: projected.variablesEnabled }
-  projections.set(snapshot, { text, dir, projected, dependencies })
+  let document: typeof doc | undefined = raw === undefined ? undefined : doc
+  let text = raw
+  const snapshot = { dir, file: commit === undefined ? join(dir, MODULE_DEFINITION_FILE) : join(dir, RULES_DIR, MODULE_LOCAL_COMMIT_FILE),
+    get doc() {
+      if (document === undefined) {
+        document = doc
+        if (commit?.declaredKeys.includes('rules')) document.set('rules', document.createNode(source.rules))
+        text = document.toString()
+      }
+      return document
+    },
+    get text() { return text ??= this.doc.toString() },
+    source, revision, revisions: projected.revisions, rules, configOrder, variables: projected.variables, variablesEnabled: projected.variablesEnabled }
+  projections.set(snapshot, { dir, projected, dependencies, get text() { return snapshot.text } })
   projectedSnapshot(snapshot)
   return snapshot
 }
 
 /** 导入、预览与规则 validateOnly 复用同一完整定义校验，不访问或写入切片。 */
-export const validateModuleDefinitionText = (directory: string, text: string, options: ModuleDefinitionValidationOptions = {}, previous?: ModuleDefinitionSnapshot): ModuleDefinitionSnapshot => snapshotFromText(directory, text, options,
-  previous?.dir === directory ? projectedSnapshot(previous) : undefined)
-
-/** 单条块映射替换：独立解析实际缩进片段，并证明其余原文字节和声明不变。 */
-export function validateModuleRuleText(snapshot: ModuleDefinitionSnapshot, expected: Record<string, unknown>, ruleId: string): ModuleDefinitionSnapshot | undefined {
-  if (snapshot.doc.directives?.yaml.version !== '1.2') return undefined
-  let unsafe = false
-  if (!plainRuleDocuments.has(snapshot)) visit(snapshot.doc, (_key, node) => {
-    if (isAlias(node) || isNode(node) && (node.anchor || node.tag || node.comment || node.commentBefore)) unsafe = true
-  })
-  if (unsafe || !Array.isArray(snapshot.source.rules) || !Array.isArray(expected.rules)) return undefined
-  const before = snapshot.source.rules, after = expected.rules
-  const index = before.findIndex(rule => record(rule) && rule.id === ruleId)
-  if (index < 0 || before.length !== after.length || !record(after[index]) || after[index].id !== ruleId) return undefined
-  if (!isDeepStrictEqual({ ...snapshot.source, rules: after }, expected)
-    || before.some((rule, at) => at !== index && !isDeepStrictEqual(rule, after[at]))) return undefined
-  const nodes = snapshot.doc.get('rules', true), node = isSeq(nodes) ? nodes.items[index] : undefined
-  if (!isMap(node) || !node.range || nodes?.flow || node.flow) return undefined
-  const [start, end] = node.range
-  const prefix = snapshot.text.slice(0, start)
-  const listIndent = /^( *)- *$/.exec(prefix.slice(prefix.lastIndexOf('\n') + 1))
-  if (!listIndent || snapshot.text[end - 1] !== '\n') return undefined
-  const serialized = stringify(after[index], { indent: 2, lineWidth: 0 }).trimEnd()
-  const indent = listIndent[1] + '  '
-  const replacement = serialized.split('\n').map((line, at) => at === 0 ? line : indent + line).join('\n') + '\n'
-  const text = prefix + replacement + snapshot.text.slice(end)
-  const fragment = parseDocument(listIndent[1] + '- ' + replacement, { logLevel: 'silent' })
-  if (fragment.errors.length || !isDeepStrictEqual(fragment.toJS(), [after[index]])) return undefined
-  visit(fragment, (_key, node) => {
-    if (isAlias(node) || isNode(node) && (node.anchor || node.tag || node.comment || node.commentBefore)) unsafe = true
-  })
-  if (unsafe) return undefined
-  const owned = ownedSnapshots.has(snapshot)
-  // 独占文档的其余原文未变，被替换的节点用实际写入片段验证并重建。
-  if (!owned && !isDeepStrictEqual(snapshot.doc.toJS(), expected)) return undefined
-  const fragmentNodes = fragment.contents
-  if (!isSeq(fragmentNodes) || !isSeq(nodes) || !isMap(fragmentNodes.items[0])) return undefined
-  const replacementNode = fragmentNodes.items[0]
-  const offset = start - replacementNode.range![0], delta = replacement.length - (end - start)
-  shiftRanges(snapshot.doc.contents, end, delta)
-  if (snapshot.doc.range) for (let at = 0; at < snapshot.doc.range.length; at++) if (snapshot.doc.range[at]! >= end) snapshot.doc.range[at]! += delta
-  shiftRanges(replacementNode, 0, offset)
-  nodes.items[index] = replacementNode
-  // 只有从私有槽取走的独占源能以引用证明未改；普通调用仍逐条按内容比对。
-  const unchangedRules = owned
-    ? new Set(before.filter((rule, at) => rule === after[at]).map(rule => (rule as RuleDefinition).id)) : undefined
-  const candidate = snapshotFromDocument(snapshot.dir, text, snapshot.doc, expected, {}, projectedSnapshot(snapshot), unchangedRules)
-  plainRuleDocuments.add(candidate)
-  return candidate
+export function validateModuleDefinitionText(directory: string, text: string, options: ModuleDefinitionValidationOptions = {}, previous?: ModuleDefinitionSnapshot): ModuleDefinitionSnapshot {
+  if (previous?.dir === directory) projectedSnapshot(previous)
+  return snapshotFromText(directory, text, options)
 }
 
-function shiftRanges(node: unknown, from: number, delta: number): void {
-  if (!isNode(node)) return
-  if (node.range) for (let at = 0; at < node.range.length; at++) if (node.range[at]! >= from) node.range[at]! += delta
-  if (isMap(node)) for (const pair of node.items) { shiftRanges(pair.key, from, delta); shiftRanges(pair.value, from, delta) }
-  else if (isSeq(node)) for (const item of node.items) shiftRanges(item, from, delta)
+export function assertSlicableAliases(doc: ModuleDefinitionSnapshot['doc']): Pick<ModuleLocalCommit, 'hasSourceAliases' | 'aliasRuleIds'> {
+  const anchors = new Map<string, { field: string; id?: string }>()
+  const ruleIds = new Set<string>()
+  let found = false
+  let unclassified = false
+  visit(doc, (_key, node, parents) => {
+    const pair = parents[2]
+    if (!isPair(pair) || !isScalar(pair.key)) return
+    const field = String(pair.key.value)
+    const rule = field === 'rules' && isSeq(parents[3]) ? parents[4] ?? node : undefined
+    const ruleId = isMap(rule) ? rule.get('id') : undefined
+    const id = typeof ruleId === 'string' ? ruleId : undefined
+    if (isNode(node) && !isAlias(node) && node.anchor) anchors.set(node.anchor, { field, id })
+    if (!isAlias(node)) return
+    found = true
+    const anchor = anchors.get(node.source)
+    if (anchor !== undefined && (field === 'rules') !== (anchor.field === 'rules')) {
+      throw new ModuleWriteError(`模块定义的 YAML 引用跨越规则与模块字段：${anchor.field} → ${field}`, 400, SHARED_ALIAS_CODE)
+    }
+    if (field === 'rules') {
+      if (id && anchor?.id) { ruleIds.add(id); ruleIds.add(anchor.id) }
+      else unclassified = true
+    }
+  })
+  if (!found) return {}
+  return { hasSourceAliases: true, ...(unclassified ? {} : { aliasRuleIds: [...ruleIds] }) }
+}
+
+/** 首次迁移已验证的完整定义。已有提交的模块不再读取交换源。 */
+export function materializeModuleDefinition(directory: string, validate?: (snapshot: ModuleDefinitionSnapshot, read: (file: string, encoding: 'utf8') => string) => void): ModuleLocalCommit {
+  const dir = canonicalDirectory(directory)
+  const ensure = (): ModuleLocalCommit => {
+    const existing = readModuleLocalCommit(dir)
+    if (existing) {
+      markModuleLocalInitialized(dir)
+      return existing
+    }
+    const source = readDefinitionText(dir)
+    const snapshot = snapshotFromText(source.dir, source.text)
+    validate?.(snapshot, (file, encoding) => {
+      const bytes = readFileSync(file)
+      recordDependency(projections.get(snapshot)!.dependencies, file, revisionOf(bytes))
+      return bytes.toString(encoding)
+    })
+    const aliases = assertSlicableAliases(snapshot.doc)
+    const projected = projectedSnapshot(snapshot)
+    const packageRoot = canonicalDirectory(packageModulesDir())
+    const fallback = join(packageRoot, basename(dir)) + sep
+    if ([...projections.get(snapshot)!.dependencies.keys()].some(file => file.startsWith(fallback))) {
+      assertModuleDefinitionSource(packageRoot, basename(dir))
+    }
+    const inputs = snapshot.doc.clone()
+    inputs.delete('rules')
+    assertSource(snapshot)
+    return writeModuleLocalCommit(dir, { moduleId: basename(dir), declaredKeys: Object.keys(snapshot.source),
+      exportBase: snapshot.text, inputs: inputs.toString(), files: projected.files, ruleIds: projected.contents.map(rule => rule.id),
+      hasProcessRules: snapshot.rules.some(rule => rule.executionScope === 'process'),
+      ...aliases }, () => { assertSource(snapshot); projectedSnapshot(snapshot) })
+  }
+  return withModuleLock(dirname(dir), basename(dir), ensure)
 }
 
 function readDefinitionText(directory: string): { dir: string; text: string } {
@@ -311,275 +320,366 @@ function readDefinitionText(directory: string): { dir: string; text: string } {
   try { dir = canonicalDirectory(directory); assertModuleId(basename(dir)); assertPlain(join(dir, MODULE_DEFINITION_FILE)) }
   catch (error) { throw new ModuleWriteError(String((error as Error).message ?? error)) }
   const bytes = readFileSync(join(dir, MODULE_DEFINITION_FILE))
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
   return { dir, text }
 }
 
-// 模块实例仅保留最近一份实际源的格式摘要；不保留或外泄可变 AST，内容/依赖变化即失效。
-let lastFormat: { dir: string; text: string; dependencies: ReadonlyMap<string, string | undefined> } | undefined
-
-/** 归属门只核完整定义与层设置，不需要取得可编辑快照。每次仍读取实际字节与依赖。 */
-export function assertModuleDefinitionFormat(directory: string): void {
-  const { dir, text } = readDefinitionText(directory)
-  if (lastFormat?.dir === dir && lastFormat.text === text) {
-    let current = true
-    for (const [file, revision] of lastFormat.dependencies) {
-      if (templateDependencyRevision(file) !== revision) { current = false; break }
-    }
-    if (current) return
-  }
-  let snapshot: ModuleDefinitionSnapshot | undefined
-  if (lastVerified?.dir === dir && lastVerified.text === text) {
-    try { projectedSnapshot(lastVerified); snapshot = lastVerified }
-    catch (error) { if (!(error instanceof ModuleWriteError) || error.code !== 'rules-conflict') throw error }
-  }
-  snapshot ??= snapshotFromText(dir, text)
-  readModuleLayerSettings(snapshot.source)
-  lastFormat = { dir, text, dependencies: new Map(projections.get(snapshot)!.dependencies) }
+const sourceConflict = (): ModuleWriteError => new ModuleWriteError('写入前模块再次变化，请重新读取', 409, 'rules-conflict')
+function assertSource(snapshot: ModuleDefinitionSnapshot): void {
+  assertPlain(snapshot.file)
+  if (revisionOf(readFileSync(snapshot.file)) !== snapshot.revision) throw sourceConflict()
 }
 
-/** 纯读完整源；无效源绝不会触发分解或恢复。 */
-export function loadModuleDefinition(directory: string, takeOwnership = false): ModuleDefinitionSnapshot {
-  const { dir, text } = readDefinitionText(directory)
-  if (lastVerified?.dir === dir && lastVerified.text === text) {
-    try {
-      projectedSnapshot(lastVerified)
-      if (takeOwnership) {
-        const snapshot = lastVerified
-        lastVerified = undefined
-        ownedSnapshots.add(snapshot)
-        return snapshot
-      }
-      return cloneSnapshot(lastVerified)
-    } catch (error) {
-      if (!(error instanceof ModuleWriteError) || error.code !== 'rules-conflict') throw error
-      lastVerified = undefined
-    }
+function parseLocal(text: string) {
+  const doc = parseDocument(text, { logLevel: 'silent' })
+  if (doc.errors.length) throw new ModuleWriteError(doc.errors[0]!.message)
+  return doc
+}
+
+function committedSnapshot(dir: string, commit: ModuleLocalCommit, data = readModuleLocalObjects(dir, [commit.inputs, ...Object.values(commit.members)])): ModuleDefinitionSnapshot {
+  const object = (hash: string) => data.members.get(hash)!.text
+  const inputs = parseLocal(object(commit.inputs))
+  const source = inputs.toJS()
+  assertCanonicalRuleSource(source)
+  const settingsHash = commit.members[RULES_SETTINGS_FILE]!
+  const state = parseCommittedState(object(settingsHash))
+  const variables = parseLocal(object(commit.members[RULES_VARIABLES_FILE]!)).toJS()
+  if (!record(state) || !record(state.rules) || !isDeepStrictEqual(source.variables ?? {}, variables)
+    || (source.variablesEnabled !== false) !== state.variablesEnabled) throw new ModuleWriteError('模块清单与状态不一致')
+  const settings = state.rules
+  const rules = commit.ruleIds.map(id => {
+    assertRuleFileId(id)
+    const content = parseLocal(object(commit.members[id + '.yml']!)).toJS()
+    const item = settings[id]
+    if (!record(content) || content.id !== id || !record(item)) throw new ModuleWriteError('规则提交成员身份无效：' + id)
+    const { order: _order, ...fields } = item
+    return { ...content, ...fields }
+  })
+  if (commit.hasProcessRules !== undefined && commit.hasProcessRules !== rules.some(rule => rule.executionScope === 'process')) {
+    throw new ModuleWriteError('模块提交的进程规则标记不一致')
   }
-  const snapshot = snapshotFromText(dir, text)
-  if (takeOwnership) ownedSnapshots.add(snapshot)
+  if (commit.declaredKeys.includes('rules')) {
+    source.rules = rules
+  } else if (rules.length) throw new ModuleWriteError('未声明规则的模块含有规则成员')
+  if (Object.keys(source).length !== commit.declaredKeys.length || commit.declaredKeys.some(k => !Object.hasOwn(source,k))) {
+    throw new ModuleWriteError('模块提交的声明与输入不一致')
+  }
+  const snapshot = snapshotFromDocument(dir, undefined, inputs, source, {}, commit)
+  if (state.variablesRevision !== snapshot.revisions.variables || state.settingsRevision !== snapshot.revisions.settings
+    || !isDeepStrictEqual(Object.entries(settings), Object.entries(projectedSnapshot(snapshot).settings))) {
+    throw new ModuleWriteError('模块提交的规则状态或顺序无效')
+  }
+  rememberRuleSettings(dir, settingsHash, data.members.get(settingsHash)!.stamp, state)
   return snapshot
 }
 
-const sourceConflict = (): ModuleWriteError => new ModuleWriteError('写入前模块再次变化，请重新读取', 409, 'rules-conflict')
-
-function assertSourcePath(snapshot: ModuleDefinitionSnapshot): void {
-  if (canonicalDirectory(snapshot.dir) !== snapshot.dir) throw sourceConflict()
-  assertModuleId(basename(snapshot.dir))
-  assertPlain(snapshot.file)
+function installed(dir: string): ModuleLocalCommit {
+  const commit = readModuleLocalCommit(dir)
+  if (!commit) throw new ModuleWriteError('缺少本地模块提交；请先安装或迁移模块')
+  return commit
 }
 
-function assertSource(snapshot: ModuleDefinitionSnapshot): void {
-  assertSourcePath(snapshot)
-  // 身份已由快照完整解析校验；相同字节版本无需再次解析整份 YAML。
-  if (revisionOf(readFileSync(snapshot.file)) !== snapshot.revision) throw sourceConflict()
-}
-/** 与 removeInterruptedWrites 同源：只认 atomicWriteTextFile 的精确 UUID 临时名，不是用户素材。 */
-function isRulesTemporary(filename: string): boolean {
-  const target = atomicTemporaryTarget(filename)
-  if (target === undefined) return false
-  if (target === RULES_SETTINGS_FILE || target === RULES_VARIABLES_FILE) return true
-  if (!target.endsWith('.yml')) return false
-  try { assertRuleFileId(target.slice(0, -4)) } catch { return false }
-  return true
+/** 普通读只认已发布的代。包自身的只读模板仍是安装输入。 */
+export function loadModuleDefinition(directory: string): ModuleDefinitionSnapshot {
+  return readCommittedDefinition(directory, (dir, commit) => committedSnapshot(dir, commit), snapshot => snapshot, true)
 }
 
-function readProjection(snapshot: ModuleDefinitionSnapshot): Projection {
-  const expected = projectedSnapshot(snapshot)
-  const dir = join(snapshot.dir, RULES_DIR)
-  assertPlain(dir, true)
-  // 只认名单内切片：名单外文件不读、不校验，也不参与集合比对。
-  const files = readdirSync(dir)
-  const present = new Set(files)
-  for (const file of Object.keys(expected.files)) {
-    const path = join(dir, file)
-    if (!present.has(file)) throw new ModuleWriteError(`规则切片缺失：${file}`, 409, 'rules-slices-invalid')
-    assertPlain(path)
-    if (readFileSync(path, 'utf8') !== expected.files[file]) throw new ModuleWriteError(`规则切片与完整定义失配：${file}`, 409, 'rules-slices-invalid')
+type RuntimeDefinition = Omit<ModuleDefinitionSnapshot, 'doc' | 'text'>
+type RuntimeRead = { commit: ModuleLocalCommit; objects: VerifiedModuleObjects; snapshot: RuntimeDefinition; dependencies: ReadonlyMap<string, string | undefined>; deltas: number }
+type RuntimeDelta = { previous: string; generation: string; id: string; dependencies: ReadonlyMap<string, string | undefined> }
+const runtimeDeltas = new Map<string, RuntimeDelta>()
+
+export function rememberRuntimeRuleEdit(directory: string, delta: RuntimeDelta): void {
+  if (runtimeDeltas.size >= 128) runtimeDeltas.delete(runtimeDeltas.keys().next().value!)
+  runtimeDeltas.set(directory, delta)
+}
+
+const currentDependencies = (dependencies: ReadonlyMap<string, string | undefined>): boolean =>
+  [...dependencies].every(([file, revision]) => templateDependencyRevision(file) === revision)
+
+export function createModuleRuntimeSnapshotReader() {
+  const modules = new Map<string, RuntimeRead>()
+  return {
+    read(directory: string): RuntimeDefinition {
+      return readCommittedDefinition(directory, (dir, commit) => {
+        const previous = modules.get(dir)
+        const data = readModuleLocalObjects(dir, [commit.inputs, ...Object.values(commit.members)], previous?.objects)
+        const store = (snapshot: RuntimeDefinition, dependencies: RuntimeRead['dependencies'], deltas = 0): void => {
+          if (!modules.has(dir) && modules.size >= 32) modules.delete(modules.keys().next().value!)
+          modules.set(dir, { commit, objects: data, snapshot, dependencies, deltas })
+        }
+        if (previous?.commit.generation === commit.generation && data.changed.size === 0 && currentDependencies(previous.dependencies)) {
+          return previous.snapshot
+        }
+        const delta = runtimeDeltas.get(dir)
+        if (previous !== undefined && previous.deltas < 32 && delta?.previous === previous.commit.generation && delta.generation === commit.generation
+          && data.changed.size === 1 && data.changed.has(commit.members[delta.id + '.yml']!)
+          && commit.inputs === previous.commit.inputs
+          && Object.keys(commit.members).length === Object.keys(previous.commit.members).length
+          && Object.entries(commit.members).every(([file, hash]) => file === delta.id + '.yml' || hash === previous.commit.members[file])
+          && isDeepStrictEqual(commit.ruleIds, previous.commit.ruleIds) && isDeepStrictEqual(commit.declaredKeys, previous.commit.declaredKeys)
+          && currentDependencies(previous.dependencies) && currentDependencies(delta.dependencies)) {
+          const before = previous.snapshot
+          const content: unknown = parseLocal(data.members.get(commit.members[delta.id + '.yml']!)!.text).toJS()
+          const prior = before.rules.find(rule => rule.id === delta.id)
+          if (!record(content) || content.id !== delta.id || prior === undefined) throw new ModuleWriteError('规则提交成员身份无效：' + delta.id)
+          const { enabled, group, groupScope, exclusive } = prior
+          const rule = { ...content, ...(enabled === undefined ? {} : { enabled }), ...(group === undefined ? {} : { group }),
+            ...(groupScope === undefined ? {} : { groupScope }), ...(exclusive === undefined ? {} : { exclusive }) } as RuleDefinition
+          const rules = before.rules.map(current => current.id === delta.id ? rule : current)
+          const revisions = { ...before.revisions, rules: { ...before.revisions.rules, [delta.id]: digest(content) } }
+          const { dir, file, configOrder, variables, variablesEnabled } = before
+          const snapshot = { dir, file, configOrder, variables, variablesEnabled, rules, revisions, revision: commit.generation,
+            source: { ...before.source, rules: ((before.source.rules ?? []) as RuleDefinition[]).map(current => current.id === delta.id ? rule : current) } }
+          store(snapshot, new Map([...previous.dependencies, ...delta.dependencies]), previous.deltas + 1)
+          return snapshot
+        }
+        const snapshot = committedSnapshot(dir, commit, data)
+        store(snapshot, projections.get(snapshot)!.dependencies)
+        return snapshot
+      }, snapshot => snapshot, true)
+    },
+    retain(directories: readonly string[]) {
+      const current = new Set(directories)
+      for (const key of modules.keys()) if (!current.has(key)) modules.delete(key)
+    },
+    dispose() { modules.clear() },
   }
-  // 中断写入残留的临时文件不是用户素材，仍触发恢复路径（清临时名 + 回收死锁目录）。
-  if (files.some(isRulesTemporary)) throw new ModuleWriteError('规则目录含中断写入残留', 409, 'rules-slices-invalid')
-  assertSource(snapshot)
-  verifiedProjections.add(snapshot)
-  return expected
 }
 
-/** 纯读且校验三方一致，不补缺、不接纳手改切片。 */
+// 规则装配已验证的降级代也约束同一 head 的按需变量读取。
+const degradedHeads = new Map<string, { identity: string; generation: string }>()
+
+function readCommittedDefinition<T>(
+  directory: string, read: (dir: string, commit: ModuleLocalCommit) => T, fallback: (snapshot: ModuleDefinitionSnapshot) => T,
+  fullRead = false,
+): T {
+  const dir = canonicalDirectory(directory)
+  if (dirname(dir) === canonicalDirectory(packageModulesDir())) {
+    const {text} = readDefinitionText(dir)
+    return fallback(snapshotFromText(dir, text))
+  }
+  const identity = moduleDirectoryIdentity(dir)
+  try {
+    let commit: ModuleLocalCommit | undefined
+    let value: T
+    try {
+      commit = installed(dir)
+      const degraded = degradedHeads.get(dir)
+      const knownDegraded = degraded?.identity === identity && degraded?.generation === commit.generation
+      if (!fullRead && knownDegraded) {
+        value = fallback(committedSnapshot(dir, commit))
+      } else {
+        value = read(dir, commit)
+      }
+      degradedHeads.delete(dir)
+    }
+    catch (error) {
+      if (error instanceof ModuleWriteError && error.code === 'rules-conflict') throw error
+      const previous = readPreviousModuleLocalCommit(dir, commit)
+      if (!previous) throw error
+      value = fullRead ? read(dir, previous) : fallback(committedSnapshot(dir, previous))
+      if (commit !== undefined && identity !== undefined) {
+        if (degradedHeads.size >= 128) degradedHeads.delete(degradedHeads.keys().next().value!)
+        degradedHeads.set(dir, { identity, generation: commit.generation })
+      }
+    }
+    if (identity === undefined || moduleDirectoryIdentity(dir) !== identity) throw sourceConflict()
+    return value
+  } catch (error) {
+    if (error instanceof ModuleWriteError && error.code === 'rules-conflict') throw error
+    if (moduleDirectoryIdentity(dir) !== identity) throw sourceConflict()
+    throw new ModuleWriteError(String((error as Error).message), 400, 'module-broken')
+  }
+}
+
+const verifiedInputs = new Map<string, { stamp: string; source: Readonly<Record<string, unknown>> }>()
+const verifiedRuleSettings = new Map<string, { stamp: string; state: unknown }>()
+
+export function freezeModuleValue<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    for (const item of Object.values(value)) freezeModuleValue(item)
+  }
+  return value
+}
+
+export function getVerifiedModuleInputs(dir: string, commit: Pick<ModuleLocalCommit, 'moduleId' | 'inputs' | 'declaredKeys'>): Readonly<Record<string, unknown>> {
+  const stamp = moduleLocalObjectStamp(dir, commit.inputs)
+  const key = JSON.stringify([dir, commit.inputs, commit.moduleId, commit.declaredKeys])
+  const cached = verifiedInputs.get(key)
+  if (cached?.stamp === stamp) {
+    verifiedInputs.delete(key)
+    verifiedInputs.set(key, cached)
+    return cached.source
+  }
+  const source = parseLocal(readModuleLocalObject(dir, commit.inputs)).toJS()
+  if (moduleLocalObjectStamp(dir, commit.inputs) !== stamp) throw sourceConflict()
+  assertCanonicalRuleSource(source)
+  if (source.id !== undefined && source.id !== commit.moduleId) throw new ModuleWriteError('模块身份不匹配')
+  const keys = Object.keys(source)
+  if (Object.hasOwn(source, 'rules') || keys.length !== commit.declaredKeys.length - Number(commit.declaredKeys.includes('rules'))
+    || keys.some(key => !commit.declaredKeys.includes(key))) throw new ModuleWriteError('模块提交的声明与输入不一致')
+  readModuleLayerSettings(source)
+  if (source.variables !== undefined) assertVariableValues(source.variables)
+  if (source.variablesEnabled !== undefined && typeof source.variablesEnabled !== 'boolean') throw new ModuleWriteError('variablesEnabled 必须是布尔值')
+  if (verifiedInputs.size >= 32) verifiedInputs.delete(verifiedInputs.keys().next().value!)
+  verifiedInputs.set(key, { stamp, source: freezeModuleValue(source) })
+  return source
+}
+
+function parseCommittedState(text: string): unknown {
+  return text.startsWith('{') ? JSON.parse(text) : parseLocal(text).toJS()
+}
+
+export function readModuleRuleEditSettings(dir: string, hash: string): unknown {
+  const key = JSON.stringify([dir, hash])
+  const stamp = moduleLocalObjectStamp(dir, hash)
+  const cached = verifiedRuleSettings.get(key)
+  if (cached?.stamp === stamp) return cached.state
+  const state = parseCommittedState(readModuleLocalObject(dir, hash))
+  if (moduleLocalObjectStamp(dir, hash) !== stamp) throw sourceConflict()
+  return rememberRuleSettings(dir, hash, stamp, state)
+}
+
+function rememberRuleSettings(dir: string, hash: string, stamp: string, state: unknown): unknown {
+  const key = JSON.stringify([dir, hash])
+  verifiedRuleSettings.delete(key)
+  if (verifiedRuleSettings.size >= 8) verifiedRuleSettings.delete(verifiedRuleSettings.keys().next().value!)
+  verifiedRuleSettings.set(key, { stamp, state: freezeModuleValue(state) })
+  return state
+}
+export function readModuleDeclaredKeys(directory: string): Set<string> {
+  return readCommittedDefinition(directory, (dir, commit) => {
+    getVerifiedModuleInputs(dir, commit)
+    return new Set(commit.declaredKeys)
+  }, snapshot => new Set(Object.keys(snapshot.source)))
+}
+
+export function readCommittedVariables(directory: string): Pick<ModuleDefinitionSnapshot, 'variables' | 'variablesEnabled'> & { revisions: Pick<RuleRevisions, 'variables' | 'settings'> } {
+  return readCommittedDefinition(directory, (dir, commit) => {
+    const source = getVerifiedModuleInputs(dir, commit)
+    const state = parseCommittedState(readModuleLocalObject(dir, commit.members[RULES_SETTINGS_FILE]!))
+    const variables = parseLocal(readModuleLocalObject(dir, commit.members[RULES_VARIABLES_FILE]!)).toJS()
+    assertVariableValues(variables)
+    const variablesEnabled = source.variablesEnabled !== false
+    if (!record(state) || !record(state.rules) || !isDeepStrictEqual(source.variables ?? {}, variables)
+      || (source.variablesEnabled !== undefined && typeof source.variablesEnabled !== 'boolean') || state.variablesEnabled !== variablesEnabled) {
+      throw new ModuleWriteError('模块清单与变量状态不一致')
+    }
+    const revisions = { variables: digest(variables), settings: digest({ rules: state.rules, variablesEnabled }) }
+    if (state.variablesRevision !== revisions.variables || state.settingsRevision !== revisions.settings) throw new ModuleWriteError('模块变量状态版本无效')
+    return { variables, variablesEnabled, revisions }
+  }, snapshot => snapshot)
+}
+
+export function assertModuleDefinitionFormat(directory: string, writing = false): void {
+  if (!writing) {
+    readCommittedDefinition(directory, (dir, commit) => { getVerifiedModuleInputs(dir, commit) }, () => undefined)
+    return
+  }
+  const dir = canonicalDirectory(directory)
+  if (dirname(dir) === canonicalDirectory(packageModulesDir())) { loadModuleDefinition(dir); return }
+  const head = readModuleLocalCommitInfo(dir)
+  if (!head) throw new ModuleWriteError('缺少本地模块提交；请先安装或迁移模块')
+  getVerifiedModuleInputs(dir, head)
+}
+
 export function readRulesDir(directory: string) {
   const snapshot = loadModuleDefinition(directory)
-  const { files: _files, ...projected } = readProjection(snapshot)
-  const result = structuredClone(projected)
-  result.contents.sort((left, right) => result.settings[left.id]!.order - result.settings[right.id]!.order)
+  const { contents, settings, variables, variablesEnabled, revisions } = projectedSnapshot(snapshot)
+  const result = structuredClone({ contents, settings, variables, variablesEnabled, revisions })
+  result.contents.sort((a,b) => result.settings[a.id]!.order - result.settings[b.id]!.order)
   return result
 }
 
-// 仅保留不可变原文；调用方改动 doc/source/rules 不会污染最后已验证快照。
-const published = new Map<string, { dir: string; text: string }>()
-// 热编辑只保留最后一个已发布模块的私有 AST；调用方取得隔离副本，外部改写按完整解析处理。
-let lastVerified: ModuleDefinitionSnapshot | undefined
-function cloneSnapshot(snapshot: ModuleDefinitionSnapshot): ModuleDefinitionSnapshot {
-  const copy = { ...snapshot, doc: snapshot.doc.clone(), source: structuredClone(snapshot.source),
-    rules: structuredClone(snapshot.rules), revisions: structuredClone(snapshot.revisions),
-    configOrder: { ...snapshot.configOrder }, variables: { ...snapshot.variables } }
-  projections.set(copy, projections.get(snapshot)!)
-  if (plainRuleDocuments.has(snapshot)) plainRuleDocuments.add(copy)
-  return copy
-}
-const publish = (snapshot: ModuleDefinitionSnapshot, cache: 'clone' | 'take' | 'skip' = 'clone'): void => {
-  published.set(directoryKey(snapshot.dir), { dir: snapshot.dir, text: snapshot.text })
-  if (cache === 'take') lastVerified = snapshot
-  else if (cache === 'clone' && (lastVerified?.dir !== snapshot.dir || lastVerified.text !== snapshot.text)) lastVerified = cloneSnapshot(snapshot)
+export function ensureModuleSlices(directory: string, _options: { writable?: boolean; force?: boolean; takeOwnership?: boolean } = {}): ModuleDefinitionSnapshot {
+  return loadModuleDefinition(directory)
 }
 
-/** 运行贡献回退到最后验证通过的定义；路径安全仍现场校验，不接纳坏候选。 */
-export function lastPublishedModuleDefinition(directory: string): ModuleDefinitionSnapshot | undefined {
-  const dir = canonicalDirectory(directory)
-  assertPlain(join(dir, MODULE_DEFINITION_FILE))
-  const previous = published.get(directoryKey(dir))
-  return previous === undefined ? undefined : snapshotFromText(previous.dir, previous.text)
-}
-
-function coordinated<T>(directory: string, action: () => T): T {
-  const dir = canonicalDirectory(directory)
-  return withModuleLock(dirname(dir), basename(dir), action)
-}
-
-/** 只认 atomicWriteTextFile 的精确 UUID 临时名，不碰普通点文件或用户素材。 */
-function rootTemporaries(directory: string): string[] {
-  return readdirSync(directory).filter(file => atomicTemporaryTarget(file) === MODULE_DEFINITION_FILE)
-}
-function removeInterruptedWrites(directory: string): void {
-  const paths = rootTemporaries(directory).map(file => join(directory, file))
-  const rules = join(directory, RULES_DIR)
-  if (existsSync(rules)) {
-    assertPlain(rules, true)
-    for (const file of readdirSync(rules)) {
-      if (!isRulesTemporary(file)) continue
-      paths.push(join(rules, file))
-    }
-  }
-  for (const path of paths) assertPlain(path)
-  for (const path of paths) rmSync(path)
-}
-
-/** 旧 _settings.yml 名单里、新名单外的规则切片是插件自己的残留，需清理；其余名单外文件归用户。 */
-function removedRuleSlices(dir: string, projected: Projection, previous?: Projection): string[] {
-  const known = previous === undefined ? undefined : reusableContents.get(previous)
-  if (known) return [...known.keys()].filter(id => !Object.hasOwn(projected.settings, id)).map(id => `${id}.yml`)
-  const path = join(dir, RULES_SETTINGS_FILE)
-  if (!existsSync(path)) return []
-  const doc = parseDocument(readFileSync(path, 'utf8'), { logLevel: 'silent' })
-  const source: unknown = doc.toJS()
-  if (doc.errors.length > 0 || !record(source) || !record(source.rules)) return []
-  return Object.keys(source.rules).filter(id => {
-    try { assertRuleFileId(id) } catch { return false }
-    return !Object.hasOwn(projected.settings, id)
-  }).map(id => `${id}.yml`)
-}
-
-function writeProjection(snapshot: ModuleDefinitionSnapshot, phase: 'contents' | 'all', contentsPrepared = false, previous?: Projection): void {
-  const projected = projectedSnapshot(snapshot)
-  const dir = join(snapshot.dir, RULES_DIR)
-  if (existsSync(dir)) assertPlain(dir, true)
-  else mkdirSync(dir)
-  // 名单外文件归用户所有：不读、不校验、不写、不删；只清理旧名单里已移除的规则切片。
-  const removed = phase === 'all' ? removedRuleSlices(dir, projected, previous) : []
-  for (const [file, text] of Object.entries(projected.files)) {
-    if (phase === 'contents' && file === RULES_SETTINGS_FILE) continue
-    if (contentsPrepared && file !== RULES_SETTINGS_FILE) continue
-    // 旧切片已在 ensure 中完整读回；相同内容无需准备，提交后仍完整校验。
-    if (phase === 'contents' && previous?.files[file] === text) continue
-    const target = join(dir, file)
-    if (existsSync(target)) { assertPlain(target); if (readFileSync(target, 'utf8') === text) continue }
-    atomicWriteTextFile(target, text, { beforeReplace: () => { assertPlain(dir, true); if (existsSync(target)) assertPlain(target) } })
-  }
-  if (phase === 'all') for (const file of removed) {
-    const target = join(dir, file)
-    if (existsSync(target)) { assertPlain(target); rmSync(target) }
-  }
-}
-
-function recoverCurrent(directory: string): ModuleDefinitionSnapshot {
+/** 从保留的来源 AST 投影当前代；未编辑节点（包括 alias 和注释）逐节点保留。 */
+export function readModuleDefinitionExport(directory: string): {text: string; revision: string} {
+  const identity = moduleDirectoryIdentity(directory)
+  const pointer = dirname(canonicalDirectory(directory)) === canonicalDirectory(packageModulesDir()) ? undefined : readModuleLocalPointerRevision(directory)
   const snapshot = loadModuleDefinition(directory)
-  removeInterruptedWrites(directory)
-  writeProjection(snapshot, 'all')
-  readProjection(snapshot)
-  publish(snapshot)
-  return snapshot
+  if (basename(snapshot.file) === MODULE_DEFINITION_FILE) return {text: snapshot.text, revision: snapshot.revision}
+  let head: ModuleLocalCommit | undefined
+  try { head = installed(snapshot.dir) } catch { /* 已通过读取路径验证可用上一代。 */ }
+  const commit = head?.generation === snapshot.revision ? head : readPreviousModuleLocalCommit(snapshot.dir, head)
+  if (commit?.generation !== snapshot.revision) throw sourceConflict()
+  const doc = parseLocal(readModuleLocalObject(snapshot.dir, commit.exportBase))
+  const original = doc.toJS()
+  reconcileYaml(doc, doc.contents, original, snapshot.source)
+  const text = serializeWithoutSharedAlias(doc, snapshot.source, '导出会改变 YAML 共享引用')
+  if (moduleDirectoryIdentity(snapshot.dir) !== identity || readModuleLocalPointerRevision(snapshot.dir) !== pointer) throw sourceConflict()
+  return {text, revision: snapshot.revision}
 }
 
-/** 有效源变化或切片失配才重切；只读模板仅在内存中投影。 */
-export function ensureModuleSlices(directory: string, options: { writable?: boolean; force?: boolean; takeOwnership?: boolean } = {}): ModuleDefinitionSnapshot {
-  const dir = moduleLocation(directory), key = directoryKey(dir)
-  const inProgress = (): ModuleDefinitionSnapshot | undefined => {
-    if (!active.has(key) && !processLocks(dir)) return undefined
-    const previous = published.get(key)
-    if (previous) return snapshotFromText(previous.dir, previous.text)
-    throw new ModuleWriteError('模块尚无已验证快照，保存或恢复正在进行', 409, 'rules-conflict')
-  }
-  const running = inProgress()
-  if (running) return running
-  const snapshot = loadModuleDefinition(dir, options.takeOwnership)
-  if (options.writable === false) return snapshot
-  if (!options.force && rootTemporaries(dir).length === 0) {
-    try {
-      readProjection(snapshot)
-      const writing = inProgress()
-      if (writing) return writing
-      publish(snapshot, options.takeOwnership ? 'skip' : 'clone')
-      return snapshot
-    } catch (error) {
-      const writing = inProgress()
-      if (writing) return writing
-      if (error instanceof ModuleWriteError && error.code === 'rules-conflict') throw error
-    }
-  }
-  return coordinated(snapshot.dir, () => {
-    // 同步提交在进程内串行；外部源修改在发布前再次复核，最多重读一次。
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try { return recoverCurrent(snapshot.dir) }
-      catch (error) { if (!(error instanceof ModuleWriteError) || error.code !== 'rules-conflict' || attempt === 1) throw error }
-    }
-    throw new ModuleWriteError('规则切片恢复失败')
-  })
+export function exportModuleDefinitionText(directory: string): string {
+  return readModuleDefinitionExport(directory).text
 }
 
-/** 唯一保存顺序：正文/变量 → module.yml 原子提交 → 状态清单 → 校验发布。 */
-export function commitModuleDefinition(snapshot: ModuleDefinitionSnapshot, next: string | ReturnType<typeof parseDocument>, prepared?: ModuleDefinitionSnapshot, retainOwnership = false): ModuleDefinitionSnapshot {
+function reconcileYaml(doc: ModuleDefinitionSnapshot['doc'], node: unknown, before: unknown, after: unknown): unknown {
+  if (isDeepStrictEqual(before, after)) return node
+  if (isMap(node) && record(before) && record(after)) {
+    for (const key of Object.keys(before)) if (!Object.hasOwn(after, key)) node.delete(key)
+    for (const [key, child] of Object.entries(after)) node.set(key, reconcileYaml(doc, node.get(key, true), before[key], child))
+    return node
+  }
+  if (isSeq(node) && Array.isArray(before) && Array.isArray(after)) {
+    const byId = new Map(before.flatMap((v, i) => record(v) && typeof v.id === 'string' ? [[v.id, i] as const] : []))
+    const items = node.items
+    node.items = after.map((v,i) => {
+      const at = record(v) && typeof v.id === 'string' ? byId.get(v.id) : i
+      return reconcileYaml(doc, at === undefined ? undefined : items[at], at === undefined ? undefined : before[at], v)
+    })
+    return node
+  }
+  const replacement = doc.createNode(after)
+  if (isNode(node)) {
+    replacement.comment = node.comment
+    replacement.commentBefore = node.commentBefore
+    if (isScalar(node) && isScalar(replacement)) {
+      replacement.type = node.type
+      replacement.anchor = node.anchor
+    }
+  }
+  return replacement
+}
+
+export function commitModuleDefinition(snapshot: ModuleDefinitionSnapshot, next: string | ModuleDefinitionSnapshot['doc'], prepared?: ModuleDefinitionSnapshot): ModuleDefinitionSnapshot {
   const text = typeof next === 'string' ? next : next.toString()
-  const cached = prepared === undefined ? undefined : projections.get(prepared)
-  const candidate = prepared?.dir === snapshot.dir && prepared.text === text && cached?.text === text && cached.dir === snapshot.dir
-    ? prepared : snapshotFromText(snapshot.dir, text)
-  if (candidate.text === snapshot.text) return ensureModuleSlices(snapshot.dir)
-  return coordinated(snapshot.dir, () => {
-    let persisted = false
-    try {
-      assertSource(snapshot)
-      writeProjection(candidate, 'contents', false, verifiedProjections.has(snapshot) ? projectedSnapshot(snapshot) : undefined)
-      replaceVersionedText({
-        file: snapshot.file,
-        expectedRevision: snapshot.revision,
-        read: () => {
-          assertSourcePath(snapshot)
-          const mode = statSync(snapshot.file).mode
-          return { revision: revisionOf(readFileSync(snapshot.file)), value: undefined, mode }
-        },
-        prepare: () => candidate.text,
-        recheck: () => { assertSourcePath(snapshot); projectedSnapshot(candidate) },
-        conflict: sourceConflict,
-      })
-      persisted = true
-      writeProjection(candidate, 'all', true, verifiedProjections.has(snapshot) ? projectedSnapshot(snapshot) : undefined)
-      readProjection(candidate)
-      publish(candidate, retainOwnership ? 'take' : 'clone')
-      return candidate
-    } catch (error) {
-      let recovered: ModuleDefinitionSnapshot | undefined
-      try { recovered = recoverCurrent(snapshot.dir) } catch { /* 保留最后已验证运行快照；下次 ensure 继续单向恢复。 */ }
-      if (persisted && recovered) return recovered
-      if (error instanceof ModuleWriteError && !persisted) throw new ModuleWriteError(error.message, error.status, error.code, false, recovered?.revisions ?? snapshot.revisions)
-      throw new ModuleWriteError(`${persisted ? '模块已保存，但规则切片发布失败' : '模块未保存，规则切片写入失败'}：${String((error as Error).message ?? error)}`, 500, 'rules-rebuild-failed', persisted, recovered?.revisions ?? (persisted ? candidate.revisions : snapshot.revisions))
+  const candidate = prepared?.dir === snapshot.dir && prepared.text === text ? prepared : snapshotFromText(snapshot.dir, text)
+  const projected = projectedSnapshot(candidate)
+  return withModuleLock(dirname(snapshot.dir), basename(snapshot.dir), () => {
+    const previous = installed(snapshot.dir)
+    if (previous.generation !== snapshot.revision) throw sourceConflict()
+    if (isDeepStrictEqual(candidate.source, snapshot.source)) return snapshot
+    // 切片源内的别名在导出时必须仍能表达本次修改。
+    let aliases: Pick<ModuleLocalCommit, 'hasSourceAliases' | 'aliasRuleIds'> = {}
+    if (previous.hasSourceAliases) {
+      const base = parseLocal(readModuleLocalObject(snapshot.dir, previous.exportBase))
+      aliases = assertSlicableAliases(base)
+      reconcileYaml(base, base.contents, base.toJS(), candidate.source)
+      serializeWithoutSharedAlias(base, candidate.source, '保存会改变 YAML 共享引用')
     }
+    const inputs = candidate.doc.clone()
+    inputs.delete('rules')
+    const members = Object.fromEntries(Object.entries(projected.files).map(([name,text]) => {
+      const hash = revisionOf(text)
+      return [name, previous.members[name] === hash ? hash : writeModuleLocalObject(snapshot.dir, text)]
+    }))
+    const commit = publishModuleLocalCommit(snapshot.dir, {
+      moduleId: previous.moduleId, ...aliases, exportBase: previous.exportBase, declaredKeys: Object.keys(candidate.source),
+      inputs: writeModuleLocalObject(snapshot.dir, inputs.toString()), ruleIds: projected.contents.map(rule => rule.id), members,
+      hasProcessRules: candidate.rules.some(rule => rule.executionScope === 'process'),
+    }, () => {
+      if (installed(snapshot.dir).generation !== previous.generation) throw sourceConflict()
+      projectedSnapshot(candidate)
+    })
+    candidate.revision = commit.generation
+    candidate.file = snapshot.file
+    return candidate
   })
 }
 

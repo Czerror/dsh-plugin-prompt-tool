@@ -1,11 +1,12 @@
 /** 定向升级只生成候选，持久化仍由正式导入预览与重建事务拥有。 */
 import { isAlias, isMap, isScalar, isSeq, parseDocument } from 'yaml'
 import type { Document, YAMLSeq } from 'yaml'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { assertModuleDirectory, assertNoModuleLinks } from './module-install.ts'
+import { assertModuleDirectory } from './module-install.ts'
 import { packageModulesDir, userModulesDir } from './module-dirs.ts'
-import { revisionOf, serializeWithoutSharedAlias } from './module-write.ts'
+import { serializeWithoutSharedAlias } from './module-write.ts'
+import { readModuleDefinitionExport } from './module-slices.ts'
 import { expandModuleSource, exportModulePackage } from './module-package.ts'
 import type { AssetFile } from '../shared/asset-transfer.ts'
 import { decodeAssetFile } from './import-source.ts'
@@ -66,24 +67,22 @@ const BASELINE = `rules:
 export async function readSoulUpgradePreview(moduleDir: string) {
   const directory = assertModuleDirectory(userModulesDir(), basename(moduleDir))
   if (directory !== moduleDir && directory.replaceAll('\\', '/') !== moduleDir.replaceAll('\\', '/')) throw new Error('Soul升级目标不在当前用户模块根')
-  const file = join(directory, 'module.yml')
-  assertNoModuleLinks(file)
-  if (!statSync(file).isFile() || statSync(file).size > 1024 * 1024) throw new Error('Soul升级模块定义无效或超限')
-  const source = readFileSync(file, 'utf8')
+  const { text: source, revision } = readModuleDefinitionExport(directory)
+  if (Buffer.byteLength(source) > 1024 * 1024) throw new Error('Soul升级模块定义无效或超限')
   const value = parseDocument(source)
   if (value.errors.length) throw new Error('Soul升级YAML无效')
   const rules = value.get('rules')
   if (!isSeq(rules) || !RULE_IDS.every(id => rules.items.some(rule => isMap(rule) && rule.get('id') === id))) return { status: 'not-applicable' as const }
   const seed = readFileSync(join(packageModulesDir(), 'soul/module.yml'), 'utf8')
   const preview = previewSoulUpgrade(source, BASELINE, seed)
-  const result = { ...preview, expectedRevision: revisionOf(source), files: [] as AssetFile[],
+  const result = { ...preview, expectedRevision: revision, files: [] as AssetFile[],
     apply: '真实用户使用 /prompt-tool upgrade {"moduleId":"目标模块","action":"preview"} 审阅；确认时action=confirm并原样带回expectedRevision、expectedSourceDigest、expectedPreviewRevision。保留私有资产并重建；升级不授权知识库，不自动更新用户副本。' }
   if (!preview.candidate) return result
   const exported = await exportModulePackage(userModulesDir(), { id: basename(moduleDir), mode: 'zip' })
   const files = await expandModuleSource([{ path: 'soul.zip', content: exported.content, encoding: 'base64' }])
   const current = await exportModulePackage(userModulesDir(), { id: basename(moduleDir), mode: 'zip', preview: true })
   if (current.revision !== exported.revision) throw new Error('Soul升级资产已变化，请重新预览')
-  if (revisionOf(readFileSync(file, 'utf8')) !== result.expectedRevision) throw new Error('Soul升级定义已变化，请重新预览')
+  if (readModuleDefinitionExport(directory).revision !== revision) throw new Error('Soul升级定义已变化，请重新预览')
   result.files = files.map(file => file.path === 'module.yml' ? { path: file.path, content: preview.candidate! } : file)
   for (const path of ['assets/retrieval-synonyms.json', ...Object.keys(ASSET_BASELINES)]) {
     const content = readFileSync(join(packageModulesDir(), 'soul', path), 'utf8')

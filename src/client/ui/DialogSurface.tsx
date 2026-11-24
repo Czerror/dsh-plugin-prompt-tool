@@ -19,9 +19,10 @@ export function DialogSurface(props: {
   size?: 'wide'
   footer?: ReactNode
   onClose: () => void
+  onEscape?: () => void
   children: ReactNode
 }): ReactNode {
-  const { dialogRef, onDialogKeyDown } = useDialogFocus<HTMLDivElement>(true, props.onClose, props)
+  const { dialogRef, onDialogKeyDown } = useDialogFocus<HTMLDivElement>(true, props.onEscape ?? props.onClose, props)
   const titleId = useId()
   const descriptionId = useId()
   const fallbackAnchorRef = useRef<HTMLElement>(null)

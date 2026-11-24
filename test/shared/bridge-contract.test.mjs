@@ -13,6 +13,7 @@ const {
 } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { bridgeTransaction } = await import('../../src/runtime/bridge-transaction.ts')
+const { materializeModuleDefinition } = await import('../../src/host/module-slices.ts')
 const bridgeDisposers = []
 // 先放掉本轮注册的端点，再让夹具的 after 清掉 home（登记顺序即执行顺序）。
 test.after(() => {
@@ -157,6 +158,7 @@ test('契约：moduleName 主语安全与 rules 非正文紧凑保存的写前�
   const subjectDir = join(userModulesDir(), 'module-name-subject')
   mkdirSync(subjectDir, { recursive: true })
   writeFileSync(join(subjectDir, 'module.yml'), 'id: module-name-subject\nname: 原名\nmodules: []\nrules: []\n', 'utf8')
+  materializeModuleDefinition(subjectDir)
   const handlers = register({
     moduleDirectory: (id) => id === 'module-name-subject' ? subjectDir : '',
     overridesChanged: async () => { throw new Error('refresh unavailable') },
@@ -193,42 +195,123 @@ test('契约：moduleName 主语安全与 rules 非正文紧凑保存的写前�
   assert.equal(stale.status, 409)
   assert.equal(JSON.parse(stale.body).code, 'module-name-conflict')
   const definitionFile = join(subjectDir, 'module.yml')
-  const savedBytes = readFileSync(definitionFile)
   const invalidFormat = fakeRes()
   writeFileSync(definitionFile, 'id: module-name-subject\nname: external\nmodules: []\nrules: []\nlayerSettings: []\n')
   await handlers.get(path)(fakeReq({ body: {}, headers: { 'x-module-id': 'module-name-subject' } }), invalidFormat)
-  assert.equal(invalidFormat.status, 400, '已通过格式检查的同目录仍拒绝外部非法层设置')
-  assert.equal(JSON.parse(invalidFormat.body).code, 'module-layer-settings-invalid')
-  writeFileSync(definitionFile, savedBytes)
-  const restored = fakeRes()
-  await handlers.get(path)(fakeReq({ body: {}, headers: { 'x-module-id': 'module-name-subject' } }), restored)
-  assert.equal(restored.status, 200, '外部修正后恢复，不保留负缓存')
+  assert.equal(invalidFormat.status, 200, '格式门只核对已提交清单')
+  assert.equal(JSON.parse(invalidFormat.body).value.name, '新名')
 
   // 非正文 compactEdit 必须在提交及发布前拒绝，不能返回失败却已删除规则。
   const rulesDir = join(userModulesDir(), 'compact-rejection')
   mkdirSync(rulesDir, { recursive: true })
   const rulesFile = join(rulesDir, 'module.yml')
   writeFileSync(rulesFile, JSON.stringify({ id: 'compact-rejection', modules: [], rules: [{ id: 'keep', then: [{ id: 'text', kind: 'inject-text', config: { text: 'KEEP' } }] }] }))
+  materializeModuleDefinition(rulesDir)
+  writeFileSync(rulesFile, 'id: compact-rejection\nmodules: []\n')
   let publications = 0
+  let effectiveGeneration, publicationFailure, failScheduling = true
   const rulesHandler = register({
     moduleDirectory: () => rulesDir,
-    schedulePublication: () => { publications++ },
+    schedulePublication: id => {
+      assert.equal(id, 'compact-rejection')
+      publications++
+      if (failScheduling) throw new Error('rules refresh unavailable')
+      publicationFailure = undefined
+    },
+    rulesChanged: (id, generation) => {
+      assert.equal(id, 'compact-rejection')
+      publications++
+      effectiveGeneration = generation
+      publicationFailure = undefined
+    },
+    publicationFailures: () => publicationFailure === undefined ? [] : [{ moduleId: 'compact-rejection', message: publicationFailure, at: 0 }],
+    moduleGenerations: () => [{ agentId: 'agent-a', generation: effectiveGeneration }],
   }).get(SETTINGS_BRIDGE_PREFIX + BRIDGE_ENDPOINTS.rules)
   const headers = { 'x-module-id': 'compact-rejection' }
   const rulesRead = fakeRes()
   await rulesHandler(fakeReq({ body: { expectedModuleId: 'compact-rejection' }, headers }), rulesRead)
   assert.equal(rulesRead.status, 200)
+  const initialRules = JSON.parse(rulesRead.body).value
+  effectiveGeneration = initialRules.definitionRevision
+  assert.deepEqual(JSON.parse(rulesRead.body).value.rules.map(rule => rule.id), ['keep'], '声明门与规则读取使用本地提交')
   const rulesBytes = readFileSync(rulesFile)
   const rejected = fakeRes()
   await rulesHandler(fakeReq({ body: {
     expectedModuleId: 'compact-rejection', compactEdit: true,
-    expectedRevisions: JSON.parse(rulesRead.body).value.revisions,
+    expectedRevisions: initialRules.revisions,
     edits: [{ previousId: 'keep', rule: null }],
   }, headers }), rejected)
   assert.deepEqual(readFileSync(rulesFile), rulesBytes, '拒绝 compactEdit 删除时完整定义不得变化')
   assert.equal(publications, 0, '拒绝 compactEdit 删除时不得安排发布')
   assert.equal(rejected.status, 400)
   assert.equal(JSON.parse(rejected.body).code, 'rules-invalid')
+
+  const edited = fakeRes()
+  await rulesHandler(fakeReq({ body: {
+    expectedModuleId: 'compact-rejection', compactEdit: true,
+    expectedRevisions: initialRules.revisions,
+    edits: [{ previousId: 'keep', rule: { ...initialRules.rules[0], name: 'NEW' } }],
+  }, headers }), edited)
+  assert.equal(edited.status, 200, edited.body)
+  const receipt = JSON.parse(edited.body).value
+  assert.equal(receipt.persisted, true)
+  assert.equal(receipt.rule.name, 'NEW')
+  assert.equal(receipt.publicationPending, true)
+  assert.notEqual(receipt.definitionRevision, initialRules.definitionRevision)
+  assert.deepEqual(receipt.effectiveGenerations, [{ agentId: 'agent-a', generation: initialRules.definitionRevision }])
+  const retry = async expectedDefinitionRevision => {
+    const response = fakeRes()
+    await rulesHandler(fakeReq({ body: { expectedModuleId: 'compact-rejection', refreshOnly: true, expectedDefinitionRevision }, headers }), response)
+    return response
+  }
+  assert.equal((await retry(initialRules.definitionRevision)).status, 409)
+  assert.equal(publications, 1, '旧代凭据不能启动发布')
+  const refreshed = await retry(receipt.definitionRevision)
+  assert.equal(refreshed.status, 200, refreshed.body)
+  const resumed = JSON.parse(refreshed.body).value
+  assert.equal(resumed.definitionRevision, receipt.definitionRevision, '重试只发布已提交代')
+  assert.equal(resumed.publicationPending, false)
+  assert.deepEqual(resumed.effectiveGenerations, [{ agentId: 'agent-a', generation: receipt.definitionRevision }])
+
+  failScheduling = false
+  const queued = fakeRes()
+  await rulesHandler(fakeReq({ body: {
+    expectedModuleId: 'compact-rejection', compactEdit: true,
+    expectedRevisions: resumed.revisions,
+    edits: [{ previousId: 'keep', rule: { ...resumed.rules[0], name: 'QUEUED' } }],
+  }, headers }), queued)
+  assert.equal(queued.status, 200, queued.body)
+  const queuedReceipt = JSON.parse(queued.body).value
+  assert.equal(queuedReceipt.persisted, true)
+  assert.equal(queuedReceipt.publicationPending, undefined, '已入队不等于发布失败')
+  assert.deepEqual(queuedReceipt.effectiveGenerations, resumed.effectiveGenerations, '回执先于 Agent 配装')
+  publicationFailure = '后台配装失败'
+  const failedRead = fakeRes()
+  await rulesHandler(fakeReq({ body: { expectedModuleId: 'compact-rejection' }, headers }), failedRead)
+  const failed = JSON.parse(failedRead.body).value
+  assert.equal(failed.definitionRevision, queuedReceipt.definitionRevision)
+  assert.equal(failed.publicationError, publicationFailure)
+  assert.equal(failed.publicationPending, true)
+
+  const { commitModuleDefinition, loadModuleDefinition } = await import('../../src/host/module-slices.ts')
+  const { readModuleLocalCommit } = await import('../../src/host/module-local-state.ts')
+  const current = loadModuleDefinition(rulesDir)
+  current.doc.set('name', 'Updated module metadata')
+  commitModuleDefinition(current, current.doc)
+  const metadata = readModuleLocalCommit(rulesDir)
+  assert.notEqual(metadata.generation, queuedReceipt.definitionRevision)
+  writeFileSync(join(rulesDir, 'rules', '.objects', metadata.inputs), 'invalid inputs')
+  const recovered = fakeRes()
+  await rulesHandler(fakeReq({ body: { expectedModuleId: 'compact-rejection' }, headers }), recovered)
+  assert.equal(recovered.status, 200, recovered.body)
+  assert.equal(JSON.parse(recovered.body).value.definitionRevision, queuedReceipt.definitionRevision)
+  const writeThroughFallback = fakeRes()
+  await rulesHandler(fakeReq({ body: {
+    expectedModuleId: 'compact-rejection', compactEdit: true, expectedRevisions: failed.revisions,
+    edits: [{ previousId: 'keep', rule: { ...failed.rules[0], name: 'SHOULD NOT SAVE' } }],
+  }, headers }), writeThroughFallback)
+  assert.equal(writeThroughFallback.status, 400, writeThroughFallback.body)
+  assert.equal(readModuleLocalCommit(rulesDir).generation, metadata.generation)
 })
 
 test('契约：全部桥路径拒绝非 loopback，无一条绕过事务', async () => {

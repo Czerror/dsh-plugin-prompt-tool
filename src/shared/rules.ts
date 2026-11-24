@@ -66,6 +66,7 @@ export interface RulesRequest {
   validateOnly?: boolean
   /** 只重新发布已提交定义，不能与规则修改或候选校验混用。 */
   refreshOnly?: boolean
+  expectedDefinitionRevision?: string
   /** 单条独立编辑仅返回目标规则与版本；省略时维持完整公开快照。 */
   compactEdit?: true
 }
@@ -86,8 +87,12 @@ export interface RuleEditorMeta {
   waterfallPositions: string[]
 }
 
-/** 单条保存的紧凑确认，绑定原子定义字节版本和目标规则 CAS。 */
-export interface CompactRulesSnapshot extends PublicationFields {
+export interface RulePublicationFields extends PublicationFields {
+  effectiveGenerations?: Array<{ agentId: string; generation?: string }>
+}
+
+/** 单条保存的紧凑确认，绑定已提交代和目标规则 CAS。 */
+export interface CompactRulesSnapshot extends RulePublicationFields {
   rule: RuleDefinition
   ruleRevision: string
   definitionRevision: string
@@ -97,7 +102,8 @@ export interface CompactRulesSnapshot extends PublicationFields {
   createdRuleId?: string
 }
 
-export interface RulesSnapshot extends PublicationFields {
+export interface RulesSnapshot extends RulePublicationFields {
+  definitionRevision?: string
   /** 目标已保存、跨模块选择未完成；用当前版本重试 activateRuleId。 */
   activationPending?: string
   rules: RuleDefinition[]

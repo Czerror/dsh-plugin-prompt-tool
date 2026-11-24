@@ -1,14 +1,16 @@
 /**
- * module.yml 的加载：把单个模块定义读成 `ModuleSpec`（按 mtime+size 签名缓存），
+ * 已提交模块加载：把固定代读成 `ModuleSpec`，
  * 并把存储根的全局层引擎参数作为兜底输入挂上（`globalParams`）。从原 `manifest.ts` 按簇拆出。
  */
-import { readdirSync, statSync } from 'node:fs'
+import { lstatSync } from 'node:fs'
 import { assertModuleId } from './module-install.ts'
 import { basename, join, resolve, sep } from 'node:path'
-import { MODULE_DEFINITION_FILE, RULES_DIR } from './paths.ts'
+import { RULES_DIR } from './paths.ts'
+import { MODULE_LOCAL_COMMIT_FILE } from './module-local-state.ts'
 import type { RuleDefinition } from '../shared/rules.ts'
 import { enableTablePath, enabledModuleIds, readGlobalLayerSettingsSafe } from './config-store.ts'
-import { ensureModuleSlices } from './module-slices.ts'
+import { createModuleRuntimeSnapshotReader, ensureModuleSlices, freezeModuleValue } from './module-slices.ts'
+import { revisionOf } from './module-write.ts'
 import { readModuleLayerSettings } from './module-layer-settings.ts'
 import { packageModulesDir, userModulesDir } from './module-dirs.ts'
 
@@ -61,22 +63,17 @@ export interface ModuleSpec {
   moduleConfigs?: Record<string, Record<string, unknown>>
   upstream?: Record<string, unknown>
 }
-/**
- * module.yml 读缓存：按 mtime+size 签名失效。load()/describe/param-overrides 等
- * 每次请求读盘解析，加缓存后同一文件只解析一次；写盘路径（saveModuleParams /
- * withModuleDefinition）与外部编辑（stat 签名变化）都会正确失效。
- */
+/** 派生视图按已验证的提交代缓存。 */
 const moduleSpecCache = new Map<string, { revision: string; spec: ModuleSpec }>()
 
-/** 写盘后失效缓存（调用方在写完 module.yml 后调用；不调用也安全——stat 签名兜底）。 */
+/** 清除模块派生视图。 */
 export function invalidateModuleSpec(dir: string): void {
-  moduleSpecCache.delete(join(dir, MODULE_DEFINITION_FILE))
+  moduleSpecCache.delete(dir)
 }
 /**
  * 把存储根的全局层挂到这个模块上（`resolveModuleParams` 的兜底输入）。
  *
- * 认两处目录：① 用户模块根下的目录；② **用户在启用表里声明过的 id**、但用户目录已被删、
- * `resolveModuleDir` 回落到包内同名模板的情形——否则「模块未声明 ⇒ 回退全局」对它静默失效。
+ * 用户模块根下的模块继承全局设置。
  * 包内模板（如 `blank` 内存模板）**不继承**全局层：克隆/导入时会把全局值烘进新模块定义。
  *
  * 读是**软失败**（`readGlobalLayerSettingsSafe`）：全局层坏掉只让这个模块按「无全局层」装配，
@@ -90,12 +87,38 @@ function withGlobalParams(spec: ModuleSpec, dir: string): ModuleSpec {
   return { ...spec, globalParams: params }
 }
 
-/** 加载某个模块模板的单一参数文件 modules/<name>/module.yml。 */
+export function createRuntimeModuleReader() {
+  const snapshots = createModuleRuntimeSnapshotReader()
+  const views = new WeakMap<object, { spec: ModuleSpec; signature: string }>()
+  return {
+    read(dir: string): { spec: ModuleSpec; generation: string; signature: string } {
+      const snapshot = snapshots.read(dir)
+      let view = views.get(snapshot)
+      if (view === undefined) {
+        const { rules: _rules, variables: _variables, ...inputs } = snapshot.source
+        const spec = { ...inputs, id: inputs.id ?? basename(dir), rules: snapshot.rules,
+          ruleRevisions: Object.fromEntries(Object.entries(snapshot.revisions.rules).map(([id, revision]) => [id, `${revision}:${snapshot.revisions.settings}`])),
+          configOrder: snapshot.configOrder, variables: snapshot.variables, variablesEnabled: snapshot.variablesEnabled } as unknown as ModuleSpec
+        const params = readModuleLayerSettings(spec)
+        if (spec.layerSettings !== undefined || spec.params !== undefined) spec.params = params
+        const signature = revisionOf(JSON.stringify([dir, inputs, snapshot.revisions.settings, Object.values(snapshot.revisions.rules)]))
+        view = { spec: freezeModuleValue(spec), signature }
+        views.set(snapshot, view)
+      }
+      const spec = freezeModuleValue(withGlobalParams(view.spec, dir))
+      return { spec, generation: snapshot.revision, signature: revisionOf(view.signature + JSON.stringify(spec.globalParams ?? {})) }
+    },
+    retain: snapshots.retain,
+    dispose: snapshots.dispose,
+  }
+}
+
+/** 加载模块已验证的运行视图。 */
 export function loadModuleSpec(dir: string, verifyRevision?: (revision: string) => void): ModuleSpec {
   // 完整性检查先于缓存；mtime/size 不能掩盖手改切片或伪造清单。
   const snapshot = ensureModuleSlices(dir, { writable: !resolve(dir).startsWith(resolve(packageModulesDir()) + sep) })
   verifyRevision?.(snapshot.revision)
-  const cached = moduleSpecCache.get(snapshot.file)
+  const cached = moduleSpecCache.get(dir)
   if (cached?.revision === snapshot.revision) return withGlobalParams(structuredClone(cached.spec), dir)
   const parsed = { ...snapshot.source, id: snapshot.source.id ?? basename(dir), rules: snapshot.rules,
     ruleRevisions: Object.fromEntries(Object.entries(snapshot.revisions.rules).map(([id, revision]) => [id, `${revision}:${snapshot.revisions.settings}`])),
@@ -103,7 +126,7 @@ export function loadModuleSpec(dir: string, verifyRevision?: (revision: string) 
   const params = readModuleLayerSettings(parsed)
   if (parsed.layerSettings !== undefined || parsed.params !== undefined) parsed.params = params
   // 缓存只存 module.yml 的事实：全局层每次现读，config.yml 改动不靠签名也能立即生效。
-  moduleSpecCache.set(snapshot.file, { revision: snapshot.revision, spec: structuredClone(parsed) })
+  moduleSpecCache.set(dir, { revision: snapshot.revision, spec: structuredClone(parsed) })
   return withGlobalParams(parsed, dir)
 }
 
@@ -112,8 +135,8 @@ export function readModulesRevision(moduleRoot: string, ids: readonly string[]):
   const parts: string[] = []
   const stamp = (file: string): void => {
     try {
-      const info = statSync(file)
-      parts.push(`${file}:${info.mtimeMs}:${info.size}`)
+      const info = lstatSync(file, { bigint: true })
+      parts.push(`${file}:${info.dev}:${info.ino}:${info.ctimeNs}:${info.mtimeNs}:${info.size}`)
     } catch {
       parts.push(`${file}:missing`)
     }
@@ -123,18 +146,7 @@ export function readModulesRevision(moduleRoot: string, ids: readonly string[]):
   if (moduleRoot !== userModulesDir()) stamp(enableTablePath(userModulesDir()))
   for (const id of ids) {
     assertModuleId(id)
-    const dir = join(moduleRoot, id)
-    const definition = join(dir, MODULE_DEFINITION_FILE)
-    stamp(definition)
-    if (parts.at(-1) === `${definition}:missing`) stamp(join(packageModulesDir(), id, MODULE_DEFINITION_FILE))
-    const rules = join(dir, RULES_DIR)
-    try {
-      for (const entry of readdirSync(rules, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-        stamp(join(rules, entry.name))
-      }
-    } catch {
-      parts.push(`${rules}:missing`)
-    }
+    stamp(join(moduleRoot, id, RULES_DIR, MODULE_LOCAL_COMMIT_FILE))
   }
   return parts.join('|')
 }

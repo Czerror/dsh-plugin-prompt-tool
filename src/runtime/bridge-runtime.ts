@@ -86,6 +86,9 @@ export interface BridgeDeps {
   moduleDirectory?: (moduleId?: string) => string
   /** 参数写入后重建指定模块；省略身份表示启用表变化，刷新全部运行实例。 */
   overridesChanged?: (moduleId?: string) => void | Promise<void>
+  rulesChanged?: (moduleId: string, expectedGeneration: string) => void | Promise<void>
+  scheduleRuleAdoption?: (moduleId: string, generation: string) => boolean
+  moduleGenerations?: (moduleId: string) => Array<{ agentId: string; generation?: string }>
   /** 模块已完整安装后的刷新回调；失败返回未生效诊断，不再物化或撤销安装。 */
   moduleInstalled?: (id: string) => void | Promise<void>
   /** 能力/recipe 提交后刷新回调；失败保留已提交定义并明确报告。 */

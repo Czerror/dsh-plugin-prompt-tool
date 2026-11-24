@@ -93,7 +93,14 @@ export function TemplateVariablesModuleCard(props: {
         </>}
         {props.loading ? (!props.error && <p className={styles.configFieldHint}>{t('variables.loading')}</p>)
           : count === 0 ? <p className={styles.configFieldHint}>{t('variables.empty')}</p>
-            : <VariablesEditor t={t} value={props.templateVariables} disabled={disabled} hideHeading onChange={(next) => { if (!disabled) props.setTemplateVariables(next ?? {}) }} />}
+            : <VariablesEditor key={props.scope} t={t} value={props.templateVariables} disabled={disabled} hideHeading
+              onChange={(next) => { if (!disabled) props.setTemplateVariables(next ?? {}) }}
+              onRemove={(next) => {
+                if (disabled) return
+                const values = next ?? {}
+                props.setTemplateVariables(values)
+                autosave.commit(() => { void props.saveTemplateVariables(values) })
+              }} />}
       </div>
       {confirmingDelete && <ConfirmDialog title={t('variables.deleteTitle')} description={props.scope === 'global' ? t('variables.globalDeleteDescription') : t('variables.deleteDescription')}
         confirmLabel={t('variables.confirmClear')} cancelLabel={t('variables.cancel')} failureMessage={t('variables.deleteFailed')}

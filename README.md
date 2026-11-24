@@ -61,7 +61,7 @@ dsh --profile web
 
 ## 数据与升级
 
-模块定义保存在 `$DSH_HOME/.prompt-tool/modules/<id>/module.yml`。停用模块会撤回它的运行贡献，并保留定义与数据；导出不包含私有 `memory.md`、`data/` 或全局变量。
+已安装模块保存在 `$DSH_HOME/.prompt-tool/modules/<id>/`，在工作台或模块工具中编辑。安装和导出使用完整的 `module.yml`。停用模块会撤回运行贡献，并保留本地提交和数据。分享导出排除私有 `memory.md`、`data/` 和全局变量。跨版本迁移见[升级与降级](docs/asset-transfer.md#升级与降级)。
 
 升级插件后，重启对应的 DSH 应用或服务以加载新代码。升级不会覆盖已有模块定义或私有数据；需要新版内置模块配置时，请显式更新用户副本。旧版内容模块也不会自动移除，升级后请检查已启用的模块。
 

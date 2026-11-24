@@ -19,7 +19,7 @@ const schema = {
     moduleId: { type: 'string', required: true }, rules: { type: 'array', required: true, items: { type: 'json' } },
     revisions: { type: 'object', additionalProperties: true, required: true }, meta: { type: 'object', additionalProperties: true, required: true },
     persisted: { type: 'boolean' }, publicationPending: { type: 'boolean' }, publicationError: { type: 'string' },
-    activationPending: { type: 'string' },
+    definitionRevision: { type: 'string' }, activationPending: { type: 'string' },
   },
 } as const
 type Result = InferValue<typeof schema>
@@ -69,13 +69,13 @@ export function registerModuleRuleTools(ctx: Context, host: ModuleToolHost): () 
         catch (error) {
           if (!(error instanceof ModuleWriteError) || !error.persisted) throw error
           const saved = loadModuleDefinition(target.dir)
-          return result(target.id, { rules: saved.rules, revisions: saved.revisions }, { persisted: true, publicationPending: true, publicationError: error.message, ...(error.activationPending === undefined ? {} : { activationPending: error.activationPending }) })
+          return result(target.id, { definitionRevision: saved.revision, rules: saved.rules, revisions: saved.revisions }, { persisted: true, publicationPending: true, publicationError: error.message, ...(error.activationPending === undefined ? {} : { activationPending: error.activationPending }) })
         }
         if (args.validateOnly === true) return result(target.id, state)
         try {
           exec.signal.throwIfAborted()
           await host.rebuild(target.id)
-          return result(target.id, readModuleRules(target.dir), { persisted: true, publicationPending: false })
+          return result(target.id, state, { persisted: true, publicationPending: false })
         } catch (error) {
           return result(target.id, state, { persisted: true, publicationPending: true, publicationError: `规则已保存，但运行发布失败：${String(error)}` })
         }

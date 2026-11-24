@@ -4,7 +4,7 @@
 
 ## 规则动作的持久化约束
 
-宿主控制的声明与运行条件见[宿主控制动作](engine-host-controls.md)。规则的 `executionScope` 缺省为 `agent`，进程级命令规则使用 `process`，沿完整定义、切片与复制导出保存，启停投影在 `_settings.yml`。
+规则的 `executionScope` 缺省为 `agent`，进程级命令规则使用 `process`。规则正文和启停由本地提交保存，随完整定义复制和导出。[宿主控制动作](engine-host-controls.md)
 
 委派额度归 `host-control/delegation-limits` 的 `value`：可选 `maxDepth`（非负安全整数）与 `askTimeout`（1–2147483 秒），至少一项。复用规则数字草稿与版本保存；清空撤销该字段，空对象与非法数字拒绝发布。
 
@@ -16,7 +16,7 @@
 
 文件读取额度归普通 `host-control/file-read-limits` 动作的 `value`，不进入部署settings或独立参数表。三个可选正安全整数复用原 `RuleParameterFields` 数字原文、错误草稿、版本保存和完整候选校验；清空只撤销该字段，三项全空仍由编译拒绝，不发布为0。标签保持简短，单位及继承说明使用原hint。实际接入边界见[文件读取上限](engine-host-controls.md#文件读取上限)。
 
-结果片段配置归 `module.yml.rules` 的普通 `tool-result/action: edit-text` 动作，`edits` 保存非空数组及每项的 `region/match/text`；空替文为有效删除，空匹配由完整候选校验拒绝。装配替句的 `match` 可为非空字面候选数组，候选仍按明确原文匹配，不转换为正则或逗号拼接。两者沿原规则CAS、YAML Document、切片、导入导出与发布链保存，没有独立结果配置文件或保存端点；运行支持边界见[工具结果与Web功能段](engine-tools.md#工具结果与web功能段)。
+结果片段配置归普通规则的 `tool-result/action: edit-text` 动作。`edits` 保存非空数组及每项的 `region/match/text`，空替文表示删除，空匹配在候选校验时拒绝。装配替句的 `match` 可为非空字面候选数组，候选按原文字面匹配。两者沿规则版本检查、切片提交、导入导出和运行发布保存。[工具结果与Web功能段](engine-tools.md#工具结果与web功能段)
 
 ## 规则事务与互斥
 
@@ -35,7 +35,7 @@
 
 确认条件的 `after: { action: seed }` 保存相对动作 id，编译与挂载时补全模块/规则身份；模板复制与规则自动改名不重写内部引用。完整候选在写盘前校验目标存在、独立投递能力、身份唯一和依赖无环。工作台可添加/清除 `after` 与 `fallbackAfter`，清除即删键；示例默认值不因展示而写入，省略兜底表示持续等待。旧专用锚定策略和参数不作兼容或自动迁移。
 
-每次事务使用 YAML Document 保留注释和未知元数据，提交前复核版本与目录。模块锁序列化保存和恢复；正文/变量切片先准备，module.yml 原子替换为提交点，再发布清单。多文件替换不宣称物理同时原子。提交前失败恢复旧投影；提交后切片发布失败返回 `persisted`、新版本、`publicationPending` 和 `publicationError`，保留最后有效运行贡献。切片验证完成后，普通保存登记后台运行发布，不等待 Agent 重挂。
+模块锁内复核目录、候选及所读字段的版本，写入变更的对象后原子替换提交记录。记录切换前失败时，旧代仍可读。切换后规则回执包含 `persisted` 与 `definitionRevision`。工作台通过 `publicationPending`、`publicationError` 和 `effectiveGenerations` 区分保存与运行生效。挂载失败的 Agent 可保留各自上次有效贡献，其余 Agent 可采用新代。桥接重试通过 `refreshOnly` 和 `expectedDefinitionRevision` 核对原代，只重试发布。
 
 跨模块选择逐模块提交；后续成员写入失败时，已保存的目标不回滚，响应仍返回目标当前规则和版本，以及 `persisted:true`、`publicationPending:true`、`publicationError` 和 `activationPending`（本次选择的规则 id）。此时重试须用返回的新版本再次提交该 `activateRuleId`，不重放已保存的正文；目标已经启用也仍完成成员关闭。客户端保留此选择并优先重试保存，成功后才走正常发布；纯运行发布失败才用 `refreshOnly`。不保存恢复日志或选择栈，不承诺跨文件崩溃原子性。
 
@@ -45,7 +45,7 @@
 
 `layerSettings.<层>.<键>` 是共享参数唯一磁盘路径。storageLayer 由参数目录固定，UI displayLayer/card 只影响展示。公开目录覆盖主/子模型、PTC 呈现、Git Bash 配置、指令提示和自定义工具审批。完整表与类型直接查 `ENGINE_PARAM_DEFINITIONS`，根 [module.yml](../../module.yml) 由脚本生成参考。运行时注入的资源根和规则/工具文件路径不进入通用编辑字段；规则与工具定义继续使用专用编辑器。
 
-同名键在两处存在：模块自己的 `module.yml`（模块层）与存储根 `config.yml` 的 `layerSettings`（**全局层**，固定卡指令卡的设置区写它）。有效值优先级是**模块显式键 ＞ 全局键 ＞ 引擎/行默认**——存在即覆盖，`false`/`0` 也算显式；判据与合并只在 `module-params.ts#resolveModuleParams` 一处，客户端与端点都不重复判。模块没有该键时回退全局值，因此全局开关对未声明它的模块同样生效。
+同名键可来自模块本地清单或存储根 `config.yml` 的全局 `layerSettings`。优先级为**模块显式键 ＞ 全局键 ＞ 引擎或行默认**，`false` 与 `0` 也算显式键。合并由 `module-params.ts#resolveModuleParams` 处理。
 
 模型卡的路由/采样在 prepareAssembly 转成两条受众限定的 request-params 合成规则，不写回规则文件。也可显式写 request-params 动作。未配置模型参数继承宿主，不修改全局默认模型。子代理递归深度归宿主官方委派管理（`subagent.maxDepth`），插件不再提供逐模块深度配置。
 
@@ -53,7 +53,7 @@
 共享参数草稿 → /param-overrides → saveModuleParams → 完整定义提交
 规则草稿 → /rules → editModuleRules → 完整候选校验与提交
 两级变量草稿 → /module-variables → editModuleVariables → 单域提交
-规则/参数保存 → 验证规则切片 → 登记后台发布 → 更新受影响 Agent
+规则或参数保存 → 验证候选 → 切换本地提交 → 发布给受影响 Agent
 变量内容更新 → 发布快照 → 下一求值读取，不重新配装
 ```
 
@@ -69,18 +69,18 @@ PTC 的 `ptcMainMode` 与 `ptcSubagentMode` 分别映射到 `present-as.mainMode
 
 ## 配置序号与跨模块排序
 
-module.yml.configOrder 保存规则id→非负安全整数，身份仍是模块id+规则id。同执行点按序排列，启用没有序号的规则追加到尾部；碰号时保留该模块内部相对顺序整体追加。规则事务新建卡时也读其他启用模块的序号，直接接在全局尾部；尾部算法只在 `src/shared/module-config-order.ts#nextConfigSequence` 一份（切片恢复只传本模块）。重复启用无冲突不改顺序。
+本地清单的 `configOrder` 保存规则 ID 到非负安全整数的映射，导出仍使用同名字段。身份仍由模块 ID 和规则 ID 组成。同执行点按序排列，启用没有序号的规则追加到尾部。碰号时保留模块内部相对顺序。规则新建沿用现有参与模块的顺序追加策略。跨模块排序逐模块提交。
 
 排序接口提交完整身份集合与版本，包含 UI 过滤隐藏项。排序只改轻量映射，不复制正文、不改变互斥开关。官方 system/context 的 order 与 waterfall 注册顺序保持各自语义，见 [引擎顺序](engine-rules.md#提示词配置插入点与顺序)。
 
 ## 模块显示名称
 
-`/module-name` 通过显式 `x-module-id` 读取 `{ name, revision }`；保存仅接受 `name`、`expectedModuleId`、`expectedRevision`，名称修剪后为 1–128 个字符。写入先校验用户可写目录、身份和完整定义版本，再用 YAML Document 与既有原子提交只修改 `name`，保留注释、未知字段与规则。过期版本返回 409；普通保存只确认 `persisted` 并登记后台发布，切片发布失败仍返回 `publicationPending` 与 `publicationError`，不伪报未写盘。模块显示名称不代表默认主语，空白创建名为“默认模块”也不会建立隐式写入目标。
+`/module-name` 通过显式 `x-module-id` 读取 `{ name, revision }`，保存接受 `name`、`expectedModuleId`、`expectedRevision`。名称修剪后为 1–128 个字符。写入校验用户可写目录、身份及版本，只修改本地清单的 `name`。过期版本返回 409。每次操作仍由调用方显式提供模块主语。
 
 ## 磁盘保存与发布确认
 
-- 普通模块写端点确认写盘和切片验证后返回 200 + `persisted:true`。Agent 后台发布独立进行，应答省略 `publicationPending:false`。启用模块先提交排序与启用表，再登记一次发布。
-- 磁盘提交后切片发布失败，返回 200 + `persisted:true` + `publicationPending:true` + `publicationError`。提交前失败返回原错误。后台运行失败见日志与 `/meta.publicationFailures`，工作台的 `moduleWarnings` 和草稿错误不显示这类失败。
+- 普通模块写端点在本地提交后返回 `persisted:true` 并登记运行发布。启用模块先提交排序与启用表，再登记发布。
+- 提交前失败返回原错误。磁盘提交后的运行发布失败通过 `publicationPending` 与 `publicationError` 表示。后台运行失败见日志与 `/meta.publicationFailures`。规则端点另返回各 Agent 已生效版本。
 - `refreshOnly` 等待真实发布结果，成功才返回 `publicationPending:false`，同版本已生效则跳过重挂。请求保留端点所需的定位身份（id/targetId/expectedModuleId/主语头）；混入写载荷一律返回 400。跨模块互斥的 `activationPending` 例外见[规则事务与互斥](#规则事务与互斥)。
 - 客户端发送共享 request/value map，宿主复检类型、大小、目标与版本。草稿、失焦、队列以及收到持久应答后的处理见[保存保护](ui-editing.md#保存保护)，主语载荷见 [bridge 主语策略](ui-bridge.md#模块主语策略)。
 

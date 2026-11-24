@@ -5,11 +5,69 @@
  * 不判断模块定义是否合法。候选内容的校验归调用方（writeModule / installModulePackage /
  * module-catalog）。目标版本为 null 表示目标必须不存在；为 string 表示必须等于该版本。
  */
-import { lstatSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { assertModuleId, canonicalModulesRoot } from './module-install.ts'
+import { isModuleId } from '../shared/module-ids.ts'
+import { assertModuleId, assertModuleTree, canonicalModulesRoot, modulePathExists } from './module-install.ts'
 import { directoryVersionOf } from './preview-revision.ts'
-import { withModuleLock } from './module-write.ts'
+import { assertPlain, withModuleLock } from './module-write.ts'
+
+const installStageName = /^\.(.+)\.install-[A-Za-z0-9]{6}$/
+
+function installStages(root: string): Map<string, string[]> {
+  const stages = new Map<string, string[]>()
+  for (const name of readdirSync(root)) {
+    const id = installStageName.exec(name)?.[1]
+    if (!isModuleId(id)) continue
+    const paths = stages.get(id) ?? []
+    paths.push(join(root, name))
+    stages.set(id, paths)
+  }
+  return stages
+}
+
+/** 目标已发布时保留外部状态交接备份。 */
+function restoreMissingTarget(root: string, id: string, stages?: readonly string[]): boolean {
+  const target = join(root, id)
+  if (modulePathExists(target)) return false
+  const backups: string[] = []
+  for (const stage of stages ?? installStages(root).get(id) ?? []) {
+    const stat = lstatSync(stage, { throwIfNoEntry: false })
+    if (!stat) continue
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`模块安装暂存路径不是普通目录：${stage}`)
+    const backup = join(stage, 'previous')
+    // 已换入的候选不再位于 stage，残留备份不能复活后来删除的模块。
+    const candidate = join(stage, id)
+    if (!modulePathExists(backup) || !modulePathExists(candidate)) continue
+    assertPlain(candidate, true)
+    backups.push(backup)
+  }
+  if (backups.length === 0) return false
+  if (backups.length !== 1) throw new Error(`模块 ${id} 有多个待恢复目录：${backups.join('、')}`)
+  const backup = backups[0]!
+  assertPlain(backup, true)
+  assertModuleTree(backup)
+  renameSync(backup, target)
+  return true
+}
+
+export function recoverModuleInstallations(root: string, warn?: (message: string) => void): ReadonlySet<string> {
+  const blocked = new Set<string>()
+  const canonical = canonicalModulesRoot(root, true)
+  if (!modulePathExists(canonical)) return blocked
+  for (const [id, stages] of installStages(canonical)) {
+    try {
+      if (modulePathExists(join(canonical, id))) continue
+      if (withModuleLock(canonical, id, () => restoreMissingTarget(canonical, id, stages))) {
+        warn?.(`prompt-tool: 已恢复中断安装前的模块目录：${join(canonical, id)}`)
+      }
+    } catch (error) {
+      blocked.add(id)
+      warn?.(`prompt-tool: 模块 ${id} 安装恢复暂缓，保留暂存目录：${String(error)}`)
+    }
+  }
+  return blocked
+}
 
 export type ModuleInstallExpectation = string | null
 
@@ -65,6 +123,7 @@ export function installModuleDirectory(options: ModuleInstallOptions | ModuleIns
     if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('候选不是普通目录：' + candidate)
     outcome = withModuleLock(rootPath, id, () => {
       signal?.throwIfAborted()
+      if (expectedVersion === null) restoreMissingTarget(rootPath, id)
       const actualVersion = directoryVersionOf(target)
       if (actualVersion !== expectedVersion) return { state: 'conflict', actualVersion } as const
       options.beforeCommit?.()

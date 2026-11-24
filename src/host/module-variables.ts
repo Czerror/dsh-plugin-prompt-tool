@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { isMap, isScalar, parseDocument } from 'yaml'
 import { dshHome, globalVariablesFile } from './paths.ts'
 import { replaceVersionedText } from './versioned-text.ts'
-import { assertVariableValues, commitModuleDefinition, ensureModuleSlices, lastPublishedModuleDefinition, loadModuleDefinition } from './module-slices.ts'
+import { assertVariableValues, commitModuleDefinition, loadModuleDefinition, readCommittedVariables } from './module-slices.ts'
 import type { ModuleDefinitionSnapshot } from './module-slices.ts'
 import { ModuleWriteError, assertUnownedUnchanged, revisionOf, withModuleLock } from './module-write.ts'
 import type { ModuleVariableRevisions, ModuleVariablesSnapshot } from '../shared/module-variables.ts'
@@ -58,20 +58,13 @@ function readGlobal(): GlobalSnapshot {
   assertVariableValues(values)
   return { doc, values, revision: revisionOf(bytes), mode: stat.mode }
 }
-function snapshot(module: ModuleDefinitionSnapshot, global: GlobalSnapshot): ModuleVariablesSnapshot {
+function snapshot(module: ReturnType<typeof readCommittedVariables>, global: GlobalSnapshot): ModuleVariablesSnapshot {
   return { global: { ...global.values }, module: { ...module.variables }, effective: { ...global.values, ...module.variables },
     revisions: { global: global.revision, module: module.revisions.variables, settings: module.revisions.settings }, enabled: module.variablesEnabled }
 }
 
-export function readModuleVariables(directory: string, options: { writable?: boolean; runtime?: boolean } = {}): ModuleVariablesSnapshot {
-  let module: ModuleDefinitionSnapshot
-  try { module = ensureModuleSlices(directory, options) }
-  catch (error) {
-    const previous = options.runtime === true ? lastPublishedModuleDefinition(directory) : undefined
-    if (previous === undefined) throw error
-    module = previous
-  }
-  return snapshot(module, readGlobal())
+export function readModuleVariables(directory: string, _options: { writable?: boolean; runtime?: boolean } = {}): ModuleVariablesSnapshot {
+  return snapshot(readCommittedVariables(directory), readGlobal())
 }
 
 function validateRequest(request: ModuleVariablesEdit): void {

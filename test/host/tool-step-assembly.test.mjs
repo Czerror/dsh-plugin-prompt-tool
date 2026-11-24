@@ -1,7 +1,7 @@
 import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -21,8 +21,10 @@ import { isolatedHome } from '../fixtures/host-harness.mjs'
 const { home, moduleRoot } = isolatedHome('pt-tool-step-')
 const { createAgentAssembly } = await import('../../src/runtime/agent-assembly.ts')
 const { installPreStepCoordinator } = await import('../../src/runtime/pre-step-coordinator.ts')
+const { commitModuleDefinition, loadModuleDefinition, materializeModuleDefinition } = await import('../../src/host/module-slices.ts')
 
 async function harness(t, rules = [{ id: 'narrow', then: [{ id: 'allow', kind: 'tool-visibility', allow: ['keep'] }] }], modules = ['rule-engine']) {
+  const modulesDirectory = mkdtempSync(join(home, 'step-modules-'))
   const root = new Context()
   await root.plugin(SessionProjections)
   await root.plugin(SystemPrompt)
@@ -35,11 +37,14 @@ async function harness(t, rules = [{ id: 'narrow', then: [{ id: 'allow', kind: '
   const agents = []
   root.provide('agents', { list: () => agents })
   const id = 'step-surface'
-  mkdirSync(join(moduleRoot, id), { recursive: true })
-  const write = (rows = modules) => writeFileSync(join(moduleRoot, id, 'module.yml'), JSON.stringify({ id, name: id, modules: rows, rules }))
-  write()
+  const dir = join(modulesDirectory, id)
+  mkdirSync(dir)
+  const definition = rows => JSON.stringify({ id, name: id, modules: rows, rules })
+  writeFileSync(join(dir, 'module.yml'), definition(modules))
+  materializeModuleDefinition(dir)
+  const write = (rows = modules) => commitModuleDefinition(loadModuleDefinition(dir), definition(rows))
   const warnings = []
-  const runtime = createAgentAssembly(root, { moduleRoot, enabledModules: () => [id], warn: error => warnings.push(String(error)) })
+  const runtime = createAgentAssembly(root, { moduleRoot: modulesDirectory, enabledModules: () => [id], warn: error => warnings.push(String(error)) })
   t.after(async () => { await runtime.dispose(); await root.fiber.dispose() })
   const agent = { id: 'step-agent', options: { model: 'next' }, model: { current: () => ({ model: 'next' }) },
     session: { id: 'step-agent', header: {}, snapshotEvents: () => [], append() {} } }
@@ -128,6 +133,7 @@ test('官方会话提交的身份、PTC 声明及工具目录使用同一步已�
         fill: 'tool-catalog', params: { action: 'narrow' }, text: 'CATALOG {{RESIDENT_TOOLS}}' } },
     ] },
   ] }))
+  materializeModuleDefinition(join(moduleRoot, id))
   const root = new Context()
   let runtime, handle
   t.after(async () => { await runtime?.dispose(); await handle?.dispose(); await root.fiber.dispose() })
@@ -184,7 +190,7 @@ test('pre-step 工具条件遵守封存后的工具面，只读裁剪保留真�
     } finally { toolSet.dispose() }
   }
   const writable = await inject()
-  assert.deepEqual(writable.messages.map(message => message.content[0].text), ['WRITE NOTICE', question.content[0].text])
+  assert.deepEqual(writable.messages.map(message => message.content[0].text), ['WRITE NOTICE', question.content[0].text], h.warnings.join('\n'))
   rules[0].then[0].allow = []
   h.write()
   h.runtime.schedule('step-surface')

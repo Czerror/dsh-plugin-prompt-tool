@@ -1,15 +1,15 @@
 /**
- * 声明面真值源：`module.yml` 的**顶层键名集合**。
+ * 声明面由本地已提交清单保存的顶层键名决定。
  *
  * 判据（用户拍板 2026-10-12）：键整个不存在＝没声明，`customTools: []` 算已声明；
  * 不做内容级语义。解析失败是**错误**，不是「没声明」——调用方照既有错误路径报错，
- * 不得把损坏的定义当成静默可用的空声明。真值源是定义文件本身：每次请求现读，不缓存。
+ * 不得把损坏的状态当成静默可用的空声明。
  *
  * **只写在读侧**：没声明就没有内容可读，读拒绝；写一个不存在的节恰恰是创建它，写完它就被声明了，
  * 所以写路径不查声明面（见 `module-subject-gate.ts` 的 `subjectGate`）。
  */
 import type { BridgeEndpointKey } from '../shared/bridge-contract.ts'
-import { loadModuleDefinition } from './module-slices.ts'
+import { readModuleDeclaredKeys } from './module-slices.ts'
 
 /**
  * 声明面登记表：端点 → 该端点读写的 `module.yml` 节。数组表示「任一存在即算已声明」。
@@ -28,5 +28,5 @@ export const DECLARED_SECTIONS: Partial<Record<BridgeEndpointKey, readonly strin
 
 /** 目标模块声明的节名集合；定义不可解析时抛既有错误，绝不返回空集。 */
 export function moduleDeclarations(dir: string): Set<string> {
-  return new Set(Object.keys(loadModuleDefinition(dir).source))
+  return readModuleDeclaredKeys(dir)
 }

@@ -8,13 +8,12 @@ import { join, resolve, sep } from 'node:path'
 import { Document } from 'yaml'
 import { isModuleId } from '../shared/module-ids.ts'
 import { MODULE_DEFINITION_FILE } from './paths.ts'
-import { assertModuleDirectory, assertModuleId, assertModuleTree, modulePathExists } from './module-install.ts'
-import { ModuleLayerSettingsError } from './module-layer-settings.ts'
-import { ModuleWriteError } from './module-write.ts'
-import { buildModuleCandidate, finalizeModuleCandidate } from './write-module.ts'
-import { installModuleDirectory, leftoverStageWarning, type ModuleInstallOutcome } from './module-install-transaction.ts'
+import { assertModuleDirectory, assertModuleId, modulePathExists } from './module-install.ts'
+import { buildModuleCandidate, finalizeModuleCandidate, migrateModuleDefinition } from './write-module.ts'
+import { installModuleDirectory, leftoverStageWarning, recoverModuleInstallations, type ModuleInstallOutcome } from './module-install-transaction.ts'
 import { findModuleDir, packageModulesDir, userModulesDir } from './module-dirs.ts'
 import { loadModuleSpec } from './module-spec.ts'
+import { markModuleLocalInitialized, readModuleLocalCommit } from './module-local-state.ts'
 
 /**
  * 内置空白模板（唯一的内存形态模板）：`moduleClone('blank')` 的源。
@@ -49,19 +48,6 @@ function blankModuleDefinitionText(targetId: string): string {
   return doc.toString()
 }
 
-/** 模块目录是否含组合源：modules、composition 或官方 agent.cordis.yml。 */
-function isRenderableModuleDir(dir: string): boolean {
-  try {
-    const spec = loadModuleSpec(dir)
-    if (Array.isArray(spec.modules)) return true
-    if (typeof spec.composition === 'string' && spec.composition.length > 0) return true
-  } catch (error) {
-    if (error instanceof ModuleLayerSettingsError || error instanceof ModuleWriteError) throw error
-    return false
-  }
-  return false
-}
-
 /** 本插件模块清单；所有目录按同一身份与组合源规则列举。 */
 export function listModules(moduleRoot = userModulesDir()): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> {
   const scan = (dir: string): Array<{ id: string; name: string; user: boolean; renderable: boolean; description?: string; meta?: Record<string, unknown> }> => {
@@ -77,7 +63,7 @@ export function listModules(moduleRoot = userModulesDir()): Array<{ id: string; 
               id: entry.name,
               name: spec.name,
               user: true,
-              renderable: isRenderableModuleDir(join(dir, entry.name)),
+              renderable: Array.isArray(spec.modules) || (typeof spec.composition === 'string' && spec.composition.length > 0),
               ...(typeof spec.description === 'string' && spec.description.length > 0 ? { description: spec.description } : {}),
               ...(spec.meta !== undefined && spec.meta !== null ? { meta: spec.meta } : {}),
             }]
@@ -117,12 +103,13 @@ export function listBuiltinTemplates(): Array<{ id: string; name: string }> {
 export function ensureModuleSeed(root = userModulesDir(), warn?: (message: string) => void): { created: string[] } {
   const created: string[] = []
   try {
+    const blocked = recoverModuleInstallations(root, warn)
     mkdirSync(root, { recursive: true })
     for (const entry of readdirSync(packageModulesDir(), { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue
+      if (!entry.isDirectory() || entry.name.startsWith('.') || blocked.has(entry.name)) continue
       const target = join(root, entry.name)
       // 硬约束：只补缺失。目标已存在（无论用户是否改过）一律不碰，不比较内容。
-      if (existsSync(target)) continue
+      if (modulePathExists(target)) continue
       const source = join(packageModulesDir(), entry.name)
       try {
         const result = installModuleDirectory({
@@ -143,6 +130,24 @@ export function ensureModuleSeed(root = userModulesDir(), warn?: (message: strin
     // 种子化失败（目录不可读/不可写等）不阻断启动，用户仍可经 UI 新建/导入。
   }
   return { created }
+}
+
+/** 启动时显式迁移仍使用旧定义的模块，包括未启用的模块。 */
+export function migrateLegacyModules(root = userModulesDir(), warn?: (message: string) => void): void {
+  let ids
+  try { ids = readdirSync(root, { withFileTypes: true }) }
+  catch { return }
+  for (const entry of ids) {
+    if (!entry.isDirectory() || !isModuleId(entry.name)) continue
+    try {
+      const dir = assertModuleDirectory(root, entry.name)
+      if (readModuleLocalCommit(dir) !== undefined) markModuleLocalInitialized(dir)
+      else if (modulePathExists(join(dir, MODULE_DEFINITION_FILE))) migrateModuleDefinition(dir)
+      else warn?.(`模块 ${entry.name} 缺少本地提交`)
+    } catch (error) {
+      warn?.(`模块 ${entry.name} 本地状态不可用：${String((error as Error).message ?? error)}`)
+    }
+  }
 }
 /** 目标目录名分配（目录复制与内存组装两条源共用）：`id` 被占用时递增 `id-2` / `id-3`…。 */
 function nextModuleDirId(id: string, root: string, autoSuffix: boolean): { ok: true; id: string } | { ok: false; message: string } {
@@ -180,7 +185,6 @@ function writeBlankModule(root: string, targetId: string, warn?: (message: strin
 }
 /** 完整复制到隐藏候选；只更新定义 ID 和已知共享引擎配置位置。 */
 function copyModuleDirectory(source: string, root: string, targetId: string, warn?: (message: string) => void): void {
-  assertModuleTree(source)
   loadModuleSpec(source)
   const result = installModuleDirectory({
     root,

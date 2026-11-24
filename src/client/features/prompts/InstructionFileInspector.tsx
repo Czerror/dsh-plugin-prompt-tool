@@ -76,9 +76,10 @@ export function InstructionFileInspector({ store, t, config, renderInstructionSe
         onChange={event => store.patchInstructionText(fileId, event.currentTarget.value)} />
       <div className={css.fileActions}>
         {renderInstructionSettings?.(config)}
-        {isReadOnly ? <Button ref={reloadButton} variant="outline" disabled={config.contentSaving}
-          onClick={() => { if (config.contentDirty) setConfirmReload(true); else void store.reloadInstructionFile(fileId) }}>{t('card.reloadFile')}</Button>
-          : <Button variant="outline" disabled={!config.contentDirty || config.contentSaving} onClick={autosave.flush}>{t('card.saveFile')}</Button>}
+        {isReadOnly && <Button ref={reloadButton} variant="outline" disabled={config.contentSaving}
+          onClick={() => { if (config.contentDirty) setConfirmReload(true); else void store.reloadInstructionFile(fileId) }}>{t('card.reloadFile')}</Button>}
+        {!isReadOnly && config.contentDirty && config.contentMessage && <Button variant="outline" disabled={config.contentSaving}
+          onClick={autosave.flush}>{t('workspace.retry')}</Button>}
         <span className={css.fileStatus} role="status" aria-atomic="true">{status}</span>
       </div>
       {config.contentMessage && <p role="alert">{config.contentMessage}</p>}

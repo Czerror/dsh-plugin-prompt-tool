@@ -1,6 +1,6 @@
 ---
 name: dsh-module
-description: 使用时机：新建、修改或审查 DSH Prompt Tool 的 module.yml，排查模块启用后未生效，导入 SillyTavern 预设、角色卡或世界书，或显式转换旧模块格式。
+description: 用于编写、导入或审查 DSH Prompt Tool 的模块定义，编辑已安装模块的规则，排查模块未生效，或转换 SillyTavern 与旧模块格式。
 ---
 
 # DSH 模块
@@ -9,7 +9,7 @@ description: 使用时机：新建、修改或审查 DSH Prompt Tool 的 module.
 
 ## 1. 定位目标与契约
 
-确认运行实例的实际 `DSH_HOME` 和插件安装根。定义在 `$DSH_HOME/.prompt-tool/modules/<id>/module.yml`，启用集合在 `.prompt-tool/config.yml`。读取完整定义及本次涉及的资产；目录名与 id 必须一致。
+确认实际 `DSH_HOME` 和插件安装根。已安装模块在 `$DSH_HOME/.prompt-tool/modules/<id>/`，启用集合在 `.prompt-tool/config.yml`。当前规则和版本用模块工具读取，完整定义从工作台导出。拟安装的 `module.yml` 的 id 应与目标目录名一致。
 
 本技能可能被复制到 `$DSH_HOME/skills/dsh-module/`；下文 `engine/`、`templates/`、`modules/` 都相对**插件包根**。从已加载插件位置或安装信息定位，不能按技能目录或默认 profile 推算。随包技能只补缺失，已有用户副本要在授权范围内比对更新。
 
@@ -49,8 +49,8 @@ rules:
 
 编辑已有模块时保留未知字段、注释、资产与完整分支树，只改变任务要求的内容：
 
-- 条件、动作、正文、人设与启停归 `rules`；`rules/` 是派生投影，编辑完整 `module.yml` 或规则工具。
-- 共享参数归登记的 `layerSettings`；行级配置归 `moduleConfigs`；变量归顶层 `variables` 或专用变量工具。
+- 通过工作台或规则工具编辑已安装模块的条件、动作、正文、人设与启停。`rules/` 内的提交记录和对象由插件维护。需要用外部完整定义覆盖时，先预览再确认导入。
+- 共享参数使用工作台的 `layerSettings`，行级配置在交换定义中归 `moduleConfigs`，变量通过专用工具编辑。
 - `customTools` 只声明需要的自定义工具；官方工具与普通委派沿用会话预设。
 - `memory.md`、`data/` 由各自文件/账本工具拥有；用户 AGENTS.md、CLAUDE.md 及独立指令策略走授权通道，正文留在原文件。
 
@@ -68,11 +68,11 @@ rules:
 
 | 结果 | 后续 |
 |---|---|
-| 校验拒绝或版本冲突 | 修正候选或重读版本，原定义保持 |
+| 校验拒绝或版本冲突 | 修正候选或重读版本，已提交内容保持 |
 | `activationPending` | 用返回版本与 `activateRuleId` 重试选择，不重放 edits |
 | 已保存、仅运行发布失败 | 用 `refreshOnly` 重试发布，不混用 edits/activateRuleId/validateOnly |
 
-完成判据：候选被接受，提交后的定义与版本已读回，保存、激活、运行发布的状态分别确认。
+完成判据：读回已提交规则及版本，分别确认保存、激活与运行发布状态。
 
 ## 4. 验证生效并交付
 

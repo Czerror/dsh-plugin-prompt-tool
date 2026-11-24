@@ -44,15 +44,25 @@ export function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /** parameters 行式编辑：key + type 下拉 + required 开关 + description，可增删。 */
-function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft | undefined; disabled: boolean; onChange: (value: ToolDraft | undefined) => void }): ReactNode {
+function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft | undefined; disabled: boolean; onChange: (value: ToolDraft | undefined) => void; onRemove: (value: ToolDraft | undefined) => void }): ReactNode {
   const { t, disabled } = props
   const params = asRecord(props.value)
   const rows = Object.entries(params)
-  const commit = (next: Array<[string, unknown]>): void => {
-    props.onChange(next.length > 0 ? Object.fromEntries(next) : undefined)
+  const duplicateErrorId = useId()
+  const [duplicate, setDuplicate] = useState<{ key: string; text: string }>()
+  const commit = (next: Array<[string, unknown]>, update = props.onChange): void => {
+    update(next.length > 0 ? Object.fromEntries(next) : undefined)
   }
   const setRow = (index: number, patch: Partial<{ key: string; type: string; required: boolean; description: string }>): void => {
     const { key, ...changes } = patch
+    const previous = rows[index]![0]
+    if (key !== undefined) {
+      if (key !== previous && Object.hasOwn(params, key)) {
+        setDuplicate({ key: previous, text: key })
+        return
+      }
+      setDuplicate(undefined)
+    }
     commit(rows.map(([name, spec], at) => at === index ? [key ?? name, patchToolParameter(asRecord(spec), changes)] : [name, spec]))
   }
   return (
@@ -63,7 +73,8 @@ function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft |
         const record = asRecord(spec)
         const type = typeof record.type === 'string' ? record.type : Array.isArray(record.oneOf) ? 'oneOf' : 'json'
         return <span key={index} className={styles.variableRow}>
-          <TextInput aria-label={t('toolEditor.params.nameAria')} value={key} spellCheck={false} placeholder={t('toolEditor.params.namePlaceholder')}
+          <TextInput aria-label={t('toolEditor.params.nameAria')} value={duplicate?.key === key ? duplicate.text : key} spellCheck={false} placeholder={t('toolEditor.params.namePlaceholder')}
+            aria-invalid={duplicate?.key === key} aria-describedby={duplicate?.key === key ? duplicateErrorId : undefined}
             onChange={(e) => setRow(index, { key: e.target.value })} />
           <MenuSelect compact disabled={disabled} ariaLabel={t('toolEditor.params.typeAria')} value={type}
             options={SCHEMA_TYPES.map((type) => ({ value: type, label: type }))}
@@ -75,11 +86,17 @@ function ParameterRowsEditor(props: { t: PromptToolTranslate; value: ToolDraft |
           <TextInput aria-label={t('toolEditor.params.descriptionAria')} value={typeof record.description === 'string' ? record.description : ''} spellCheck={false} placeholder={t('toolEditor.params.descriptionPlaceholder')}
             onChange={(e) => setRow(index, { description: e.target.value })} />
           <Button shape="pill" size="sm" variant="outline" type="button" data-danger aria-label={t('toolEditor.params.removeAria', { key: key || index })}
-            onClick={() => commit(rows.filter((_, at) => at !== index))}>{t('toolEditor.params.remove')}</Button>
+            onClick={() => {
+              if (duplicate?.key === key) setDuplicate(undefined)
+              commit(rows.filter((_, at) => at !== index), props.onRemove)
+            }}>{t('toolEditor.params.remove')}</Button>
         </span>
       })}
+      {duplicate !== undefined && Object.hasOwn(params, duplicate.key) &&
+        <span id={duplicateErrorId} role="alert" className={styles.configFieldHint}>{t('toolEditor.params.duplicateName')}</span>}
       <span>
         <Button shape="pill" size="sm" variant="outline" type="button" aria-label={t('toolEditor.params.add')} title={t('toolEditor.params.add')}
+          disabled={disabled || rows.some(([key]) => key.trim() === '')}
           onClick={() => commit([...rows, ['', { type: 'string' }]])}>
           {t('toolEditor.params.addButton')}
         </Button>
@@ -130,6 +147,7 @@ export function CustomToolEditor(props: {
   index: number
   disabled: boolean
   onPatch: (patch: Partial<ToolDraft>) => void
+  onRemoveParameter: (parameters: ToolDraft | undefined) => void
   onMoveUp: () => void
   onMoveDown: () => void
   onDuplicate: () => void
@@ -268,6 +286,7 @@ export function CustomToolEditor(props: {
         disabled={disabled}
         value={asRecord(tool.parameters)}
         onChange={(next) => props.onPatch({ parameters: next })}
+        onRemove={props.onRemoveParameter}
       />
       <ToolJsonField t={t} drafts={props.fieldDrafts} draftKey={`${id}:parameters`} label={t('toolEditor.json.advanced')} value={asRecord(tool.parameters)} onChange={(parameters) => props.onPatch({ parameters })} />
       <ToolJsonField t={t} drafts={props.fieldDrafts} draftKey={`${id}:output`} label={t('toolEditor.json.output')} value={asRecord(tool.output)} onChange={(output) => props.onPatch({

@@ -28,6 +28,8 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   const dir = join(home, 'modules', 'alice')
   mkdirSync(join(dir, 'data'), { recursive: true })
   writeFileSync(join(dir, 'module.yml'), 'id: alice\nmodules: []\nrules: []\n')
+  const { commitModuleDefinition, loadModuleDefinition, materializeModuleDefinition } = await import('../../src/host/module-slices.ts')
+  materializeModuleDefinition(dir)
   writeFileSync(join(dir, 'data', 'SELF.src.md'), 'USER SKELETON')
   const storage = await import('@deepseek-ai/dsh-storage')
   const json = await import('@deepseek-ai/dsh-storage-json')
@@ -301,8 +303,8 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   writeFileSync(join(dir, 'data', '.soul-ledger-v2.json'), JSON.stringify({ ...historicalBoundary, length: historicalLedger.length, prefix: createHash('sha256').update(historicalLedger).digest('hex') }))
   assert.equal(readSoulLedgerProjection(dir).items.find(row => row.entry['概要'] === 'DELIVERY PENDING REVIEW').status, 'pending-review')
   assert.match(JSON.stringify((await advanceDelivery('observe historical pending')).content), /DELIVERY PENDING REVIEW/, '历史待核对事项首次进入SELF')
-  const moduleBeforePressure = readFileSync(join(dir, 'module.yml'), 'utf8')
-  writeFileSync(join(dir, 'module.yml'), 'id: alice\nmodules: []\nrules: []\nmoduleConfigs:\n  soul-maintenance:\n    pressureThresholds: [0.5, 0.7, 0.9]\n')
+  const moduleBeforePressure = loadModuleDefinition(dir)
+  commitModuleDefinition(moduleBeforePressure, 'id: alice\nmodules: []\nrules: []\nmoduleConfigs:\n  soul-maintenance:\n    pressureThresholds: [0.5, 0.7, 0.9]\n')
   let measuredTokens = 95
   root.provide('tokenMeter', { measure: () => ({ totalTokens: measuredTokens }) })
   const requestHeader = fresh.agent.session.requestHeader.bind(fresh.agent.session)
@@ -333,7 +335,7 @@ test('连续记录沿真实消息和工具执行，重放不增原文，旧历�
   } finally {
     fresh.agent.session.requestHeader = requestHeader
     fresh.agent.session.requestContext = requestContext
-    writeFileSync(join(dir, 'module.yml'), moduleBeforePressure)
+    commitModuleDefinition(loadModuleDefinition(dir), moduleBeforePressure.text)
   }
   for (const [index, mark] of ['DELTA MARK A', 'DELTA MARK B', 'DELTA MARK A', null].entries()) {
     const state = variables.read(dir, fresh.agent.session.id)

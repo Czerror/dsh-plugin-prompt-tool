@@ -166,6 +166,7 @@ export function RuleCard(props: {
   const retryLabel = t(draft.pending ? 'rules.checkSave' : activationPending ? 'rules.resumeWinner' : retry === 'save' ? 'rules.retrySave' : 'rules.reloadAria')
   return <AutoSaveSelection.Provider value={save}><section ref={surface} id={panelId} className={css.canvasSurface} aria-label={ruleName}
     data-rule-id={rule.id} data-rule-key={entry.key}
+    onFocus={autosave.onFocus} onBlur={autosave.onBlur}
     onCompositionStart={() => { editor.setComposing(entry.key, true); autosave.onCompositionStart() }}
     onCompositionEnd={() => { editor.setComposing(entry.key, false); autosave.onCompositionEnd() }}
     >
@@ -207,8 +208,6 @@ export function RuleCard(props: {
             <span>{t('rules.definition')}</span>
           </Button>
         </span></HintTooltip>
-        <Button variant="outline" shape="pill" aria-label={t('rules.save')} title={t('rules.save')}
-          disabled={disabled || hasRuleFields(draft, entry.key) || unsupported} onClick={save}>{t('rules.saveButton')}</Button>
       </div>
     </header>
     <div className={css.body} data-rule-editor>
