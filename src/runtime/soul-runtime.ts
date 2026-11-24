@@ -1,7 +1,6 @@
 /** Soul宿主接线：历史只读句柄、检索授权与SELF/维护共享owner。 */
 import { createSoulDelivery, proposeSoulDelivery, deliverySource, messageText, digest } from './soul-delivery.ts'
-import { statSync } from 'node:fs'
-import { join } from 'node:path'
+import { readModuleLocalCommit } from '../host/module-local-state.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -85,9 +84,10 @@ export function installSoulRuntime(ctx: Context, host: ModuleToolHost, moduleIds
   // 定义暂时损坏时保留最近有效预算，不降低可用快照的注入上限。
   const budgets = new Map<string, { stamp: string; checkedAt: number; value: number }>()
   const readSelfBudget = (dir: string): number => {
-    const stat = statSync(join(dir, 'module.yml'), { throwIfNoEntry: false })
-    const stamp = stat ? `${stat.mtimeMs}:${stat.size}` : 'missing'
     const hit = budgets.get(dir)
+    let stamp = ''
+    try { stamp = readModuleLocalCommit(dir)?.generation ?? '' }
+    catch { return hit?.value ?? validateSelfBudget() }
     if (hit !== undefined && hit.stamp === stamp && performance.now() - hit.checkedAt < 1000) return hit.value
     let value = hit?.value ?? validateSelfBudget()
     try {

@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { ModuleWriteError } from './module-write.ts'
 import { loadModuleDefinition } from './module-slices.ts'
 import { assertModuleId, assertNoModuleLinks } from './module-install.ts'
+import { RULES_DIR } from './paths.ts'
+import { MODULE_LOCAL_COMMIT_FILE } from './module-local-state.ts'
 
 interface GroupRule { id?: string; group?: string; groupScope?: string; enabled?: boolean; exclusive?: boolean }
 
@@ -12,7 +14,7 @@ export function assertCrossModuleParticipantPaths(moduleRoot: string, moduleIds:
     try { assertModuleId(moduleId) } catch (error) { throw new ModuleWriteError(String((error as Error).message ?? error), 403, 'module-readonly') }
     try {
       assertNoModuleLinks(join(moduleRoot, moduleId))
-      assertNoModuleLinks(join(moduleRoot, moduleId, 'module.yml'))
+      assertNoModuleLinks(join(moduleRoot, moduleId, RULES_DIR, MODULE_LOCAL_COMMIT_FILE))
     } catch {
       throw new ModuleWriteError(`跨模块互斥成员 ${moduleId} 路径非法`, 403, 'module-readonly')
     }
@@ -29,7 +31,8 @@ export function assertCrossModuleGroups(
   const groups = new Map<string, GroupRule[]>()
   for (const moduleId of moduleIds) {
     const directory = join(moduleRoot, moduleId)
-    if (!existsSync(join(directory, 'module.yml'))) continue
+    const commit = join(directory, RULES_DIR, MODULE_LOCAL_COMMIT_FILE)
+    if (!existsSync(commit)) continue
     let rules = overrides.get(moduleId)
     if (rules === undefined) {
       try { rules = loadModuleDefinition(directory).rules }
@@ -38,9 +41,9 @@ export function assertCrossModuleGroups(
     if (!(rules as GroupRule[]).some(rule => rule.groupScope === 'cross-module' && typeof rule.group === 'string' && rule.group.trim() !== '')) continue
     try {
       assertNoModuleLinks(directory)
-      assertNoModuleLinks(join(directory, 'module.yml'))
+      assertNoModuleLinks(commit)
       accessSync(directory, constants.W_OK)
-      accessSync(join(directory, 'module.yml'), constants.W_OK)
+      accessSync(commit, constants.W_OK)
     } catch {
       throw new ModuleWriteError(`跨模块互斥成员 ${moduleId} 不可写或路径非法`, 403, 'module-readonly')
     }

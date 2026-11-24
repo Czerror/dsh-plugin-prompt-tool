@@ -13,6 +13,7 @@ const {
 } = await import('../../src/shared/bridge-contract.ts')
 const { registerSettingsBridge } = await import('../../src/runtime/settings-bridge.ts')
 const { bridgeTransaction } = await import('../../src/runtime/bridge-transaction.ts')
+const { materializeModuleDefinition } = await import('../../src/host/module-slices.ts')
 const bridgeDisposers = []
 // 先放掉本轮注册的端点，再让夹具的 after 清掉 home（登记顺序即执行顺序）。
 test.after(() => {
@@ -157,6 +158,7 @@ test('契约：moduleName 主语安全与 rules 非正文紧凑保存的写前�
   const subjectDir = join(userModulesDir(), 'module-name-subject')
   mkdirSync(subjectDir, { recursive: true })
   writeFileSync(join(subjectDir, 'module.yml'), 'id: module-name-subject\nname: 原名\nmodules: []\nrules: []\n', 'utf8')
+  materializeModuleDefinition(subjectDir)
   const handlers = register({
     moduleDirectory: (id) => id === 'module-name-subject' ? subjectDir : '',
     overridesChanged: async () => { throw new Error('refresh unavailable') },
@@ -193,22 +195,19 @@ test('契约：moduleName 主语安全与 rules 非正文紧凑保存的写前�
   assert.equal(stale.status, 409)
   assert.equal(JSON.parse(stale.body).code, 'module-name-conflict')
   const definitionFile = join(subjectDir, 'module.yml')
-  const savedBytes = readFileSync(definitionFile)
   const invalidFormat = fakeRes()
   writeFileSync(definitionFile, 'id: module-name-subject\nname: external\nmodules: []\nrules: []\nlayerSettings: []\n')
   await handlers.get(path)(fakeReq({ body: {}, headers: { 'x-module-id': 'module-name-subject' } }), invalidFormat)
-  assert.equal(invalidFormat.status, 400, '已通过格式检查的同目录仍拒绝外部非法层设置')
-  assert.equal(JSON.parse(invalidFormat.body).code, 'module-layer-settings-invalid')
-  writeFileSync(definitionFile, savedBytes)
-  const restored = fakeRes()
-  await handlers.get(path)(fakeReq({ body: {}, headers: { 'x-module-id': 'module-name-subject' } }), restored)
-  assert.equal(restored.status, 200, '外部修正后恢复，不保留负缓存')
+  assert.equal(invalidFormat.status, 200, '格式门只核对已提交清单')
+  assert.equal(JSON.parse(invalidFormat.body).value.name, '新名')
 
   // 非正文 compactEdit 必须在提交及发布前拒绝，不能返回失败却已删除规则。
   const rulesDir = join(userModulesDir(), 'compact-rejection')
   mkdirSync(rulesDir, { recursive: true })
   const rulesFile = join(rulesDir, 'module.yml')
   writeFileSync(rulesFile, JSON.stringify({ id: 'compact-rejection', modules: [], rules: [{ id: 'keep', then: [{ id: 'text', kind: 'inject-text', config: { text: 'KEEP' } }] }] }))
+  materializeModuleDefinition(rulesDir)
+  writeFileSync(rulesFile, 'id: compact-rejection\nmodules: []\n')
   let publications = 0
   const rulesHandler = register({
     moduleDirectory: () => rulesDir,
@@ -218,6 +217,7 @@ test('契约：moduleName 主语安全与 rules 非正文紧凑保存的写前�
   const rulesRead = fakeRes()
   await rulesHandler(fakeReq({ body: { expectedModuleId: 'compact-rejection' }, headers }), rulesRead)
   assert.equal(rulesRead.status, 200)
+  assert.deepEqual(JSON.parse(rulesRead.body).value.rules.map(rule => rule.id), ['keep'], '声明门与规则读取使用本地提交')
   const rulesBytes = readFileSync(rulesFile)
   const rejected = fakeRes()
   await rulesHandler(fakeReq({ body: {

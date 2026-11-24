@@ -1,7 +1,5 @@
-/** 已启用配置卡的排序：轻量序号归各自 module.yml，文件是可重建投影。 */
+/** 已启用配置卡的排序：序号归各模块提交状态。 */
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { enabledModuleIds } from './config-store.ts'
 import { assertModuleDirectory } from './module-install.ts'
 import { invalidateModuleSpec } from './module-spec.ts'
@@ -9,7 +7,6 @@ import { commitModuleDefinition, ensureModuleSlices, loadModuleDefinition, nextM
 import type { ModuleDefinitionSnapshot } from './module-slices.ts'
 import { ModuleWriteError } from './module-write.ts'
 import { assertSafeConfigId } from './prompt-configs.ts'
-import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { compareModuleConfigOrder, configIdentityKey } from '../shared/module-config-order.ts'
 import type { ModuleConfigIdentity, ModuleConfigOrderEntry, ModuleConfigOrderSnapshot } from '../shared/module-config-order.ts'
 
@@ -90,27 +87,23 @@ function writeOrders(root: string, inputs: ModuleOrderInput[], orders: Map<strin
   // 全部目标在首次写入前校验；同进程请求串行，外部编辑在每次原子替换前再次校验。
   const verify = (change: ModuleOrderInput) => {
     const dir = assertModuleDirectory(root, change.moduleId)
-    if (dir !== change.dir || readFileSync(join(dir, MODULE_DEFINITION_FILE), 'utf8') !== change.raw) throw new ModuleConfigOrderError('模块版本已变化，请重新读取排序', true)
+    if (dir !== change.dir || loadModuleDefinition(dir).revision !== change.snapshot.revision) throw new ModuleConfigOrderError('模块版本已变化，请重新读取排序', true)
   }
   for (const change of changes) verify(change)
-  const written: typeof changes = []
+  const written: Array<{ change: typeof changes[number]; revision: string }> = []
   try {
     for (const change of changes) {
-      try { commitModuleDefinition(change.snapshot, change.next) }
-      catch (error) {
-        if (error instanceof ModuleWriteError && error.persisted) written.push(change)
-        throw error
-      }
+      const committed = commitModuleDefinition(change.snapshot, change.next)
+      written.push({ change, revision: committed.revision })
       invalidateModuleSpec(change.dir)
-      written.push(change)
     }
   } catch (error) {
-    // 只恢复仍是本次写入字节的文件，不覆盖失败期间出现的外部新改动。
+    // 只恢复仍是本次写入的提交代。
     const failures: unknown[] = []
-    for (const change of written.reverse()) {
+    for (const { change, revision } of written.reverse()) {
       try {
         const current = loadModuleDefinition(change.dir)
-        if (current.text !== change.next) throw new Error('排序恢复时模块再次变化')
+        if (current.revision !== revision) throw new Error('排序恢复时模块再次变化')
         commitModuleDefinition(current, change.raw)
         invalidateModuleSpec(change.dir)
       } catch (restoreError) { failures.push(restoreError) }

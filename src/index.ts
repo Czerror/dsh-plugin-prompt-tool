@@ -27,8 +27,7 @@ import { installPreStepCoordinator } from './runtime/pre-step-coordinator.ts'
 import { installPersonaCapture } from './runtime/persona-registration.ts'
 import { registerTuiCommand } from './runtime/tui.ts'
 import { registerTuiSettingsSection, settingsNamespace } from './runtime/tui-settings.ts'
-import { ensureModuleReady } from './host/write-module.ts'
-import { ensureModuleSeed } from './host/module-catalog.ts'
+import { ensureModuleSeed, migrateLegacyModules } from './host/module-catalog.ts'
 import { moduleDirExists } from './host/module-dirs.ts'
 import {
   Config,
@@ -71,7 +70,8 @@ export function apply(ctx: Context, configIn: Config): void {
   // settings 区块与命令都按 Config owner 的实际 Loader 行 id 寻址，换行 id 装配时不静默失配。
   const settingsNs = settingsNamespace(ctx)
   // 包内目录与输出目录同名；启动只复制缺失项，现有用户定义不被重新铺写。
-  const seededModules = new Set(ensureModuleSeed(modulesDir(), message => warn(ctx, message)).created)
+  ensureModuleSeed(modulesDir(), message => warn(ctx, message))
+  migrateLegacyModules(modulesDir(), message => warn(ctx, message))
   // 内置技能同一纪律：只补缺失项，已有目录不碰；删掉的会被这次启动补回。
   ensureSkillSeed()
   const readConfig = () => ({
@@ -88,20 +88,13 @@ export function apply(ctx: Context, configIn: Config): void {
   const runtime: RuntimeOptions = {
     ...config,
   }
-  const refreshModuleSlices = (id: string): void => {
-    ensureModuleReady(id, {
-      modulesRoot: modulesDir(),
-      warn: (message) => warn(ctx, message),
-    })
-  }
-  const refreshModuleRuntime = async (id: string): Promise<void> => {
-    refreshModuleSlices(id)
+  const refreshModuleRuntime = async (id: string, generation?: string): Promise<void> => {
     // 先同步协议再刷新：本次保存选中的红队协议要在同一次刷新后的请求里生效。
     // 同步失败不能掐断刷新：否则保存成功但装配不更新，桥会兜成「已保存未生效」。
     if (id === ROLE_MODULE_ID) {
       try { autoDelegation?.syncRule() } catch (error) { warn(ctx, `prompt-tool: 自动派工规则同步失败：${String((error as Error)?.message ?? error)}`) }
     }
-    await assembly?.refresh(id)
+    await assembly?.refresh(id, generation)
   }
 
   // 在线编辑不再经 ctx.llm 暴露 settings namespace：改为自建 loopback bridge，
@@ -112,6 +105,8 @@ export function apply(ctx: Context, configIn: Config): void {
     // 显式目标不存在就拒绝，不能落到另一个模块；编辑选择不进入部署设置。
     moduleDirectory: (subject) => resolveRequestedModuleDir(modulesDir(), subject),
     overridesChanged: (id) => id === undefined ? assembly?.refresh() : refreshModuleRuntime(id),
+    rulesChanged: (id, generation) => refreshModuleRuntime(id, generation),
+    moduleGenerations: id => assembly?.moduleGenerations(id) ?? [],
     // host 已安装完整候选；不能二次物化覆盖导入资产。
     moduleInstalled: async (id) => {
       await assembly?.refresh(id)
@@ -170,14 +165,9 @@ registerTuiCommand(
     }
     const modulesEnabledChanged = runtime.modulesEnabled !== nextRuntime.modulesEnabled
     if (!needsInitialApply && !modulesEnabledChanged) return
-    const initial = needsInitialApply
     needsInitialApply = false
 
     Object.assign(runtime, nextRuntime)
-    if (initial) {
-      for (const id of seededModules) refreshModuleSlices(id)
-      seededModules.clear()
-    }
     // 总闸只撤回/恢复运行时贡献，物化文件保留；关闭期间保存仍可重建。
     await assembly?.refresh()
   }

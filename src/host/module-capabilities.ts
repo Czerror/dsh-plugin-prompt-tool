@@ -3,13 +3,12 @@
  * 一起增删（`createModuleCapability` / `removeModuleCapability`）。从原 `manifest.ts` 按簇拆出；
  * 每次提交都过共享引用守卫，能力登记表是唯一事实源。
  */
-import { existsSync, mkdtempSync, renameSync, rmSync } from 'node:fs'
+import { mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { parseDocument } from 'yaml'
 import { engineRecipe, isModuleCapabilityDeclared, moduleCapability } from '../shared/engine-capabilities.ts'
 import { isModuleId } from '../shared/module-ids.ts'
 import { ENGINE_PARAM_DEFINITIONS, ENGINE_PARAM_KEYS } from '../shared/engine-params.ts'
-import { MODULE_DEFINITION_FILE } from './paths.ts'
 import { engineParamPath, readModuleLayerSettings } from './module-layer-settings.ts'
 import { commitModuleDefinition, loadModuleDefinition } from './module-slices.ts'
 import { assertUnownedUnchanged, withModuleLock } from './module-write.ts'
@@ -115,8 +114,6 @@ export function createModuleCapability(
   moduleDir: string,
   request: ModuleCapabilityCreateRequest,
 ): ModuleCapabilityCreateResult {
-  const file = join(moduleDir, MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) throw new Error(`模块目录缺少 module.yml：${moduleDir}`)
   const snapshot = loadModuleDefinition(moduleDir)
   const doc = snapshot.doc
   const source = doc.toJS() as ModuleSpec
@@ -199,8 +196,6 @@ export function removeModuleCapability(
   moduleDir: string,
   capabilityId: string,
 ): ModuleCapabilityRemoveResult {
-  const file = join(moduleDir, MODULE_DEFINITION_FILE)
-  if (!existsSync(file)) throw new Error(`模块目录缺少 module.yml：${moduleDir}`)
   const snapshot = loadModuleDefinition(moduleDir)
   const doc = snapshot.doc
   const source = doc.toJS() as unknown as ModuleSpec & Record<string, unknown>
