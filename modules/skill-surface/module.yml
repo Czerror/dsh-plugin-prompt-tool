@@ -29,6 +29,8 @@ rules:
           - 'plugin:ponytail-subagent-readonly'
           - 'plugin:ponytail-subagent-rules'
           - dsh-mnemon
+          - dsh-ops:step-tail
+          - dsh-ops:batching-guidance
           - compact-checkpoint
           - goal
       - id: skill-discovery-notice
