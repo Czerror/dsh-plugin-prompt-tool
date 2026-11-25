@@ -65,7 +65,7 @@
 
 `pre-step-filter` 明确区分不限制、严格来源白名单 `sources` 和保留原始消息的增量白名单 `keepKinds`，同时可独立按插件身份 `blockPlugins` 屏蔽。表单只显示字段、模式与控件，不堆叠引擎原理说明。空白名单与未声明仍按引擎原有语义保存。技能目录收窄编辑原有来源白名单，不新增技能装配目标或来源排除能力。
 
-随包的「技能面收窄」允许 dsh-ops 的步骤尾注与批处理提示。已有模块副本需要在工作台打开该模块的 `drop-skill-catalog` 动作，将 `dsh-ops:step-tail` 和 `dsh-ops:batching-guidance` 追加到严格来源白名单并保存。
+随包的「技能面收窄」允许 dsh-ops 的步骤尾注与批处理提示。要更新已有副本，在工作台打开该模块，选中「过滤注入消息」（`drop-skill-catalog`）。在「来源过滤」为「仅保留」时，将 `dsh-ops:step-tail` 和 `dsh-ops:batching-guidance` 追加到「保留来源」并保存。
 
 `request-params` 编辑调用字段，字符串清空删除 patch 键，数字清空删除键而 0 保留。未知动作或嵌套扩展可在 JSON 中编辑，服务端编译失败保留完整输入；改规则级 `layer` 会改「动作未声明 `config.layer` 时」的运行通道（动作自带 `config.layer` 时只改展示分组与筛选），不清除动作数据。
 
