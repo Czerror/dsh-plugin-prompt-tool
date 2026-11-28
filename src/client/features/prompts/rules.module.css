@@ -29,11 +29,12 @@
 .canvasTopbar { position: absolute; inset: 68px 12px auto; z-index: 6; display: flex; align-items: flex-start; gap: 8px; pointer-events: none; }
 .contextCluster, .commandCluster { border: 1px solid #313844; border-radius: 10px; background: #181c23; box-shadow: 0 8px 24px #0003; pointer-events: auto; min-inline-size: 0; }
 .contextCluster { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; max-inline-size: 28rem; padding: 4px 8px; }
-.canvasIdentity { display: grid; grid-template-columns: fit-content(44%) auto minmax(0, 1fr) auto; align-items: center; column-gap: 5px; min-block-size: 26px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #b5c2d4; font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
+.canvasIdentity { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; align-items: center; gap: 2px 8px; min-block-size: 26px; padding: 2px 0; border: 0; border-radius: 4px; background: transparent; color: #b5c2d4; font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
 .canvasIdentity:is(:hover, [aria-expanded=true]) { background: #242e3d; }
 .canvasIdentity:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 2px; }
-.canvasIdentity > :is(span:first-child, strong), .canvasSaveState, .canvasPublicationError { min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.canvasIdentity strong { color: #f0f5fc; font-size: 14px; }
+.canvasIdentity > span, .canvasSaveState, .canvasPublicationError { min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.canvasIdentity strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; color: #f0f5fc; font-size: 16px; line-height: 20px; }
+.canvasIdentity svg { grid-column: 2; grid-row: 1 / 3; }
 .canvasIdentity[aria-expanded=true] svg { rotate: 180deg; }
 .identityDetails { display: grid; gap: 6px; margin: 0; overflow-wrap: anywhere; }
 .identityDetails dt { font-weight: 600; }
@@ -107,7 +108,7 @@
 @container rule-workspace (width < 30rem) {
   .ruleListPane:has(> .ruleList):not([hidden]) { inset-inline-end: 8px; }
   /* Leave a readable strip of canvas above the editor and keep its fit control reachable. */
-  .ruleWorkspace { --pt-inspector-top: calc(var(--pt-canvas-top, 68px) + clamp(0px, (100% - var(--pt-canvas-top, 68px) - 64px) / 3, 9rem)); }
+  .ruleWorkspace { --pt-inspector-top: max(var(--pt-canvas-top, 68px), calc(100% - min(28rem, 44%))); }
   .ruleWorkspace :global([data-instruction-inspector]), .ruleWorkspace .moduleSettingsInspector,
   .canvasSurface .definitionDrawer, .canvasSurface .ruleCanvas:not(:has([data-library-open])) > .ruleProperties {
     inset-block: var(--pt-inspector-top) 64px;
@@ -200,6 +201,7 @@
 .surfaceColumns { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
 .surfaceColumns > * { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .surfaceEntry + .surfaceEntry { padding-top: 12px; border-top: .5px solid var(--dsw-alias-border-l2); }
+.ruleWorkspace[data-canvas-workspace] .ruleListPane .error { color: #f25a5a; }
 .error { color: var(--dsw-alias-state-error-primary); overflow-wrap: anywhere; }
 .body [hidden] { display: none !important; }
 
@@ -213,6 +215,7 @@
 .workspace [data-drop-before] { box-shadow: 0 -2px 0 0 var(--dsw-alias-state-business-primary); }
 .workspace [data-drop-after] { box-shadow: 0 2px 0 0 var(--dsw-alias-state-business-primary); }
 @media (forced-colors: active) {
+  .error { color: CanvasText; }
   .workspace [data-drop-before], .workspace [data-drop-after] { outline: 2px solid Highlight; }
 }
 
