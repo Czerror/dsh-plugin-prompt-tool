@@ -26,8 +26,8 @@ web
 
 ## Capabilities and Constraints
 
-- 模块可新建、复制、导入、导出和启停。新建或导入的模块默认停用，作者可以先检查内容再让它参与装配。SillyTavern 预设、角色卡和世界书经转换后也作为模块使用。[导入与分享](docs/asset-transfer.md) · [转换范围](docs/SillyTavern.md)
-- `module.yml` 交换完整定义，已安装模块的编辑通过工作台或模块工具提交。磁盘保存和运行发布分别回执；发布失败时，已保存的变更可重试发布。[参数架构](docs/architecture-params.md) · [保存与发布](docs/subsystems/params-write.md)
+- 模块可新建、复制、导入、导出和启停。从模块侧栏单独新建、复制，或导入为新 ID 时，模块默认停用。覆盖导入沿用目标模块的启用状态，已启用的目标会进入发布流程。在「添加注入模板」中选择「新建空白模块」时，规则提交成功后会尝试启用新模块，新规则仍停用。SillyTavern 预设、角色卡和世界书经转换后也作为模块使用。[导入与分享](docs/asset-transfer.md) · [模板写入与启用](docs/subsystems/ui-workbench.md) · [转换范围](docs/SillyTavern.md)
+- `module.yml` 交换完整定义，已安装模块的编辑通过工作台或模块工具提交。磁盘保存和运行发布分别回执。发布失败时，已保存的变更可重试发布。[参数架构](docs/architecture-params.md) · [保存与发布](docs/subsystems/params-write.md)
 - 会话发现的指令文件各有独立文件卡。经授权的修改写回选中的文件，磁盘版本冲突时保留草稿，供作者重新读取后处理。[编辑与保存保护](docs/subsystems/ui-editing.md)
 
 ## Product Principles
