@@ -5,6 +5,5 @@ lib/
 
 .scratch/
 .readmex/
-AGENTS.md
-CLAUDE.md
-docs/agents/
+docs/agents/workspace.yaml
+docs/agents/label-colors.yaml
