@@ -32,7 +32,7 @@
 .canvasIdentity { display: grid; grid-template-columns: fit-content(44%) auto minmax(0, 1fr) auto; align-items: center; column-gap: 5px; min-block-size: 26px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #b5c2d4; font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
 .canvasIdentity:is(:hover, [aria-expanded=true]) { background: #242e3d; }
 .canvasIdentity:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 2px; }
-.canvasIdentity > :is(span:first-child, strong), .canvasSaveState { min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.canvasIdentity > :is(span:first-child, strong), .canvasSaveState, .canvasPublicationError { min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .canvasIdentity strong { color: #f0f5fc; font-size: 14px; }
 .canvasIdentity[aria-expanded=true] svg { rotate: 180deg; }
 .identityDetails { display: grid; gap: 6px; margin: 0; overflow-wrap: anywhere; }
@@ -40,6 +40,11 @@
 .identityDetails dd { margin: 0 0 8px; }
 .canvasStates { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; color: #b5c2d4; overflow-wrap: anywhere; }
 .canvasStates small { font-size: 11px; }
+.canvasFeedback { display: flex; align-items: center; gap: 8px; min-inline-size: 0; max-inline-size: 100%; }
+.canvasFeedback:has(> button) { flex-basis: 100%; }
+.canvasFeedbackText { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr); min-inline-size: 0; }
+.canvasFeedback button { flex: none; }
+.canvasPublicationState { white-space: normal; }
 .moduleState, .pausedState { padding-inline: 6px; border: 1px solid #3c4859; border-radius: 5px; }
 .moduleState[data-enabled=true] { color: #94e1b8; border-color: #355747; }
 .pausedState { color: #f0c480; border-color: #695431; }

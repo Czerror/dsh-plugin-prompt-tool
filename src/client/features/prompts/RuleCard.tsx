@@ -16,7 +16,6 @@ import { Button } from '../../ui/Button.tsx'
 import { IconChevronDownOutlineRegular, IconCloseFillRegular } from '../../ui/icons.tsx'
 import { MenuSelect } from '../../ui/MenuSelect.tsx'
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx'
-import { PublicationNotice } from '../../ui/PublicationNotice.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { TriggerJsonField, asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleStepsPanel } from './RuleSteps.tsx'
@@ -154,13 +153,15 @@ export function RuleCard(props: {
     + t(rule.enabled === false || props.disabled ? 'rules.identity.unverified' : rule.executionScope === 'process' && availability === 'rules.identity.matched' ? targets.has('host:command-confine') ? 'rules.commandReady' : 'rules.processReady' : availability)
   const activationPending = draft.activationPending === rule.id
   const publication = draft.activationPending === undefined && draft.publicationPending
+  const publicationText = publication ? t('publication.pending') : undefined
+  const publicationError = publication && draft.publicationError !== 'rules-refresh-pending' ? draft.publicationError : undefined
   const dirty = rulesDirty(draft, entry.key)
   const enableRuleLabel = t('rules.enableRuleLabel')
   const saveStatus = draft.pending ? t('rules.savePending')
     : draft.busy === 'save' ? t('rules.saving')
       : hasRuleFields(draft, entry.key) ? t('rules.fieldsPending')
         : draft.remote ? t('rules.conflict') : !publication && !activationPending ? draft.error : undefined
-  const saveText = (saveStatus ?? t(dirty ? 'rules.dirty' : 'rules.clean')) + (publication ? ' · ' + t('publication.pending') : '')
+  const saveText = saveStatus ?? (dirty ? t('rules.dirty') : publication ? undefined : t('rules.clean'))
   const drawerLabel = t(drawer === 'identity' ? 'rules.identityDetails' : drawer === 'properties' ? 'rules.ruleSettings' : 'rules.definition')
   const retry = editor.retryKind
   const retryLabel = t(draft.pending ? 'rules.checkSave' : activationPending ? 'rules.resumeWinner' : retry === 'save' ? 'rules.retrySave' : 'rules.reloadAria')
@@ -182,9 +183,16 @@ export function RuleCard(props: {
         <div className={css.canvasStates}>
           <small className={css.moduleState} data-enabled={moduleEnabled}>{t(moduleEnabled ? 'rules.moduleIsEnabled' : 'rules.moduleIsDisabled')}</small>
           {!modulesEnabled && <small className={css.pausedState}>{t('rules.modulePaused')}</small>}
-          <small className={css.canvasSaveState} role="status" data-clean={!saveStatus && !publication && !dirty || undefined}>
-            {saveText}
-          </small>
+          <div className={css.canvasFeedback}>
+            <div className={css.canvasFeedbackText} role="status" aria-atomic="true">
+              {saveText && <small className={css.canvasSaveState} data-clean={!saveStatus && !dirty || undefined}>{saveText}</small>}
+              {publicationText && <small className={`${css.canvasSaveState} ${css.canvasPublicationState}`}>{publicationText}</small>}
+              {publicationError && <small className={css.canvasPublicationError} title={publicationError}>{publicationError}</small>}
+            </div>
+            {publication && <Button variant="outline" shape="pill" size="sm" disabled={draft.busy !== undefined}
+              aria-label={t('publication.retry')} title={t('publication.retry')}
+              onClick={() => { void editor.retryPublication() }}>{t('publication.retryButton')}</Button>}
+          </div>
         </div>
       </div>
       <div className={css.commandCluster}>
@@ -221,10 +229,6 @@ export function RuleCard(props: {
         {(draft.pending || draft.remote) && <Button shape="pill" variant="outline" aria-label={t('triggers.discard')} title={t('triggers.discard')}
           disabled={draft.busy !== undefined} onClick={() => setDiscarding(true)}>{t('rules.discardButton')}</Button>}
       </div>}
-      <PublicationNotice publication={publication ? { pending: true, error: draft.publicationError } : undefined}
-        disabled={draft.busy !== undefined} pendingLabel={t('publication.pending')} retryLabel={t('publication.retry')}
-        retryButtonLabel={t('publication.retryButton')}
-        onRetry={() => { void editor.retryPublication() }} />
       {targets.size > 0 && (reason ? <HintTooltip label={reason}><p role="status" className={css.status} tabIndex={0} aria-label={status + ' · ' + reason}>{status}</p></HintTooltip> : <p role="status" className={css.status}>{status}</p>)}
       {drawer !== undefined && <aside data-rule-drawer data-canvas-obstacle="right" className={`${css.definitionDrawer} ${ui.configForm}`} aria-label={drawerLabel}
         onKeyDown={event => {
@@ -240,7 +244,11 @@ export function RuleCard(props: {
       {drawer === 'identity' && <dl className={css.identityDetails}>
         <dt>{t('rules.module')}</dt><dd>{moduleName}</dd>
         <dt>{t('rules.name')}</dt><dd>{ruleName}</dd>
-        {(saveStatus || publication) && <><dt>{t('rules.saveStateLabel')}</dt><dd>{saveText}</dd></>}
+        {(saveStatus || publication) && <><dt>{t('rules.saveStateLabel')}</dt><dd>
+          {saveText && <div>{saveText}</div>}
+          {publicationText && <div>{publicationText}</div>}
+          {publicationError && <div>{publicationError}</div>}
+        </dd></>}
       </dl>}
       {drawer === 'properties' && <><div className={css.headerFields}>
         <FormField label={t('rules.rename')}><TextInput value={rule.id} spellCheck={false} readOnly={disabled} onChange={event => patch({ id: event.target.value })} /></FormField>
