@@ -613,7 +613,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {entries.map(row => {
         const { entry, moduleId: id, key, draft, editor } = row
         const orderEntry = orderByIdentity.get(row.identity)?.entry
-        const pendingWinner = draft.activationPending === entry.value.id
+        const pendingWinner = draft.activationPending === entry.value.id && ruleFeedback(draft, editor, t).activationTarget === entry.value.id
         const selectableWinner = enabledIds.has(id) && entry.value.groupScope === 'cross-module'
           && (pendingWinner || entry.value.exclusive === true) && Boolean(entry.value.group)
         const name = entry.value.name || entry.value.id
@@ -638,7 +638,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
               event.stopPropagation()
               const rule = entry.value
               if (!pendingWinner && rule.enabled === false) editor.patch(entry.key, { ...rule, enabled: true })
-              if (pendingWinner) retryRules({ moduleId: id, draft, editor }, ruleFeedback(draft, editor, t).activationTarget)
+              if (pendingWinner) retryRules({ moduleId: id, draft, editor }, rule.id)
               else retryRules({ moduleId: id, draft, editor }, rule.id, () => editor.submit({ activateRuleId: rule.id }))
             }}>{pendingWinner ? '↻' : '✓'}</button>}
           {showList && moveButtons(row.identity, orderEntry, `${id} / ${name}`)}
