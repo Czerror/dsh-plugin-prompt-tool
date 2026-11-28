@@ -31,6 +31,7 @@ import { InstructionCanvas, type CanvasInstructionFile } from './RuleCanvas.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleCard } from './RuleCard.tsx'
+import { ruleFeedback } from './rule-feedback.ts'
 import { useTemplateCreate } from './useTemplatePicker.tsx'
 import type { ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import ui from '../../ui/controls.module.css'
@@ -560,23 +561,18 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     </div>
     {showList && owners.map(({ moduleId: id, draft, editor }) => {
       const invalid = hasRuleFields(draft)
-      if (!draft.error && !draft.pending && !draft.remote && !draft.publicationPending && !invalid) return null
-      const retry = editor.retryKind
-      const publicationPending = retry === 'publish' && draft.publicationError === undefined
-      const message = draft.pending ? t('rules.savePending') : draft.remote ? t('rules.conflict')
-        : publicationPending ? t('rules.publishPending') : retry === 'publish' ? t('rules.publishFailed')
-          : draft.error && retry === 'read' ? t('rules.readBeforeRetry') : draft.error
-      const retryLabel = draft.pending ? 'rules.checkSave'
-        : retry === 'save' ? (draft.activationPending === undefined ? 'rules.retrySave' : 'rules.resumeWinner')
-          : retry === 'publish' ? 'publication.retry' : 'rules.reloadAria'
+      if (!draft.error && !draft.pending && !draft.remote && !draft.publicationPending && !draft.activationPending && !invalid) return null
+      const feedback = ruleFeedback(draft, editor, t)
       return <div key={id}>
-        {message && <div className={css.row}>
+        {feedback.action && <div className={css.row}>
           <span>{t('rules.source', { module: id })}</span>
-          <p role={publicationPending ? 'status' : 'alert'} className={publicationPending ? undefined : css.error}>{message}</p>
-          {draft.error && draft.error !== message && !publicationPending && !draft.pending && !draft.remote &&
+          {feedback.issue && <p role="alert" className={css.error}>{feedback.issue}</p>}
+          {feedback.publication && <p role="status">{feedback.publication}</p>}
+          {feedback.publication && draft.publicationError && <p role="alert" className={css.error}>{draft.publicationError}</p>}
+          {draft.error && draft.error !== feedback.issue && !draft.pending && !draft.remote &&
             <details className={css.ruleFailureDetails}><summary>{t('rules.errorReason')}</summary>{draft.error}</details>}
           <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
-            onClick={() => { if (draft.pending) void editor.reconcile(true); else void editor.retry() }}>{t(retryLabel)}</Button>
+            onClick={() => { void editor.retry() }}>{feedback.action}</Button>
           {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
             aria-label={t('triggers.discard')} title={t('triggers.discard')} onClick={() => setDiscard(id)}>{t('rules.discardButton')}</Button>}
         </div>}

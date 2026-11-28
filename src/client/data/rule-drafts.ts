@@ -30,12 +30,14 @@ export interface RulesDraft {
   definitionRevision?: string
   meta?: RulesSnapshot['meta']
   remote?: RulesSnapshot
-  pending?: { checked: boolean; read: () => Promise<boolean>; entries?: RuleEntry[]; request: RulesRequest }
+  pending?: { checked: boolean; read: () => Promise<boolean>; entries?: RuleEntry[]; request: RulesRequest; key?: string }
   retryCreate?: RulesRequest
+  retrySave?: { key?: string; activateRuleId?: string }
   loaded: boolean
   busy?: 'read' | 'save' | 'validate'
   saving?: Promise<void>
   error?: string
+  errorCode?: string
   retry?: 'read' | 'save'
   rulesDeclared?: boolean
   publicationPending?: boolean
@@ -77,8 +79,6 @@ function acceptRules(draft: RulesDraft, snapshot: RulesSnapshot): void {
   draft.loaded = true
   draft.rulesDeclared = true
   draft.remote = undefined
-  draft.retry = undefined
-  draft.error = draft.publicationError
 }
 interface RuleEditorDependencies {
   onUnconfirmed?: () => void
@@ -90,21 +90,25 @@ interface RuleEditorDependencies {
 /** 读取、编辑、改名、激活和整组响应都通过这一 owner，不写旧配置段。 */
 export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: RuleEditorDependencies) {
   const changed = (): void => { draft.validated = false; deps.changed() }
+  const clearFailure = (): void => {
+    draft.retry = undefined; draft.retrySave = undefined; draft.error = undefined; draft.errorCode = undefined
+  }
   const publication = (snapshot: RulesSnapshot | CompactRulesSnapshot): void => {
     draft.activationPending = 'activationPending' in snapshot ? snapshot.activationPending : undefined
     const state = readPublication(snapshot)
     draft.publicationPending = state.pending
     draft.publicationError = state.error
-    draft.error = draft.retry === 'read' ? 'rules-conflict' : draft.publicationError
   }
-  const receive = (snapshot: RulesSnapshot): boolean => {
+  const receive = (snapshot: RulesSnapshot, keepSaveFailure = false): boolean => {
     if (rulesDirty(draft)) {
       if (!deepEqual(snapshot.rules, draft.saved)) {
+        clearFailure()
         draft.remote = snapshot; draft.retry = 'read'; draft.error = 'rules-conflict'; draft.loaded = true; return false
       }
       draft.revisions = snapshot.revisions; draft.definitionRevision = snapshot.definitionRevision; draft.meta = snapshot.meta
     } else acceptRules(draft, snapshot)
-    draft.loaded = true; draft.rulesDeclared = true; draft.remote = undefined; draft.retry = undefined; draft.error = draft.publicationError
+    draft.loaded = true; draft.rulesDeclared = true; draft.remote = undefined
+    if (!keepSaveFailure) clearFailure()
     return true
   }
   const acceptSent = (entries: RuleEntry[], snapshot: RulesSnapshot): void => {
@@ -157,8 +161,9 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     draft.meta = snapshot.meta
     draft.loaded = true
   }
-  const unknown = (request: RulesRequest, entries?: RuleEntry[]): false => {
-    draft.pending = { checked: false, read: () => reconcile(), request, entries }
+  const unknown = (request: RulesRequest, entries?: RuleEntry[], key?: string): false => {
+    clearFailure()
+    draft.pending = { checked: false, read: () => reconcile(), request, entries, key }
     draft.retry = 'read'
     draft.error = '保存结果待确认。连接恢复后将核对原模块。'
     if (deps.onUnconfirmed) queueMicrotask(deps.onUnconfirmed)
@@ -192,12 +197,13 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
         && (rule === null || deepEqual(rule, remote.get(rule.id))))
       if (matches && pending.entries) {
         acceptSent(pending.entries, saved)
-        draft.retry = undefined; draft.pending = undefined
+        clearFailure(); draft.pending = undefined
         publication(saved)
         return true
       }
       draft.pending = undefined
       if (deepEqual(saved.revisions, draft.revisions)) {
+        draft.retrySave = { key: pending.key, activateRuleId: request.activateRuleId }
         draft.retry = 'save'; draft.error = '原模块仍为保存前版本，可重试。'
       } else {
         draft.remote = saved; draft.retry = 'read'; draft.error = '原模块已变化，草稿仍保留。'
@@ -213,6 +219,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     const request: RulesRequest = { expectedModuleId: moduleId, createRule: candidate,
       ...(draft.rulesDeclared !== true && rulesDeclared === false ? { expectedRulesAbsent: true as const } : {}) }
     draft.retryCreate = undefined
+    clearFailure()
     draft.busy = 'save'; deps.changed()
     try {
       const result = await deps.enqueue(moduleId, () => deps.request(request))
@@ -226,7 +233,11 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
         receive(result.value)
         draft.rulesDeclared = true
         publication(result.value)
-      } else draft.error = result.message ?? result.code ?? 'rules-create-failed'
+      } else {
+        draft.errorCode = result.code
+        if (READ_FIRST_CODES.includes(result.code ?? '')) draft.retry = 'read'
+        draft.error = result.message ?? result.code ?? 'rules-create-failed'
+      }
       return result
     } catch (error) {
       if (isLatest(draft, sequence)) unknown(request)
@@ -242,11 +253,11 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     try {
       const result = await deps.request({ expectedModuleId: moduleId })
       if (!isLatest(draft, sequence)) return false
-      if (!result.ok) { draft.retry = 'read'; draft.error = result.message ?? result.code ?? 'rules-read-failed'; return false }
-      if (!validSnapshot(result.value)) { draft.retry = 'read'; draft.error = '规则读取应答无效'; return false }
+      if (!result.ok) { clearFailure(); draft.retry = 'read'; draft.errorCode = result.code; draft.error = result.message ?? result.code ?? 'rules-read-failed'; return false }
+      if (!validSnapshot(result.value)) { clearFailure(); draft.retry = 'read'; draft.error = '规则读取应答无效'; return false }
       publication(result.value)
       return receive(result.value)
-    } catch (error) { if (isLatest(draft, sequence)) { draft.retry = 'read'; draft.error = String(error) }; return false }
+    } catch (error) { if (isLatest(draft, sequence)) { clearFailure(); draft.retry = 'read'; draft.error = String(error) }; return false }
     finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
   }
   const patch = (key: string, value: RuleDefinition): void => {
@@ -264,8 +275,8 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     changed()
   }
   const retryPublication = async (): Promise<boolean> => {
-    if (draft.activationPending !== undefined) return submit({ activateRuleId: draft.activationPending })
-    if (!deps.isCurrent() || draft.busy !== undefined || !draft.publicationPending) return false
+    if (!deps.isCurrent() || draft.busy !== undefined || draft.pending || draft.retry === 'read' || draft.remote
+      || draft.activationPending !== undefined || !draft.publicationPending) return false
     const sequence = beginLatest(draft)
     draft.busy = 'save'; deps.changed()
     try {
@@ -275,21 +286,23 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       if (!isLatest(draft, sequence) || result === undefined) return false
       if (result.ok) {
         if (!validSnapshot(result.value)) {
+          clearFailure()
           draft.retry = 'read'; draft.error = '规则发布应答无效'; return false
         }
-        receive(result.value); publication(result.value)
+        receive(result.value, draft.retry === 'save'); publication(result.value)
       } else if (READ_FIRST_CODES.includes(result.code ?? '')) {
+        clearFailure()
         draft.retry = 'read'
+        draft.errorCode = result.code
         draft.error = result.message ?? result.code
         return false
       }
       if (!result.ok) {
         draft.publicationError = result.message ?? result.code ?? 'rules-refresh-failed'
-        draft.error = draft.publicationError
         return false
       }
       return !draft.publicationPending
-    } catch (error) { if (isLatest(draft, sequence)) { draft.error = String(error); draft.publicationError = draft.error }; return false }
+    } catch (error) { if (isLatest(draft, sequence)) draft.publicationError = String(error); return false }
     finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
   }
   const submit = async (options: { validateOnly?: boolean; activateRuleId?: string } = {}, key?: string): Promise<boolean> => {
@@ -317,7 +330,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       && edits.length === 1 && edits[0]!.previousId !== null && edits[0]!.rule !== null
       && edits[0]!.previousId === edits[0]!.rule.id && edits[0]!.settingsChanged !== true
     const request = { expectedModuleId: moduleId, expectedRevisions, edits, ...options, ...(compactEdit ? { compactEdit: true as const } : {}) }
-    draft.busy = options.validateOnly ? 'validate' : 'save'; draft.error = undefined; deps.changed()
+    draft.busy = options.validateOnly ? 'validate' : 'save'; clearFailure(); deps.changed()
     try {
       const result = await deps.enqueue(moduleId, async () => isLatest(draft, sequence)
         ? deps.request(request) : undefined)
@@ -329,21 +342,21 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
         && 'settingsRevision' in compactValue && 'variablesRevision' in compactValue
         ? compactValue as CompactRulesSnapshot : undefined
       if (!options.validateOnly && ((!result.ok && result.code === 'bridge-response-unknown')
-        || (result.ok && !(compactResult ? compactResult.rule?.id === edits[0]!.rule!.id : validSnapshot(result.value as RulesSnapshot))))) return unknown(request, entries)
+        || (result.ok && !(compactResult ? compactResult.rule?.id === edits[0]!.rule!.id : validSnapshot(result.value as RulesSnapshot))))) return unknown(request, entries, key)
       if (!result.ok) {
         draft.retry = READ_FIRST_CODES.includes(result.code ?? '') ? 'read' : 'save'
+        draft.errorCode = result.code
+        if (draft.retry === 'save') draft.retrySave = { key, activateRuleId: options.activateRuleId }
         draft.error = result.message ?? result.code ?? 'rules-save-failed'; return false
       }
-      draft.retry = undefined
       if (options.validateOnly) draft.validated = deepEqual(draft.entries, entries) && !hasRuleFields(draft)
       else if (compactResult) acceptCompactSent(entries, compactResult)
       else acceptSent(entries, result.value as RulesSnapshot)
       if (!options.validateOnly) publication(compactResult ?? result.value as RulesSnapshot)
-      if (draft.publicationPending) { draft.error = draft.publicationError; return false }
-      return true
+      return !draft.publicationPending
     } catch (error) {
       if (isLatest(draft, sequence)) {
-        if (!options.validateOnly) return unknown(request, entries)
+        if (!options.validateOnly) return unknown(request, entries, key)
         draft.error = String(error)
       }
       return false
@@ -380,28 +393,39 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
   }
   const discard = (): void => {
     if (draft.busy !== undefined) return
+    const readRequired = draft.retry === 'read' || draft.pending !== undefined
+    clearFailure()
     draft.retryCreate = undefined
-    if (draft.pending) {
-      draft.pending = undefined
-      draft.retry = 'read'
-    }
+    draft.pending = undefined
     if (draft.remote !== undefined) {
       publication(draft.remote)
       acceptRules(draft, draft.remote)
     }
     else if (draft.meta && draft.revisions) {
-      const retry = draft.retry
       acceptRules(draft, { rules: draft.saved, meta: draft.meta, revisions: draft.revisions, definitionRevision: draft.definitionRevision })
-      if (retry === 'read') { draft.retry = 'read'; draft.error = 'rules-conflict' }
+      if (readRequired) { draft.retry = 'read'; draft.error = 'rules-conflict' }
     }
     draft.fields.clear(); changed()
   }
   const retryKind = (): 'read' | 'save' | 'publish' => draft.retry === 'read' || draft.remote !== undefined ? 'read'
-    : draft.activationPending !== undefined || draft.retryCreate ? 'save' : draft.publicationPending ? 'publish' : draft.loaded && rulesDirty(draft) ? 'save' : 'read'
+    : draft.retry === 'save' || draft.activationPending !== undefined || draft.retryCreate ? 'save'
+      : draft.publicationPending ? 'publish' : draft.loaded && rulesDirty(draft) ? 'save' : 'read'
   const retry = async (): Promise<boolean> => {
+    if (draft.pending) return reconcile(true)
+    const kind = retryKind()
+    if (kind === 'read') return load(true)
+    if (kind === 'publish') return retryPublication()
     const request = draft.retryCreate
     if (request?.createRule) return (await create(request.createRule, !request.expectedRulesAbsent)).ok
-    return retryKind() === 'publish' ? retryPublication() : retryKind() === 'save' ? submit() : load(true)
+    if (draft.retrySave) {
+      const { key, activateRuleId } = draft.retrySave
+      return submit({ activateRuleId }, key)
+    }
+    const activateRuleId = draft.activationPending
+    if (activateRuleId !== undefined) {
+      return submit({ activateRuleId }, draft.entries.find(entry => !entry.deleted && entry.value.id === activateRuleId)?.key)
+    }
+    return submit()
   }
   return { load, reconcile, patch, move, setComposing, add, remove, create, submit, submitRule, retryPublication, discard, changed, retry, get retryKind() { return retryKind() } }
 }
