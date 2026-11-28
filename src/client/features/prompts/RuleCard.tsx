@@ -56,6 +56,7 @@ export function RuleCard(props: {
   diagnosticFocusToken?: object
   onRuleEdit?: () => void
   onActivate?: () => void
+  onRetry: (activationTarget?: string) => void
   renderSettings?: (rule: RuleDefinition, moduleId: string) => ReactNode
 }): ReactNode {
   const { t, entry, editor, draft, moduleName, moduleEnabled, modulesEnabled } = props, rule = entry.value
@@ -152,7 +153,6 @@ export function RuleCard(props: {
   const reason = observed.filter(record => record.reason).map(record => record.reason).join(' · ')
   const status = t(rule.enabled === false ? 'rules.identity.disabled' : 'rules.identity.enabled') + ' · '
     + t(rule.enabled === false || props.disabled ? 'rules.identity.unverified' : rule.executionScope === 'process' && availability === 'rules.identity.matched' ? targets.has('host:command-confine') ? 'rules.commandReady' : 'rules.processReady' : availability)
-  const activationPending = draft.activationPending === rule.id
   const feedback = ruleFeedback(draft, editor, t)
   const publicationError = feedback.publication ? draft.publicationError : undefined
   const dirty = rulesDirty(draft, entry.key)
@@ -186,7 +186,7 @@ export function RuleCard(props: {
               {publicationError && <small className={css.canvasPublicationError} title={publicationError}>{publicationError}</small>}
             </div>
             {feedback.action && <Button shape="pill" variant="outline" disabled={draft.busy !== undefined} aria-label={feedback.action}
-              onClick={() => { void editor.retry().then(ok => { if (ok && activationPending) props.onActivate?.() }) }}>{feedback.action}</Button>}
+              onClick={() => props.onRetry(feedback.activationTarget)}>{feedback.action}</Button>}
             {feedback.retrySavedVersion && <Button shape="pill" variant="outline" disabled={draft.busy !== undefined}
               onClick={() => { void editor.retryPublication() }}>{t('publication.retry')}</Button>}
             {(draft.pending || draft.remote) && <Button shape="pill" variant="outline" aria-label={t('triggers.discard')} title={t('triggers.discard')}

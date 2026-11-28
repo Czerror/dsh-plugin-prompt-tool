@@ -488,6 +488,13 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       }
     }
   }
+  const retryRules = ({ moduleId, draft, editor }: ModuleRuleEditor, activationTarget?: string): void => {
+    const rule = activationTarget === undefined ? undefined
+      : draft.entries.find(entry => !entry.deleted && entry.value.id === activationTarget)?.value
+    void editor.retry().then(() => {
+      if (rule && draft.activationPending === undefined) refreshExclusivePeers(moduleId, rule)
+    })
+  }
   const diagnosticsLabel = t(diagnosticTarget && props.onReturnToDiagnostics ? 'diagnostics.return' : 'rules.sidebarDiagnostics')
   const libraryLabel = t(libraryOpen ? 'rules.hideLibrary' : 'rules.showLibrary')
   return <CanvasChoiceContext.Provider value={t}><section className={css.workspaceContainer} aria-label={t('rules.list')}>
@@ -583,7 +590,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
           {draft.error && draft.error !== feedback.issue && !draft.pending && !draft.remote &&
             <details className={css.ruleFailureDetails}><summary>{t('rules.errorReason')}</summary>{draft.error}</details>}
           <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
-            onClick={() => { void editor.retry() }}>{feedback.action}</Button>
+            onClick={() => retryRules({ moduleId: id, draft, editor }, feedback.activationTarget)}>{feedback.action}</Button>
           {feedback.retrySavedVersion && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
             onClick={() => { void editor.retryPublication() }}>{t('publication.retry')}</Button>}
           {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
@@ -622,8 +629,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
           </button>
           {showList && selectableWinner && <button type="button" className={css.ruleWinner}
             disabled={readOnly(id) || modulePending || order.busy || (pendingWinner ? draft.busy !== undefined : needsOrderBlock(draft))}
-            aria-label={pendingWinner ? t('rules.resumeWinner') : t('rules.selectWinner', { id: entry.value.id })}
-            title={pendingWinner ? t('rules.resumeWinner') : t('rules.selectWinner', { id: entry.value.id })}
+            aria-label={t(pendingWinner ? 'rules.resumeWinner' : 'rules.selectWinner', { id: entry.value.id })}
+            title={t(pendingWinner ? 'rules.resumeWinner' : 'rules.selectWinner', { id: entry.value.id })}
             onClick={event => {
               event.stopPropagation()
               const rule = entry.value
@@ -677,6 +684,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         diagnosticActionId={diagnosticKey === selected.key ? diagnosticTarget?.actionId : undefined}
         onRuleEdit={props.onRuleEdit}
         onActivate={() => refreshExclusivePeers(selected.moduleId, selected.entry.value)}
+        onRetry={activationTarget => retryRules(selected, activationTarget)}
         expandedRows={store.editorDrafts.expanded}
         renderSettings={selected.entry.value.layer !== undefined && props.hasLayerSettings?.(selected.entry.value.layer, selected.moduleId) && props.renderLayerSettings ? (rule, module) => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }, module, create.openToolsForModule) : undefined} />
       {fileInspector}

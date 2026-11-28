@@ -90,10 +90,14 @@ interface RuleEditorDependencies {
 }
 /** 读取、编辑、改名、激活和整组响应都通过这一 owner，不写旧配置段。 */
 export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: RuleEditorDependencies) {
-  const changed = (): void => { draft.validated = false; deps.changed() }
   const clearFailure = (): void => {
     draft.retry = undefined; draft.retrySave = undefined; draft.error = undefined; draft.errorCode = undefined
   }
+  const clearRevertedSave = (): void => {
+    const failed = draft.retrySave
+    if (failed && failed.activateRuleId === undefined && !rulesDirty(draft, failed.key)) clearFailure()
+  }
+  const changed = (): void => { draft.validated = false; clearRevertedSave(); deps.changed() }
   const publication = (snapshot: RulesSnapshot | CompactRulesSnapshot): void => {
     draft.activationPending = 'activationPending' in snapshot ? snapshot.activationPending : undefined
     const state = readPublication(snapshot)
@@ -206,6 +210,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       if (deepEqual(saved.revisions, draft.revisions)) {
         draft.retrySave = { key: pending.key, activateRuleId: request.activateRuleId }
         draft.retry = 'save'; draft.error = '原模块仍为保存前版本，可重试。'
+        clearRevertedSave()
       } else {
         draft.remote = saved; draft.retry = 'read'; draft.error = '原模块已变化，草稿仍保留。'
       }
@@ -350,7 +355,9 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
         draft.retry = READ_FIRST_CODES.includes(result.code ?? '') ? 'read' : 'save'
         draft.errorCode = result.code
         if (draft.retry === 'save') draft.retrySave = { key, activateRuleId: options.activateRuleId }
-        draft.error = result.message ?? result.code ?? 'rules-save-failed'; return false
+        draft.error = result.message ?? result.code ?? 'rules-save-failed'
+        clearRevertedSave()
+        return false
       }
       if (options.validateOnly) draft.validated = deepEqual(draft.entries, entries) && !hasRuleFields(draft)
       else if (compactResult) acceptCompactSent(entries, compactResult)

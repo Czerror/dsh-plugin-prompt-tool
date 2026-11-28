@@ -14,6 +14,7 @@ export function ruleFeedback(draft: RulesDraft, editor: RuleEditor, t: PromptToo
     ? t(draft.publicationError === undefined ? 'rules.publishPending' : 'rules.publishFailed')
     : undefined
   let action: string | undefined
+  let activationTarget: string | undefined
   let retrySavedVersion = false
   if (draft.pending) action = t('rules.checkSave')
   else if (issue || publication || draft.activationPending) {
@@ -21,8 +22,11 @@ export function ruleFeedback(draft: RulesDraft, editor: RuleEditor, t: PromptToo
     retrySavedVersion = Boolean(publication && retry === 'save')
     if (retry === 'read') action = t('rules.reloadAria')
     else if (draft.retryCreate) action = t('rules.retryCreate')
-    else if (draft.activationPending) action = t('rules.resumeWinner')
+    else if (draft.activationPending) {
+      activationTarget = draft.activationPending
+      action = t('rules.resumeWinner', { id: activationTarget })
+    }
     else action = t(retry === 'publish' ? 'publication.retry' : 'rules.retrySave')
   }
-  return { issue, publication, action, retrySavedVersion }
+  return { issue, publication, action, activationTarget, retrySavedVersion }
 }
