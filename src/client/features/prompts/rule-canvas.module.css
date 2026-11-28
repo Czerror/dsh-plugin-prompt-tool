@@ -5,7 +5,7 @@
 .edges { position: absolute; inset: 0; width: 1280px; height: 710px; overflow: visible; pointer-events: none; }
 .edges path { fill: none; stroke: var(--edge-color, #72aaff); stroke-width: 2; }
 .edges [data-emphasis=active] path { stroke-width: 3; }
-.edges [data-emphasis=inactive] { opacity: .38; }
+.edges [data-edge-route][data-emphasis=inactive] { opacity: .56; }
 .then { --edge-color: #70d5ad; }
 .condition { --edge-color: #72aaff; }
 .else { --edge-color: #efc467; }

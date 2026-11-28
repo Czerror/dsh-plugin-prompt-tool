@@ -171,9 +171,8 @@ export function RuleCard(props: {
       <div className={css.contextCluster}>
         <button type="button" className={css.canvasIdentity} title={`${props.moduleId} / ${rule.id} · ${summary}`}
           aria-expanded={drawer === 'identity'} data-rule-drawer-trigger onClick={event => openDrawer('identity', event.currentTarget)}>
-          <span>{moduleName}</span>
-          <span aria-hidden="true">›</span>
           <strong>{ruleName}</strong>
+          <span>{moduleName}</span>
           <IconChevronDownOutlineRegular />
         </button>
         <div className={css.canvasStates}>
