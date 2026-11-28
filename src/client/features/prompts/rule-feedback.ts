@@ -22,11 +22,11 @@ export function ruleFeedback(draft: RulesDraft, editor: RuleEditor, t: PromptToo
     retrySavedVersion = Boolean(publication && retry === 'save')
     if (retry === 'read') action = t('rules.reloadAria')
     else if (draft.retryCreate) action = t('rules.retryCreate')
-    else if (draft.activationPending) {
-      activationTarget = draft.activationPending
-      action = t('rules.resumeWinner', { id: activationTarget })
+    else {
+      activationTarget = draft.retrySave?.activateRuleId ?? draft.activationPending
+      action = activationTarget === undefined ? t(retry === 'publish' ? 'publication.retry' : 'rules.retrySave')
+        : t('rules.resumeWinner', { id: activationTarget })
     }
-    else action = t(retry === 'publish' ? 'publication.retry' : 'rules.retrySave')
   }
   return { issue, publication, action, activationTarget, retrySavedVersion }
 }

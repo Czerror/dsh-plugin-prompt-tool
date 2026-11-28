@@ -95,7 +95,9 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
   }
   const clearRevertedSave = (): void => {
     const failed = draft.retrySave
-    if (failed && failed.activateRuleId === undefined && !rulesDirty(draft, failed.key)) clearFailure()
+    if (!failed || rulesDirty(draft, failed.key)) return
+    const target = failed.activateRuleId
+    if (target === undefined || draft.entries.some(entry => !entry.deleted && entry.value.id === target && entry.value.enabled === false)) clearFailure()
   }
   const changed = (): void => { draft.validated = false; clearRevertedSave(); deps.changed() }
   const publication = (snapshot: RulesSnapshot | CompactRulesSnapshot): void => {
@@ -330,7 +332,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       edit.previousId === null ? [] : [[edit.previousId, draft.revisions!.rules[edit.previousId]!]])) }
     if (options.activateRuleId !== undefined || edits.some(edit => edit.settingsChanged || edit.previousId === null
       || edit.rule === null || edit.previousId !== edit.rule.id)) expectedRevisions.settings = draft.revisions.settings
-    if (edits.length === 0 && options.activateRuleId === undefined && !options.validateOnly) return draft.publicationPending ? retryPublication() : true
+    if (edits.length === 0 && options.activateRuleId === undefined && !options.validateOnly) return key === undefined && draft.publicationPending ? retryPublication() : true
     const sequence = beginLatest(draft), entries = structuredClone(key === undefined ? draft.entries : draft.entries.filter(entry => entry.key === key))
     const completed = Promise.withResolvers<void>()
     draft.saving = completed.promise

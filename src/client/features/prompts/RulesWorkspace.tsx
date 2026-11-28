@@ -475,11 +475,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       onRetry={() => { void withEnableFocus(retryEnable) }} />
   </div>
   const refreshExclusivePeers = (id: string, rule: RuleDefinition): void => {
-    if (!enabledIds.has(id) || rule.groupScope !== 'cross-module' || rule.exclusive !== true || !rule.group) return
+    if (rule.groupScope !== 'cross-module' || !rule.group) return
     const active = new Map(ownersRef.current.map(owner => [owner.moduleId, owner.editor]))
     for (const [peerId, draft] of store.editorDrafts.rules) {
       if (peerId === id || !enabledIds.has(peerId) || !draft.loaded
-        || !draft.saved.some(saved => saved.group === rule.group && saved.groupScope === 'cross-module' && saved.exclusive)) continue
+        || !draft.saved.some(member => member.groupScope === 'cross-module' && member.group === rule.group && member.enabled !== false)) continue
       const editor = active.get(peerId)
       if (editor) void editor.load(true)
       else {
@@ -488,11 +488,13 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       }
     }
   }
-  const retryRules = ({ moduleId, draft, editor }: ModuleRuleEditor, activationTarget?: string): void => {
-    const rule = activationTarget === undefined ? undefined
-      : draft.entries.find(entry => !entry.deleted && entry.value.id === activationTarget)?.value
-    void editor.retry().then(() => {
-      if (rule && draft.activationPending === undefined) refreshExclusivePeers(moduleId, rule)
+  const retryRules = ({ moduleId, draft, editor }: ModuleRuleEditor, activationTarget?: string, run = editor.retry): void => {
+    const before = draft.saved
+    void run().then(() => {
+      // 接纳已写盘的快照会替换 saved，运行发布仍待完成时也会替换。
+      if (activationTarget === undefined || draft.saved === before || draft.activationPending !== undefined) return
+      const rule = draft.saved.find(rule => rule.id === activationTarget)
+      if (rule) refreshExclusivePeers(moduleId, rule)
     })
   }
   const diagnosticsLabel = t(diagnosticTarget && props.onReturnToDiagnostics ? 'diagnostics.return' : 'rules.sidebarDiagnostics')
@@ -612,7 +614,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         const { entry, moduleId: id, key, draft, editor } = row
         const orderEntry = orderByIdentity.get(row.identity)?.entry
         const pendingWinner = draft.activationPending === entry.value.id
-        const selectableWinner = enabledIds.has(id) && entry.value.groupScope === 'cross-module' && entry.value.exclusive === true && Boolean(entry.value.group)
+        const selectableWinner = enabledIds.has(id) && entry.value.groupScope === 'cross-module'
+          && (pendingWinner || entry.value.exclusive === true) && Boolean(entry.value.group)
         const name = entry.value.name || entry.value.id
         const state = t(entry.value.enabled === false ? 'rules.rowDisabled' : 'rules.rowEnabled')
         return <li key={key} data-module-id={id}>
@@ -635,8 +638,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
               event.stopPropagation()
               const rule = entry.value
               if (!pendingWinner && rule.enabled === false) editor.patch(entry.key, { ...rule, enabled: true })
-              const result = pendingWinner ? editor.retry() : editor.submit({ activateRuleId: rule.id })
-              void result.then(() => refreshExclusivePeers(id, rule))
+              if (pendingWinner) retryRules({ moduleId: id, draft, editor }, ruleFeedback(draft, editor, t).activationTarget)
+              else retryRules({ moduleId: id, draft, editor }, rule.id, () => editor.submit({ activateRuleId: rule.id }))
             }}>{pendingWinner ? '↻' : '✓'}</button>}
           {showList && moveButtons(row.identity, orderEntry, `${id} / ${name}`)}
         </li>

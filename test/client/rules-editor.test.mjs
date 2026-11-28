@@ -108,6 +108,26 @@ test('rules bridge: rename/delete use previous identity and CAS; unknown payload
   assert.equal(h.calls.length, 2, 'unchanged submit does not write')
 })
 
+test('撤回被拒的启用不重试发布，已启用赢家的选择仍可重试', async () => {
+  const h = harness(async body => body.edits
+    ? { ok: false, code: 'rules-invalid', message: 'activation rejected' }
+    : { ok: true, value: { ...snapshot(), publicationPending: true, publicationError: 'older publish failed' } })
+  await h.editor.load()
+  const [winner, disabled] = h.draft.entries
+  h.editor.patch(disabled.key, { ...disabled.value, enabled: true })
+  assert.equal(await h.editor.submitRule(disabled.key, { activateRuleId: beta.id }), false)
+  h.editor.patch(disabled.key, disabled.value)
+  assert.equal(await h.editor.submitRule(disabled.key), true)
+  assert.equal(h.draft.error, undefined)
+  assert.equal(h.draft.publicationError, 'older publish failed')
+  assert.deepEqual(h.calls.map(body => [body.activateRuleId, body.refreshOnly]), [[undefined, undefined], [beta.id, undefined]])
+
+  assert.equal(await h.editor.submit({ activateRuleId: winner.value.id }), false)
+  assert.equal(h.draft.error, 'activation rejected')
+  assert.equal(await h.editor.retry(), false)
+  assert.deepEqual(h.calls.slice(2).map(body => [body.activateRuleId, body.edits]), [[alpha.id, []], [alpha.id, []]])
+})
+
 test('lost save receipt is reconciled by reading the original module and preserves later input', async () => {
   let stored = alpha
   const h = harness(async body => {
