@@ -16,7 +16,7 @@
 | 引擎、晋升、PTC、插入点、组合来源或重建契约 | [引擎复用](docs/engine-reuse.md)；编辑组合声明时查 [dsh-module](skills/dsh-module/SKILL.md) 的对应规则 |
 | SillyTavern、角色卡或世界书转换契约 | 在 `F:\ai\other\SillyTavern` 定位相关 API/实现，结合 [转换约定](docs/SillyTavern.md) 的对应部分 |
 | 宿主 API、Cordis 生命周期、Settings、Slot 或官方预设契约 | 在 `D:\AI\GitHub\deepseek-harness` 定位相关服务、类型或文档 |
-| 创建、读取或推进本地 Issue/规格/票据 | [Issue tracker](docs/agents/issue-tracker.md)；仅改 triage 分类/状态时查 [标签规则](docs/agents/triage-labels.md) |
+| 创建、读取或推进 [GitHub 上的 Issue/规格/票据](https://github.com/Czerror/dsh-plugin-prompt-tool/issues) | [Issue tracker](docs/agents/issue-tracker.md)；仅改 triage 分类/状态时查 [标签规则](docs/agents/triage-labels.md) |
 | 新增或修改领域词汇、ADR，或术语/决策有冲突 | [Domain docs](docs/agents/domain.md)，只查相关术语与 ADR |
 | 需要跨会话状态账本 | [PLAN 格式](docs/agents/plan-format.md)，记录到 `.scratch/plan/`；普通任务不建 PLAN |
 | 发版、同版本重试或核验 npm / GitHub Release | 先读[发布手册](D:/AI/workspase/.ai-memory/03_Knowledge/dsh-plugin-prompt-tool/dsh-plugin-prompt-tool发布手册.md)，按远端发布状态选择步骤 |
@@ -82,7 +82,7 @@
 
 **大型改造**：新增/删除公开接口、桥端点、页面或模块目录；跨 ≥3 个 `src/` 子目录或改 ≥10 个文件；删除子系统、依赖或用户可见功能。任一命中：
 
-- 目标明确：能写出问题、验收标准和至少一条可测行为时，`to-spec` → 用户批准 `.scratch/<feature>/spec.md` → `to-tickets` → 逐票 `implement`。
+- 目标明确：能写出问题、验收标准和至少一条可测行为时，`to-spec` → 用户批准 GitHub 上的规格 Issue → `to-tickets` → 逐票 `implement`。
 - 目标未定：先澄清；一次会话装不下时，用 `wayfinder` 逐张解决决策票，全部关闭、边界清楚后交接 `to-spec`。澄清后仍属大型改造的，走目标明确路径。
 
 **普通任务**：未触发上述条件的单会话任务，按目标和验收条件直接实施。
