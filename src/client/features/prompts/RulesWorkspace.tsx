@@ -233,7 +233,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (moduleFilter && module.id !== moduleFilter) return []
     if (module.broken !== undefined || module.renderable === false) return []
     const owner = settingOwners.get(module.id)
-    if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
+    if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error || owner.draft.publicationPending)) return []
     const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted)
       .map(entry => entry.value.layer))
     const missing = [...moduleSettingsLayers(module)].filter(layer => !layers.has(layer) && (view === 'all' || view === layer))
@@ -540,10 +540,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     <div className={css.ruleSearchBar}>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
       <div className={css.ruleBatchActions} role="group" aria-label={t('rules.batchActions')}>
-        <button type="button" data-batch="enable" disabled={batchDisabled} aria-label={t('rules.enableVisible')} title={t('rules.enableVisible')}
-          onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</button>
-        <button type="button" data-batch="disable" disabled={batchDisabled} aria-label={t('rules.disableVisible')} title={t('rules.disableVisible')}
-          onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible')}</button>
+        <button type="button" data-batch="enable" disabled={batchDisabled}
+          onClick={() => batchSetEnabled(true)}>{t('rules.enableVisible')}</button>
+        <button type="button" data-batch="disable" disabled={batchDisabled}
+          onClick={() => batchSetEnabled(false)}>{t('rules.disableVisible')}</button>
       </div>
     </div>
     <div className={css.ruleFilters}>
@@ -558,17 +558,29 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         <button type="button" aria-label={t('rules.allModules')} aria-pressed={!moduleFilter && allModules} onClick={() => changeModuleScope('all')}>{t('configs.view.all')}</button>
       </div>
     </div>
-    {owners.map(({ moduleId: id, draft, editor }) => {
-      return (draft.error || hasRuleFields(draft)) && <div key={id}>
-        {draft.error && <div className={css.row}>
+    {showList && owners.map(({ moduleId: id, draft, editor }) => {
+      const invalid = hasRuleFields(draft)
+      if (!draft.error && !draft.pending && !draft.remote && !draft.publicationPending && !invalid) return null
+      const retry = editor.retryKind
+      const publicationPending = retry === 'publish' && draft.publicationError === undefined
+      const message = draft.pending ? t('rules.savePending') : draft.remote ? t('rules.conflict')
+        : publicationPending ? t('rules.publishPending') : retry === 'publish' ? t('rules.publishFailed')
+          : draft.error && retry === 'read' ? t('rules.readBeforeRetry') : draft.error
+      const retryLabel = draft.pending ? 'rules.checkSave'
+        : retry === 'save' ? (draft.activationPending === undefined ? 'rules.retrySave' : 'rules.resumeWinner')
+          : retry === 'publish' ? 'publication.retry' : 'rules.reloadAria'
+      return <div key={id}>
+        {message && <div className={css.row}>
           <span>{t('rules.source', { module: id })}</span>
-          <p role="alert" className={css.error}>{draft.remote ? t('rules.conflict') : draft.error}</p>
-          <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} aria-label={t(editor.retryKind === 'save' ? 'rules.retrySave' : 'workspace.retry')}
-            title={t(editor.retryKind === 'save' ? 'rules.retrySave' : 'workspace.retry')} onClick={() => { void editor.retry() }}>{t(editor.retryKind === 'save' ? 'rules.retrySaveButton' : 'rules.reloadButton')}</Button>
+          <p role={publicationPending ? 'status' : 'alert'} className={publicationPending ? undefined : css.error}>{message}</p>
+          {draft.error && draft.error !== message && !publicationPending && !draft.pending && !draft.remote &&
+            <details className={css.ruleFailureDetails}><summary>{t('rules.errorReason')}</summary>{draft.error}</details>}
+          <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
+            onClick={() => { if (draft.pending) void editor.reconcile(true); else void editor.retry() }}>{t(retryLabel)}</Button>
           {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
             aria-label={t('triggers.discard')} title={t('triggers.discard')} onClick={() => setDiscard(id)}>{t('rules.discardButton')}</Button>}
         </div>}
-        {hasRuleFields(draft) && <p role="alert" className={css.error}>{t('rules.source', { module: id })} · {t('rules.fieldsPending')}</p>}
+        {invalid && <p role="alert" className={css.error}>{t('rules.source', { module: id })} · {t('rules.fieldsPending')}</p>}
       </div>
     })}
     {order.error && <p role="alert" className={css.error}>{order.error}</p>}
@@ -586,8 +598,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         const pendingWinner = draft.activationPending === entry.value.id
         const selectableWinner = enabledIds.has(id) && entry.value.groupScope === 'cross-module' && entry.value.exclusive === true && Boolean(entry.value.group)
         const name = entry.value.name || entry.value.id
+        const state = t(entry.value.enabled === false ? 'rules.rowDisabled' : 'rules.rowEnabled')
         return <li key={key} data-module-id={id}>
-          <button type="button" title={`${name} · ${id}`} aria-label={`${t('rules.editNamed', { name })} · ${id}`} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
+          <button type="button" title={`${name} · ${id}`} aria-label={`${t('rules.editNamed', { name })} · ${id} · ${state}`} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
             onClick={event => {
               closeRightEditor()
               if (key !== expanded) saveSelected.current?.()
@@ -596,6 +609,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
               select(key)
             }}>
             <strong>{name}</strong>
+            <small>{state}</small>
           </button>
           {showList && selectableWinner && <button type="button" className={css.ruleWinner}
             disabled={readOnly(id) || modulePending || order.busy || (pendingWinner ? draft.busy !== undefined : needsOrderBlock(draft))}

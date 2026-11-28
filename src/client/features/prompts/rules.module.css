@@ -40,9 +40,11 @@
 .identityDetails dd { margin: 0 0 8px; }
 .canvasStates { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; color: #b5c2d4; overflow-wrap: anywhere; }
 .canvasStates small { font-size: 11px; }
-.canvasFeedback { display: flex; align-items: center; gap: 8px; min-inline-size: 0; max-inline-size: 100%; }
+.canvasFeedback { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-inline-size: 0; max-inline-size: 100%; }
 .canvasFeedback:has(> button) { flex-basis: 100%; }
 .canvasFeedbackText { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr); min-inline-size: 0; }
+.canvasFeedback:has(> button) .canvasFeedbackText { flex-basis: 10rem; }
+.canvasFeedback:has(> button) .canvasSaveState { white-space: normal; }
 .canvasFeedback button { flex: none; }
 .canvasPublicationState { white-space: normal; }
 .moduleState, .pausedState { padding-inline: 6px; border: 1px solid #3c4859; border-radius: 5px; }
@@ -130,13 +132,15 @@
 .ruleListHeader { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .ruleListHeader .workspaceHeading { flex: 1; }
 .ruleListPane:has(> .ruleList) { gap: 6px; }
-.ruleSearchBar, .ruleFilters { display: flex; align-items: center; gap: 6px; }
-.ruleSearchBar > :first-child, .ruleLayerFilter { flex: 1; min-inline-size: 0; }
+.ruleSearchBar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.ruleFilters { display: flex; align-items: center; gap: 6px; }
+.ruleLayerFilter { flex: 1; min-inline-size: 0; }
 .ruleSearchBar input[type=search] { height: 30px; padding-inline-end: 8px; border-radius: 6px; }
-.ruleBatchActions { display: inline-flex; align-items: center; flex: none; gap: 1px; }
-.ruleBatchActions button { min-block-size: 24px; padding: 2px 7px; border: 0; border-radius: 4px; background: transparent; color: #bbcae2; font: 500 12px/18px system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
+.ruleBatchActions { display: flex; flex-wrap: wrap; align-items: center; gap: 1px; }
+.ruleBatchActions button { min-inline-size: 0; min-block-size: 24px; padding: 2px 7px; border: 0; border-radius: 4px; background: transparent; color: #bbcae2; font: 500 12px/18px system-ui, sans-serif; overflow-wrap: anywhere; cursor: pointer; }
 .ruleBatchActions button:hover:not(:disabled) { background: #2f425e; }
 .ruleBatchActions button:disabled { opacity: .42; cursor: default; }
+.ruleFailureDetails { overflow-wrap: anywhere; }
 .ruleLayerFilter { box-sizing: border-box; min-block-size: 28px; border: 1px solid #40516d; border-radius: 6px; padding-inline: 6px; color: #dfebff; background: #1b2638; font: 500 12px/18px system-ui, sans-serif; color-scheme: dark; }
 .ruleLayerFilter:focus-visible, .ruleBatchActions button:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 1px; }
 .ruleList { display: flex; flex: 0 0 auto; flex-direction: column; gap: 4px; margin: 0; padding: 2px; max-block-size: 60vh; overflow: auto; list-style: none; }

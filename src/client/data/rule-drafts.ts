@@ -94,7 +94,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     draft.activationPending = 'activationPending' in snapshot ? snapshot.activationPending : undefined
     const state = readPublication(snapshot)
     draft.publicationPending = state.pending
-    draft.publicationError = state.error ?? (state.pending ? 'rules-refresh-pending' : undefined)
+    draft.publicationError = state.error
     draft.error = draft.retry === 'read' ? 'rules-conflict' : draft.publicationError
   }
   const receive = (snapshot: RulesSnapshot): boolean => {
@@ -283,13 +283,12 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
         draft.error = result.message ?? result.code
         return false
       }
-      if (!result.ok || draft.publicationPending) {
-        draft.publicationError = result.ok ? draft.publicationError ?? 'rules-refresh-pending' : result.message ?? result.code ?? 'rules-refresh-failed'
+      if (!result.ok) {
+        draft.publicationError = result.message ?? result.code ?? 'rules-refresh-failed'
         draft.error = draft.publicationError
         return false
       }
-      draft.publicationPending = false; draft.publicationError = undefined; draft.error = draft.retry === 'read' ? 'rules-conflict' : undefined
-      return true
+      return !draft.publicationPending
     } catch (error) { if (isLatest(draft, sequence)) { draft.error = String(error); draft.publicationError = draft.error }; return false }
     finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
   }
@@ -340,7 +339,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       else if (compactResult) acceptCompactSent(entries, compactResult)
       else acceptSent(entries, result.value as RulesSnapshot)
       if (!options.validateOnly) publication(compactResult ?? result.value as RulesSnapshot)
-      if (draft.publicationError) { draft.error = draft.publicationError; return false }
+      if (draft.publicationPending) { draft.error = draft.publicationError; return false }
       return true
     } catch (error) {
       if (isLatest(draft, sequence)) {

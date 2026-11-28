@@ -153,18 +153,21 @@ export function RuleCard(props: {
     + t(rule.enabled === false || props.disabled ? 'rules.identity.unverified' : rule.executionScope === 'process' && availability === 'rules.identity.matched' ? targets.has('host:command-confine') ? 'rules.commandReady' : 'rules.processReady' : availability)
   const activationPending = draft.activationPending === rule.id
   const publication = draft.activationPending === undefined && draft.publicationPending
-  const publicationText = publication ? t('publication.pending') : undefined
-  const publicationError = publication && draft.publicationError !== 'rules-refresh-pending' ? draft.publicationError : undefined
+  const publicationError = publication ? draft.publicationError : undefined
+  const publicationText = publication ? t(publicationError === undefined ? 'rules.publishPending' : 'rules.publishFailed') : undefined
   const dirty = rulesDirty(draft, entry.key)
   const enableRuleLabel = t('rules.enableRuleLabel')
   const saveStatus = draft.pending ? t('rules.savePending')
-    : draft.busy === 'save' ? t('rules.saving')
+    : draft.busy === 'save' && !publication ? t('rules.saving')
       : hasRuleFields(draft, entry.key) ? t('rules.fieldsPending')
-        : draft.remote ? t('rules.conflict') : !publication && !activationPending ? draft.error : undefined
+        : draft.remote ? t('rules.conflict')
+          : draft.retry === 'read' && draft.error ? t('rules.readBeforeRetry')
+            : !publication && !activationPending ? draft.error : undefined
   const saveText = saveStatus ?? (dirty ? t('rules.dirty') : publication ? undefined : t('rules.clean'))
   const drawerLabel = t(drawer === 'identity' ? 'rules.identityDetails' : drawer === 'properties' ? 'rules.ruleSettings' : 'rules.definition')
   const retry = editor.retryKind
-  const retryLabel = t(draft.pending ? 'rules.checkSave' : activationPending ? 'rules.resumeWinner' : retry === 'save' ? 'rules.retrySave' : 'rules.reloadAria')
+  const retryLabel = t(draft.pending ? 'rules.checkSave' : retry === 'read' ? 'rules.reloadAria'
+    : activationPending ? 'rules.resumeWinner' : publication ? 'publication.retry' : 'rules.retrySave')
   return <AutoSaveSelection.Provider value={save}><section ref={surface} id={panelId} className={css.canvasSurface} aria-label={ruleName}
     data-rule-id={rule.id} data-rule-key={entry.key}
     onFocus={autosave.onFocus} onBlur={autosave.onBlur}
@@ -189,9 +192,15 @@ export function RuleCard(props: {
               {publicationText && <small className={`${css.canvasSaveState} ${css.canvasPublicationState}`}>{publicationText}</small>}
               {publicationError && <small className={css.canvasPublicationError} title={publicationError}>{publicationError}</small>}
             </div>
-            {publication && <Button variant="outline" shape="pill" size="sm" disabled={draft.busy !== undefined}
-              aria-label={t('publication.retry')} title={t('publication.retry')}
-              onClick={() => { void editor.retryPublication() }}>{t('publication.retryButton')}</Button>}
+            {(draft.pending || activationPending || publication || draft.error) && <Button shape="pill" variant="outline" disabled={draft.busy !== undefined} onClick={() => {
+              if (draft.pending) void editor.reconcile(true)
+              else if (retry === 'read') void editor.retry()
+              else if (activationPending) void editor.submitRule(entry.key, { activateRuleId: rule.id }).then(() => props.onActivate?.())
+              else if (publication) void editor.retryPublication()
+              else void editor.submitRule(entry.key)
+            }} aria-label={retryLabel}>{retryLabel}</Button>}
+            {(draft.pending || draft.remote) && <Button shape="pill" variant="outline" aria-label={t('triggers.discard')} title={t('triggers.discard')}
+              disabled={draft.busy !== undefined} onClick={() => setDiscarding(true)}>{t('rules.discardButton')}</Button>}
           </div>
         </div>
       </div>
@@ -219,16 +228,6 @@ export function RuleCard(props: {
       </div>
     </header>
     <div className={css.body} data-rule-editor>
-      {(draft.pending || activationPending || (draft.error && !publication)) && <div className={css.row}>
-        <Button shape="pill" variant="outline" aria-label={retryLabel} title={retryLabel} disabled={draft.busy !== undefined} onClick={() => {
-          if (draft.pending) void editor.reconcile(true)
-          else if (activationPending) void editor.submitRule(entry.key, { activateRuleId: rule.id }).then(() => props.onActivate?.())
-          else if (retry === 'save') void editor.submitRule(entry.key)
-          else void editor.retry()
-        }}>{t(draft.pending ? 'rules.checkSaveButton' : activationPending ? 'rules.resumeWinnerButton' : retry === 'save' ? 'rules.retrySaveButton' : 'rules.reloadButton')}</Button>
-        {(draft.pending || draft.remote) && <Button shape="pill" variant="outline" aria-label={t('triggers.discard')} title={t('triggers.discard')}
-          disabled={draft.busy !== undefined} onClick={() => setDiscarding(true)}>{t('rules.discardButton')}</Button>}
-      </div>}
       {targets.size > 0 && (reason ? <HintTooltip label={reason}><p role="status" className={css.status} tabIndex={0} aria-label={status + ' · ' + reason}>{status}</p></HintTooltip> : <p role="status" className={css.status}>{status}</p>)}
       {drawer !== undefined && <aside data-rule-drawer data-canvas-obstacle="right" className={`${css.definitionDrawer} ${ui.configForm}`} aria-label={drawerLabel}
         onKeyDown={event => {
@@ -246,6 +245,7 @@ export function RuleCard(props: {
         <dt>{t('rules.name')}</dt><dd>{ruleName}</dd>
         {(saveStatus || publication) && <><dt>{t('rules.saveStateLabel')}</dt><dd>
           {saveText && <div>{saveText}</div>}
+          {draft.retry === 'read' && draft.error && !draft.remote && draft.error !== publicationError && <div>{draft.error}</div>}
           {publicationText && <div>{publicationText}</div>}
           {publicationError && <div>{publicationError}</div>}
         </dd></>}

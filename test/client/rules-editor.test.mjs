@@ -176,8 +176,9 @@ test('rules bridge: conflict recovery reads remote, preserves local input and ne
 
 test('rules bridge: first creation stores the complete result without an active view and retries only publication', async () => {
   const created = { id: 'first', enabled: false, then: [] }
-  const h = harness(async body => ({ ok: true, value: { ...snapshot([created], body.createRule ? 'created' : 'published'),
-    ...(body.createRule ? { createdRuleId: 'first', publicationPending: true, publicationError: 'publish failed' } : {}),
+  let pending = true
+  const h = harness(async body => ({ ok: true, value: { ...snapshot([created], pending ? 'created' : 'published'),
+    ...(body.createRule ? { createdRuleId: 'first', publicationError: 'publish failed' } : {}), publicationPending: pending,
   } }))
   const result = await h.editor.create(created, false)
   assert.equal(result.ok, true)
@@ -186,9 +187,13 @@ test('rules bridge: first creation stores the complete result without an active 
   assert.equal(h.draft.entries[0].value.id, 'first')
   assert.equal(h.draft.entries[0].value.enabled, false)
   assert.equal(h.editor.retryKind, 'publish')
+  assert.equal(h.draft.publicationError, 'publish failed')
+  assert.equal(await h.editor.submit(), false, 'a refresh receipt can still be pending')
+  assert.equal(h.draft.publicationError, undefined)
+  pending = false
   h.editor.patch(h.draft.entries[0].key, { ...created, name: 'unsaved' })
   assert.equal(await h.editor.retry(), true)
-  assert.deepEqual(h.calls[1], { expectedModuleId: 'module-a', refreshOnly: true })
+  assert.deepEqual(h.calls.slice(1), Array(2).fill({ expectedModuleId: 'module-a', refreshOnly: true }))
   assert.equal(h.calls.filter(call => call.createRule).length, 1)
   assert.equal(h.draft.publicationPending, false)
   assert.equal(h.draft.revisions.rules.first, 'published')
