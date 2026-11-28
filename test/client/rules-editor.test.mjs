@@ -1,7 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createWorkspaceDrafts } from '../../src/client/data/workspace-drafts.ts'
+import { bridgeCall } from '../../src/client/data/bridge-client.ts'
 import { createRuleEditor, getRulesDraft, rulesDirty } from '../../src/client/data/rule-drafts.ts'
+import { createTemplateRuleWriter } from '../../src/client/data/template-rule-writer.ts'
 
 const meta = { predicates: [], composites: ['all', 'any', 'not', 'notAny'], actions: [], waterfallPositions: ['default'] }
 const alpha = { id: 'alpha', enabled: true, group: 'mode', exclusive: true, then: [{ id: 'alpha-text', kind: 'inject-text', config: { id: 'text', text: 'Alpha', layer: 'pre-step', future: { keep: 42 } } }] }
@@ -216,26 +218,47 @@ test('rules bridge: first creation stores the complete result without an active 
   assert.equal(h.draft.entries[0].value.name, 'unsaved')
 })
 
-test('rules bridge: unknown creation can be retried only after readback confirms it did not write', async () => {
+test('rules bridge: unknown creation can be retried only after readback confirms it did not write', async (t) => {
   const created = { id: 'first', then: [{ id: 'text', kind: 'inject-text', config: { text: 'body' } }] }
+  const drafts = createWorkspaceDrafts(), calls = [], effects = [], receipts = []
+  const draft = getRulesDraft(drafts, 'module-a')
   let readable = false
-  const h = harness(async body => body.createRule
-    ? readable ? { ok: true, value: { ...snapshot([created]), createdRuleId: created.id } } : { ok: false, code: 'bridge-response-unknown' }
-    : { ok: false, code: readable ? 'module-not-declared' : 'bridge-response-unknown' })
-  const result = await h.editor.create(created, false)
+  t.mock.method(globalThis, 'fetch', async (_url, { body }) => {
+    const request = JSON.parse(body)
+    calls.push(request)
+    return Response.json(request.createRule && readable
+      ? { ok: true, value: { ...snapshot([created]), createdRuleId: created.id } }
+      : { ok: false, code: readable ? 'module-not-declared' : 'bridge-response-unknown' })
+  })
+  const enqueue = async task => task()
+  const writer = createTemplateRuleWriter({ drafts, modules: () => [], changed() {}, enqueue,
+    markDeclared: (id, section) => effects.push([id, section]),
+    actions: { enable: async (id, enabled) => {
+      effects.push([id, 'enable', enabled])
+      return { ok: false, message: 'enable failed' }
+    } },
+  })
+  const editor = createRuleEditor('module-a', draft, { isCurrent: () => true, changed() {},
+    request: body => bridgeCall('rules', body, 'module-a'),
+    enqueue: (_id, task) => enqueue(task),
+  })
+  const result = await writer('module-a', created, true, receipt => receipts.push(receipt))
   assert.equal(result.ok, false)
-  assert.equal(h.draft.pending !== undefined, true)
-  assert.equal(await h.editor.retry(), false)
-  assert.equal(h.draft.retryCreate, undefined)
-  assert.equal(h.calls.filter(call => call.createRule).length, 1)
+  assert.equal(draft.pending !== undefined, true)
+  assert.equal(await editor.retry(), false)
+  assert.equal(draft.retryCreate, undefined)
+  assert.equal(calls.filter(call => call.createRule).length, 1)
   readable = true
-  assert.equal(await h.editor.retry(), false)
-  assert.equal(h.draft.pending, undefined)
-  assert.equal(h.editor.retryKind, 'save')
-  assert.equal(h.calls.filter(call => call.createRule).length, 1)
-  assert.equal(await h.editor.retry(), true)
-  assert.deepEqual(h.calls.filter(call => call.createRule), [h.calls[0], h.calls[0]])
-  assert.equal(h.draft.entries[0].value.id, created.id)
+  assert.equal(await editor.retry(), false)
+  assert.equal(draft.pending, undefined)
+  assert.equal(editor.retryKind, 'save')
+  assert.equal(calls.filter(call => call.createRule).length, 1)
+  assert.deepEqual(effects, [])
+  assert.equal(await editor.retry(), true)
+  assert.deepEqual(calls.filter(call => call.createRule), [calls[0], calls[0]])
+  assert.deepEqual(effects, [['module-a', 'rules'], ['module-a', 'enable', true]])
+  assert.deepEqual(receipts.map(receipt => [receipt.value.createdRuleId, receipt.moduleEnableError]), [['first', 'enable failed']])
+  assert.equal(draft.entries[0].value.id, created.id)
 })
 
 test('rules bridge: queued save and in-flight read survive leaving the view without losing input', async () => {

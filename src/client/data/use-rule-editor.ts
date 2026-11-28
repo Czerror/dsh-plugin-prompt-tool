@@ -32,9 +32,9 @@ export function useModuleRuleEditors(store: RuleEditorStore, moduleIds: readonly
     }) }
   }), [identity, store.editorDrafts, store.enqueueRuleTask, store.publishDrafts, store.reconcileRules])
   // 未加载的草稿才重读：全局加载（改总闸、导入）会把 loaded 清成 false，届时按各模块主语重取一次。
-  const pending = editors.filter(({ draft }) => !draft.loaded).map(({ moduleId }) => moduleId).join(',')
+  const pending = editors.filter(({ draft }) => !draft.loaded && !draft.retryCreate).map(({ moduleId }) => moduleId).join(',')
   useEffect(() => {
-    for (const { editor, draft } of editors) if (!draft.loaded) void editor.load()
+    for (const { editor, draft } of editors) if (!draft.loaded && !draft.retryCreate) void editor.load()
   }, [editors, pending])
   return editors
 }

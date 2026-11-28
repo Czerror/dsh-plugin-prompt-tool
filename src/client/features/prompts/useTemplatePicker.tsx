@@ -5,6 +5,7 @@ import type { PromptConfigTemplateEntry } from '../../prompt-tool-types.ts'
 import type { RuleDefinition } from '../../../shared/rules.ts'
 import { readPublication } from '../../../shared/publication.ts'
 import type { DraftsPort, ModuleActionsPort, NoticePort, RuleEditingPort } from '../../data/store-ports.ts'
+import type { TemplateWriteResult } from '../../data/template-rule-writer.ts'
 import { BLANK_MODULE_TEMPLATE } from '../../data/module-subject.ts'
 import type { ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import { insertToolTemplateIntoDraft } from '../../data/tools-editor.ts'
@@ -177,29 +178,30 @@ export function useTemplateCreate(props: {
   const writeInto = useCallback(async (target: TemplatePickerTarget, config: RuleDefinition, file: string): Promise<void> => {
     const { moduleId } = target
     const generation = writeGeneration.current
-    const result = await store.createTemplateRule(moduleId, config, target.newlyCreated)
-    if (!result.ok) {
+    const finish = (result: TemplateWriteResult): void => {
       if (writeGeneration.current !== generation) return
-      const reason = result.message ?? result.code
-      store.showNotice('error', result.unconfirmed ? t('rules.savePending')
-        : [t('rules.create.writeFailed', { id: moduleId }), reason].filter(Boolean).join(' · '))
-      return
+      if (!result.ok) {
+        const reason = result.message ?? result.code
+        store.showNotice('error', result.unconfirmed ? t('rules.savePending')
+          : [t('rules.create.writeFailed', { id: moduleId }), reason].filter(Boolean).join(' · '))
+        return
+      }
+      const createdRuleId = result.value.createdRuleId ?? config.id
+      const publication = readPublication(result.value)
+      if (!result.localConflict) onCreated(moduleId, createdRuleId)
+      if (result.moduleEnableError !== undefined) {
+        store.showNotice('error', t('rules.create.enableFailed', { id: moduleId, reason: result.moduleEnableError }))
+      } else if (result.refreshError !== undefined) {
+        store.showNotice('error', t('rules.create.refreshFailed', { id: moduleId }))
+      } else if (result.localConflict) {
+        store.showNotice('error', t('rules.create.localConflict', { id: moduleId }))
+      } else if (publication.pending) {
+        store.showNotice('error', `${t('publication.pending')}：${publication.error ?? '请重试'}`)
+      } else {
+        store.showNotice('ok', t('templates.inserted', { file, id: createdRuleId }))
+      }
     }
-    const createdRuleId = result.value.createdRuleId ?? config.id
-    const publication = readPublication(result.value)
-    if (writeGeneration.current !== generation) return
-    if (!result.localConflict) onCreated(moduleId, createdRuleId)
-    if (result.moduleEnableError !== undefined) {
-      store.showNotice('error', t('rules.create.enableFailed', { id: moduleId, reason: result.moduleEnableError }))
-    } else if (result.refreshError !== undefined) {
-      store.showNotice('error', t('rules.create.refreshFailed', { id: moduleId }))
-    } else if (result.localConflict) {
-      store.showNotice('error', t('rules.create.localConflict', { id: moduleId }))
-    } else if (publication.pending) {
-      store.showNotice('error', `${t('publication.pending')}：${publication.error ?? '请重试'}`)
-    } else {
-      store.showNotice('ok', t('templates.inserted', { file, id: createdRuleId }))
-    }
+    finish(await store.createTemplateRule(moduleId, config, target.newlyCreated, finish))
   }, [onCreated, store, t])
   const picker = useTemplatePicker((config, target, file) => { void writeInto(target, config, file) }, store.showNotice, t)
   const cancelTarget = useCallback(() => {

@@ -30,8 +30,8 @@ export interface RulesDraft {
   definitionRevision?: string
   meta?: RulesSnapshot['meta']
   remote?: RulesSnapshot
-  pending?: { checked: boolean; read: () => Promise<boolean>; entries?: RuleEntry[]; request: RulesRequest; key?: string }
-  retryCreate?: RulesRequest
+  pending?: { checked: boolean; read: () => Promise<boolean>; entries?: RuleEntry[]; request: RulesRequest; key?: string; retryCreate?: () => Promise<boolean> }
+  retryCreate?: () => Promise<boolean>
   retrySave?: { key?: string; activateRuleId?: string }
   loaded: boolean
   busy?: 'read' | 'save' | 'validate'
@@ -82,6 +82,7 @@ function acceptRules(draft: RulesDraft, snapshot: RulesSnapshot): void {
 }
 interface RuleEditorDependencies {
   onUnconfirmed?: () => void
+  onRetriedCreate?: (snapshot: RulesSnapshot) => Promise<void>
   request: (body: RulesRequest) => Promise<BridgeResult<RulesSnapshot>>
   enqueue: <T>(moduleId: string, task: () => Promise<T>) => Promise<T>
   isCurrent: () => boolean
@@ -161,9 +162,9 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     draft.meta = snapshot.meta
     draft.loaded = true
   }
-  const unknown = (request: RulesRequest, entries?: RuleEntry[], key?: string): false => {
+  const unknown = (operation: Omit<NonNullable<RulesDraft['pending']>, 'checked' | 'read'>): false => {
     clearFailure()
-    draft.pending = { checked: false, read: () => reconcile(), request, entries, key }
+    draft.pending = { ...operation, checked: false, read: () => reconcile() }
     draft.retry = 'read'
     draft.error = '保存结果待确认。连接恢复后将核对原模块。'
     if (deps.onUnconfirmed) queueMicrotask(deps.onUnconfirmed)
@@ -179,7 +180,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       const request = pending.request
       if (request.createRule && ((!result.ok && result.code === 'module-not-declared' && request.expectedRulesAbsent)
         || (result.ok && validSnapshot(result.value) && draft.loaded && deepEqual(result.value.revisions, draft.revisions)))) {
-        draft.pending = undefined; draft.retryCreate = request
+        draft.pending = undefined; draft.retryCreate = pending.retryCreate
         draft.retry = 'save'; draft.error = '原模块没有此次创建的改动，可重试创建。'
         return false
       }
@@ -212,13 +213,15 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     } catch { return false }
     finally { draft.busy = undefined; deps.changed() }
   }
-  const create = async (rule: RuleDefinition, rulesDeclared?: boolean): Promise<BridgeResult<RulesSnapshot>> => {
+  const create = async (request: RulesRequest): Promise<BridgeResult<RulesSnapshot>> => {
     if (draft.pending) return { ok: false, message: draft.error ?? '保存结果待确认' }
     if (draft.busy !== undefined) return { ok: false, code: 'rules-busy', message: '规则正在读写，请稍后重试' }
-    const sequence = beginLatest(draft), candidate = structuredClone(rule)
-    const request: RulesRequest = { expectedModuleId: moduleId, createRule: candidate,
-      ...(draft.rulesDeclared !== true && rulesDeclared === false ? { expectedRulesAbsent: true as const } : {}) }
-    draft.retryCreate = undefined
+    const sequence = beginLatest(draft)
+    const operation = { request, retryCreate: async () => {
+      const result = await create(request)
+      if (result.ok) await deps.onRetriedCreate?.(result.value)
+      return result.ok
+    } }
     clearFailure()
     draft.busy = 'save'; deps.changed()
     try {
@@ -226,7 +229,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       if (!isLatest(draft, sequence)) return result
       if ((!result.ok && result.code === 'bridge-response-unknown') || (result.ok && (!validSnapshot(result.value)
         || !result.value.rules.some(item => item.id === result.value.createdRuleId)))) {
-        unknown(request)
+        unknown(operation)
         return { ok: false, message: draft.error }
       }
       if (result.ok) {
@@ -240,9 +243,9 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       }
       return result
     } catch (error) {
-      if (isLatest(draft, sequence)) unknown(request)
+      if (isLatest(draft, sequence)) unknown(operation)
       return { ok: false, message: String(error) }
-    } finally { if (isLatest(draft, sequence)) { draft.busy = undefined; deps.changed() } }
+    } finally { if (isLatest(draft, sequence)) { draft.retryCreate = undefined; draft.busy = undefined; deps.changed() } }
   }
   const load = async (force = false): Promise<boolean> => {
     if (draft.pending) return force ? reconcile(true) : false
@@ -342,7 +345,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
         && 'settingsRevision' in compactValue && 'variablesRevision' in compactValue
         ? compactValue as CompactRulesSnapshot : undefined
       if (!options.validateOnly && ((!result.ok && result.code === 'bridge-response-unknown')
-        || (result.ok && !(compactResult ? compactResult.rule?.id === edits[0]!.rule!.id : validSnapshot(result.value as RulesSnapshot))))) return unknown(request, entries, key)
+        || (result.ok && !(compactResult ? compactResult.rule?.id === edits[0]!.rule!.id : validSnapshot(result.value as RulesSnapshot))))) return unknown({ request, entries, key })
       if (!result.ok) {
         draft.retry = READ_FIRST_CODES.includes(result.code ?? '') ? 'read' : 'save'
         draft.errorCode = result.code
@@ -356,7 +359,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
       return !draft.publicationPending
     } catch (error) {
       if (isLatest(draft, sequence)) {
-        if (!options.validateOnly) return unknown(request, entries, key)
+        if (!options.validateOnly) return unknown({ request, entries, key })
         draft.error = String(error)
       }
       return false
@@ -415,8 +418,7 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     const kind = retryKind()
     if (kind === 'read') return load(true)
     if (kind === 'publish') return retryPublication()
-    const request = draft.retryCreate
-    if (request?.createRule) return (await create(request.createRule, !request.expectedRulesAbsent)).ok
+    if (draft.retryCreate) return draft.retryCreate()
     if (draft.retrySave) {
       const { key, activateRuleId } = draft.retrySave
       return submit({ activateRuleId }, key)
@@ -427,6 +429,9 @@ export function createRuleEditor(moduleId: string, draft: RulesDraft, deps: Rule
     }
     return submit()
   }
-  return { load, reconcile, patch, move, setComposing, add, remove, create, submit, submitRule, retryPublication, discard, changed, retry, get retryKind() { return retryKind() } }
+  return { load, reconcile, patch, move, setComposing, add, remove,
+    create: (rule: RuleDefinition, rulesDeclared?: boolean) => create({ expectedModuleId: moduleId, createRule: structuredClone(rule),
+      ...(draft.rulesDeclared !== true && rulesDeclared === false ? { expectedRulesAbsent: true as const } : {}) }),
+    submit, submitRule, retryPublication, discard, changed, retry, get retryKind() { return retryKind() } }
 }
 export type RuleEditor = ReturnType<typeof createRuleEditor>

@@ -148,6 +148,15 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const [editingModule, editingKey] = (!moduleFilter && !allModules ? selectedRuleIdentity(expanded) : undefined) ?? []
   // 参与范围内停用当前模块后，只保留正在编辑的规则。
   const pinnedModule = editingModule !== undefined && !enabledIds.has(editingModule) && editingModule !== diagnosticTarget?.moduleId ? editingModule : undefined
+  const creationRecovery = (): string => {
+    if (!showList) return ''
+    let ids = ''
+    for (const [id, draft] of store.editorDrafts.rules) {
+      if (draft.pending?.retryCreate || draft.retryCreate) ids += id + '\0'
+    }
+    return ids
+  }
+  const creationRecoveryIds = useSyncExternalStore(store.subscribeDrafts, creationRecovery, creationRecovery)
   const ownerIds = (moduleFilter ? modules.filter(module => module.id === moduleFilter)
     : allModules ? modules : modules.filter(module => enabledIds.has(module.id) || module.id === diagnosticTarget?.moduleId || module.id === pinnedModule))
     .filter(module => moduleDeclares(modules, module.id, 'rules') !== false).map(module => module.id)
@@ -163,7 +172,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     }
     return (await Promise.all(ownersRef.current.filter(owner => enabledIds.has(owner.moduleId)).map(owner => owner.editor.load(true)))).every(Boolean)
   })
-  const owners = useModuleRuleEditors(store, ownerIds)
+  const recoveryIds = creationRecoveryIds ? creationRecoveryIds.slice(0, -1).split('\0') : []
+  const feedbackOwners = useModuleRuleEditors(store, [...ownerIds, ...recoveryIds])
+  const owners = recoveryIds.length ? feedbackOwners.slice(0, ownerIds.length) : feedbackOwners
   const diagnosticOwner = owners.find(owner => owner.moduleId === diagnosticTarget?.moduleId)
   const diagnosticEntry = diagnosticOwner?.draft.entries.find(entry => !entry.deleted && (entry.previousId ?? entry.value.id) === diagnosticTarget?.ruleId)
   const diagnosticKey = diagnosticEntry && diagnosticOwner && configIdentityKey({ moduleId: diagnosticOwner.moduleId, configId: diagnosticEntry.key })
@@ -559,9 +570,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         <button type="button" aria-label={t('rules.allModules')} aria-pressed={!moduleFilter && allModules} onClick={() => changeModuleScope('all')}>{t('configs.view.all')}</button>
       </div>
     </div>
-    {showList && owners.map(({ moduleId: id, draft, editor }) => {
+    {showList && feedbackOwners.map(({ moduleId: id, draft, editor }) => {
       const invalid = hasRuleFields(draft)
-      if (!draft.error && !draft.pending && !draft.remote && !draft.publicationPending && !draft.activationPending && !invalid) return null
+      if (!draft.error && !draft.pending && !draft.retryCreate && !draft.remote && !draft.publicationPending && !draft.activationPending && !invalid) return null
       const feedback = ruleFeedback(draft, editor, t)
       return <div key={id}>
         {feedback.action && <div className={css.row}>
@@ -573,6 +584,8 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
             <details className={css.ruleFailureDetails}><summary>{t('rules.errorReason')}</summary>{draft.error}</details>}
           <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
             onClick={() => { void editor.retry() }}>{feedback.action}</Button>
+          {feedback.retrySavedVersion && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
+            onClick={() => { void editor.retryPublication() }}>{t('publication.retry')}</Button>}
           {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
             aria-label={t('triggers.discard')} title={t('triggers.discard')} onClick={() => setDiscard(id)}>{t('rules.discardButton')}</Button>}
         </div>}

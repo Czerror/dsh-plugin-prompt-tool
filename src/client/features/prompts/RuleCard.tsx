@@ -187,6 +187,8 @@ export function RuleCard(props: {
             </div>
             {feedback.action && <Button shape="pill" variant="outline" disabled={draft.busy !== undefined} aria-label={feedback.action}
               onClick={() => { void editor.retry().then(ok => { if (ok && activationPending) props.onActivate?.() }) }}>{feedback.action}</Button>}
+            {feedback.retrySavedVersion && <Button shape="pill" variant="outline" disabled={draft.busy !== undefined}
+              onClick={() => { void editor.retryPublication() }}>{t('publication.retry')}</Button>}
             {(draft.pending || draft.remote) && <Button shape="pill" variant="outline" aria-label={t('triggers.discard')} title={t('triggers.discard')}
               disabled={draft.busy !== undefined} onClick={() => setDiscarding(true)}>{t('rules.discardButton')}</Button>}
           </div>

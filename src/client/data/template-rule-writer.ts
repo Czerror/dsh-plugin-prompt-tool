@@ -18,23 +18,30 @@ export function createTemplateRuleWriter(deps: {
   enqueue: <T>(task: () => Promise<T>) => Promise<T>
   actions: Pick<ModuleActions, 'enable'>
 }) {
-  return async (moduleId: string, rule: RuleDefinition, newlyCreated = false): Promise<TemplateWriteResult> => {
+  return async (moduleId: string, rule: RuleDefinition, newlyCreated = false,
+    onRetried?: (result: TemplateWriteResult) => void): Promise<TemplateWriteResult> => {
     if (!newlyCreated && !isWritableTarget(deps.modules(), moduleId)) return { ok: false, code: 'module-readonly', message: '目标模块不可写' }
     const draft = getRulesDraft(deps.drafts, moduleId)
     const module = deps.modules()?.find(candidate => candidate.id === moduleId)
     const declared = newlyCreated ? false : module?.declares?.includes('rules')
+    const finish = async (value: RulesSnapshot): Promise<TemplateWriteResult> => {
+      deps.markDeclared(moduleId, 'rules')
+      const committed = { ok: true as const, value, localConflict: draft.remote !== undefined }
+      if (!newlyCreated) return committed
+      const enabled = await deps.actions.enable(moduleId, true)
+      if (!enabled.ok) return { ...committed, moduleEnableError: enabled.message ?? enabled.code ?? 'module-enable-failed' }
+      return { ...committed, moduleEnabled: true, ...(enabled.refreshError === undefined ? {} : { refreshError: enabled.refreshError }) }
+    }
     const editor = createRuleEditor(moduleId, draft, {
       request: body => bridgeCall('rules', body, moduleId) as Promise<BridgeResult<RulesSnapshot>>, enqueue: (_id, task) => deps.enqueue(task),
       isCurrent: () => true, changed: deps.changed,
       onUnconfirmed: deps.reconcileRules,
+      onRetriedCreate: async value => {
+        const result = await finish(value)
+        onRetried?.(result)
+      },
     })
     const result = await editor.create(rule, declared)
-    if (!result.ok) return draft.pending ? { ...result, unconfirmed: true } : result
-    deps.markDeclared(moduleId, 'rules')
-    const committed = { ...result, localConflict: draft.remote !== undefined }
-    if (!newlyCreated) return committed
-    const enabled = await deps.actions.enable(moduleId, true)
-    if (!enabled.ok) return { ...committed, moduleEnableError: enabled.message ?? enabled.code ?? 'module-enable-failed' }
-    return { ...committed, moduleEnabled: true, ...(enabled.refreshError === undefined ? {} : { refreshError: enabled.refreshError }) }
+    return result.ok ? finish(result.value) : draft.pending ? { ...result, unconfirmed: true } : result
   }
 }

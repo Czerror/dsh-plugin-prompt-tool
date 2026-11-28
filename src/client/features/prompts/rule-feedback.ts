@@ -14,13 +14,15 @@ export function ruleFeedback(draft: RulesDraft, editor: RuleEditor, t: PromptToo
     ? t(draft.publicationError === undefined ? 'rules.publishPending' : 'rules.publishFailed')
     : undefined
   let action: string | undefined
+  let retrySavedVersion = false
   if (draft.pending) action = t('rules.checkSave')
   else if (issue || publication || draft.activationPending) {
     const retry = editor.retryKind
+    retrySavedVersion = Boolean(publication && retry === 'save')
     if (retry === 'read') action = t('rules.reloadAria')
     else if (draft.retryCreate) action = t('rules.retryCreate')
     else if (draft.activationPending) action = t('rules.resumeWinner')
     else action = t(retry === 'publish' ? 'publication.retry' : 'rules.retrySave')
   }
-  return { issue, publication, action }
+  return { issue, publication, action, retrySavedVersion }
 }
