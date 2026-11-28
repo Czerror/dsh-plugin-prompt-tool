@@ -23,7 +23,7 @@ export function ruleFeedback(draft: RulesDraft, editor: RuleEditor, t: PromptToo
     if (retry === 'read') action = t('rules.reloadAria')
     else if (draft.retryCreate) action = t('rules.retryCreate')
     else {
-      activationTarget = draft.retrySave?.activateRuleId ?? draft.activationPending
+      activationTarget = draft.retrySave ? draft.retrySave.activateRuleId : draft.activationPending
       action = activationTarget === undefined ? t(retry === 'publish' ? 'publication.retry' : 'rules.retrySave')
         : activationTarget === draft.activationPending ? t('rules.resumeWinner', { id: activationTarget })
           : t('rules.enable', { name: activationTarget })
