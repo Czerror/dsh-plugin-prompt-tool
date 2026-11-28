@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-28T09:21:05Z",
+  "title": "DSH 提示词工具设计系统",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "条件蓝",
+        "tonalRamp": ["oklch(15% 0.046 258.5)", "oklch(26% 0.079 258.5)", "oklch(38% 0.116 258.5)", "oklch(49% 0.137 258.5)", "oklch(61% 0.137 258.5)", "oklch(72% 0.110 258.5)", "oklch(84% 0.063 258.5)", "oklch(95% 0.020 258.5)"]
+      },
+      "then": {
+        "role": "secondary",
+        "displayName": "成立绿",
+        "tonalRamp": ["oklch(15% 0.037 165.7)", "oklch(26% 0.065 165.7)", "oklch(38% 0.095 165.7)", "oklch(49% 0.112 165.7)", "oklch(61% 0.112 165.7)", "oklch(72% 0.090 165.7)", "oklch(84% 0.051 165.7)", "oklch(95% 0.016 165.7)"]
+      },
+      "else": {
+        "role": "tertiary",
+        "displayName": "否则琥珀",
+        "tonalRamp": ["oklch(15% 0.041 84.8)", "oklch(26% 0.070 84.8)", "oklch(38% 0.103 84.8)", "oklch(49% 0.122 84.8)", "oklch(61% 0.122 84.8)", "oklch(72% 0.097 84.8)", "oklch(84% 0.056 84.8)", "oklch(95% 0.017 84.8)"]
+      },
+      "order": {
+        "role": "neutral",
+        "displayName": "同点次序灰",
+        "tonalRamp": ["oklch(15% 0.009 257.7)", "oklch(26% 0.015 257.7)", "oklch(38% 0.022 257.7)", "oklch(49% 0.026 257.7)", "oklch(61% 0.026 257.7)", "oklch(72% 0.021 257.7)", "oklch(84% 0.012 257.7)", "oklch(95% 0.004 257.7)"]
+      },
+      "stage": {
+        "role": "neutral",
+        "displayName": "画布底色",
+        "tonalRamp": ["oklch(15% 0.004 260.6)", "oklch(26% 0.007 260.6)", "oklch(38% 0.010 260.6)", "oklch(49% 0.011 260.6)", "oklch(61% 0.011 260.6)", "oklch(72% 0.009 260.6)", "oklch(84% 0.005 260.6)", "oklch(95% 0.002 260.6)"]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "列表与工具浮层",
+        "tonalRamp": ["oklch(15% 0.005 261.6)", "oklch(26% 0.009 261.6)", "oklch(38% 0.013 261.6)", "oklch(49% 0.015 261.6)", "oklch(61% 0.015 261.6)", "oklch(72% 0.012 261.6)", "oklch(84% 0.007 261.6)", "oklch(95% 0.002 261.6)"]
+      },
+      "inspector": {
+        "role": "neutral",
+        "displayName": "属性栏底色",
+        "tonalRamp": ["oklch(15% 0.008 259.3)", "oklch(26% 0.014 259.3)", "oklch(38% 0.020 259.3)", "oklch(49% 0.024 259.3)", "oklch(61% 0.024 259.3)", "oklch(72% 0.019 259.3)", "oklch(84% 0.011 259.3)", "oklch(95% 0.003 259.3)"]
+      },
+      "node": {
+        "role": "neutral",
+        "displayName": "节点底色",
+        "tonalRamp": ["oklch(15% 0.010 259.1)", "oklch(26% 0.017 259.1)", "oklch(38% 0.025 259.1)", "oklch(49% 0.030 259.1)", "oklch(61% 0.030 259.1)", "oklch(72% 0.024 259.1)", "oklch(84% 0.014 259.1)", "oklch(95% 0.004 259.1)"]
+      },
+      "list-row": {
+        "role": "neutral",
+        "displayName": "规则行底色",
+        "tonalRamp": ["oklch(15% 0.013 258.3)", "oklch(26% 0.022 258.3)", "oklch(38% 0.032 258.3)", "oklch(49% 0.038 258.3)", "oklch(61% 0.038 258.3)", "oklch(72% 0.030 258.3)", "oklch(84% 0.017 258.3)", "oklch(95% 0.005 258.3)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "画布正文",
+        "tonalRamp": ["oklch(15% 0.005 258.3)", "oklch(26% 0.008 258.3)", "oklch(38% 0.012 258.3)", "oklch(49% 0.014 258.3)", "oklch(61% 0.014 258.3)", "oklch(72% 0.011 258.3)", "oklch(84% 0.006 258.3)", "oklch(95% 0.002 258.3)"]
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "画布焦点",
+        "tonalRamp": ["oklch(15% 0.025 257.2)", "oklch(26% 0.044 257.2)", "oklch(38% 0.064 257.2)", "oklch(49% 0.076 257.2)", "oklch(61% 0.076 257.2)", "oklch(72% 0.060 257.2)", "oklch(84% 0.035 257.2)", "oklch(95% 0.011 257.2)"]
+      }
+    },
+    "typographyMeta": {
+      "body": {
+        "displayName": "工作台正文",
+        "purpose": "侧栏说明、紧凑按钮与基础界面文字。"
+      },
+      "field": {
+        "displayName": "搜索输入",
+        "purpose": "共享搜索框的输入文字。"
+      },
+      "rule-title": {
+        "displayName": "规则名称",
+        "purpose": "规则列表的单行标题。"
+      },
+      "node-title": {
+        "displayName": "节点标题",
+        "purpose": "在画布上辨认条件、分组或动作。"
+      },
+      "node-kind": {
+        "displayName": "节点种类",
+        "purpose": "节点首行与种类图形并排的短标签。"
+      }
+    },
+    "shadows": [
+      {
+        "name": "node",
+        "value": "0 6px 16px #0003",
+        "purpose": "画布中未选中节点的短投影。"
+      },
+      {
+        "name": "panel",
+        "value": "0 8px 24px #0005",
+        "purpose": "列表和属性栏覆盖画布时的投影。"
+      },
+      {
+        "name": "dock",
+        "value": "0 3px 12px #0003",
+        "purpose": "缩放和图例工具条贴近画布。"
+      }
+    ],
+    "motion": [
+      {
+        "name": "switch-thumb",
+        "value": "transform 120ms ease",
+        "purpose": "开关滑块随启用状态移动，减少动态效果时直接显示终点。"
+      },
+      {
+        "name": "edge-flow",
+        "value": "travel 1.8s linear 140ms 2",
+        "purpose": "选中节点时在支持运动路径的环境中，沿直接相连的边短暂指示方向。"
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "rule-workspace-list",
+        "value": "56rem"
+      },
+      {
+        "name": "viewport-legend",
+        "value": "46rem"
+      },
+      {
+        "name": "rule-workspace-toolbar",
+        "value": "43rem"
+      },
+      {
+        "name": "rule-workspace-compact",
+        "value": "30rem"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "主按钮",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "实心填色突出当前操作，这里预览基础圆角款。",
+      "html": "<div class=\"ds-host-sample\"><button class=\"ds-button ds-primary\" type=\"button\">添加到画布</button></div>",
+      "css": ".ds-host-sample { display: inline-flex; align-items: center; gap: 12px; max-inline-size: 100%; padding: 8px; background: var(--dsw-alias-bg-base, #151517); color: var(--dsw-alias-label-primary, #f9fafb); }\n.ds-button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 28px; padding: 0 10px; border: 0; border-radius: var(--dsw-radius-sm, 8px); background: transparent; color: var(--dsw-alias-label-primary, #f9fafb); cursor: pointer; font: 12px/18px system-ui, sans-serif; }\n.ds-button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #7aaaff); outline-offset: 2px; }\n.ds-button:disabled { cursor: not-allowed; opacity: .4; }\n@media (pointer: coarse) { .ds-button { min-width: 44px; min-height: 44px; } }\n.ds-primary { background: var(--dsw-alias-button-primary-fill, #f9fafb); color: var(--dsw-alias-label-primary-foreground, #0f1115); }\n.ds-primary:hover:not(:disabled) { background: var(--dsw-alias-button-primary-hover, #ebeef2); }"
+    },
+    {
+      "name": "描边按钮",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "用细边框标出可独立识别的次要入口。",
+      "html": "<div class=\"ds-host-sample\"><button class=\"ds-button ds-outline\" type=\"button\">规则</button></div>",
+      "css": ".ds-host-sample { display: inline-flex; align-items: center; gap: 12px; max-inline-size: 100%; padding: 8px; background: var(--dsw-alias-bg-base, #151517); color: var(--dsw-alias-label-primary, #f9fafb); }\n.ds-button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 28px; padding: 0 10px; border: 0; border-radius: var(--dsw-radius-sm, 8px); background: transparent; color: var(--dsw-alias-label-primary, #f9fafb); cursor: pointer; font: 12px/18px system-ui, sans-serif; }\n.ds-button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #7aaaff); outline-offset: 2px; }\n.ds-button:disabled { cursor: not-allowed; opacity: .4; }\n@media (pointer: coarse) { .ds-button { min-width: 44px; min-height: 44px; } }\n.ds-outline { border: .5px solid var(--dsw-alias-border-l3, rgba(255, 255, 255, .16)); }\n.ds-outline:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, .08)); }"
+    },
+    {
+      "name": "无边框按钮",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "默认透明，悬停和按住时用宿主填色反馈。",
+      "html": "<div class=\"ds-host-sample\"><button class=\"ds-button ds-ghost\" type=\"button\">关闭</button></div>",
+      "css": ".ds-host-sample { display: inline-flex; align-items: center; gap: 12px; max-inline-size: 100%; padding: 8px; background: var(--dsw-alias-bg-base, #151517); color: var(--dsw-alias-label-primary, #f9fafb); }\n.ds-button { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 28px; padding: 0 10px; border: 0; border-radius: var(--dsw-radius-sm, 8px); background: transparent; color: var(--dsw-alias-label-primary, #f9fafb); cursor: pointer; font: 12px/18px system-ui, sans-serif; }\n.ds-button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #7aaaff); outline-offset: 2px; }\n.ds-button:disabled { cursor: not-allowed; opacity: .4; }\n@media (pointer: coarse) { .ds-button { min-width: 44px; min-height: 44px; } }\n.ds-ghost:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, .08)); }\n.ds-ghost:active:not(:disabled) { background: var(--dsw-alias-interactive-bg-active, rgba(255, 255, 255, .14)); }"
+    },
+    {
+      "name": "搜索框",
+      "kind": "input",
+      "refersTo": "search-input",
+      "description": "规则、工具与技能列表共用的搜索框，可在预览中输入。",
+      "html": "<div class=\"ds-host-sample\"><div class=\"ds-search\"><svg class=\"ds-search-icon\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" aria-hidden=\"true\"><path d=\"M6.58727 11.8586C9.55061 11.8586 11.9529 9.45637 11.9529 6.49304C11.9529 3.5297 9.55061 1.12744 6.58727 1.12744C3.62394 1.12744 1.22168 3.5297 1.22168 6.49304C1.22168 9.45637 3.62394 11.8586 6.58727 11.8586Z M10.2991 10.3933L14.7783 14.8725\" stroke=\"currentColor\"/></svg><input class=\"ds-search-input\" type=\"search\" aria-label=\"搜索规则\" placeholder=\"搜索规则\"></div></div>",
+      "css": ".ds-host-sample { display: inline-flex; align-items: center; gap: 12px; max-inline-size: 100%; padding: 8px; background: var(--dsw-alias-bg-base, #151517); color: var(--dsw-alias-label-primary, #f9fafb); }\n.ds-search { position: relative; display: flex; align-items: center; width: 100%; min-width: 0; color: var(--dsw-alias-label-tertiary, #adb2b8); }\n.ds-search-icon { position: absolute; left: 12px; pointer-events: none; }\n.ds-search-input { box-sizing: border-box; width: 100%; min-width: 0; height: 36px; padding: 0 34px 0 36px; border: .5px solid var(--dsw-alias-border-l4, rgba(255, 255, 255, .2)); border-radius: var(--dsw-radius-md, 12px); background: var(--dsw-alias-bg-layer-1, #232324); color: var(--dsw-alias-label-primary, #f9fafb); font: 13px/20px system-ui, sans-serif; }\n.ds-search-input::placeholder { color: var(--dsw-alias-label-tertiary, #adb2b8); }\n.ds-search-input:focus-visible { border-color: var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, #7aaaff)); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, #7aaaff)) 18%, transparent); }\n@media (pointer: coarse) { .ds-search-input { min-width: 44px; min-height: 44px; } }\n@media (forced-colors: active) { .ds-search-input:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; } }"
+    },
+    {
+      "name": "画布左栏",
+      "kind": "nav",
+      "refersTo": "canvas-nav",
+      "description": "规则工作台从左栏打开编辑对象和工具，示例为规则列表已打开。",
+      "html": "<div class=\"ds-canvas-nav\" role=\"group\" aria-label=\"画布左栏\"><button type=\"button\" aria-label=\"模块\" aria-pressed=\"false\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M10 22V7a1 1 0 0 0-1-1H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 0 0-1-1H2\"/><rect x=\"14\" y=\"2\" width=\"8\" height=\"8\" rx=\"1\"/></svg></button><button type=\"button\" aria-label=\"规则\" aria-pressed=\"true\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M13 5h8 M13 12h8 M13 19h8 M3 17l2 2 4-4 M3 7l2 2 4-4\"/></svg></button><button type=\"button\" aria-label=\"动作条件库\" aria-pressed=\"false\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect width=\"8\" height=\"18\" x=\"3\" y=\"3\" rx=\"1\"/><path d=\"M7 3v18 M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z\"/></svg></button><button type=\"button\" aria-label=\"隐藏\" aria-pressed=\"false\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"/><path d=\"M9 3v18 M16 15l-3-3 3-3\"/></svg></button><button type=\"button\" aria-label=\"诊断\" aria-pressed=\"false\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2\"/></svg></button></div>\n<!-- Lucide icons (https://lucide.dev), ISC License.\nCopyright (c) 2026 Lucide Icons and Contributors\nPermission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.\nTHE SOFTWARE IS PROVIDED \"AS IS\" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. -->",
+      "css": ".ds-canvas-nav { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; max-inline-size: 100%; padding: 4px; border: 1px solid #363f4d; border-radius: 10px; background: #171c24; }\n.ds-canvas-nav > button { display: grid; place-items: center; inline-size: 34px; min-block-size: 34px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #c7d0dc; cursor: pointer; }\n.ds-canvas-nav > button[aria-pressed=true] { color: #eaf1fd; border-color: #445879; background: #273547; }\n.ds-canvas-nav > button:hover:not(:disabled) { background: #263141; }\n.ds-canvas-nav > button:focus-visible { outline: 2px solid #a6c7f6; outline-offset: 1px; }\n@media (pointer: coarse) { .ds-canvas-nav > button { inline-size: 44px; min-block-size: 44px; } }"
+    },
+    {
+      "name": "模块状态",
+      "kind": "chip",
+      "refersTo": "module-state",
+      "description": "规则工作台在对象名称下显示模块层级的启用状态。",
+      "html": "<div class=\"ds-module-states\"><small class=\"ds-module-state\" data-enabled=\"true\">模块已启用</small><small class=\"ds-module-state\" data-enabled=\"false\">模块已停用</small></div>",
+      "css": ".ds-module-states { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; padding: 4px 8px; border: 1px solid #313844; border-radius: 10px; background: #181c23; color: #b5c2d4; font: 12px/18px system-ui, sans-serif; }\n.ds-module-state { padding-inline: 6px; border: 1px solid #3c4859; border-radius: 5px; font-size: 11px; }\n.ds-module-state[data-enabled=true] { color: #94e1b8; border-color: #355747; }"
+    },
+    {
+      "name": "动作节点",
+      "kind": "card",
+      "refersTo": "action-node",
+      "description": "绿色方形标记区分动作，蓝色边框表示当前选中的节点。",
+      "html": "<div class=\"ds-action-stage\"><button class=\"ds-action-node\" type=\"button\" aria-pressed=\"true\"><small>动作</small><strong>请求参数</strong><span>温度 0.7</span></button></div>",
+      "css": ".ds-action-stage { display: inline-flex; max-inline-size: 100%; box-sizing: border-box; padding: 12px; background: radial-gradient(#343b486b .8px, transparent .8px) 0 0 / 20px 20px #0e1116; color: #e7edf6; }\n.ds-action-node { box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; width: 216px; max-width: 100%; min-height: 7rem; padding: .7rem .8rem; border: 1px solid #40516a; border-radius: 10px; background: #192230; color: inherit; text-align: start; cursor: grab; box-shadow: 0 6px 16px #0003; user-select: none; }\n.ds-action-node[aria-pressed=true] { border: 2px solid #72aaff; box-shadow: 0 0 0 5px #72aaff18; }\n.ds-action-node:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #7aaaff); outline-offset: 2px; }\n.ds-action-node:active { cursor: grabbing; }\n.ds-action-node small { display: flex; align-items: center; gap: 8px; color: #79d7ae; font: 11px ui-monospace, monospace; }\n.ds-action-node small::before { content: \"\"; inline-size: 8px; block-size: 8px; flex: none; border: 1.5px solid currentColor; border-radius: 2px; }\n.ds-action-node strong { margin-block: 6px; font: 700 17px/1.25 system-ui, sans-serif; }\n.ds-action-node span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; margin-top: .25rem; color: #9ca7b7; font: 14px/1.4 system-ui, sans-serif; overflow-wrap: anywhere; }"
+    },
+    {
+      "name": "规则列表项",
+      "kind": "custom",
+      "refersTo": "rule-row",
+      "description": "选中后用蓝色底与边框定位当前编辑的规则。",
+      "html": "<ul class=\"ds-rule-list\" aria-label=\"规则列表\"><li><button class=\"ds-rule-choice\" type=\"button\" aria-current=\"true\"><strong>文档写作</strong></button><button type=\"button\" class=\"ds-move\" aria-label=\"上移文档写作\" aria-disabled=\"true\" tabindex=\"-1\">↑</button><button type=\"button\" class=\"ds-move\" aria-label=\"下移文档写作\">↓</button></li><li><button class=\"ds-rule-choice\" type=\"button\"><strong>代码审查</strong></button><button type=\"button\" class=\"ds-move\" aria-label=\"上移代码审查\">↑</button><button type=\"button\" class=\"ds-move\" aria-label=\"下移代码审查\" aria-disabled=\"true\" tabindex=\"-1\">↓</button></li></ul>",
+      "css": ".ds-rule-list { display: flex; flex-direction: column; gap: 4px; min-width: 0; width: min(100%, 17rem); margin: 0; padding: 12px; border: 1px solid #313844; border-radius: 10px; background: #181c23; color: #e7edf6; font: 12px/18px system-ui, sans-serif; list-style: none; box-sizing: border-box; }\n.ds-rule-list > li { display: flex; align-items: center; min-inline-size: 0; padding-inline-end: 3px; border: 1px solid #34445e; border-radius: 6px; background: #1c283a; }\n.ds-rule-list > li:hover { border-color: #4d6282; }\n.ds-rule-list > li:has(.ds-rule-choice[aria-current=true]) { border-color: #7a9ed0; background: #293e5c; }\n.ds-rule-choice { display: grid; flex: 1; align-content: center; min-inline-size: 0; min-block-size: 32px; padding: 2px 8px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: inherit; text-align: start; font: inherit; cursor: pointer; }\n.ds-rule-choice strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; font-weight: 600; }\n.ds-rule-choice:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }\n@media (pointer: coarse) { .ds-rule-choice { min-block-size: 44px; } }\n.ds-move { display: grid; place-items: center; flex: none; inline-size: 27px; block-size: 28px; padding: 0; border: 0; border-radius: 4px; color: #c1d1e9; background: transparent; font: inherit; cursor: pointer; }\n.ds-move:hover:not([aria-disabled=true]) { background: #374e70; color: #fff; }\n.ds-move[aria-disabled=true] { opacity: .42; cursor: default; }\n.ds-move:focus-visible { outline: 2px solid #a6c7f6; outline-offset: -2px; }\n@media (pointer: coarse) { .ds-move { min-block-size: 44px; inline-size: 44px; } }"
+    },
+    {
+      "name": "启用开关",
+      "kind": "custom",
+      "refersTo": "switch",
+      "description": "轨道与滑块同时表达开和关，这里展示两个固定状态。",
+      "html": "<div class=\"ds-host-sample\"><button class=\"ds-switch\" type=\"button\" role=\"switch\" aria-label=\"启用文档写作规则\" aria-checked=\"true\"><span class=\"ds-switch-track\" aria-hidden=\"true\"><span class=\"ds-switch-thumb\"></span></span></button><button class=\"ds-switch\" type=\"button\" role=\"switch\" aria-label=\"启用代码审查规则\" aria-checked=\"false\"><span class=\"ds-switch-track\" aria-hidden=\"true\"><span class=\"ds-switch-thumb\"></span></span></button></div>",
+      "css": ".ds-host-sample { display: inline-flex; align-items: center; gap: 12px; max-inline-size: 100%; padding: 8px; background: var(--dsw-alias-bg-base, #151517); color: var(--dsw-alias-label-primary, #f9fafb); }\n.ds-switch { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 999px; background: transparent; cursor: pointer; }\n.ds-switch-track { box-sizing: border-box; display: block; flex: none; width: 36px; height: 20px; padding: 2px; border-radius: 999px; background: var(--dsw-alias-border-l3, rgba(255, 255, 255, .16)); }\n.ds-switch-thumb { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--dsw-alias-switch-thumb, #adb2b8); transition: transform 120ms ease; }\n.ds-switch[aria-checked=true] .ds-switch-track { background: var(--dsw-alias-brand-primary, #f9fafb); }\n.ds-switch[aria-checked=true] .ds-switch-thumb { background: var(--dsw-alias-label-primary-foreground, #0f1115); transform: translateX(16px); }\n.ds-switch:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary, #7aaaff); outline-offset: 2px; }\n.ds-switch:disabled { cursor: default; opacity: .5; }\n@media (prefers-reduced-motion: reduce) { .ds-switch-thumb { transition: none; } }\n@media (pointer: coarse) { .ds-switch { min-width: 44px; min-height: 44px; } }\n@media (forced-colors: active) { .ds-switch-track { outline: 1px solid ButtonText; } .ds-switch[aria-checked=true] .ds-switch-track { background: Highlight; } .ds-switch-thumb, .ds-switch[aria-checked=true] .ds-switch-thumb { background: ButtonText; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "规则工作台",
+    "overview": "规则工作台围绕一张深色点阵画布展开。打开规则后，顶栏写明所属模块、规则名和保存状态。作者认清编辑对象，再顺着连线读条件、分支和动作。\n\n左侧列表负责查找和切换，右侧属性栏负责检查和编辑。控件排列紧凑，细边框和阴影交代每一层的位置。名称、开关和状态文字各自回答一个问题。",
+    "keyCharacteristics": [
+      "顶栏用名称标识编辑目标，用文字报告保存状态。",
+      "节点用形状和文字区分种类，连线有方向、线型与图例。",
+      "节点落在画布上，工具条、列表和属性栏浮在上面。"
+    ],
+    "rules": [
+      {
+        "name": "连线图例",
+        "body": "同一种关系在画布与底栏图例中使用相同的颜色和线型。",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "让规则名称、所属模块与保存反馈各有清晰的位置。",
+      "以工作台容器的实际宽度安排面板，给列表和属性内容各自的滚动空间。",
+      "保留键盘焦点、节点种类标记和连线图例，减少动态效果时仍突出当前连接。"
+    ],
+    "donts": [
+      "避免把分支色当成全局成功、警告或错误色。",
+      "避免把模块启用、规则启用与保存结果合成一个状态点。",
+      "避免把桌面三列等比缩进窄侧栏，或把单行名称截断用于属性正文。"
+    ]
+  }
+}
