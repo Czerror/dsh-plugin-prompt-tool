@@ -31,6 +31,7 @@ import { InstructionCanvas, type CanvasInstructionFile } from './RuleCanvas.tsx'
 import { LAYER_LABEL_KEYS, translateLabel } from './prompt-config-policy.ts'
 import { asTriggerRecord } from './RuleJsonField.tsx'
 import { RuleCard } from './RuleCard.tsx'
+import { ruleFeedback } from './rule-feedback.ts'
 import { useTemplateCreate } from './useTemplatePicker.tsx'
 import type { ModuleCreateItem } from '../modules/EngineModuleList.tsx'
 import ui from '../../ui/controls.module.css'
@@ -147,6 +148,15 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
   const [editingModule, editingKey] = (!moduleFilter && !allModules ? selectedRuleIdentity(expanded) : undefined) ?? []
   // 参与范围内停用当前模块后，只保留正在编辑的规则。
   const pinnedModule = editingModule !== undefined && !enabledIds.has(editingModule) && editingModule !== diagnosticTarget?.moduleId ? editingModule : undefined
+  const creationRecovery = (): string => {
+    if (!showList) return ''
+    let ids = ''
+    for (const [id, draft] of store.editorDrafts.rules) {
+      if (draft.pending?.retryCreate || draft.retryCreate) ids += id + '\0'
+    }
+    return ids
+  }
+  const creationRecoveryIds = useSyncExternalStore(store.subscribeDrafts, creationRecovery, creationRecovery)
   const ownerIds = (moduleFilter ? modules.filter(module => module.id === moduleFilter)
     : allModules ? modules : modules.filter(module => enabledIds.has(module.id) || module.id === diagnosticTarget?.moduleId || module.id === pinnedModule))
     .filter(module => moduleDeclares(modules, module.id, 'rules') !== false).map(module => module.id)
@@ -162,7 +172,9 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     }
     return (await Promise.all(ownersRef.current.filter(owner => enabledIds.has(owner.moduleId)).map(owner => owner.editor.load(true)))).every(Boolean)
   })
-  const owners = useModuleRuleEditors(store, ownerIds)
+  const recoveryIds = creationRecoveryIds ? creationRecoveryIds.slice(0, -1).split('\0') : []
+  const feedbackOwners = useModuleRuleEditors(store, [...ownerIds, ...recoveryIds])
+  const owners = recoveryIds.length ? feedbackOwners.slice(0, ownerIds.length) : feedbackOwners
   const diagnosticOwner = owners.find(owner => owner.moduleId === diagnosticTarget?.moduleId)
   const diagnosticEntry = diagnosticOwner?.draft.entries.find(entry => !entry.deleted && (entry.previousId ?? entry.value.id) === diagnosticTarget?.ruleId)
   const diagnosticKey = diagnosticEntry && diagnosticOwner && configIdentityKey({ moduleId: diagnosticOwner.moduleId, configId: diagnosticEntry.key })
@@ -233,7 +245,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     if (moduleFilter && module.id !== moduleFilter) return []
     if (module.broken !== undefined || module.renderable === false) return []
     const owner = settingOwners.get(module.id)
-    if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error)) return []
+    if (moduleDeclares(store.meta.modules, module.id, 'rules') !== false && (!owner?.draft.loaded || owner.draft.error || owner.draft.publicationPending)) return []
     const layers = new Set((owner?.draft.entries ?? []).filter(entry => !entry.deleted)
       .map(entry => entry.value.layer))
     const missing = [...moduleSettingsLayers(module)].filter(layer => !layers.has(layer) && (view === 'all' || view === layer))
@@ -463,11 +475,11 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
       onRetry={() => { void withEnableFocus(retryEnable) }} />
   </div>
   const refreshExclusivePeers = (id: string, rule: RuleDefinition): void => {
-    if (!enabledIds.has(id) || rule.groupScope !== 'cross-module' || rule.exclusive !== true || !rule.group) return
+    if (rule.groupScope !== 'cross-module' || !rule.group) return
     const active = new Map(ownersRef.current.map(owner => [owner.moduleId, owner.editor]))
     for (const [peerId, draft] of store.editorDrafts.rules) {
       if (peerId === id || !enabledIds.has(peerId) || !draft.loaded
-        || !draft.saved.some(saved => saved.group === rule.group && saved.groupScope === 'cross-module' && saved.exclusive)) continue
+        || !draft.saved.some(member => member.groupScope === 'cross-module' && member.group === rule.group && member.enabled !== false)) continue
       const editor = active.get(peerId)
       if (editor) void editor.load(true)
       else {
@@ -475,6 +487,15 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         store.publishDrafts(peerId)
       }
     }
+  }
+  const retryRules = ({ moduleId, draft, editor }: ModuleRuleEditor, activationTarget?: string, run = editor.retry): void => {
+    const before = draft.saved
+    void run().then(() => {
+      // 接纳已写盘的快照会替换 saved，运行发布仍待完成时也会替换。
+      if (activationTarget === undefined || draft.saved === before || draft.activationPending !== undefined) return
+      const rule = draft.saved.find(rule => rule.id === activationTarget)
+      if (rule) refreshExclusivePeers(moduleId, rule)
+    })
   }
   const diagnosticsLabel = t(diagnosticTarget && props.onReturnToDiagnostics ? 'diagnostics.return' : 'rules.sidebarDiagnostics')
   const libraryLabel = t(libraryOpen ? 'rules.hideLibrary' : 'rules.showLibrary')
@@ -540,10 +561,10 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     <div className={css.ruleSearchBar}>
       <SearchInput inline aria-label={t('rules.search')} placeholder={t('rules.search')} value={props.keyword ?? filter} onChange={event => changeFilter(event.target.value)} />
       <div className={css.ruleBatchActions} role="group" aria-label={t('rules.batchActions')}>
-        <button type="button" data-batch="enable" disabled={batchDisabled} aria-label={t('rules.enableVisible')} title={t('rules.enableVisible')}
-          onClick={() => batchSetEnabled(true)}>{t('configs.batch.enableVisible')}</button>
-        <button type="button" data-batch="disable" disabled={batchDisabled} aria-label={t('rules.disableVisible')} title={t('rules.disableVisible')}
-          onClick={() => batchSetEnabled(false)}>{t('configs.batch.disableVisible')}</button>
+        <button type="button" data-batch="enable" disabled={batchDisabled}
+          onClick={() => batchSetEnabled(true)}>{t('rules.enableVisible')}</button>
+        <button type="button" data-batch="disable" disabled={batchDisabled}
+          onClick={() => batchSetEnabled(false)}>{t('rules.disableVisible')}</button>
       </div>
     </div>
     <div className={css.ruleFilters}>
@@ -558,17 +579,26 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         <button type="button" aria-label={t('rules.allModules')} aria-pressed={!moduleFilter && allModules} onClick={() => changeModuleScope('all')}>{t('configs.view.all')}</button>
       </div>
     </div>
-    {owners.map(({ moduleId: id, draft, editor }) => {
-      return (draft.error || hasRuleFields(draft)) && <div key={id}>
-        {draft.error && <div className={css.row}>
+    {showList && feedbackOwners.map(({ moduleId: id, draft, editor }) => {
+      const invalid = hasRuleFields(draft)
+      if (!draft.error && !draft.pending && !draft.retryCreate && !draft.remote && !draft.publicationPending && !draft.activationPending && !invalid) return null
+      const feedback = ruleFeedback(draft, editor, t)
+      return <div key={id}>
+        {feedback.action && <div className={css.row}>
           <span>{t('rules.source', { module: id })}</span>
-          <p role="alert" className={css.error}>{draft.remote ? t('rules.conflict') : draft.error}</p>
-          <Button variant="outline" shape="pill" disabled={draft.busy !== undefined} aria-label={t(editor.retryKind === 'save' ? 'rules.retrySave' : 'workspace.retry')}
-            title={t(editor.retryKind === 'save' ? 'rules.retrySave' : 'workspace.retry')} onClick={() => { void editor.retry() }}>{t(editor.retryKind === 'save' ? 'rules.retrySaveButton' : 'rules.reloadButton')}</Button>
+          {feedback.issue && <p role="alert" className={css.error}>{feedback.issue}</p>}
+          {feedback.publication && <p role="status">{feedback.publication}</p>}
+          {feedback.publication && draft.publicationError && <p role="alert" className={css.error}>{draft.publicationError}</p>}
+          {draft.error && draft.error !== feedback.issue && !draft.pending && !draft.remote &&
+            <details className={css.ruleFailureDetails}><summary>{t('rules.errorReason')}</summary>{draft.error}</details>}
+          <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
+            onClick={() => retryRules({ moduleId: id, draft, editor }, feedback.activationTarget)}>{feedback.action}</Button>
+          {feedback.retrySavedVersion && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
+            onClick={() => { void editor.retryPublication() }}>{t('publication.retry')}</Button>}
           {(rulesDirty(draft) || draft.remote) && <Button variant="outline" shape="pill" disabled={draft.busy !== undefined}
             aria-label={t('triggers.discard')} title={t('triggers.discard')} onClick={() => setDiscard(id)}>{t('rules.discardButton')}</Button>}
         </div>}
-        {hasRuleFields(draft) && <p role="alert" className={css.error}>{t('rules.source', { module: id })} · {t('rules.fieldsPending')}</p>}
+        {invalid && <p role="alert" className={css.error}>{t('rules.source', { module: id })} · {t('rules.fieldsPending')}</p>}
       </div>
     })}
     {order.error && <p role="alert" className={css.error}>{order.error}</p>}
@@ -583,11 +613,13 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
     {entries.map(row => {
         const { entry, moduleId: id, key, draft, editor } = row
         const orderEntry = orderByIdentity.get(row.identity)?.entry
-        const pendingWinner = draft.activationPending === entry.value.id
-        const selectableWinner = enabledIds.has(id) && entry.value.groupScope === 'cross-module' && entry.value.exclusive === true && Boolean(entry.value.group)
+        const pendingWinner = draft.activationPending === entry.value.id && ruleFeedback(draft, editor, t).activationTarget === entry.value.id
+        const selectableWinner = enabledIds.has(id) && entry.value.groupScope === 'cross-module'
+          && (pendingWinner || entry.value.exclusive === true) && Boolean(entry.value.group)
         const name = entry.value.name || entry.value.id
+        const state = t(entry.value.enabled === false ? 'rules.rowDisabled' : 'rules.rowEnabled')
         return <li key={key} data-module-id={id}>
-          <button type="button" title={`${name} · ${id}`} aria-label={`${t('rules.editNamed', { name })} · ${id}`} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
+          <button type="button" title={`${name} · ${id}`} aria-label={`${t('rules.editNamed', { name })} · ${id} · ${state}`} className={css.ruleChoice} ref={selected?.key === key ? selectedButton : undefined} aria-current={selected?.key === key || undefined}
             onClick={event => {
               closeRightEditor()
               if (key !== expanded) saveSelected.current?.()
@@ -596,17 +628,18 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
               select(key)
             }}>
             <strong>{name}</strong>
+            <small>{state}</small>
           </button>
           {showList && selectableWinner && <button type="button" className={css.ruleWinner}
             disabled={readOnly(id) || modulePending || order.busy || (pendingWinner ? draft.busy !== undefined : needsOrderBlock(draft))}
-            aria-label={pendingWinner ? t('rules.resumeWinner') : t('rules.selectWinner', { id: entry.value.id })}
-            title={pendingWinner ? t('rules.resumeWinner') : t('rules.selectWinner', { id: entry.value.id })}
+            aria-label={t(pendingWinner ? 'rules.resumeWinner' : 'rules.selectWinner', { id: entry.value.id })}
+            title={t(pendingWinner ? 'rules.resumeWinner' : 'rules.selectWinner', { id: entry.value.id })}
             onClick={event => {
               event.stopPropagation()
               const rule = entry.value
               if (!pendingWinner && rule.enabled === false) editor.patch(entry.key, { ...rule, enabled: true })
-              const result = pendingWinner ? editor.retry() : editor.submit({ activateRuleId: rule.id })
-              void result.then(() => refreshExclusivePeers(id, rule))
+              if (pendingWinner) retryRules({ moduleId: id, draft, editor }, rule.id)
+              else retryRules({ moduleId: id, draft, editor }, rule.id, () => editor.submit({ activateRuleId: rule.id }))
             }}>{pendingWinner ? '↻' : '✓'}</button>}
           {showList && moveButtons(row.identity, orderEntry, `${id} / ${name}`)}
         </li>
@@ -654,6 +687,7 @@ export function RulesWorkspace(props: RulesWorkspaceProps): ReactNode {
         diagnosticActionId={diagnosticKey === selected.key ? diagnosticTarget?.actionId : undefined}
         onRuleEdit={props.onRuleEdit}
         onActivate={() => refreshExclusivePeers(selected.moduleId, selected.entry.value)}
+        onRetry={activationTarget => retryRules(selected, activationTarget)}
         expandedRows={store.editorDrafts.expanded}
         renderSettings={selected.entry.value.layer !== undefined && props.hasLayerSettings?.(selected.entry.value.layer, selected.moduleId) && props.renderLayerSettings ? (rule, module) => props.renderLayerSettings!(rule.layer!, { id: rule.id, layer: rule.layer }, module, create.openToolsForModule) : undefined} />
       {fileInspector}
